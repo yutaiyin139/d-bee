@@ -2,7 +2,7 @@
 
 - 日期：2026-10-14
 - 前置：阶段 0 代码解耦已完成（见 `docs/阶段0-代码解耦-验收报告.md`）
-- 当前状态：**本地骨架已跑通，真机验收待用户补齐构建工具链**
+- 当前状态：**Windows 侧构建链路已打通、debug APK 已产出、模拟器验收通过（登录页渲染）**；剩余仅「验证码登录 + 云端数据读取」需真人输入验证码完成
 
 ---
 
@@ -131,3 +131,61 @@ Capacitor 生成的两个平台目录**自带 `.gitignore`**，已覆盖全部�
    这是预期行为（SPM 模式下 CocoaPods 那步本来就无关紧要）。真正编译必须在 macOS 上做。
 3. 本机 `npm audit` 报 2 个漏洞（`esbuild` moderate / `vite` high），是**升级前就存在**的
    开发服务器类问题，与 Capacitor 无关，且不影响生产构建产物。可后续把 Vite 升到 5.x 最新版处理。
+
+---
+
+## 六、Windows 侧构建链路打通与模拟器验收（2026-10-14 13:00 补记）
+
+### 重要更正：Android SDK 其实已装好
+
+「本机无 Android SDK」此前是**误判**——SDK 完整存在于 `C:/Users/yuty/AppData/Local/Android/Sdk`，
+且 `android/local.properties` 已正确指向它。实测盘点：
+
+| 组件 | 实际状态 |
+|---|---|
+| platforms | android-36 / 36.1 / 37.0（compileSdk 36 需求满足） |
+| build-tools | 35.0.0 / 36.0.0 / 37.0.0 |
+| platform-tools | adb 37.0.1 可用 |
+| emulator | emulator.exe + WHPX 硬件加速可用 |
+| 系统镜像 | android-37.0 google_apis_playstore x86_64 |
+| AVD | `Medium_Phone_API_37.0`（Android 17 / API 37，1080×2400） |
+| Gradle | wrapper 8.14.3 已缓存，无需下载 |
+
+> 唯一缺的是 Android Studio 这个 GUI（不影响命令行构建）。`ANDROID_HOME` 未设也不影响——
+> `local.properties` 已生效。若将来需要 Studio（调试布局/Logcat 面板）再装即可。
+
+### 产物
+
+- `android/app/build/outputs/apk/debug/app-debug.apk`（5,049,029 B）
+- APK 内 web 资源 = dist 产物（主包 `index-x5qEteMv.js` 401,901 B，与阶段 0 验收一致）
+
+### 模拟器验收结果（AVD Medium_Phone_API_37.0，Android 17）
+
+| 验收清单项 | 结果 |
+|---|---|
+| 1. App 启动 → 登录页正常渲染 | ✅ **通过**（截图 `docs/verify/phase1-01-native-login.png`：logo/手机号-邮箱切换/验证码/微信登录/协议链接/版本号全部在位） |
+| 2. 手机验证码登录 | ⏳ 需真人收验证码，待用户完成 |
+| 3. 登录后首页读到云端数据（**成败判定点**） | ⏳ 依赖第 2 项 |
+| 4. 记录一餐 + 杀 App 重开数据仍在 | ⏳ 依赖第 2 项 |
+
+日志证据（logcat）：
+
+- `Capacitor: Handling local request: https://localhost/assets/index-x5qEteMv.js`
+  → **androidScheme=https 生效**，WebView 来源确为 `https://localhost`，web 资源从包内加载
+- 无 `FATAL EXCEPTION`、无 AndroidRuntime 崩溃；App 进程持续存活
+- 全程无 ANR 来自 `com.dbee.app`（出现的 ANR 全是系统应用：输入法/电话/拨号器/Play 商店，
+  属 swiftshader 软渲染 + 宿主机 16 GB 内存跑 4 GB AVD 的资源紧张，**与 App 无关**）
+
+### 用户操作指引（完成剩余 3 项验收）
+
+```bash
+# 1. 启动模拟器（或插真机开 USB 调试）
+C:/Users/yuty/AppData/Local/Android/Sdk/emulator/emulator.exe -avd Medium_Phone_API_37.0
+
+# 2. 安装并启动
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n com.dbee.app/.MainActivity
+```
+
+在登录页输入手机号 → 获取验证码 → 登录，观察首页是否加载出云端数据（成败判定点）。
+若读不到数据，优先检查 `capacitor.config.ts` 的 `plugins.CapacitorHttp.enabled` 是否为 true。
