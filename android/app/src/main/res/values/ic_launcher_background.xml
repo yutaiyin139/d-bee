@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FFFFFF</color>
+    <!-- 与应用主题底色一致（见 src/styles.css 的 bg 变量） -->
+    <color name="ic_launcher_background">#FBF8F1</color>
 </resources>
