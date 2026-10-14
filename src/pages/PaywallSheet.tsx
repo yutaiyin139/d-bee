@@ -1,0 +1,126 @@
+import { useState } from 'react'
+import { IconCrown, IconGift } from '../components/Icons'
+import { Sheet } from '../components/Sheet'
+import { FREE_DAILY_AI, FREE_INSIGHT_PER_WEEK, FREE_REPORT_DAYS } from '../lib/entitlement'
+import { usePlan } from '../state/plan'
+
+/**
+ * 付费墙（P4）。
+ * 真实支付（微信 / 支付宝 / App 内购）尚未接入；当前用兑换码直接解锁 Pro，
+ * 权益写入云端 entitlements，换设备同样生效。界面上对这一点明确告知。
+ */
+
+const FREE_ITEMS = [
+  `每日 ${FREE_DAILY_AI} 次 AI 识别（拍照 / 文字 / 条码兜底 / AI 问答共用）`,
+  '饮食、体重、饮水、运动记录全部功能',
+  `饮食报告看近 ${FREE_REPORT_DAYS} 天`,
+  `AI 周解读每 ${FREE_INSIGHT_PER_WEEK} 次`,
+]
+
+const PRO_ITEMS = [
+  'AI 识别与问答不限次数',
+  '饮食报告扩展到 30 天 + 数据导出',
+  'AI 周解读不限次',
+  '后续新功能优先体验',
+]
+
+export function PaywallSheet() {
+  const { paywall, closePaywall, redeem, pro } = usePlan()
+  const [code, setCode] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [ok, setOk] = useState(false)
+
+  if (!paywall.open) return null
+
+  async function submitCode() {
+    if (!code.trim()) return
+    setBusy(true)
+    setErr('')
+    try {
+      const res = await redeem(code)
+      if (res === 'bad') {
+        setErr('兑换码不对，检查一下大小写和连字符。')
+        return
+      }
+      setOk(true)
+      setTimeout(() => {
+        closePaywall()
+        setOk(false)
+        setCode('')
+      }, 1400)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '兑换失败，请重试')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Sheet title={pro ? 'D-Bee Pro' : '升级 D-Bee Pro'} onClose={closePaywall}>
+      {paywall.reason && <div className="notice info">{paywall.reason}</div>}
+      {pro && (
+        <div className="notice ok">
+          你已经是 Pro 会员，所有功能已解锁。
+        </div>
+      )}
+
+      <div className="pay-card pay-card-pro">
+        <div className="pay-badge">
+          <IconCrown color="#6b4a08" size={16} />
+          Pro
+        </div>
+        {PRO_ITEMS.map((t) => (
+          <div className="pay-line" key={t}>
+            <span className="tick">✓</span>
+            {t}
+          </div>
+        ))}
+      </div>
+
+      <div className="pay-card">
+        <div className="pay-badge pay-badge-free">免费版</div>
+        {FREE_ITEMS.map((t) => (
+          <div className="pay-line muted" key={t}>
+            <span className="tick">·</span>
+            {t}
+          </div>
+        ))}
+      </div>
+
+      {!pro && (
+        <>
+          <div className="field" style={{ marginTop: 18 }}>
+            <label htmlFor="redeem">兑换码</label>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <input
+                id="redeem"
+                placeholder="例如 DBEE-PRO-2026"
+                value={code}
+                onChange={(e) => {
+                  setCode(e.target.value)
+                  setErr('')
+                }}
+                autoCapitalize="characters"
+              />
+              <button
+                className="btn btn-ghost"
+                style={{ width: 96, flexShrink: 0, fontSize: 14 }}
+                disabled={busy || !code.trim()}
+                onClick={submitCode}
+              >
+                {busy ? <span className="spinner" /> : <><IconGift size={16} /> 兑换</>}
+              </button>
+            </div>
+            {err && <div className="err">{err}</div>}
+            {ok && <div className="ok-msg">兑换成功，Pro 已生效 🐝</div>}
+          </div>
+
+          <div className="helper" style={{ lineHeight: 1.7 }}>
+            在线订阅（微信 / 支付宝 / 应用商店内购）正在接入中，上线前可先用兑换码体验完整功能。
+          </div>
+        </>
+      )}
+    </Sheet>
+  )
+}

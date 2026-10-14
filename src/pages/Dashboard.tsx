@@ -1,0 +1,635 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { IconDrop, IconFire, IconFork, IconPea, IconPlus, IconRun, IconWater } from '../components/Icons'
+import { FoodTagList } from '../components/FoodTags'
+import { MonthPicker } from '../components/MonthPicker'
+import { Ring } from '../components/Ring'
+import { SiteFooter } from '../components/SiteFooter'
+import { WeekStrip } from '../components/WeekStrip'
+import type { DocId } from '../content/legal'
+import {
+  addExercise,
+  addWater,
+  deleteExercise,
+  deleteMeal,
+  listExerciseByDate,
+  listMealsBetween,
+  listMealsByDate,
+  listWaterByDate,
+  undoLastWater,
+} from '../lib/api'
+import type { CoachContext } from '../lib/ai'
+import { categoryOf } from '../lib/foods'
+import { LEVEL_LABELS, levelOfScore, nextMealAdvice, summarizeEntries } from '../lib/foodInsight'
+import { EXERCISES, exerciseKcal, formatDateShort, guessMealType, shiftDate, targetFromProfile, todayKey, waterTargetMl } from '../lib/nutrition'
+import { computeStreak } from '../lib/streak'
+import { usePlan } from '../state/plan'
+import { MEAL_LABELS, MEAL_ORDER } from '../types'
+import type { ExerciseLog, MealEntry, MealType, Profile, WaterLog } from '../types'
+import { CoachSheet } from './CoachSheet'
+import { LogSheet } from './LogSheet'
+
+interface DashboardProps {
+  profile: Profile
+  onOpenLegal: (id: DocId) => void
+}
+
+// 配色对应参考稿：蛋白质绿、碳水橙、脂肪黄
+const MACRO_META = [
+  { key: 'protein_g', label: '蛋白质', color: 'var(--green)', icon: IconPea },
+  { key: 'carb_g', label: '碳水化合物', color: 'var(--honey)', icon: IconDrop },
+  { key: 'fat_g', label: '脂肪', color: 'var(--yellow)', icon: IconDrop },
+] as const
+
+const STREAK_WINDOW_DAYS = 185
+
+export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
+  const { pro, aiRemaining, openPaywall } = usePlan()
+  const [logDate, setLogDate] = useState(todayKey())
+  const [entries, setEntries] = useState<MealEntry[]>([])
+  const [water, setWater] = useState<WaterLog[]>([])
+  const [exercise, setExercise] = useState<ExerciseLog[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [sheetMeal, setSheetMeal] = useState<MealType | null>(null)
+  const [coachOpen, setCoachOpen] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
+
+  // 打卡：需要近半年的「有记录日期」集合；同时留一份近窗记录用于卡路里追踪
+  const [loggedDates, setLoggedDates] = useState<string[]>([])
+  const [recentMeals, setRecentMeals] = useState<MealEntry[]>([])
+  const today = todayKey()
+
+  const target = useMemo(() => targetFromProfile(profile), [profile])
+  const waterTarget = useMemo(() => waterTargetMl(profile.current_weight_kg), [profile.current_weight_kg])
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const [m, w, x, recent] = await Promise.all([
+        listMealsByDate(logDate),
+        listWaterByDate(logDate),
+        listExerciseByDate(logDate),
+        listMealsBetween(shiftDate(today, -STREAK_WINDOW_DAYS), today),
+      ])
+      setEntries(m)
+      setWater(w)
+      setExercise(x)
+      setRecentMeals(recent)
+      setLoggedDates(Array.from(new Set(recent.map((r) => r.log_date))))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '加载失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [logDate, today])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const totals = useMemo(
+    () =>
+      entries.reduce(
+        (acc, e) => {
+          acc.kcal += Number(e.calories) || 0
+          acc.p += Number(e.protein_g) || 0
+          acc.c += Number(e.carb_g) || 0
+          acc.f += Number(e.fat_g) || 0
+          return acc
+        },
+        { kcal: 0, p: 0, c: 0, f: 0 },
+      ),
+    [entries],
+  )
+
+  const waterMl = useMemo(() => water.reduce((s, w) => s + (Number(w.amount_ml) || 0), 0), [water])
+  const burnKcal = useMemo(() => exercise.reduce((s, x) => s + (Number(x.calories) || 0), 0), [exercise])
+  const netKcal = Math.round(totals.kcal - burnKcal)
+
+  const remain = Math.round(target.calories - netKcal)
+  const over = remain < 0
+  const isToday = logDate === today
+
+  const streak = useMemo(() => computeStreak(loggedDates, today), [loggedDates, today])
+
+  const byMeal = useMemo(() => {
+    const map: Record<MealType, MealEntry[]> = { breakfast: [], lunch: [], dinner: [], snack: [] }
+    for (const e of entries) {
+      const k = (e.meal_type in map ? e.meal_type : 'snack') as MealType
+      map[k].push(e)
+    }
+    return map
+  }, [entries])
+
+  const planAdvice = useMemo(() => {
+    if (!profile.plan_summary) return []
+    try {
+      const parsed = JSON.parse(profile.plan_summary) as { summary?: string; advice?: string[] }
+      return parsed.advice ?? []
+    } catch {
+      return []
+    }
+  }, [profile.plan_summary])
+
+  /** 当日饮食体检：规则引擎本地计算，离线可用、不消耗 AI 额度 */
+  const dayInsight = useMemo(() => summarizeEntries(entries, categoryOf), [entries])
+
+  /** 卡路里追踪：把剩余额度按还没吃的餐次拆开，给出下一餐的参考上限 */
+  const eatenMeals = useMemo(() => new Set<string>(entries.map((e) => e.meal_type)), [entries])
+  const advice = useMemo(() => nextMealAdvice(remain, eatenMeals), [remain, eatenMeals])
+
+  /** 近 7 天热量迷你趋势（数据已在近窗查询里，不再额外请求） */
+  const weekBars = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const m of recentMeals) {
+      map.set(m.log_date, (map.get(m.log_date) ?? 0) + (Number(m.calories) || 0))
+    }
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = shiftDate(today, i - 6)
+      return { date: d, kcal: Math.round(map.get(d) ?? 0), logged: map.has(d), isToday: d === today }
+    })
+  }, [recentMeals, today])
+
+  const weekPeak = useMemo(
+    () => Math.max(target.calories, ...weekBars.map((b) => b.kcal), 1),
+    [target.calories, weekBars],
+  )
+
+  const checkupLevel = dayInsight.avgScore === null ? null : levelOfScore(dayInsight.avgScore)
+  const checkupTone = checkupLevel === 'great' || checkupLevel === 'good' ? 'is-good' : checkupLevel === 'ok' ? 'is-ok' : 'is-warn'
+
+  // 传给 AI 助手的实时状态
+  const coachCtx: CoachContext = useMemo(
+    () => ({
+      goal: profile.goal ?? 'keep',
+      targetKcal: target.calories,
+      eatenKcal: totals.kcal,
+      burnedKcal: burnKcal,
+      proteinTarget: target.protein_g,
+      proteinEaten: totals.p,
+      waterMl,
+      waterTarget,
+      topFoods: entries.slice(0, 5).map((e) => e.food_name),
+      barriers: profile.barriers ? profile.barriers.split(',') : [],
+    }),
+    [profile, target, totals, burnKcal, waterMl, waterTarget, entries],
+  )
+
+  async function handleDelete(id?: number) {
+    if (!id) return
+    setError('')
+    try {
+      // 删除后统一刷新：当日列表、运动饮水与打卡状态都依赖日期窗数据
+      await deleteMeal(id)
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '删除失败')
+    }
+  }
+
+  async function handleWater(ml: number) {
+    setError('')
+    try {
+      setWater(await addWater(logDate, ml))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '记录饮水失败')
+    }
+  }
+
+  async function handleWaterUndo() {
+    setError('')
+    try {
+      await undoLastWater(logDate)
+      setWater(await listWaterByDate(logDate))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '撤销失败')
+    }
+  }
+
+  // 运动快捷录入
+  const [exName, setExName] = useState(EXERCISES[0].name)
+  const [exMinutes, setExMinutes] = useState(30)
+  const exPreview = useMemo(() => exerciseKcal(exName, exMinutes, profile.current_weight_kg), [exName, exMinutes, profile.current_weight_kg])
+
+  async function handleAddExercise() {
+    setError('')
+    try {
+      setExercise(await addExercise({ log_date: logDate, name: exName, minutes: exMinutes, calories: exPreview }))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '记录运动失败')
+    }
+  }
+
+  async function handleDelExercise(id?: number) {
+    if (!id) return
+    setError('')
+    try {
+      setExercise(await deleteExercise(id, logDate))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '删除失败')
+    }
+  }
+
+  const waterPct = Math.min(100, Math.round((waterMl / waterTarget) * 100))
+
+  return (
+    <div className="page">
+      <div className="page-top" />
+
+      {/* 顶部：应用名 + 日期导航（点日期打开日历选任意一天） */}
+      <div className="dash-head">
+        <h1>自律蜜蜂</h1>
+        <div className="date-nav">
+          <button className="date-arrow" onClick={() => setLogDate((d) => shiftDate(d, -1))} aria-label="前一天">
+            ‹
+          </button>
+          <button className="date-label" onClick={() => setPickerOpen(true)} aria-label="打开日历选择日期">
+            {isToday ? '今天' : formatDateShort(logDate)}
+            <span className="dl-caret">▾</span>
+          </button>
+          <button
+            className="date-arrow"
+            onClick={() => setLogDate((d) => shiftDate(d, 1))}
+            aria-label="后一天"
+          >
+            ›
+          </button>
+        </div>
+      </div>
+
+      {/* 周历：左右滑动翻周，点选任意一天；有记录的日子带小圆点 */}
+      <WeekStrip
+        date={logDate}
+        today={today}
+        loggedDates={loggedDates}
+        onPick={setLogDate}
+        onShiftDays={(days) => setLogDate((d) => shiftDate(d, days))}
+      />
+
+      {error && <div className="notice err">{error}</div>}
+
+      {/* 热量卡：已摄入 / 环形剩余 / 已消耗 + 三大营养素（参考自律茄子） */}
+      <div className="ring-card">
+        <div className="ring-row">
+          <div className="side-stat">
+            <div className="side-label">
+              <IconFork color="var(--honey-dark)" size={15} />
+              已摄入
+            </div>
+            <div className="side-num">{Math.round(totals.kcal)}</div>
+          </div>
+
+          <Ring value={Math.min(Math.max(netKcal, 0), target.calories)} max={target.calories} size={148} stroke={13}>
+            <div className="ring-center">
+              <div className={`ring-remain ${over ? 'over' : ''}`}>{Math.abs(remain)}</div>
+              <div className="ring-sub">{over ? '超出预算' : '剩余'}</div>
+            </div>
+          </Ring>
+
+          <div className="side-stat">
+            <div className="side-label">
+              已消耗
+              <IconFire color="var(--red)" size={15} />
+            </div>
+            <div className="side-num">{Math.round(burnKcal)}</div>
+          </div>
+        </div>
+
+        <div className="ring-macros">
+          {MACRO_META.map((m) => {
+            const goal = target[m.key]
+            const got = m.key === 'protein_g' ? totals.p : m.key === 'carb_g' ? totals.c : totals.f
+            const ratio = goal > 0 ? Math.min(got / goal, 1) : 0
+            const Icon = m.icon
+            return (
+              <div className="rm-col" key={m.key}>
+                <div className="rm-head">
+                  <Icon color={m.color} size={13} />
+                  <span>{m.label}</span>
+                </div>
+                <div className="rm-track">
+                  <div className="rm-fill" style={{ width: `${ratio * 100}%`, background: m.color }} />
+                </div>
+                <div className="rm-val">
+                  {Math.round(got)} / {goal}克
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* 卡路里追踪：下一餐的参考额度 */}
+      <div className={`advice-strip ${advice.over ? 'is-over' : ''}`}>
+        <span className="as-tag">卡路里追踪</span>
+        <span className="as-text">{advice.text}</span>
+      </div>
+
+      {/* 卡路里追踪：近 7 天热量迷你趋势 */}
+      <div className="card card-tight mini-trend">
+        <div className="mt-head">
+          <span className="mt-title">近 7 天热量</span>
+          <span className="mt-sub">虚线为预算 {target.calories} kcal</span>
+        </div>
+        <div className="mt-bars">
+          {weekBars.map((b) => {
+            const h = Math.max(b.kcal > 0 ? 6 : 0, Math.round((b.kcal / weekPeak) * 100))
+            const overDay = b.logged && b.kcal > target.calories * 1.1
+            return (
+              <button
+                key={b.date}
+                className={`mt-col ${b.isToday ? 'is-today' : ''}`}
+                onClick={() => setLogDate(b.date)}
+                title={b.logged ? `${b.date} · ${b.kcal} kcal` : `${b.date} · 未记录`}
+              >
+                <span className="mt-val">{b.logged ? b.kcal : ''}</span>
+                <span className="mt-track">
+                  <span
+                    className={`mt-fill ${overDay ? 'is-over' : ''}`}
+                    style={{ height: `${h}%` }}
+                  />
+                </span>
+                <span className="mt-day">{Number(b.date.slice(-2))}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* 打卡卡片 */}
+      <div className="streak-card">
+        <div className="streak-flame">
+          <IconFire color={streak.current > 0 ? 'var(--honey-dark)' : 'var(--ink-3)'} size={22} />
+        </div>
+        <div className="streak-main">
+          <div className="streak-num">
+            {streak.current > 0 ? <>连续打卡 <b>{streak.current}</b> 天</> : isToday ? '今天还没记录，记一餐就开始' : '这天没有记录'}
+          </div>
+          <div className="streak-sub">
+            最长 {streak.longest} 天 · 累计 {streak.total} 天
+            {streak.nextMilestone && <> · 再坚持 {streak.nextMilestone - streak.current} 天到 {streak.nextMilestone} 天里程碑</>}
+          </div>
+        </div>
+      </div>
+
+      {/* 饮水 */}
+      <div className="card">
+        <div className="water-head">
+          <div className="water-title">
+            <IconWater color="var(--blue)" size={18} />
+            <span>饮水</span>
+          </div>
+          <span className="water-val">
+            <b>{(waterMl / 1000).toFixed(2)}</b> / {(waterTarget / 1000).toFixed(1)} L
+          </span>
+        </div>
+        <div className="macro-track" style={{ margin: '10px 0 12px' }}>
+          <div className="macro-fill" style={{ width: `${waterPct}%`, background: 'var(--blue)' }} />
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button className="chip water-chip" onClick={() => void handleWater(250)}>+250 ml</button>
+          <button className="chip water-chip" onClick={() => void handleWater(500)}>+500 ml</button>
+          {water.length > 0 && (
+            <button className="btn-text" style={{ marginLeft: 'auto', color: 'var(--ink-3)' }} onClick={handleWaterUndo}>
+              撤销一杯
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 运动 */}
+      <div className="card">
+        <div className="water-head">
+          <div className="water-title">
+            <IconRun color="var(--green)" size={18} />
+            <span>运动</span>
+          </div>
+          <span className="water-val">
+            {exercise.length > 0 ? (
+              <>
+                消耗 <b>{Math.round(burnKcal)}</b> kcal
+              </>
+            ) : (
+              <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>今天还没动</span>
+            )}
+          </span>
+        </div>
+
+        {exercise.length > 0 && (
+          <div style={{ margin: '4px 0 10px' }}>
+            {exercise.map((x) => (
+              <div key={x.id} className="ex-row">
+                <span className="ex-name">{x.name} {x.minutes} 分钟</span>
+                <span className="ex-kcal">{Math.round(Number(x.calories))} kcal</span>
+                <button className="entry-del" onClick={() => void handleDelExercise(x.id)} aria-label="删除">×</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="chips chips-scroll" style={{ marginBottom: 10 }}>
+          {EXERCISES.map((e) => (
+            <button key={e.name} className={`chip ${exName === e.name ? 'active' : ''}`} onClick={() => setExName(e.name)}>
+              {e.name}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div className="stepper" style={{ flex: 1 }}>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={5}
+              max={300}
+              value={exMinutes}
+              onChange={(e) => setExMinutes(Math.max(5, Math.min(300, Number(e.target.value) || 5)))}
+            />
+            <span className="unit">分钟</span>
+            <span className="ex-est">≈ {exPreview} kcal</span>
+          </div>
+          <button className="btn btn-ghost" style={{ width: 96, flexShrink: 0 }} onClick={handleAddExercise}>
+            <IconPlus color="var(--ink)" />
+            记录
+          </button>
+        </div>
+      </div>
+
+      <div className="section-title">
+        {isToday ? '今日餐次' : '这一天'}
+        <span className="hint">{entries.length} 条记录</span>
+      </div>
+
+      {loading ? (
+        <>
+          <div className="skeleton" style={{ height: 68, marginBottom: 12 }} />
+          <div className="skeleton" style={{ height: 68, marginBottom: 12 }} />
+          <div className="skeleton" style={{ height: 68 }} />
+        </>
+      ) : (
+        MEAL_ORDER.map((m) => {
+          const list = byMeal[m]
+          const kcal = Math.round(list.reduce((s, e) => s + (Number(e.calories) || 0), 0))
+          return (
+            <div className="meal-block" key={m}>
+              <div className={`meal-head ${list.length ? 'has-items' : ''}`}>
+                <div className="left">
+                  <span className="meal-dot" />
+                  <span className="meal-name">{MEAL_LABELS[m]}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <span className="meal-kcal">{list.length ? `${kcal} kcal` : ''}</span>
+                  <button className="meal-add" onClick={() => setSheetMeal(m)} aria-label={`添加${MEAL_LABELS[m]}`}>
+                    <IconPlus />
+                  </button>
+                </div>
+              </div>
+              {list.length === 0 ? (
+                <div className="meal-empty">还没有记录</div>
+              ) : (
+                list.map((e) => (
+                  <div className="entry" key={e.id ?? `${e.food_name}-${e.created_at}`}>
+                    <div className="entry-main">
+                      <div className="entry-name">{e.food_name}</div>
+                      <div className="entry-meta">
+                        {e.quantity_text || ''}
+                        {e.ai_note ? ` · ${e.ai_note}` : ''}
+                      </div>
+                    </div>
+                    <span className="entry-kcal">{Math.round(Number(e.calories))}</span>
+                    <button className="entry-del" onClick={() => void handleDelete(e.id)} aria-label="删除">
+                      ×
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          )
+        })
+      )}
+
+      {/* 饮食体检：风险发现 + 益处探索（规则引擎本地算，不消耗 AI 额度） */}
+      {dayInsight.scanned > 0 && dayInsight.avgScore !== null && checkupLevel && (
+        <>
+          <div className="section-title">
+            饮食体检
+            <span className="hint">共 {dayInsight.scanned} 项 · 友好度 {dayInsight.avgScore}</span>
+          </div>
+          <div className="card checkup">
+            <div className="checkup-verdict">
+              <span className={`cu-score ${checkupTone}`}>{dayInsight.avgScore}</span>
+              <span className="cu-main">
+                <span className={`cu-level ${checkupTone}`}>{LEVEL_LABELS[checkupLevel]}</span>
+                <span className="cu-text">{dayInsight.verdict}</span>
+              </span>
+            </div>
+
+            {dayInsight.risks.length > 0 && (
+              <div className="checkup-group">
+                <div className="cg-title risk">建议留意</div>
+                {dayInsight.risks.map((t) => (
+                  <div className="cg-row" key={t.key}>
+                    <span className="cg-label">{t.label}</span>
+                    <span className="cg-badge">{t.count} 项</span>
+                    <span className="cg-reason">{t.reason}</span>
+                    <span className="cg-items">
+                      {t.items.join('、')}
+                      {t.count > t.items.length ? ` 等 ${t.count} 项` : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {dayInsight.benefits.length > 0 && (
+              <div className="checkup-group">
+                <div className="cg-title good">值得肯定</div>
+                {dayInsight.benefits.map((t) => (
+                  <div className="cg-row" key={t.key}>
+                    <span className="cg-label">{t.label}</span>
+                    <span className="cg-badge good">{t.count} 项</span>
+                    <span className="cg-reason">{t.reason}</span>
+                    <span className="cg-items">
+                      {t.items.join('、')}
+                      {t.count > t.items.length ? ` 等 ${t.count} 项` : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="helper" style={{ marginTop: 4, lineHeight: 1.7 }}>
+              按营养成分与烹调方式本地推算
+              {dayInsight.aiAssisted > 0 ? `，其中 ${dayInsight.aiAssisted} 项参考了 AI 评分` : ''}，
+              不消耗 AI 次数。仅供参考，不构成医疗建议。
+            </div>
+          </div>
+        </>
+      )}
+
+      {planAdvice.length > 0 && (
+        <>
+          <div className="section-title">给你的建议</div>
+          <div className="card">
+            {planAdvice.map((a, i) => (
+              <div key={i} style={{ display: 'flex', gap: 9, fontSize: 13.5, color: 'var(--ink-2)', marginBottom: i === planAdvice.length - 1 ? 0 : 9 }}>
+                <span style={{ color: 'var(--honey-dark)', fontWeight: 600 }}>{i + 1}</span>
+                <span>{a}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      <button className="btn btn-ghost coach-entry" onClick={() => setCoachOpen(true)}>
+        饮食上有拿不准的？问问小蜜 →
+      </button>
+      {!pro && (
+        <div className="helper" style={{ textAlign: 'center', marginTop: 6 }}>
+          免费版每日 {aiRemaining ?? 0} 次 AI 额度（识别与问答共用）
+        </div>
+      )}
+
+      <button
+        className="btn"
+        style={{ marginTop: 16 }}
+        onClick={() => setSheetMeal(guessMealType())}
+      >
+        <IconPlus color="#4a3208" />
+        记一餐
+      </button>
+
+      {pickerOpen && (
+        <MonthPicker
+          value={logDate}
+          today={today}
+          loggedDates={loggedDates}
+          onSelect={(d) => {
+            setLogDate(d)
+            setPickerOpen(false)
+          }}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
+
+      {sheetMeal && (
+        <LogSheet
+          logDate={logDate}
+          initialMeal={sheetMeal}
+          budget={advice.budget}
+          budgetText={advice.text}
+          onClose={() => setSheetMeal(null)}
+          onSaved={() => {
+            setSheetMeal(null)
+            void load()
+          }}
+        />
+      )}
+
+      {coachOpen && <CoachSheet ctx={coachCtx} onClose={() => setCoachOpen(false)} />}
+
+      {/* 首页也放页脚：备案号与法律文档入口必须在首页可达 */}
+      <SiteFooter onOpen={onOpenLegal} />
+    </div>
+  )
+}

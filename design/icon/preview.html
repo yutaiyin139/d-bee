@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>D-Bee 图标方案对比</title>
+<style>
+  :root{--bg:#FBF8F1;--ink:#2a2723;--ink2:#6b655c;--line:rgba(42,39,35,.12)}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+       padding:40px 28px 72px}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-size:26px;margin:0 0 6px}
+  .lede{color:var(--ink2);margin:0 0 34px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:20px;padding:26px 28px 30px;
+        margin-bottom:26px;box-shadow:0 1px 2px rgba(42,39,35,.04),0 10px 30px rgba(42,39,35,.045)}
+  .card header h2{font-size:19px;margin:0 0 2px}
+  .card header p{color:var(--ink2);margin:0;font-size:13.5px}
+  .stage{display:flex;gap:34px;align-items:center;flex-wrap:wrap;margin:22px 0 6px}
+  .hero-wrap{position:relative;flex:0 0 auto}
+  .hero{box-shadow:0 8px 26px rgba(42,39,35,.17)}
+  .safezone{position:absolute;left:10%;top:10%;width:80%;height:80%;border:2px dashed rgba(60,45,20,.4);
+            border-radius:50%;pointer-events:none}
+  .col{flex:1 1 340px;min-width:280px}
+  h3{font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink2);
+     margin:20px 0 10px;font-weight:600}
+  .row{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap}
+  .m,.sz{display:flex;flex-direction:column;align-items:center;gap:7px}
+  .m span,.sz span{font-size:11px;color:var(--ink2)}
+  .m img{box-shadow:0 3px 12px rgba(42,39,35,.14)}
+  .sizes{align-items:flex-end}
+  .sz img{box-shadow:0 2px 8px rgba(42,39,35,.13)}
+  .homescreen{display:flex;gap:20px;padding:18px 20px;border-radius:18px;
+    background:linear-gradient(160deg,#d9d3c6,#bdb5a5)}
+  .app{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .app span{font-size:11px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.35)}
+  .note{margin-top:30px;font-size:13px;color:var(--ink2);border-top:1px solid var(--line);padding-top:18px}
+  code{background:#f1ece1;padding:1px 6px;border-radius:6px;font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>D-Bee · 自律蜜蜂 — App 图标方案</h1>
+  <p class="lede">三套方向，均为矢量源文件，全部通过 maskable 安全区像素级自检。大图上的虚线圆 = Android 自适应图标安全区。</p>
+  <section class="card">
+      <header><h2>A · 蜂巢蜜蜂</h2><p>拟物友好：蜜色底 + 蜂巢纹理 + 圆润正面蜜蜂</p></header>
+      <div class="stage">
+        <div class="hero-wrap">
+        <img class="hero" src="preview/a-512.png" width="280" height="280" style="border-radius:22.37%">
+        <span class="safezone" title="Android maskable 安全区（直径 80%）"></span>
+      </div>
+        <div class="col">
+          <h3>遮罩适配</h3>
+          <div class="row"><div class="m"><img src="preview/a-192.png" width="104" height="104" style="border-radius:22.37%"><span>ios</span></div><div class="m"><img src="preview/a-192.png" width="104" height="104" style="border-radius:50%"><span>circle</span></div><div class="m"><img src="preview/a-192.png" width="104" height="104" style="border-radius:16%"><span>rounded</span></div><div class="m"><img src="preview/a-192.png" width="104" height="104" style="border-radius:28%"><span>squircle</span></div><div class="m"><img src="preview/a-192.png" width="104" height="104" style=""><span>none</span></div><div class="m"><img src="preview/a-maskable.png" width="104" height="104" style="border-radius:50%"><span>maskable(圆)</span></div>
+      <div class="m"><img src="preview/a-maskable.png" width="104" height="104" style="border-radius:22.37%"><span>maskable(方)</span></div></div>
+        </div>
+      </div>
+      <h3>小尺寸可读性（真实像素）</h3>
+      <div class="row sizes"><div class="sz"><img src="preview/a-192.png" width="192" height="192" alt=""><span>192px</span></div><div class="sz"><img src="preview/a-96.png" width="96" height="96" alt=""><span>96px</span></div><div class="sz"><img src="preview/a-64.png" width="64" height="64" alt=""><span>64px</span></div><div class="sz"><img src="preview/a-32.png" width="32" height="32" alt=""><span>32px</span></div></div>
+      <h3>主屏效果</h3>
+      <div class="homescreen"><div class="app"><img src="preview/a-192.png" width="60" height="60" style="border-radius:22.37%"><span>D-Bee</span></div><div class="app"><img src="preview/a-192.png" width="60" height="60" style="border-radius:22.37%"><span>D-Bee</span></div><div class="app"><img src="preview/a-192.png" width="60" height="60" style="border-radius:22.37%"><span>D-Bee</span></div><div class="app"><img src="preview/a-192.png" width="60" height="60" style="border-radius:22.37%"><span>D-Bee</span></div></div>
+    </section><section class="card">
+      <header><h2>B · 极简侧影</h2><p>高辨识：大色块 + 侧面蜜蜂剪影，无背景纹理</p></header>
+      <div class="stage">
+        <div class="hero-wrap">
+        <img class="hero" src="preview/b-512.png" width="280" height="280" style="border-radius:22.37%">
+        <span class="safezone" title="Android maskable 安全区（直径 80%）"></span>
+      </div>
+        <div class="col">
+          <h3>遮罩适配</h3>
+          <div class="row"><div class="m"><img src="preview/b-192.png" width="104" height="104" style="border-radius:22.37%"><span>ios</span></div><div class="m"><img src="preview/b-192.png" width="104" height="104" style="border-radius:50%"><span>circle</span></div><div class="m"><img src="preview/b-192.png" width="104" height="104" style="border-radius:16%"><span>rounded</span></div><div class="m"><img src="preview/b-192.png" width="104" height="104" style="border-radius:28%"><span>squircle</span></div><div class="m"><img src="preview/b-192.png" width="104" height="104" style=""><span>none</span></div><div class="m"><img src="preview/b-maskable.png" width="104" height="104" style="border-radius:50%"><span>maskable(圆)</span></div>
+      <div class="m"><img src="preview/b-maskable.png" width="104" height="104" style="border-radius:22.37%"><span>maskable(方)</span></div></div>
+        </div>
+      </div>
+      <h3>小尺寸可读性（真实像素）</h3>
+      <div class="row sizes"><div class="sz"><img src="preview/b-192.png" width="192" height="192" alt=""><span>192px</span></div><div class="sz"><img src="preview/b-96.png" width="96" height="96" alt=""><span>96px</span></div><div class="sz"><img src="preview/b-64.png" width="64" height="64" alt=""><span>64px</span></div><div class="sz"><img src="preview/b-32.png" width="32" height="32" alt=""><span>32px</span></div></div>
+      <h3>主屏效果</h3>
+      <div class="homescreen"><div class="app"><img src="preview/b-192.png" width="60" height="60" style="border-radius:22.37%"><span>D-Bee</span></div><div class="app"><img src="preview/b-192.png" width="60" height="60" style="border-radius:22.37%"><span>D-Bee</span></div><div class="app"><img src="preview/b-192.png" width="60" height="60" style="border-radius:22.37%"><span>D-Bee</span></div><div class="app"><img src="preview/b-192.png" width="60" height="60" style="border-radius:22.37%"><span>D-Bee</span></div></div>
+    </section><section class="card">
+      <header><h2>C · D 字母徽标</h2><p>品牌感：奶油底 + 蜜色 D + 字腔小蜜蜂</p></header>
+      <div class="stage">
+        <div class="hero-wrap">
+        <img class="hero" src="preview/c-512.png" width="280" height="280" style="border-radius:22.37%">
+        <span class="safezone" title="Android maskable 安全区（直径 80%）"></span>
+      </div>
+        <div class="col">
+          <h3>遮罩适配</h3>
+          <div class="row"><div class="m"><img src="preview/c-192.png" width="104" height="104" style="border-radius:22.37%"><span>ios</span></div><div class="m"><img src="preview/c-192.png" width="104" height="104" style="border-radius:50%"><span>circle</span></div><div class="m"><img src="preview/c-192.png" width="104" height="104" style="border-radius:16%"><span>rounded</span></div><div class="m"><img src="preview/c-192.png" width="104" height="104" style="border-radius:28%"><span>squircle</span></div><div class="m"><img src="preview/c-192.png" width="104" height="104" style=""><span>none</span></div><div class="m"><img src="preview/c-maskable.png" width="104" height="104" style="border-radius:50%"><span>maskable(圆)</span></div>
+      <div class="m"><img src="preview/c-maskable.png" width="104" height="104" style="border-radius:22.37%"><span>maskable(方)</span></div></div>
+        </div>
+      </div>
+      <h3>小尺寸可读性（真实像素）</h3>
+      <div class="row sizes"><div class="sz"><img src="preview/c-192.png" width="192" height="192" alt=""><span>192px</span></div><div class="sz"><img src="preview/c-96.png" width="96" height="96" alt=""><span>96px</span></div><div class="sz"><img src="preview/c-64.png" width="64" height="64" alt=""><span>64px</span></div><div class="sz"><img src="preview/c-32.png" width="32" height="32" alt=""><span>32px</span></div></div>
+      <h3>主屏效果</h3>
+      <div class="homescreen"><div class="app"><img src="preview/c-192.png" width="60" height="60" style="border-radius:22.37%"><span>D-Bee</span></div><div class="app"><img src="preview/c-192.png" width="60" height="60" style="border-radius:22.37%"><span>D-Bee</span></div><div class="app"><img src="preview/c-192.png" width="60" height="60" style="border-radius:22.37%"><span>D-Bee</span></div><div class="app"><img src="preview/c-192.png" width="60" height="60" style="border-radius:22.37%"><span>D-Bee</span></div></div>
+    </section>
+  <p class="note">
+    矢量源文件：<code>design/icon/concept-a.svg</code> / <code>-b.svg</code> / <code>-c.svg</code>。
+    选定后我会导出 PWA 全套尺寸（192 / 512 / maskable-512 / apple-touch 180 / favicon 64），
+    替换 <code>public/</code> 下现有图标并部署实测。
+  </p>
+</div>
+</body>
+</html>

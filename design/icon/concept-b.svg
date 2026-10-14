@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bBg" x1="0" y1="0" x2="0.25" y2="1">
+      <stop offset="0" stop-color="#F8C356"/>
+      <stop offset="1" stop-color="#D97F0D"/>
+    </linearGradient>
+    <radialGradient id="bGlow" cx="0.5" cy="0.1" r="0.72">
+      <stop offset="0" stop-color="#FFEEC0" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#FFEEC0" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="bClip"><ellipse cx="470" cy="606" rx="252" ry="152"/></clipPath>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bBg)"/>
+  <rect width="1024" height="1024" fill="url(#bGlow)"/>
+
+  <g id="art">
+      <!-- 图形整体绕画布中心缩 3%：原始构图最远点距中心 413px，略超 maskable
+           安全半径 410px（实测 14px 擦线），缩放后 400.6px 达标。0.97 与
+           -16.65 = 0.97×545-512 配合，等效于"先 -33 平移再绕中心缩放" -->
+    <g transform="translate(-16.65 -16.65) scale(0.97)">
+      <ellipse cx="500" cy="410" rx="136" ry="78" transform="rotate(-20 500 410)" fill="#FFFFFF" fill-opacity="0.86"/>
+      <ellipse cx="640" cy="452" rx="112" ry="64" transform="rotate(12 640 452)" fill="#FFFFFF" fill-opacity="0.62"/>
+      <path d="M 252 576 L 156 606 L 252 648 Z" fill="#4A3208" fill-opacity="0.92"/>
+      <ellipse cx="470" cy="606" rx="252" ry="152" fill="#FFFCF2"/>
+      <g clip-path="url(#bClip)" fill="#4A3208" fill-opacity="0.86">
+        <rect x="330" y="430" width="56" height="360"/>
+        <rect x="452" y="430" width="56" height="360"/>
+        <rect x="574" y="430" width="56" height="360"/>
+      </g>
+      <circle cx="742" cy="566" r="116" fill="#FFFCF2"/>
+      <circle cx="790" cy="540" r="24" fill="#3A2A10"/>
+      <circle cx="797" cy="531" r="8" fill="#FFFFFF" fill-opacity="0.88"/>
+      <g stroke="#4A3208" stroke-width="19" fill="none" stroke-linecap="round">
+        <path d="M796 470 C 838 424 880 408 908 402"/>
+        <path d="M736 456 C 758 408 776 388 792 372"/>
+      </g>
+      <g fill="#4A3208">
+        <circle cx="912" cy="400" r="18"/>
+        <circle cx="796" cy="369" r="18"/>
+      </g>
+    </g>
+  </g>
+</svg>

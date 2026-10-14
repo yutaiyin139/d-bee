@@ -1,0 +1,24 @@
+node_modules/
+dist/
+*.local
+.env
+.env.*
+!.env.example
+.DS_Store
+
+# 凭据与备份数据不入库
+db/CREDENTIALS.txt
+db/backups/
+design/icon/_check/
+design/icon/backup-public/
+design/icon/preview/
+deploy/screenshots/
+
+# 自检脚本的编译产物（源码 tools/insight-selftest.ts）
+tools/.insight-selftest.mjs
+
+# 发布归档包（体积大，含凭据，不入库）
+backups/
+
+# WorkBuddy 本地运行产物（memory/ 保留，跨机保留工作上下文；tmp/ 是草稿，不入库）
+.workbuddy/tmp/

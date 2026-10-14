@@ -1,0 +1,16 @@
+已写出 SVG:
+  concept-a.svg  (A · 蜂巢蜜蜂)
+  concept-b.svg  (B · 极简侧影)
+  concept-c.svg  (C · D 字母徽标)
+（改用缓存 chromium: C:\Users\yuty\AppData\Local\ms-playwright\chromium-1148\chrome-win\chrome.exe）
+  已渲染 A · 蜂巢蜜蜂 -> preview/a-{512,192,96,64,32}.png
+  已渲染 B · 极简侧影 -> preview/b-{512,192,96,64,32}.png
+  已渲染 C · D 字母徽标 -> preview/c-{512,192,96,64,32}.png
+
+安全区自检（安全圆半径 410，画布中心 512,512）:
+  a: 外接矩形 [182,227]-[842,872] 最远角距中心 488px  ✗ 超出，圆形遮罩会被切
+  b: 外接矩形 [127,299]-[879,725] 最远角距中心 440px  ✗ 超出，圆形遮罩会被切
+  c: 外接矩形 [270,240]-[754,784] 最远角距中心 364px  ✓ 安全
+  => 存在超界，需调整构图
+
+已生成对比预览: design/icon/preview.html

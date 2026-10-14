@@ -1,0 +1,30 @@
+# 换行符与文本属性统一策略
+#
+# 目的：Windows 与 Mac mini 双向同步时，杜绝 CRLF/LF 差异引发的
+# 「文件明明没改却被标记为已修改」「构建产物哈希漂移」这类难排查问题。
+#
+# 规则：仓库内一律存 LF，检出到工作区也一律是 LF（eol=lf），
+# 因此在 Windows 上不会自动变成 CRLF，Mac 上也不会有差异。
+# 对应需要在两台机器上都设置：git config core.autocrlf false
+#
+* text=auto eol=lf
+
+# Shell / 配置脚本必须保持 LF，否则在 macOS 与 Linux 上无法执行
+*.sh text eol=lf
+*.mjs text eol=lf
+*.ts  text eol=lf
+
+# 二进制文件：不要做任何行尾转换，也不要尝试 diff
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.icns binary
+*.wasm binary
+*.gz   binary
+*.zip  binary
+*.pdf  binary
+
+# 锁文件与生成物保留原样，避免无意义的巨大 diff
+package-lock.json -diff linguist-generated

@@ -1,0 +1,143 @@
+# D-Bee（自律蜜蜂）— 腾讯云轻量服务器 Nginx 配置【模板·唯一来源】
+#
+# ⚠️ 本文件是**模板**，不要手工复制到服务器上改。
+#    由 deploy/deploy.sh 渲染（把 __SERVER_NAME__ 等占位符替换掉）后推送安装。
+#
+# 用法：
+#   纯前端更新（不动 nginx）：
+#     DBEE_HOST=150.158.51.106 DBEE_USER=ubuntu DBEE_PWD='密码' bash deploy/deploy.sh
+#   改了 nginx 配置 / 首次绑域名：
+#     DBEE_HOST=150.158.51.106 DBEE_USER=ubuntu DBEE_PWD='密码' \
+#     DBEE_DOMAIN=dbee.example.com APPLY_NGINX_CONF=1 bash deploy/deploy.sh
+#
+# ⚠️ 若已经用过 certbot 上了 HTTPS，**不要**再用 APPLY_NGINX_CONF=1 覆盖 ——
+#    certbot 是把 443 站点块**写进** /etc/nginx/sites-available/d-bee 的，
+#    本模板只有 80 端口，覆盖会把 HTTPS 配置冲掉。
+#    （push-nginx.sh 覆盖前会备份成 d-bee.bak，出问题可回滚。）
+#
+# ⚠️ 为什么必须有下面的反向代理（不要省）：
+#   D-Bee 界面是纯静态的，但**数据库、账号登录、AI 调用全部在 WorkBuddy 云端**
+#   （endpoint: https://zilv-mifeng.app.workbuddy.host）。
+#   实测该云端接口在跨域预检（OPTIONS）时**不允许 apikey 请求头**，
+#   即只做静态托管、让浏览器直连云端会报：
+#     "Request header field apikey is not allowed by Access-Control-Allow-Headers"
+#   数据库请求会被浏览器整体拦掉（Failed to fetch），App 直接不可用。
+#   把 /.cloud/ 与 /auth/ 反代到云端后，浏览器看到的全是同源请求，跨域问题彻底消失。
+#
+# ⚠️ 中国大陆服务器绑域名对外提供 Web 服务，**必须先完成 ICP 备案**，
+#   否则 80/443 会被腾讯云拦截（仅用公网 IP 访问不受影响）。
+
+upstream dbee_cloud {
+    # 用域名而不是 IP：保证 SNI 与证书校验正常
+    server zilv-mifeng.app.workbuddy.host:443;
+    keepalive 16;
+}
+
+server {
+    # default_server：让「服务名不匹配」的请求（比如直接用 IP 访问）也落到本站
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name __SERVER_NAME__;
+
+    root /var/www/d-bee;
+    index index.html;
+
+    # 手机端扫码/拍照上传，放宽请求体上限
+    client_max_body_size 20m;
+
+    gzip on;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css application/javascript application/json
+               image/svg+xml application/manifest+json;
+
+    # ---- 1. 静态资源 ----
+
+    # 带内容 hash 的构建产物，可长期强缓存
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # Service Worker 与清单绝不能缓存，否则新版本发布后用户拿不到更新
+    location = /sw.js {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        try_files $uri =404;
+    }
+    location = /manifest.webmanifest {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+
+    # ---- 2. 反代 WorkBuddy 云端 ----
+    # 覆盖前端真实会打的所有路径。
+    # ✅ 路径清单已从 SDK 源码核对（node_modules/@tencent-ai/workbuddy-cloud-sdk/lib/index.js:101-107）：
+    #     CLOUD_MODULE_PATHS = {
+    #       auth:     "/.cloud/auth",            ← 认证**全部在这个前缀下**
+    #       database: "/.cloud/database/rest",   ← 数据读写
+    #       storage:  "/.cloud/storage",         ← 图片存储
+    #       llm:      "/.cloud/llm"              ← AI 识别与助手（含 SSE 流式）
+    #     }
+    #    认证的子路径（AUTH_PATHS）形如 /v1/verification、/v1/user/me、/v1/token，
+    #    即实际请求是 /.cloud/auth/v1/**，**不是**裸 /auth/v1/**。
+    # 因此本 location 一条即可覆盖数据 + 认证 + 存储 + AI 四类请求。
+    location /.cloud/ {
+        proxy_pass https://dbee_cloud;
+        proxy_http_version 1.1;
+        proxy_ssl_server_name on;
+        proxy_set_header Host zilv-mifeng.app.workbuddy.host;
+        proxy_set_header Connection "";
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # ⚠️ 必须改写来源头：云端网关有来源白名单，命中会返回
+        #   403 {"error":"access_denied","error_description":"the request origin is not allowed for this client"}
+        #   自托管站点的来源（IP 或你自己的域名）都不在白名单内，
+        #   所以统一改写成已登记的应用来源，与官方域名下浏览器发出的请求完全一致。
+        #   —— 这也是换域名后不必向云端登记新来源的原因。
+        proxy_set_header Origin  "https://zilv-mifeng.app.workbuddy.host";
+        proxy_set_header Referer "https://zilv-mifeng.app.workbuddy.host/";
+
+        # AI 走 SSE 流式返回，必须关缓冲，否则前端会一直等不到内容
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+
+    # 兼容保留：SDK 当前**不请求**裸 /auth/ 路径（认证走 /.cloud/auth/），
+    # 这个块仅作为防御性兜底 —— 若将来 SDK 或某个 OAuth 回调改用 /auth/，
+    # 不至于落到 SPA 兜底返回一份 HTML（那会让 JSON 解析静默失败，很难排查）。
+    # 注意：不要用它做健康检查。GET /auth/v1/health 会返回上游的 HTML 兜底页，
+    #      而非探活响应 —— 真实的认证探活应打 /.cloud/auth/v1/user/me（无 token 返回 401 JSON）。
+    location /auth/ {
+        proxy_pass https://dbee_cloud;
+        proxy_http_version 1.1;
+        proxy_ssl_server_name on;
+        proxy_set_header Host zilv-mifeng.app.workbuddy.host;
+        proxy_set_header Connection "";
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # 同 /.cloud/：登录接口同样受来源白名单限制
+        proxy_set_header Origin  "https://zilv-mifeng.app.workbuddy.host";
+        proxy_set_header Referer "https://zilv-mifeng.app.workbuddy.host/";
+
+        proxy_read_timeout 60s;
+    }
+
+    # ---- 3. SPA 兜底（必须放最后）----
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+
+# ── HTTPS ──────────────────────────────────────────────────────────
+# 等 ICP 备案通过、域名解析生效后执行：
+#   DBEE_HOST=… DBEE_USER=… DBEE_PWD=… \
+#   DBEE_DOMAIN=dbee.example.com DBEE_CERT_EMAIL=you@example.com \
+#   bash deploy/deploy.sh https      # 或单独：bash deploy/deploy.sh 后跟 certbot 命令
+# 详见 deploy/setup-https.sh（certbot 会自动往上一段 server 块补 443 监听与证书路径）。
