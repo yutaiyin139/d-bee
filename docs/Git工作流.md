@@ -42,11 +42,11 @@ npm ci
 
 ### 离线（GitHub 不可达时的兜底）
 
-仓库基线已导出为 `backups/d-bee-baseline-47b04be.bundle`（636 KB，含完整历史）。
-把它拷到 Mac mini 后：
+仓库基线已导出为离线包 `backups/d-bee-baseline-<提交号>.bundle`（约 700 KB，含完整
+历史；文件名里的提交号即导出时的最新提交）。把它拷到 Mac mini 后：
 
 ```bash
-git clone d-bee-baseline-47b04be.bundle d-bee
+git clone backups/d-bee-baseline-<提交号>.bundle d-bee
 cd d-bee
 git remote add origin https://github.com/yutaiyin139/d-bee.git
 # 网络恢复后再补推
