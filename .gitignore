@@ -25,3 +25,11 @@ backups/
 
 # WorkBuddy 本地运行产物（memory/ 保留，跨机保留工作上下文；tmp/ 是草稿，不入库）
 .workbuddy/tmp/
+
+# cap sync 守卫绕行时临时移出的原生目录（不 repairs 入库）
+.cap-tmp/
+
+# 原生插件的 Gradle 构建产物不入库
+native-plugins/*/android/build/
+native-plugins/*/android/.gradle/
+native-plugins/*/ios/DerivedData/

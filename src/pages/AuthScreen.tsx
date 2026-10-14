@@ -3,6 +3,7 @@ import { cloud } from '../cloud'
 import { SiteFooter } from '../components/SiteFooter'
 import { isNative } from '../lib/platform'
 import { isWechatLoginAvailable, signInWithWechatNative } from '../lib/wechat'
+import { useNativeDiagnosticsEntry } from '../native/useDiagnosticsEntry'
 import type { DocId } from '../content/legal'
 
 /** 静态判断，无需随渲染变化：Web 恒可用；原生需凭据与云端接口齐备 */
@@ -16,6 +17,8 @@ interface AuthScreenProps {
 type Channel = 'phone' | 'email'
 
 export function AuthScreen({ onSignedIn, onOpenLegal }: AuthScreenProps) {
+  // 原生端专用：连接自检面板（懒加载；Web 端恒为 null，分包不会被加载）
+  const NativeDiagnostics = useNativeDiagnosticsEntry()
   const [channel, setChannel] = useState<Channel>('phone')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -367,6 +370,8 @@ export function AuthScreen({ onSignedIn, onOpenLegal }: AuthScreenProps) {
         <div className="helper" style={{ textAlign: 'center', marginTop: 18, lineHeight: 1.7 }}>
           登录后，你的饮食记录会同步到云端，换手机也不会丢。
         </div>
+
+        {NativeDiagnostics && <NativeDiagnostics />}
 
         <SiteFooter onOpen={onOpenLegal} />
       </div>

@@ -54,19 +54,28 @@ function AppInner({ onOpenLegal }: { onOpenLegal: (id: DocId) => void }) {
 
   const enterApp = useCallback(async (user: unknown) => {
     setAccount(maskAccount(user))
-    try {
-      const p = await getProfile()
-      if (p && p.onboarded) {
-        setProfile(p)
-        setStage('main')
-      } else {
-        setProfile(p)
-        setStage('onboarding')
+    // 冷启动 / 弱网时首批请求可能整体失败（模拟器实测：DNS 短暂未就绪，SDK 内部
+    // 重试 3 次仍失败）。启动期读档案失败若直接落回 onboarding，会把「引导已完成」
+    // 的老用户误当成新号重新走引导 —— 这里做有限次退避重试，全部失败才降级。
+    let lastErr: unknown = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const p = await getProfile()
+        if (p && p.onboarded) {
+          setProfile(p)
+          setStage('main')
+        } else {
+          setProfile(p)
+          setStage('onboarding')
+        }
+        return
+      } catch (e) {
+        lastErr = e
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)))
       }
-    } catch (e) {
-      setBootError(e instanceof Error ? e.message : '读取档案失败')
-      setStage('onboarding')
     }
+    setBootError(lastErr instanceof Error ? lastErr.message : '读取档案失败')
+    setStage('onboarding')
   }, [])
 
   /** 读取当前会话并决定进入哪个阶段 */

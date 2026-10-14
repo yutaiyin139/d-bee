@@ -1,0 +1,29 @@
+{
+  "name": "@dbee/origin-proxy",
+  "version": "0.1.0",
+  "description": "D-Bee 原生 Origin 转发插件：在原生层为云端请求强制注入 Origin / Referer",
+  "type": "module",
+  "main": "dist/plugin.js",
+  "module": "dist/plugin.js",
+  "types": "dist/plugin.d.ts",
+  "files": [
+    "dist/",
+    "android/src/main/",
+    "android/build.gradle",
+    "ios/Sources",
+    "Package.swift"
+  ],
+  "license": "UNLICENSED",
+  "private": true,
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  },
+  "capacitor": {
+    "android": {
+      "src": "android"
+    },
+    "ios": {
+      "src": "ios"
+    }
+  }
+}
