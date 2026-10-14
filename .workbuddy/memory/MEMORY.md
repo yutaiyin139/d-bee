@@ -10,18 +10,22 @@ http://150.158.51.106/，归档在 `backups/d-bee-v1.0.1-20261013.{tar.gz,zip}`�
 
 | 项 | 决策 |
 |---|---|
-| 混合壳方案 | **Capacitor 7**（已排除 React Native / Tauri 2 Mobile / 纯 PWA 包装） |
+| 混合壳方案 | **Capacitor 8.5.3**（已排除 React Native / Tauri 2 Mobile / 纯 PWA 包装）。原文档写 Capacitor 7，2026-10-14 实施时修订：Cap 7 的 Extended Support 2026-12-08 到期；Cap 8 要求的 Xcode 26+ 正是苹果上传强制门槛；Cap 8 默认 SPM，Mac 上免装 CocoaPods |
 | Web 栈 | React 18 + Vite 5 + TypeScript，PWA |
 | iOS 构建机 | **用户自己的 Mac mini M4**（Apple Silicon），不用云 macOS CI，不需要公网 IP |
 | iOS / Android | **并行推进**：Windows 跑 Android 构建，Mac mini 跑 iOS 构建 |
 | appId | `com.dbee.app`，appName `D-Bee` |
+| 工具链 | Node ≥ 22、JDK 21、Xcode ≥ 26.0、Android Studio ≥ Otter 2025.2.1 |
 
 ## 阶段划分（方案文档 §4）
 
 - **阶段 0 代码解耦** —— ✅ 2026-10-13 完成；2026-10-14 独立复验通过
   （typecheck 0 错、build 成功、主包仅 +1,068 B / +0.27%、CSS/分包哈希不变、
   登录页与近 7 天报告渲染正常；证据见 `docs/阶段0-代码解耦-验收报告.md` 与 `docs/verify/`）
-- **阶段 1 Capacitor 骨架跑通**（约 1 周）—— 下一步
+- **阶段 1 Capacitor 骨架跑通**（约 1 周）—— 🟡 **骨架已完成，真机验收待用户**。
+  已生成 `capacitor.config.ts` + `android/` + `ios/`（SPM）；typecheck/build/cap sync/cap doctor 全通过。
+  卡点：本机**无 Android SDK / Android Studio**，产不出 APK。见
+  `docs/原生App-阶段1-Capacitor骨架.md`
 - **阶段 2 原生能力补齐**（约 2–3 周，按对过审贡献度排序）
 - **阶段 3 支付改造**（redeem code → IAP，Apple 3.1.1）
 - **阶段 4 提审**

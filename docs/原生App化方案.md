@@ -10,7 +10,7 @@
 
 | 项 | 结论 |
 |---|---|
-| **推荐路线** | **Capacitor 7 混合壳 + 原生能力插件**，不重写 UI |
+| **推荐路线** | **Capacitor 混合壳 + 原生能力插件**，不重写 UI（版本见下方注） |
 | **技术可行性** | ✅ 高。云端 SDK 走 `fetch`（166 处）且无 cookie 依赖，原生层代理请求可绕过 CORS |
 | **编码工作量** | 约 5–7 周（含联调与真机回归），不含资质办理 |
 | **最大的技术阻塞** | `src/cloudConfig.ts` 的 endpoint 运行时推导在 WebView 里会失效（见 §2.1） |
@@ -197,6 +197,12 @@ await cloud.auth.signInWithOAuth({ provider: 'wechat', redirectTo: location.orig
 ---
 
 ### 阶段 1：Capacitor 骨架跑通（约 1 周）
+
+> **⚠️ 版本变更（2026-10-14 实施时修订）**：实际采用 **Capacitor 8.5.3**，不是本文原写的 7。
+> 原因：Cap 7 的 Extended Support 于 2026-12-08 结束；Cap 8 要求的 Xcode 26+ 正好是苹果强制
+> 的上传门槛；Cap 8 默认用 SPM，Mac mini 上无需再装 CocoaPods。
+> 详细决策依据、落地文件与验证结果见 **`docs/原生App-阶段1-Capacitor骨架.md`**。
+> 下文命令中的版本号请按 8.x 理解。
 
 ```bash
 npm i @capacitor/core @capacitor/cli

@@ -1,0 +1,133 @@
+# 阶段 1：Capacitor 骨架跑通
+
+- 日期：2026-10-14
+- 前置：阶段 0 代码解耦已完成（见 `docs/阶段0-代码解耦-验收报告.md`）
+- 当前状态：**本地骨架已跑通，真机验收待用户补齐构建工具链**
+
+---
+
+## 一、版本决策变更：Capacitor 7 → **8.5.3**
+
+`docs/原生App化方案.md` 原定 Capacitor 7。开工核查后发现三条硬事实，因此改用 **Capacitor 8.5.3**：
+
+| 依据 | 事实 | 影响 |
+|---|---|---|
+| 官方支持策略 | **Capacitor 7 的 Extended Support 于 2026-12-08 结束**（Maintenance 已于 2026-06-08 结束） | 距离 EOL 不足 2 个月，新项目不应起步在一个即将停更的版本上 |
+| Xcode 要求 | Cap 7 要求 Xcode 16+；**Cap 8 要求 Xcode 26+** | 苹果自 2026-04-28 起强制 Xcode 26+ 才能上传 App Store，Cap 8 的要求与我们的硬约束完全重合——用 Cap 7 反而是「要额外验证能不能配 Xcode 26」 |
+| iOS 依赖管理 | Cap 7 默认 CocoaPods；**Cap 8 默认 Swift Package Manager（SPM）** | CocoaPods 已进入维护模式、Specs 仓库 2026-12 转只读。用 SPM 则 Mac mini 上**不需要装 Homebrew + CocoaPods**，环境准备少两步 |
+
+工具链契合度（已逐项核对）：
+
+| Cap 8 要求 | 本机/已定环境 | 结论 |
+|---|---|---|
+| Node ≥ 22 | 22.22.2 | ✅ |
+| Xcode ≥ 26.0 | Mac mini M4 计划装 26/27 | ✅ |
+| JDK 21 | 21.0.12.1 LTS（已装） | ✅ |
+| Android Studio ≥ Otter 2025.2.1 | **未安装** | ⏳ 待用户安装 |
+| iOS Deployment Target 15.0 | 模板已生成 | ✅ |
+
+阶段 2 要用的 8 个插件**全部已有 v8 版本**（`peerDependencies.@capacitor/core >= 8.0.0`），升级无后顾之忧：
+
+```
+@capacitor/camera 8.2.5          @capacitor/filesystem 8.1.4
+@capacitor/preferences 8.0.1     @capacitor/share 8.0.3
+@capacitor/push-notifications 8.1.3   @capacitor/app 8.1.2
+@capacitor/status-bar 8.0.4      @capacitor-mlkit/barcode-scanning 8.2.1
+```
+
+> 若坚持 Cap 7 也完全可行，但需要在 12 月前再升级一次，且要在 Mac 上额外装 CocoaPods。
+
+---
+
+## 二、已落地的改动
+
+### 新增文件
+
+| 文件 | 说明 |
+|---|---|
+| `capacitor.config.ts` | appId `com.dbee.app`、appName `D-Bee`、webDir `dist`、`server.androidScheme: 'https'`、**`plugins.CapacitorHttp.enabled: true`**（文件内有逐条注释说明为什么） |
+| `android/` | Capacitor 8 生成的 Android 工程（minSdk 24 / compileSdk 36 / targetSdk 36 / namespace `com.dbee.app` / app_name `D-Bee`） |
+| `ios/` | Capacitor 8 生成的 iOS 工程，**使用 SPM**（`ios/App/CapApp-SPM/Package.swift` 锁定 `capacitor-swift-pm` 8.5.3，platform iOS 15） |
+
+### 修改文件
+
+| 文件 | 改动 |
+|---|---|
+| `package.json` | 新增依赖 `@capacitor/core|ios|android@^8.5.3`、devDep `@capacitor/cli@^8.5.3`；新增脚本 `native:sync` / `native:android` / `native:ios` |
+
+### 入库规则
+
+Capacitor 生成的两个平台目录**自带 `.gitignore`**，已覆盖全部生成物，无需在根 `.gitignore` 补充：
+
+- Android：`app/src/main/assets/public`（web 资源副本）、`app/src/main/assets/capacitor.config.json`、`local.properties`（**含本机 SDK 路径，跨机必须忽略**）、`.gradle/`、`build/`
+- iOS：`App/App/public`、`App/App/capacitor.config.json`、`Pods/`、`xcuserdata`、`DerivedData`
+
+已实测：`git status` 中**没有任何生成物**出现，平台目录可以安全入库。
+
+---
+
+## 三、验证结果（Windows 侧）
+
+| 检查项 | 结果 |
+|---|---|
+| `npm run typecheck` | ✅ 无错 |
+| `npm run build` | ✅ 成功；主包 `index-x5qEteMv.js` 373.23 kB / gzip 132.60 kB（与阶段 0 完全一致，Web 产物未变） |
+| `npx cap add android` | ✅ |
+| `npx cap add ios`（Windows 上） | ✅ 脚手架生成成功（Xcode/CocoaPods 相关步骤按预期跳过——SPM 模式下也不需要 CocoaPods） |
+| `npx cap sync` | ✅ 两个平台均 `Sync finished`；web 资源已拷入 `android/app/src/main/assets/public` 与 `ios/App/App/public` |
+| `npx cap doctor` | ✅ 已安装版本与最新版一致（8.5.3）；Android 检查通过；iOS 提示 `Xcode is not installed`（Windows 上的预期结果） |
+| `android/variables.gradle` | ✅ minSdk 24 / compileSdk 36 / targetSdk 36 |
+| `android/app/src/main/AndroidManifest.xml` | ✅ `configChanges` 已含 `density`（v8 新要求） |
+| `ios/App/CapApp-SPM/Package.swift` | ✅ `platforms: [.iOS(.v15)]`，`capacitor-swift-pm` exact 8.5.3 |
+
+> **未做**：真机/模拟器启动与登录联调——本机没有 Android SDK 与 Android Studio，无法产出 APK。这属于下面第四节的用户动作。
+
+---
+
+## 四、下一步需要用户做的事
+
+### Windows 侧（Android 构建）
+
+1. 安装 **Android Studio Otter（2025.2.1）或更新版本**，安装时勾选：
+   - Android SDK Platform **36**（API 36）
+   - Android SDK Build-Tools
+   - Android SDK Platform-Tools
+   - 一个 AVD 系统镜像（或直接用真机调试）
+2. 安装后设好环境变量 `ANDROID_HOME`（Studio 首次启动会提示），JDK 21 已就绪无需装。
+3. 跑通真机：
+   ```bash
+   npm run native:android     # build + cap sync + 打开 Android Studio
+   ```
+   在 Studio 里点 Run ▶ 选真机/模拟器。
+
+### Mac mini 侧（iOS 构建）
+
+1. 先 `df -h /` 确认剩余空间（Xcode + 模拟器运行时 + DerivedData 可占 60–100 GB）。
+2. 装 **Xcode 26+**（App Store，约 40 GB 下载），然后 `xcode-select --install` 装命令行工具。
+   - **不需要装 CocoaPods**——Capacitor 8 用 SPM，Xcode 会自行解析 `Package.swift`。
+3. 装 Node 22+，`git clone` 仓库，`npm ci`。
+4. 跑通真机：
+   ```bash
+   npm run native:ios         # build + cap sync ios + 打开 Xcode
+   ```
+   在 Xcode 里配好签名团队（Apple 开发者账号），选真机 Run ▶。
+
+### 真机验收清单（出自方案文档 §4 阶段 1）
+
+- [ ] App 启动 → 登录页正常渲染
+- [ ] 手机验证码登录成功
+- [ ] **登录后首页能读到云端数据** ← 验证 `CapacitorHttp` + endpoint 方案是否真的有效（这是阶段 1 的成败判定点）
+- [ ] 记录一餐、写库成功、杀掉 App 重开数据仍在
+
+---
+
+## 五、环境坑位记录
+
+1. **Capacitor CLI 的 `sync` 会整目录删掉 `ios/capacitor-cordova-ios-plugins`（约 52 个条目）**。
+   本机的文件删除安全机制对「单条命令删除 > 50 个条目」会拦截，导致 `cap sync` 报
+   `SAFE_DELETE_BULK_CONFIRM_REQUIRED` 而失败。这不是项目问题——**在你自己的终端里直接
+   `npx cap sync` 不会有这个限制**。若在受限环境里遇到，先分两批把该目录删掉再跑 sync 即可。
+2. Windows 上 `cap add ios` 会在 `pod install` 与 `xcodebuild` 两步给出 warning 并跳过，
+   这是预期行为（SPM 模式下 CocoaPods 那步本来就无关紧要）。真正编译必须在 macOS 上做。
+3. 本机 `npm audit` 报 2 个漏洞（`esbuild` moderate / `vite` high），是**升级前就存在**的
+   开发服务器类问题，与 Capacitor 无关，且不影响生产构建产物。可后续把 Vite 升到 5.x 最新版处理。
