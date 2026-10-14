@@ -165,11 +165,14 @@ http://150.158.51.106/，归档在 `backups/d-bee-v1.0.1-20261013.{tar.gz,zip}`�
 - 项目**已于 2026-10-14 纳入 Git 并完成全量推送**：远端
   `https://github.com/yutaiyin139/d-bee.git`，分支 `main`，基线提交 `f99a2c5`（108 文件）。
   当前远端 HEAD = `9a1600f`（213 文件），本地与远端**完全一致、无待推送提交**。
-- **GitHub 连通性（2026-10-14 22:15 更正）**：本机到 github.com **是通的** ——
-  `git ls-remote` 与 `git push` 均正常（`74ff3c2..9a1600f main -> main`）。
-  此前记录的「代理 502 / 直连超时」是**当时的间歇性故障**，不是稳定状态；
-  更早一次失败应归因于**无 GitHub 凭据**（见提交 `7373165`）。遇到推送失败先重试，
-  不要预先假设网络不通。`backups/*.bundle` 仅作离线兜底，非必需。
+- **GitHub 连通性（2026-10-14 22:30 实测更正）**：可达，但**间歇性不稳**。
+  同一条命令在一轮里实测：1 次成功 → 接着连续 4 次失败 → 第 5 次又成功。
+  失败形态为 `Empty reply from server` / `CONNECT tunnel failed, response 502` /
+  `Connection timed out after 300036 ms`（长达 5 分钟的挂起）。
+  **结论：推送失败属常态波动，正确策略是「循环重试」——不要判定网络不通、更不要因此改方案。**
+  实操：写成 for 循环重试 5 次、每次失败间隔 5s，而不是单次执行后放弃。
+  更早一次失败的另一个原因是**无 GitHub 凭据**（见提交 `7373165`）。
+  `backups/*.bundle` 仅作离线兜底，非必需。
 - 换行符策略：仓库根有 `.gitattributes`（`* text=auto eol=lf` + 二进制白名单），
   **两台机器都必须 `git config --global core.autocrlf false`**，不得设 true。
 - 双机同步流程见 `docs/Git工作流.md`（权威文档）。Mac 侧直接
