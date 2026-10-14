@@ -76,14 +76,23 @@ http://150.158.51.106/，归档在 `backups/d-bee-v1.0.1-20261013.{tar.gz,zip}`�
 
 ## 待用户拍板的开放决策
 
-1. 是否立即 `git init` 并提交阶段 0（建议：是，这是干净回退点）
+1. ~~是否立即 `git init` 并提交阶段 0~~ ✅ 2026-10-14 已完成（基线 `f99a2c5`）
 2. 是否先补最小回归用例集再进阶段 1（建议：是，项目当前无任何测试框架）
-3. 远程私有仓库放哪（GitHub private / Gitee / 自建）
+3. ~~远程私有仓库放哪~~ ✅ 已定 GitHub（`yutaiyin139/d-bee`）；若推送持续不畅可加 Gitee 镜像
 4. 是否启用自有域名 `d-bee.com.cn`（涉及备案进度）
 
 ## 环境备忘
 
-- 项目**不是 git 仓库**（截至 2026-10-13）
+- 项目**已于 2026-10-14 纳入 Git**：远端 `https://github.com/yutaiyin139/d-bee.git`，
+  分支 `main`，基线提交 `f99a2c5`（108 文件）。**推送尚未成功**——本机到 github.com
+  不通（代理 502 / 直连超时），需用户在有代理的网络下执行
+  `git push -u origin main`，或改用 SSH / Gitee。离线兜底：
+  `backups/d-bee-baseline-<提交号>.bundle`（可拷到 Mac 直接 `git clone`）。
+- 换行符策略：仓库根有 `.gitattributes`（`* text=auto eol=lf` + 二进制白名单），
+  **两台机器都必须 `git config --global core.autocrlf false`**，不得设 true。
+- 双机同步流程见 `docs/Git工作流.md`（权威文档）。
 - `package.json` **无测试框架、无 lint 脚本**；scripts 只有 `dev` / `build` / `typecheck` / `preview` / `start`
 - 本机 3000 端口常被占用，`npm run dev` 会自动退到 3001
 - 访问本机 dev server 时 curl 需加 `--noproxy '*'`（环境有代理）
+- 本机 `git` 走 https 访问 github.com 会被沙箱代理拦（`CONNECT tunnel failed, 502`），
+  直连也超时——涉及 GitHub 的网络操作交给用户执行

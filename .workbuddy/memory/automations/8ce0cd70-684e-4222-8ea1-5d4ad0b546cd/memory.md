@@ -17,6 +17,20 @@
   私有仓库而非共享目录。
 - 待用户拍板的开放决策（沿用）：是否 `git init` 提交阶段 0、远程私有仓库放哪。
 
+## 2026-10-14（第二次执行，独立复验）
+
+- 阶段 0 保持完成态，无需改动任何源码；本轮做独立复验并刷新证据截图。
+- 复验结论（本轮全新证据，非沿用上轮）：
+  - `npm run typecheck` 退出码 0
+  - `npm run build` 成功，产物与上轮**逐字节一致**（主包 index-x5qEteMv.js 401,901 B、
+    分包 36,098 B、CSS 27,184 B、wasm 966,895 B）→ 构建可重复、逻辑等价
+  - 无头 Edge 真实渲染：登录页（phase0-01-login.png）与 mock 看板
+    （phase0-02-dashboard.png）全部要素在位；DOM 文本断言
+    近 7 天/kcal/今日餐次/记一餐/连续打卡/四餐段 全部命中
+- 工具备忘：browser-use CLI 本机未安装；改用系统 Edge headless（--headless=new +
+  --screenshot/--dump-dom）成功。node 读 /tmp 会失败（Windows 原生 node 不识别 Git Bash 的 /tmp），改用 grep。
+- 阶段 0 已彻底关闭。下一步是阶段 1（Capacitor 骨架），隐性前置仍是 **git init**（项目仍非 git 仓库）。
+
 ## 复用提示（下次执行时）
 
 - 项目**仍不是 git 仓库**，是阶段 1 的隐性前置阻塞项，每次执行都应检查并提醒。
