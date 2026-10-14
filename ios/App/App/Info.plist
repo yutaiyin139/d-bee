@@ -24,6 +24,13 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 
 	<!--
+	  出口合规声明：本 App 仅使用 HTTPS（属豁免范围），未实现任何非豁免的加密算法。
+	  显式声明为 false，可免去每次上传 App Store Connect 时的手动回答。
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
+	<!--
 	  微信开放平台「移动应用」接入配置（配套代码见 src/lib/wechat.ts）。
 	  1) CFBundleURLSchemes 必须填你的微信 AppID（形如 wx1234567890abcdef）——
 	     微信回调时靠这个 scheme 把控制权交回本 App。此处保留占位值不会造成副作用
@@ -56,6 +63,26 @@
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+
+	<!--
+	  隐私用途说明（App Store 审核强制要求）。
+	  缺失的后果不是「弹窗文案难看」，而是 iOS 在 App 请求该权限时**直接终止进程**。
+	  文案必须说明**具体用途**——笼统表述（如「需要相机权限」）会被审核以 5.1.1 打回。
+
+	  对应功能与代码位置：
+	    - 相机 · 扫码：Web 端 getUserMedia + zxing 识别食品条码（src/lib/scan.ts）
+	    - 相机 · 拍照：Web 端 <input capture> 拍摄餐食照片（src/lib/capture.ts）
+	    - 相册 · 读取：从相册选择已有餐食照片
+
+	  ⚠️ 未声明 NSMicrophoneUsageDescription —— 本 App 不录音，多声明反而会被审核追问。
+	  ⚠️ 若阶段 2 接入 @capacitor/camera 的 saveToGallery（保存到相册），
+	     需另行补 NSPhotoLibraryAddUsageDescription。
+	-->
+	<key>NSCameraUsageDescription</key>
+	<string>D-Bee 需要使用相机，用于扫描食品包装上的条码、以及拍摄你这一餐的照片，以便自动识别食物并估算热量。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>D-Bee 需要访问相册，用于选择你已拍摄的餐食照片，以便识别食物并估算热量。</string>
+
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -81,7 +108,12 @@
 	<string>Main</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
-		<string>armv7</string>
+		<!--
+		  原值 armv7 是 Capacitor/Cordova 模板遗留的 32 位声明（iOS 11 起系统已无 32 位）。
+		  本工程产物是 arm64-only，声明 armv7 会导致 App Store 的机型兼容性判定与实际
+		  二进制不一致，出现过「商店显示不兼容 / 无法安装」的案例。改为 arm64 与构建产物对齐。
+		-->
+		<string>arm64</string>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>

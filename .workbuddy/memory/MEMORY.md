@@ -109,6 +109,33 @@ http://150.158.51.106/，归档在 `backups/d-bee-v1.0.1-20261013.{tar.gz,zip}`�
     替代盲点坐标；依赖 websocket-client（已装 WorkBuddy venv）。登录页底部有
     「连接自检」面板（`src/native/`，动态 import，Web 主包仅 +531 B），
     结构化结果同时写 logcat，`adb logcat | grep d-bee-diag` 可读。
+14. **安全区适配（2026-10-14 真机修复）**：Cap 8 SystemBars 注入的是 CSS **变量**
+    `--safe-area-inset-*`（挂 `<html>`），小米等 WebView 的 `env()` 路径返回 0。
+    styles.css 必须统一写 `var(--safe-area-inset-*, env(safe-area-inset-*))`，三端通吃。
+15. **图标**：源图在 `public/icon-512.png` / `icon-maskable-512.png`，
+    跑 `python tools/gen-app-icons.py` 生成 mipmap 全密度 + 自适应前景 + iOS 1024 图标，
+    然后 `npm run native:sync`。改图标后真机桌面若仍旧是启动器缓存，重启手机即可。
+16. **受限环境出包流程**：`cap sync` 会撞 safe-delete 守卫（批量删
+    `android/capacitor-cordova-android-plugins/` 与 `android/app/src/main/assets/public/`），
+    绕法：先 `mv` 两目录进 `.cap-tmp/` 再 cap sync。XML 注释禁止含 `--`。
+    模拟器 SystemUI ANR 弹窗用 DPAD_DOWN+ENTER 关掉；`adb reboot` 只重启 guest
+    （沙箱内可用），重启后按 runbook 恢复 wifi（captive_portal_mode 0 + 重连）。
+17. **iOS 侧现状（2026-10-14 补齐配置）**：
+    - `ios/App/App/PrivacyInfo.xcprivacy` 已新建并挂入 pbxproj 的 App 分组 + Resources 阶段
+      （**不挂 Resources，文件存在也不进包**）。6 类采集数据 + `UserDefaults/CA92.1`；
+      依据是 `src/lib/ai.ts` 会把照片 data URL 上传云端视觉模型、四个健康数据表。
+      微信插件与 WechatOpenSDK **均不带隐私清单**，靠 App 层兜底。
+    - `Info.plist` 已有相机/相册用途说明、`ITSAppUsesNonExemptEncryption=false`、
+      `UIRequiredDeviceCapabilities` 由模板遗留的 `armv7` 改为 `arm64`。
+    - 未做（只能在 Mac 上）：微信真实 AppID 替换 + Associated Domains +
+      `apple-app-site-association`。**提审前必做**，不阻塞阶段 1。
+    - ⚠️ **`native-plugins/dbee-origin-proxy/ios/.../OriginProxyPlugin.swift` 从未被编译过**
+      （Windows 无 Swift 工具链）。它是 Android 侧已验收登录链路的 iOS 对应实现，
+      首次 Mac 构建大概率要排错 —— 应作为 Mac 侧第一件事。
+    - Mac 侧 SPM 首次解析需访问 github.com（拉 `capacitor-swift-pm` 与
+      `yanyin1986/WechatOpenSDK` 第三方镜像），国内网络是**开 Xcode 之前的实际卡点**。
+    - Mac 上**不要**跑 `xcode-select --install`（只装独立 CommandLineTools，不会切活动
+      开发者目录，会找不到 iOS SDK）；正确动作序见 `docs/原生App-阶段1-Capacitor骨架.md`。
 
 ## 过审合规要点（不能忘）
 

@@ -102,15 +102,61 @@ Capacitor 生成的两个平台目录**自带 `.gitignore`**，已覆盖全部�
 
 ### Mac mini 侧（iOS 构建）
 
-1. 先 `df -h /` 确认剩余空间（Xcode + 模拟器运行时 + DerivedData 可占 60–100 GB）。
-2. 装 **Xcode 26+**（App Store，约 40 GB 下载），然后 `xcode-select --install` 装命令行工具。
-   - **不需要装 CocoaPods**——Capacitor 8 用 SPM，Xcode 会自行解析 `Package.swift`。
-3. 装 Node 22+，`git clone` 仓库，`npm ci`。
-4. 跑通真机：
+> **2026-10-14 修订**：原第 2 步写「`xcode-select --install` 装命令行工具」是错的——
+> 该命令安装的是**独立的 CommandLineTools**，不会把活动开发者目录指向 Xcode.app，
+> 结果是 `xcrun` / `xcodebuild` 找不到 iOS SDK，Capacitor 与 Xcode 命令行构建全部报错。
+> 已安装 App Store 版 Xcode 时**不应**执行它，正确做法见下面的步骤 2。
+
+1. `df -h /` 确认剩余空间：Xcode + 模拟器运行时 + `DerivedData` 合计 **60–100 GB**。
+   256 GB 基础款偏紧，不足请配外置 Thunderbolt SSD。
+2. 装 **Xcode 26+**（App Store，约 40 GB 下载），然后**按顺序**执行：
    ```bash
-   npm run native:ios         # build + cap sync ios + 打开 Xcode
+   xcodebuild -version                 # 必须 ≥ 26.0（2026-04-28 起上传 App Store 的硬闸门）
+   xcode-select -p                     # ★ 必须输出 /Applications/Xcode.app/Contents/Developer
+   sudo xcodebuild -license accept     # 首次必做，否则一切构建失败
+   xcodebuild -runFirstLaunch          # 安装内置组件
+   xcodebuild -downloadPlatform iOS    # ★ Xcode 15 起模拟器运行时不再随包分发，需单独下载 7–10 GB
+   open -a Simulator                   # 能起来 = 运行时装好了
    ```
-   在 Xcode 里配好签名团队（Apple 开发者账号），选真机 Run ▶。
+   - **不需要装 CocoaPods，也不需要 Homebrew**——Cap 8 用 SPM，Xcode 会自行解析 `Package.swift`。
+3. **确认能访问 github.com**：`curl -I https://github.com`。
+   SPM 首次解析需拉 `ionic-team/capacitor-swift-pm@8.5.3` 与 `yanyin1986/WechatOpenSDK`
+   （腾讯官方不走 SPM，社区镜像）。**国内网络不通则 Xcode 连工程都打不开**——这是实际卡点，
+   阻塞在开 Xcode 之前，不是代码问题。需提前配代理或改走 SSH。
+4. 装 Node 22+，`git clone` 仓库，`npm ci`。
+   ```bash
+   git config --global core.autocrlf false    # ★ 必须 false，两台机器一致
+   ```
+5. `npm run native:ios`（build + cap sync ios + 打开 Xcode）。
+6. 在 Xcode 里配签名：账号（Settings → Accounts）→ App target 的 Signing & Capabilities
+   选 Team。工程里 `DEVELOPMENT_TEAM` 是空的，只有 `CODE_SIGN_STYLE = Automatic`，**必须补**。
+   Bundle ID `com.dbee.app` 首次真机运行由 Xcode 自动注册。
+7. **优先验证 `OriginProxy` 的 iOS 实现能否编译**——见下方「已知风险」。
+
+### 已知风险：iOS 侧 OriginProxy 从未被编译过（2026-10-14 标记）
+
+`native-plugins/dbee-origin-proxy/ios/Sources/OriginProxyPlugin/OriginProxyPlugin.swift`
+是 Android 侧**已验收通过**的登录链路（方案 B：原生层强制注入 Origin 以通过云端白名单）
+在 iOS 的对应实现，但**从未被任何 Swift 编译器编译过**（开发机是 Windows，无 Swift 工具链），
+文件内已自行标注警示。首次 `xcodebuild` 大概率需要排错。
+
+**建议作为 Mac 侧第一件事**，不要排在最后：它一旦跑通，iOS 的
+「登录 → 读云端 → 记一餐」链路即基本打通；反之会变成结项前才暴露的技术风险。
+
+`@capgo/capacitor-wechat` 的 iOS 依赖 `WechatOpenSDK` 来自**第三方 SPM 镜像**
+（腾讯官方不通过 SPM 分发微信 SDK），认证类 SDK 走第三方镜像属**供应链风险**，
+上线前需与官方 SDK 版本核对。该 SDK 与插件均**未提供自己的隐私清单**，
+已在 App 层 `PrivacyInfo.xcprivacy` 兜底声明 `UserDefaults`（CA92.1）。
+
+### iOS 工程配置（2026-10-14 已在 Windows 侧补齐，Mac 上无需重复做）
+
+| 项 | 状态 |
+|---|---|
+| 相机 / 相册用途说明 | ✅ 已补 `NSCameraUsageDescription`、`NSPhotoLibraryUsageDescription`（缺失会导致权限请求时**直接终止 App**） |
+| 隐私清单 | ✅ 新增 `ios/App/App/PrivacyInfo.xcprivacy` 并已挂入 target 的 Resources 阶段（6 类采集数据 + `UserDefaults` CA92.1） |
+| 出口合规 | ✅ 新增 `ITSAppUsesNonExemptEncryption = false`，免去每次上传时的手动回答 |
+| 设备能力声明 | ✅ `UIRequiredDeviceCapabilities` 由模板遗留的 `armv7` 改为 `arm64`，与 arm64-only 产物对齐 |
+| 微信 scheme | ⏳ 仍为占位 `wx0000000000000000` + 缺 Associated Domains / `apple-app-site-association`（**只能在 Mac 上配，提审前必做**；不阻塞阶段 1，因原生微信入口当前隐藏） |
 
 ### 真机验收清单（出自方案文档 §4 阶段 1）
 
