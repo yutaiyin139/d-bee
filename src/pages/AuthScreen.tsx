@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { cloud } from '../cloud'
 import { SiteFooter } from '../components/SiteFooter'
+import { isNative } from '../lib/platform'
+import { isWechatLoginAvailable, signInWithWechatNative } from '../lib/wechat'
 import type { DocId } from '../content/legal'
+
+/** 静态判断，无需随渲染变化：Web 恒可用；原生需凭据与云端接口齐备 */
+const WECHAT_LOGIN_AVAILABLE = isWechatLoginAvailable()
 
 interface AuthScreenProps {
   onSignedIn: () => void
@@ -156,6 +161,24 @@ export function AuthScreen({ onSignedIn, onOpenLegal }: AuthScreenProps) {
 
   async function signInWithWechat() {
     setError('')
+    // 原生 App：走微信开放平台「移动应用」原生 SDK（WebView 里不能做 OAuth 跳转）
+    if (WECHAT_LOGIN_AVAILABLE && isNative()) {
+      setBusy(true)
+      try {
+        const res = await signInWithWechatNative()
+        if (res.status === 'ok') {
+          onSignedIn()
+          return
+        }
+        // 用户主动取消不报错
+        if (res.status === 'cancelled') return
+        setError(res.message || '微信登录失败')
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+    // Web / PWA：走云 Relay 网页扫码登录
     try {
       const res = await cloud.auth.signInWithOAuth({ provider: 'wechat', redirectTo: location.origin })
       if (res.error) {
@@ -316,26 +339,30 @@ export function AuthScreen({ onSignedIn, onOpenLegal }: AuthScreenProps) {
           </>
         )}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '22px 0 16px' }}>
-          <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
-          <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>或</span>
-          <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
-        </div>
+        {WECHAT_LOGIN_AVAILABLE && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '22px 0 16px' }}>
+              <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
+              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>或</span>
+              <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
+            </div>
 
-        <button className="btn btn-ghost" onClick={signInWithWechat}>
-          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-            <path
-              d="M9.2 3.4C5.2 3.4 2 6.1 2 9.4c0 1.9 1.1 3.6 2.8 4.7l-.7 2.1 2.4-1.2c.8.2 1.7.4 2.7.4h.5a5.6 5.6 0 01-.2-1.5c0-3.2 3.1-5.8 6.9-5.8h.4C15.9 5.1 12.9 3.4 9.2 3.4z"
-              fill="#3f9463"
-            />
-            <path
-              d="M22 14c0-2.8-2.8-5-6.2-5s-6.2 2.2-6.2 5 2.8 5 6.2 5c.7 0 1.4-.1 2.1-.3l1.9 1-.5-1.7C20.8 16.9 22 15.5 22 14z"
-              fill="#3f9463"
-              opacity="0.78"
-            />
-          </svg>
-          微信登录
-        </button>
+            <button className="btn btn-ghost" disabled={busy} onClick={signInWithWechat}>
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                <path
+                  d="M9.2 3.4C5.2 3.4 2 6.1 2 9.4c0 1.9 1.1 3.6 2.8 4.7l-.7 2.1 2.4-1.2c.8.2 1.7.4 2.7.4h.5a5.6 5.6 0 01-.2-1.5c0-3.2 3.1-5.8 6.9-5.8h.4C15.9 5.1 12.9 3.4 9.2 3.4z"
+                  fill="#3f9463"
+                />
+                <path
+                  d="M22 14c0-2.8-2.8-5-6.2-5s-6.2 2.2-6.2 5 2.8 5 6.2 5c.7 0 1.4-.1 2.1-.3l1.9 1-.5-1.7C20.8 16.9 22 15.5 22 14z"
+                  fill="#3f9463"
+                  opacity="0.78"
+                />
+              </svg>
+              微信登录
+            </button>
+          </>
+        )}
 
         <div className="helper" style={{ textAlign: 'center', marginTop: 18, lineHeight: 1.7 }}>
           登录后，你的饮食记录会同步到云端，换手机也不会丢。

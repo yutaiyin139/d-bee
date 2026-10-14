@@ -119,6 +119,13 @@ await cloud.auth.signInWithOAuth({ provider: 'wechat', redirectTo: location.orig
 - **A（推荐）**：接微信开放平台**移动应用**，用原生 SDK 拿 code，再把 code 交给 `cloud.auth` 换取会话
 - **B（降级）**：v1 先只保留**手机号验证码 + 邮箱验证码**登录（这两条是纯 HTTP 请求，原生下天然可用），微信登录延后
 
+> **2026-10-14 勘误与进展**：A 路线实测卡在**云端**而非客户端 —— `cloud.auth.signInWithWechat(code, appid)`
+> 文档写明只接受**小程序** `wx.login` 的 code（服务端走 jscode2session），移动应用的 code
+> 走的是 `sns/oauth2/access_token`，两者不能混用。客户端侧已全部就绪
+> （插件 `@capgo/capacitor-wechat` + 双端工程配置 + 抽象层 `src/lib/wechat.ts`），
+> 云端就绪前原生端入口按设计隐藏（避免 App Store 2.1/4.2「登录方式不可用」被拒）。
+> 完整记录见 `docs/微信登录接入.md`。
+
 ---
 
 ### 2.5 存储抽象

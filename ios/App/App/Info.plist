@@ -22,6 +22,38 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+
+	<!--
+	  微信开放平台「移动应用」接入配置（配套代码见 src/lib/wechat.ts）。
+	  1) CFBundleURLSchemes 必须填你的微信 AppID（形如 wx1234567890abcdef）——
+	     微信回调时靠这个 scheme 把控制权交回本 App。此处保留占位值不会造成副作用
+	     （未配置 AppID 时原生端微信入口本身就是隐藏的），但**提审前必须替换**。
+	  2) LSApplicationQueriesSchemes 供 canOpenURL 检测微信是否已安装；
+	     缺 weixin 会被 iOS 判定为「未安装微信」，缺 weixinULAPI 则 Universal Link
+	     回跳会失效。
+	  3) Universal Link 还需要在 Xcode 里为目标开启 Associated Domains
+	     （applinks:<已备案域名>），并在该域名上放置 apple-app-site-association，
+	     这两步只能在 Mac 上做，见 docs/原生App-阶段1-Capacitor骨架.md。
+	-->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>weixin</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>wx0000000000000000</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>weixin</string>
+		<string>weixinULAPI</string>
+		<string>weixinURLParamsAPI</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

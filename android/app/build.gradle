@@ -36,6 +36,11 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    // 微信开放平台 SDK。@capgo/capacitor-wechat 内部用的是 implementation（不向宿主模块
+    // 透出），而 app 模块的 WXEntryActivity / WXPayEntryActivity 继承了插件的
+    // WechatResponseActivity（它实现了 IWXAPIEventHandler），编译期必须能看到该类型，
+    // 所以这里要显式再声明一次，版本需与插件保持一致（插件当前用 6.8.0）。
+    implementation "com.tencent.mm.opensdk:wechat-sdk-android-without-mta:6.8.0"
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

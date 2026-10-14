@@ -24,6 +24,27 @@
 
         </activity>
 
+        <!--
+          微信 SDK 回调。微信是外部应用，必须用显式 Intent 把结果发回来，
+          因此 exported 必须为 true，且类名必须是 <applicationId>.wxapi.WXEntryActivity
+          —— 包名改了这里也要跟着改。
+          taskAffinity 设成 applicationId 是微信官方要求：否则从微信返回时
+          系统可能把回调 Activity 放进另一个任务栈，用户看到的是黑屏/空白页。
+        -->
+        <activity
+            android:name=".wxapi.WXEntryActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="${applicationId}"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <activity
+            android:name=".wxapi.WXPayEntryActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="${applicationId}"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

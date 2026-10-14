@@ -17,6 +17,7 @@
     "@capacitor/android": "^8.5.3",
     "@capacitor/core": "^8.5.3",
     "@capacitor/ios": "^8.5.3",
+    "@capgo/capacitor-wechat": "^8.0.52",
     "@tencent-ai/workbuddy-cloud-sdk": "dev",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
