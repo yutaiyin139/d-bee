@@ -2,30 +2,23 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react'
 import { cloud } from '../cloud'
 import {
-  consumeAiQuota,
   consumePhotoQuota,
   getEntitlement,
   getPhotoQuota,
   grantPhotoBonus,
-  releaseAiQuota,
   releasePhotoQuota,
   saveEntitlement,
 } from '../lib/api'
 import {
   FREE_DAILY_AI,
-  FREE_INSIGHT_PER_WEEK,
-  INSIGHT_FEATURE,
   NEWBIE_BONUS_AMOUNT,
-  SCAN_FEATURE,
   STREAK_BONUS_AMOUNT,
   codeIsValid,
   isLifetime,
   isPro,
-  mondayOf,
   normalizeCode,
   proUntilFromMonths,
 } from '../lib/entitlement'
-import { todayKey } from '../lib/nutrition'
 import type { Entitlement } from '../types'
 
 /**
@@ -47,9 +40,6 @@ interface PlanContextValue {
   claimAiQuota: () => Promise<{ allowed: boolean; remaining: number | null }>
   /** 识别失败（模糊/非食物/报错）时退还刚占用的额度 */
   refundAiQuota: () => Promise<void>
-  /** 周洞察配额：原子占用，false 表示本周已用过 */
-  claimInsightQuota: () => Promise<boolean>
-  refundInsightQuota: () => Promise<void>
   redeem: (code: string) => Promise<'ok' | 'bad'>
   /**
    * 购买/激活一个商品档位。真实支付未接入前由兑换码或后台直达触发；
@@ -145,17 +135,6 @@ export function PlanProvider({ children }: { children: ReactNode }) {
     if (q) setPhotoQuota({ base: q.baseRemaining, bonus: q.bonusRemaining, total: q.totalRemaining })
   }, [pro])
 
-  const claimInsightQuota = useCallback(async (): Promise<boolean> => {
-    if (pro) return true
-    const res = await consumeAiQuota(mondayOf(todayKey()), INSIGHT_FEATURE, FREE_INSIGHT_PER_WEEK)
-    return res.allowed
-  }, [pro])
-
-  const refundInsightQuota = useCallback(async () => {
-    if (pro) return
-    await releaseAiQuota(mondayOf(todayKey()), INSIGHT_FEATURE)
-  }, [pro])
-
   const redeem = useCallback(
     async (code: string): Promise<'ok' | 'bad'> => {
       if (!codeIsValid(code)) return 'bad'
@@ -219,8 +198,6 @@ export function PlanProvider({ children }: { children: ReactNode }) {
     bonusRemaining,
     claimAiQuota,
     refundAiQuota,
-    claimInsightQuota,
-    refundInsightQuota,
     redeem,
     activate,
     grantNewbieBonus,

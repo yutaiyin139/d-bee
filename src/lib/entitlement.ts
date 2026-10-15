@@ -9,8 +9,11 @@ import type { Entitlement, UserPlan } from '../types'
  *  - lifetime  终身买断：plan='lifetime' 且 pro_until 恒 null，永久解锁。
  *
  * 计数口径（重要）：
- *  - **只有「AI 拍照识别」消耗次数**；手动录入、体重/饮水打卡、文字解析、
- *    包装识别、AI 问答均不计次、不扣额度。
+ *  - **只有「AI 拍照识别」消耗次数**（成功才扣、失败不扣）；手动录入、体重/饮水打卡、
+ *    文字解析、包装识别均不计次。
+ *  - **条码扫码识别不限次数永久免费**（走 Open Food Facts，不消耗 AI 额度）。
+ *  - **AI 文字问答（问问小蜜）不限次数**，但免费用户带限流保护（1 分钟最多 3 次防刷）。
+ *  - **长文本 AI 复盘（报告「本期解读」）与个性化完整膳食计划为会员专属**。
  *  - 基础额度自然日 0 点重置，不累计、不结转到次日。
  *  - 识别失败（模糊/非食物/解析报错）不消耗额度（由调用方 refund 实现）。
  *  - 奖励额度（连续打卡 7 天 +2、完善资料 +3）带 7 天有效期，见 quota_bonus 表。
@@ -20,7 +23,6 @@ import type { Entitlement, UserPlan } from '../types'
  */
 
 export const FREE_DAILY_AI = 3
-export const FREE_INSIGHT_PER_WEEK = 1
 export const FREE_REPORT_DAYS = 7
 export const PRO_REPORT_DAYS = 30
 
@@ -31,7 +33,6 @@ export const NEWBIE_BONUS_AMOUNT = 3 // 完善资料新手奖励次数
 export const BONUS_TTL_DAYS = 7 // 奖励有效期（防囤积）
 
 export const SCAN_FEATURE = 'scan'
-export const INSIGHT_FEATURE = 'insight'
 
 /* ── 定价（单位：元；最终以支付平台商品为准）────────────────────────── */
 export const PRICE_PRO_MONTHLY = 18
@@ -130,6 +131,6 @@ export function quotaExhaustedReason(): string {
   return (
     `今日 ${FREE_DAILY_AI} 次免费拍照识别已用完，明天 0 点自动重置。` +
     `升级 Pro 可无限次拍照识别。` +
-    `手动录入、文字描述、扫条码、记录饮水体重运动、AI 问答、查看近 ${FREE_REPORT_DAYS} 天报告都不受影响。`
+    `扫条码、文字描述、手动录入、记录饮水体重运动、AI 问答都免费不限次数。`
   )
 }

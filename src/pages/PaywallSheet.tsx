@@ -3,7 +3,6 @@ import { IconCrown, IconGift } from '../components/Icons'
 import { Sheet } from '../components/Sheet'
 import {
   FREE_DAILY_AI,
-  FREE_INSIGHT_PER_WEEK,
   FREE_REPORT_DAYS,
   PRO_REPORT_DAYS,
   PRODUCTS,
@@ -18,18 +17,21 @@ import { usePlan } from '../state/plan'
  */
 
 const FREE_ITEMS = [
-  `每日 ${FREE_DAILY_AI} 次 AI 拍照识别`,
-  '文字描述、扫条码、手动录入、体重饮水运动记录全部免费',
+  `每日 ${FREE_DAILY_AI} 次 AI 拍照识别（识别成功才扣次数）`,
+  '扫条码不限次数永久免费',
+  '文字描述识别、手动录入、体重饮水运动记录全部免费',
+  'AI 问答不限次数（每分钟限 3 次防刷）',
   `饮食报告看近 ${FREE_REPORT_DAYS} 天`,
-  `AI 周解读每 ${FREE_INSIGHT_PER_WEEK} 次`,
   '连续打卡 7 天、完善资料再送拍照次数',
 ]
 
 const PRO_ITEMS = [
   'AI 拍照识别不限次数',
+  'AI 问答不限流',
+  '长文本 AI 复盘（本期解读）无限次',
+  '个性化完整膳食计划、长期 AI 膳食规划',
+  '宏量营养素深度分析',
   `饮食报告扩展到 ${PRO_REPORT_DAYS} 天 + 数据导出`,
-  'AI 周解读不限次',
-  '后续新功能优先体验',
 ]
 
 const PRICE_TAG: Record<string, string> = {

@@ -11,6 +11,10 @@ interface Msg {
   text: string
 }
 
+/** 免费用户 AI 问答限流：1 分钟内最多 3 次提问（防刷，Pro 不限） */
+const COACH_RATE_LIMIT = 3
+const COACH_RATE_WINDOW_MS = 60 * 1000
+
 export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
   const [messages, setMessages] = useState<Msg[]>([
     {
@@ -22,17 +26,38 @@ export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const bodyRef = useRef<HTMLDivElement>(null)
+  // 记录最近一次提问的时间戳，用于限流（前端本地计数，防刷而非严格计费）
+  const askTimesRef = useRef<number[]>([])
 
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, busy])
 
+  /** 检查是否触发限流；返回剩余秒数，0 表示可放行 */
+  function rateLimitBlocked(): number {
+    const now = Date.now()
+    const windowStart = now - COACH_RATE_WINDOW_MS
+    const recent = askTimesRef.current.filter((t) => t > windowStart)
+    askTimesRef.current = recent
+    if (recent.length >= COACH_RATE_LIMIT) {
+      const oldest = recent[0]
+      return Math.ceil((oldest + COACH_RATE_WINDOW_MS - now) / 1000)
+    }
+    return 0
+  }
+
   async function send() {
     const q = input.trim()
     if (!q || busy) return
+    const waitSec = rateLimitBlocked()
+    if (waitSec > 0) {
+      setErr(`问得太快啦，请 ${waitSec} 秒后再提问（免费版每分钟最多 ${COACH_RATE_LIMIT} 次，Pro 不限）。`)
+      return
+    }
     setInput('')
     setErr('')
     setMessages((prev) => [...prev, { role: 'user', text: q }])
+    askTimesRef.current.push(Date.now())
     setBusy(true)
     try {
       // AI 问答不计入拍照额度（只有 AI 拍照识别才消耗次数）

@@ -85,7 +85,7 @@ function ForecastCard({ forecast, targetWeight }: { forecast: Forecast; targetWe
 }
 
 export function ReportScreen({ profile }: ReportScreenProps) {
-  const { pro, openPaywall, claimInsightQuota, refundInsightQuota } = usePlan()
+  const { pro, openPaywall } = usePlan()
   const [days, setDays] = useState(7)
   const [recentMeals, setRecentMeals] = useState<MealEntry[]>([])
   const [weights, setWeights] = useState<WeightLog[]>([])
@@ -190,16 +190,14 @@ export function ReportScreen({ profile }: ReportScreenProps) {
   }
 
   async function handleInsight() {
+    // 长文本 AI 复盘（本期解读）为会员专属：免费用户弹付费墙，Pro/终身可无限次生成
+    if (!pro) {
+      openPaywall('「本期解读」是 AI 长文本复盘，属于 Pro 会员专属功能。升级后可无限次生成，并获得周复盘、长期膳食规划与宏量营养素深度分析。')
+      return
+    }
     setInsightBusy(true)
     setInsightError('')
-    let claimed = false
     try {
-      const allowed = await claimInsightQuota()
-      if (!allowed) {
-        openPaywall('免费版每周 1 次 AI 解读（每周一重置），升级 Pro 可不限次数。')
-        return
-      }
-      claimed = true
       const res = await generateReportInsight({
         days: report.days,
         loggedDays: report.loggedDays,
@@ -219,7 +217,6 @@ export function ReportScreen({ profile }: ReportScreenProps) {
       })
       setInsight(res)
     } catch (e) {
-      if (claimed) await refundInsightQuota()
       setInsightError(e instanceof Error ? e.message : '生成解读失败，请重试')
     } finally {
       setInsightBusy(false)
