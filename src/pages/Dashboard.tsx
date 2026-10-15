@@ -16,6 +16,7 @@ import {
   listMealsByDate,
   listWaterByDate,
   undoLastWater,
+  updateMealGrams,
 } from '../lib/api'
 import type { CoachContext } from '../lib/ai'
 import { categoryOf } from '../lib/foods'
@@ -53,6 +54,12 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   const [sheetMeal, setSheetMeal] = useState<MealType | null>(null)
   const [coachOpen, setCoachOpen] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
+
+  // 原位编辑与删除确认：避免竞品「提交后不能改」「误触删除」两个差评点
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editGrams, setEditGrams] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null)
 
   // 打卡：需要近半年的「有记录日期」集合；同时留一份近窗记录用于卡路里追踪
   const [loggedDates, setLoggedDates] = useState<string[]>([])
@@ -189,6 +196,12 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
 
   async function handleDelete(id?: number) {
     if (!id) return
+    // 第一次点击进入「待确认」态，二次点击才真正删除，防误触
+    if (pendingDeleteId !== id) {
+      setPendingDeleteId(id)
+      return
+    }
+    setPendingDeleteId(null)
     setError('')
     try {
       // 删除后统一刷新：当日列表、运动饮水与打卡状态都依赖日期窗数据
@@ -196,6 +209,32 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : '删除失败')
+    }
+  }
+
+  function startEdit(e: MealEntry) {
+    if (e.id == null) return
+    setEditingId(e.id)
+    setEditGrams(String(Math.round(Number(e.grams) || 0)))
+  }
+
+  async function saveEdit() {
+    if (editingId == null) return
+    const g = Number(editGrams)
+    if (!Number.isFinite(g) || g <= 0) {
+      setError('请输入大于 0 的份量')
+      return
+    }
+    setSavingEdit(true)
+    setError('')
+    try {
+      await updateMealGrams(editingId, g)
+      setEditingId(null)
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '修改失败')
+    } finally {
+      setSavingEdit(false)
     }
   }
 
@@ -582,10 +621,39 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
                         {e.quantity_text || ''}
                         {e.ai_note ? ` · ${e.ai_note}` : ''}
                       </div>
+                      {editingId === e.id ? (
+                        <div className="entry-edit" style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8 }}>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            value={editGrams}
+                            onChange={(ev) => setEditGrams(ev.target.value)}
+                            style={{ width: 76, height: 32, borderRadius: 10, border: '1px solid var(--line-2)', background: 'var(--surface)', padding: '0 8px', outline: 'none' }}
+                            aria-label="份量克数"
+                          />
+                          <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>g</span>
+                          <button className="btn-text" style={{ color: 'var(--honey-dark)' }} disabled={savingEdit} onClick={() => void saveEdit()}>
+                            {savingEdit ? '保存中…' : '保存'}
+                          </button>
+                          <button className="btn-text" style={{ color: 'var(--ink-3)' }} onClick={() => setEditingId(null)}>
+                            取消
+                          </button>
+                        </div>
+                      ) : (
+                        <button className="btn-text" style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4, padding: 0 }} onClick={() => startEdit(e)}>
+                          编辑份量
+                        </button>
+                      )}
                     </div>
                     <span className="entry-kcal">{Math.round(Number(e.calories))}</span>
-                    <button className="entry-del" onClick={() => void handleDelete(e.id)} aria-label="删除">
-                      ×
+                    <button
+                      className={`entry-del ${pendingDeleteId === e.id ? 'confirming' : ''}`}
+                      onClick={() => void handleDelete(e.id)}
+                      aria-label={pendingDeleteId === e.id ? '再次点击确认删除' : '删除'}
+                      title={pendingDeleteId === e.id ? '再次点击确认删除' : '删除'}
+                      style={pendingDeleteId === e.id ? { background: 'var(--red)', color: '#fff' } : undefined}
+                    >
+                      {pendingDeleteId === e.id ? '删除?' : '×'}
                     </button>
                   </div>
                 ))

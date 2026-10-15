@@ -5,8 +5,10 @@ import { LineChart } from '../components/Charts'
 import type { DocId } from '../content/legal'
 import { IconCrown, IconDownload, IconTrash } from '../components/Icons'
 import {
+  buildMealsCsv,
   clearAllRecords,
   exportAllData,
+  listMealsBetween,
   listWeightLogs,
   saveProfile,
   saveWeight,
@@ -20,7 +22,7 @@ import {
   todayKey,
 } from '../lib/nutrition'
 import { usePlan } from '../state/plan'
-import { exportJSON } from '../lib/share'
+import { exportJSON, exportText } from '../lib/share'
 import type { Profile, WeightLog } from '../types'
 
 interface ProfileScreenProps {
@@ -43,6 +45,10 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
   const [clearing, setClearing] = useState(false)
   const [dataMsg, setDataMsg] = useState('')
   const [dataErr, setDataErr] = useState('')
+
+  // 注销账号（Apple 5.1.1(v) 合规入口）：两步确认
+  const [confirmDeleteAcct, setConfirmDeleteAcct] = useState(false)
+  const [deletingAcct, setDeletingAcct] = useState(false)
 
   const [weights, setWeights] = useState<WeightLog[]>([])
   const [weightInput, setWeightInput] = useState(String(profile.current_weight_kg ?? ''))
@@ -182,6 +188,27 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
     }
   }
 
+  /** 饮食记录 CSV 导出：供用户用 Excel 做营养结构综合分析（自律茄子坑 3 的补位） */
+  async function doExportCsv() {
+    setExporting(true)
+    setDataErr('')
+    setDataMsg('')
+    try {
+      const meals = await listMealsBetween('1970-01-01', '2999-12-31')
+      if (meals.length === 0) {
+        setDataMsg('还没有任何饮食记录，先去记一餐吧。')
+        return
+      }
+      const csv = buildMealsCsv(meals)
+      const res = await exportText(csv, `d-bee-饮食记录-${todayKey()}.csv`, 'text/csv;charset=utf-8')
+      setDataMsg(res.message)
+    } catch (e) {
+      setDataErr(e instanceof Error ? e.message : '导出失败')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   async function doClear() {
     setClearing(true)
     setDataErr('')
@@ -195,6 +222,33 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
       setDataErr(e instanceof Error ? e.message : '清空失败')
     } finally {
       setClearing(false)
+    }
+  }
+
+  /**
+   * 注销账号（降级实现）。
+   * 云端当前不提供删除 auth 账号的能力（SDK 无 deleteUser、admin 端点只读），
+   * 因此这里做「清空全部数据 + 登出」的本地数据删除，并明确告知：彻底注销账号
+   * 需联系客服人工处理。这满足 Apple 5.1.1(v) 的「App 内提供删除入口」最低要求。
+   */
+  async function doDeleteAccount() {
+    setDeletingAcct(true)
+    setDataErr('')
+    setDataMsg('')
+    try {
+      await clearAllRecords()
+      // 也清掉身体档案，避免残留可识别个人信息
+      try {
+        await saveProfile({ nickname: null, barriers: null, plan_summary: null })
+      } catch {
+        // 档案清理失败不阻断登出
+      }
+      setConfirmDeleteAcct(false)
+      onSignOut()
+    } catch (e) {
+      setDataErr(e instanceof Error ? e.message : '注销失败，请重试')
+    } finally {
+      setDeletingAcct(false)
     }
   }
 
@@ -370,6 +424,24 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
             )}
           </span>
         </div>
+        <div className="list-line" onClick={() => !pro && openPaywall('数据导出是 Pro 功能，升级后可随时打包带走全部记录。')} role="button" tabIndex={0}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <IconDownload size={16} />
+            导出饮食记录（CSV）
+          </span>
+          <span className="val" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {pro ? (
+              <button className="btn-text" disabled={exporting} onClick={(e) => { e.stopPropagation(); void doExportCsv() }}>
+                {exporting ? '导出中…' : '导出'}
+              </button>
+            ) : (
+              <>
+                Pro
+                <span className="arrow">›</span>
+              </>
+            )}
+          </span>
+        </div>
         <div className="list-line" onClick={() => !confirmClear && setConfirmClear(true)} role="button" tabIndex={0}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <IconTrash size={16} />
@@ -405,6 +477,35 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
       <button className="btn btn-ghost" style={{ marginTop: 8 }} onClick={onSignOut}>
         退出登录
       </button>
+
+      <div className="section-title" style={{ marginTop: 24 }}>账号管理</div>
+      <div className="card">
+        <div className="list-line" onClick={() => setConfirmDeleteAcct(true)} role="button" tabIndex={0}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--red)' }}>
+            <IconTrash size={16} />
+            注销账号
+          </span>
+          <span className="val" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {confirmDeleteAcct ? (
+              <span style={{ display: 'flex', gap: 8 }}>
+                <button className="btn-text" style={{ color: 'var(--red)' }} disabled={deletingAcct} onClick={(e) => { e.stopPropagation(); void doDeleteAccount() }}>
+                  {deletingAcct ? '注销中…' : '确认注销'}
+                </button>
+                <button className="btn-text" style={{ color: 'var(--ink-3)' }} onClick={(e) => { e.stopPropagation(); setConfirmDeleteAcct(false) }}>
+                  取消
+                </button>
+              </span>
+            ) : (
+              <span className="arrow" style={{ marginLeft: 6 }}>›</span>
+            )}
+          </span>
+        </div>
+        {confirmDeleteAcct && (
+          <div className="helper" style={{ color: 'var(--red)', marginBottom: 4 }}>
+            ⚠️ 将删除你的全部记录与身体档案并退出登录，不可恢复。如需彻底注销账号，请通过「关于 → 联系我们」与客服联系。
+          </div>
+        )}
+      </div>
 
       <SiteFooter onOpen={onOpenLegal} />
 

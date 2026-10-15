@@ -143,6 +143,46 @@ export async function deleteMeal(id: number): Promise<void> {
   if (rows<MealEntry>(data).length === 0) throw new Error('删除失败：该记录不属于当前账号')
 }
 
+/**
+ * 原位编辑已保存的饮食记录：改份量（grams）。
+ * 营养值按「每克」等比缩放，保留原记录的食物构成与来源，不重新走 AI。
+ * 自律茄子坑 2 的解法 —— 竞品「提交后不能改份量」是本功能最直接的补位。
+ */
+export async function updateMealGrams(id: number, grams: number): Promise<MealEntry> {
+  const { data: found, error: findErr } = await db('meal_entries')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle()
+  if (findErr) throw new Error(findErr.message || '读取记录失败')
+  const existing = found as MealEntry | null
+  if (!existing) throw new Error('该记录不存在或不属于当前账号')
+
+  const g = Math.max(1, Math.round(grams))
+  // 以「每克营养值」为基准等比缩放，避免直接改 calories 造成与宏量不一致
+  const baseGrams = Number(existing.grams) || 1
+  const scale = g / baseGrams
+  const round1 = (n: number) => Math.round(n * 10) / 10
+
+  const patch: Row = {
+    grams: g,
+    quantity_text: `${g} 克`,
+    calories: Math.round((Number(existing.calories) || 0) * scale),
+    protein_g: round1((Number(existing.protein_g) || 0) * scale),
+    carb_g: round1((Number(existing.carb_g) || 0) * scale),
+    fat_g: round1((Number(existing.fat_g) || 0) * scale),
+    sodium_mg: existing.sodium_mg != null ? Math.round((Number(existing.sodium_mg) || 0) * scale) : null,
+    fiber_g: existing.fiber_g != null ? round1((Number(existing.fiber_g) || 0) * scale) : null,
+    added_sugar_g: existing.added_sugar_g != null ? round1((Number(existing.added_sugar_g) || 0) * scale) : null,
+    updated_at: new Date().toISOString(),
+  }
+
+  const { data, error } = await db('meal_entries').update(patch).eq('id', id).select()
+  if (error) throw new Error(error.message || '修改失败')
+  const list = rows<MealEntry>(data)
+  if (list.length === 0) throw new Error('修改失败：该记录不属于当前账号')
+  return list[0]
+}
+
 export async function listWeightLogs(limit = 90): Promise<WeightLog[]> {
   const { data, error } = await db('weight_logs')
     .select('*')
@@ -532,4 +572,49 @@ export async function clearAllRecords(): Promise<void> {
       if (delErr) throw new Error(delErr.message || '清空记录失败')
     }
   }
+}
+
+/* ── 饮食记录 CSV 导出 ── */
+
+function csvCell(v: unknown): string {
+  const s = v == null ? '' : String(v)
+  // Excel 兼容：含逗号/引号/换行的字段加引号包裹
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+  return s
+}
+
+const CSV_HEADERS = [
+  '日期', '餐次', '食物', '份量', '克数', '热量(kcal)',
+  '蛋白质(g)', '碳水(g)', '脂肪(g)', '钠(mg)', '膳食纤维(g)', '添加糖(g)', '来源',
+] as const
+
+const MEAL_CN: Record<string, string> = {
+  breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐',
+}
+
+/** 把全部饮食记录拼成 CSV 文本（UTF-8 BOM，Excel 直接打开不乱码） */
+export function buildMealsCsv(meals: MealEntry[]): string {
+  const lines: string[] = [CSV_HEADERS.join(',')]
+  for (const m of meals) {
+    lines.push(
+      [
+        m.log_date,
+        MEAL_CN[m.meal_type] ?? m.meal_type,
+        m.food_name,
+        m.quantity_text ?? '',
+        m.grams ?? '',
+        m.calories,
+        m.protein_g,
+        m.carb_g,
+        m.fat_g,
+        m.sodium_mg ?? '',
+        m.fiber_g ?? '',
+        m.added_sugar_g ?? '',
+        m.source,
+      ]
+        .map(csvCell)
+        .join(','),
+    )
+  }
+  return '\ufeff' + lines.join('\r\n')
 }
