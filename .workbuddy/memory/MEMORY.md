@@ -32,6 +32,12 @@ http://150.158.51.106/，归档在 `backups/d-bee-v1.0.1-20261013.{tar.gz,zip}`�
   `ios/App/App/public` web 资源未更新（句柄锁），构建前 `cap sync` 重建即可。
 - **阶段 2 原生能力补齐**（约 2–3 周，按对过审贡献度排序）
 - **阶段 3 支付改造**（redeem code → IAP，Apple 3.1.1）
+  - ⚠️ **2026-10-15 会员体系已提前改造为三档**（V1.1.0，commit 1123fdf）：
+    `free`/`pro`(订阅,pro_until 到期)/`lifetime`(买断,pro_until=null)。
+    定价 ¥18月/¥128年/¥328终身。核心在 `src/lib/entitlement.ts`（判定+PRODUCTS 商品定义）
+    与 `src/state/plan.tsx` 的 `activate(plan,months)`（支付回调统一入口）。
+    entitlements 表加 `source` 列（redeem/wechat/alipay/apple/google）。
+    兑换码现解锁 lifetime；真实支付待营业执照。方案文档 `docs/商业化与会员三档方案.md`。
 - **阶段 4 提审**
 
 ## 架构约定（阶段 0 建立，后续必须遵守）
