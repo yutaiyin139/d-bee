@@ -43,7 +43,7 @@ const MACRO_META = [
 const STREAK_WINDOW_DAYS = 185
 
 export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
-  const { pro, aiRemaining, openPaywall } = usePlan()
+  const { pro, aiRemaining, openPaywall, grantStreakBonus } = usePlan()
   const [logDate, setLogDate] = useState(todayKey())
   const [entries, setEntries] = useState<MealEntry[]>([])
   const [water, setWater] = useState<WaterLog[]>([])
@@ -115,6 +115,14 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   const isToday = logDate === today
 
   const streak = useMemo(() => computeStreak(loggedDates, today), [loggedDates, today])
+
+  // 连续打卡满 7 天 → 自动发放奖励（+2 次拍照，7 天有效）。
+  // 以「当前连续段第 7 天的日期」作 grant_key，同一连续段只发一次；
+  // 数据库 UNIQUE(owner_id, source, grant_key) 兜底防重复。
+  useEffect(() => {
+    if (pro) return
+    if (streak.streak7Date) void grantStreakBonus(streak.streak7Date)
+  }, [streak.streak7Date, pro, grantStreakBonus])
 
   const byMeal = useMemo(() => {
     const map: Record<MealType, MealEntry[]> = { breakfast: [], lunch: [], dinner: [], snack: [] }

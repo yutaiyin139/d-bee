@@ -18,14 +18,15 @@ import { usePlan } from '../state/plan'
  */
 
 const FREE_ITEMS = [
-  `每日 ${FREE_DAILY_AI} 次 AI 识别（拍照 / 文字 / 条码兜底 / AI 问答共用）`,
-  '饮食、体重、饮水、运动记录全部功能',
+  `每日 ${FREE_DAILY_AI} 次 AI 拍照识别`,
+  '文字描述、扫条码、手动录入、体重饮水运动记录全部免费',
   `饮食报告看近 ${FREE_REPORT_DAYS} 天`,
   `AI 周解读每 ${FREE_INSIGHT_PER_WEEK} 次`,
+  '连续打卡 7 天、完善资料再送拍照次数',
 ]
 
 const PRO_ITEMS = [
-  'AI 识别与问答不限次数',
+  'AI 拍照识别不限次数',
   `饮食报告扩展到 ${PRO_REPORT_DAYS} 天 + 数据导出`,
   'AI 周解读不限次',
   '后续新功能优先体验',

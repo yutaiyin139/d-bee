@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { generatePlan } from '../lib/ai'
 import { saveProfile } from '../lib/api'
 import { ACTIVITY_LABELS, GOAL_LABELS, calcTarget } from '../lib/nutrition'
+import { usePlan } from '../state/plan'
 import type { Profile } from '../types'
 
 interface OnboardingProps {
@@ -25,6 +26,7 @@ const STEPS = ['goal', 'body', 'activity', 'barriers', 'result'] as const
 type Step = (typeof STEPS)[number]
 
 export function Onboarding({ nickname, onDone }: OnboardingProps) {
+  const { grantNewbieBonus } = usePlan()
   const [step, setStep] = useState<Step>('goal')
 
   const [goal, setGoal] = useState<'lose' | 'keep' | 'gain'>('lose')
@@ -138,6 +140,8 @@ export function Onboarding({ nickname, onDone }: OnboardingProps) {
         plan_summary: plan ? JSON.stringify(plan) : null,
         onboarded: true,
       })
+      // 首次完善身体数据 → 一次性新手奖励（+3 次拍照，7 天有效；数据库 UNIQUE 防重复）
+      void grantNewbieBonus()
       onDone(saved)
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : '保存失败，请重试')

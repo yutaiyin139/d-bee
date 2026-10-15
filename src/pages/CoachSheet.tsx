@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { askCoach, type CoachContext } from '../lib/ai'
-import { quotaExhaustedReason } from '../lib/entitlement'
-import { usePlan } from '../state/plan'
 
 interface CoachSheetProps {
   ctx: CoachContext
@@ -14,7 +12,6 @@ interface Msg {
 }
 
 export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
-  const { claimAiQuota, refundAiQuota, aiRemaining, openPaywall } = usePlan()
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: 'coach',
@@ -37,20 +34,11 @@ export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
     setErr('')
     setMessages((prev) => [...prev, { role: 'user', text: q }])
     setBusy(true)
-    let claimed = false
     try {
-      const quota = await claimAiQuota()
-      if (!quota.allowed) {
-        setErr('')
-        openPaywall(quotaExhaustedReason())
-        return
-      }
-      claimed = true
+      // AI 问答不计入拍照额度（只有 AI 拍照识别才消耗次数）
       const answer = await askCoach(q, ctx)
       setMessages((prev) => [...prev, { role: 'coach', text: answer }])
     } catch (e) {
-      // AI 调用失败要把刚占用的额度退回去，不让用户白扣次数
-      if (claimed) await refundAiQuota()
       setErr(e instanceof Error ? e.message : '回答失败，请重试')
     } finally {
       setBusy(false)
@@ -63,11 +51,6 @@ export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
         <div className="sheet-head">
           <h2>问问小蜜</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            {aiRemaining !== null && (
-              <span className="hint" style={{ fontSize: 12, color: 'var(--ink-3)' }}>
-                今日剩 {aiRemaining} 次
-              </span>
-            )}
             <button className="sheet-close" onClick={onClose} aria-label="关闭">×</button>
           </div>
         </div>

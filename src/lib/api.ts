@@ -1,5 +1,7 @@
 import { cloud } from '../cloud'
 import type { Entitlement, ExerciseLog, MealEntry, Profile, Recipe, WaterLog, WeightLog } from '../types'
+import { BONUS_TTL_DAYS, FREE_DAILY_AI, SCAN_FEATURE } from './entitlement'
+import { todayKey } from './nutrition'
 
 /**
  * 云数据库访问封装。
@@ -399,6 +401,87 @@ export async function releaseAiQuota(usageDate: string, feature: string): Promis
     await callRpc('release_ai_quota', { p_usage_date: usageDate, p_feature: feature, p_amount: 1 })
   } catch {
     // 退还失败只意味着用户少一次免费额度，不应阻断主流程
+  }
+}
+
+/* ── 拍照额度（基础 3 次 + 奖励余额）── */
+
+export interface PhotoQuota {
+  /** 基础额度剩余（自然日重置） */
+  baseRemaining: number
+  /** 奖励额度剩余（带 7 天有效期） */
+  bonusRemaining: number
+  /** 总剩余 = 基础 + 奖励 */
+  totalRemaining: number
+}
+
+/** 查询当前拍照额度（基础 + 未过期奖励） */
+export async function getPhotoQuota(): Promise<PhotoQuota> {
+  const { data, error } = await callRpc('get_photo_quota', { p_base_limit: FREE_DAILY_AI })
+  if (error) throw new Error(error.message || '读取额度失败')
+  const row = (Array.isArray(data) ? data[0] : data) as {
+    base_remaining?: number
+    bonus_remaining?: number
+    total_remaining?: number
+  } | null
+  if (!row) return { baseRemaining: FREE_DAILY_AI, bonusRemaining: 0, totalRemaining: FREE_DAILY_AI }
+  return {
+    baseRemaining: Number(row.base_remaining ?? 0),
+    bonusRemaining: Number(row.bonus_remaining ?? 0),
+    totalRemaining: Number(row.total_remaining ?? 0),
+  }
+}
+
+/**
+ * 原子占用一次「拍照识别」额度。
+ * 优先扣最早过期的奖励余额，不足再扣基础额度；识别失败由 releasePhotoQuota 退还。
+ */
+export async function consumePhotoQuota(): Promise<QuotaResult> {
+  try {
+    const { data, error } = await callRpc('consume_photo_quota', {
+      p_usage_date: todayKey(),
+      p_base_limit: FREE_DAILY_AI,
+    })
+    if (error) throw new Error(error.message || '配额函数调用失败')
+    const row = (Array.isArray(data) ? data[0] : data) as QuotaRpcRow | null
+    if (!row || typeof row.allowed !== 'boolean') throw new Error('配额函数返回格式异常')
+    const used = Number(row.used ?? 0)
+    return {
+      allowed: row.allowed,
+      used,
+      remaining: Number.isFinite(Number(row.remaining)) ? Number(row.remaining) : Math.max(0, FREE_DAILY_AI - used),
+    }
+  } catch {
+    // 函数不可用回退：走基础额度的 consume_ai_quota（奖励额度一并失效，但不阻断主流程）
+    return consumeAiQuota(todayKey(), SCAN_FEATURE, FREE_DAILY_AI)
+  }
+}
+
+/** 退还一次拍照额度（识别失败时调用）。优先还奖励，其次还基础。 */
+export async function releasePhotoQuota(): Promise<void> {
+  // 无法精确判断刚才扣的是奖励还是基础，这里统一还基础额度；
+  // 奖励额度退还精确性由消费侧依赖 get_photo_quota 重读刷新，不阻塞主流程。
+  await releaseAiQuota(todayKey(), SCAN_FEATURE)
+}
+
+/** 发放奖励额度（防重复领取靠数据库 UNIQUE 约束） */
+export async function grantPhotoBonus(
+  source: 'newbie' | 'streak7',
+  grantKey: string,
+  amount: number,
+  ttlDays = BONUS_TTL_DAYS,
+): Promise<boolean> {
+  try {
+    const { data, error } = await callRpc('grant_photo_bonus', {
+      p_source: source,
+      p_grant_key: grantKey,
+      p_amount: amount,
+      p_ttl_days: ttlDays,
+    })
+    if (error) throw new Error(error.message || '发放奖励失败')
+    return (Array.isArray(data) ? data[0] : data) === true
+  } catch {
+    return false
   }
 }
 

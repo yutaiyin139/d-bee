@@ -407,9 +407,9 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   }, [keyword, category, sort])
 
   /**
-   * AI 调用前的统一闸门：原子占用一次免费额度。
-   * 额度在服务端一条语句内「判断 + 自增」，多端并发也不会超发；
-   * 占用发生但后续 AI 调用失败时，由各 handler 的 catch 退还。
+   * 「AI 拍照识别」专用闸门：原子占用一次拍照额度（基础 3 次 + 奖励余额）。
+   * 只有拍照识别消耗次数；文字解析、包装识别、条码、手动录入、AI 问答都不计。
+   * 识别失败（模糊/非食物/报错）时由 handleFile 的 catch 退还。
    */
   async function guardAiQuota(): Promise<boolean> {
     const q = await claimAiQuota()
@@ -443,15 +443,12 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
     if (!text.trim()) return
     setError('')
     setBusy(true)
-    let claimed = false
     try {
-      if (!(await guardAiQuota())) return
-      claimed = true
+      // 文字描述解析不计入拍照额度（只有 AI 拍照识别才消耗次数）
       const res = await parseFoodFromText(text.trim())
       setItems((prev) => [...prev, ...res.map((d) => toDraft(d, 'text'))])
       setText('')
     } catch (e) {
-      if (claimed) await refundAiQuota()
       setError(e instanceof Error ? e.message : '解析失败，请重试')
     } finally {
       setBusy(false)
@@ -504,17 +501,14 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   async function handlePackagePhoto(file: File) {
     setError('')
     setBusy(true)
-    let claimed = false
     try {
-      if (!(await guardAiQuota())) return
-      claimed = true
+      // 包装识别是条码兜底，不计入拍照额度（只有「拍餐盘照片」才消耗次数）
       const dataUrl = await compressImage(file)
       const res = await identifyPackagedFood(dataUrl, missCode || undefined)
       setItems((prev) => [...prev, ...res.map((d) => toDraft(d, 'barcode'))])
       setScanMsg({ kind: 'ok', text: '已按包装上的营养表识别，请核对份量是否与实物一致。' })
       setMissCode('')
     } catch (e) {
-      if (claimed) await refundAiQuota()
       setError(e instanceof Error ? e.message : '识别包装失败，请重试')
     } finally {
       setBusy(false)
@@ -615,7 +609,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
           <h2>记录饮食</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {mode !== 'manual' && aiRemaining !== null && (
-              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>今日剩 {aiRemaining} 次 AI</span>
+              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>今日剩 {aiRemaining} 次拍照</span>
             )}
             <button className="sheet-close" onClick={onClose} aria-label="关闭">×</button>
           </div>

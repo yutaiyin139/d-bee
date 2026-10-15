@@ -4,23 +4,31 @@ import type { Entitlement, UserPlan } from '../types'
  * 会员与配额的核心规则（纯函数，便于测试与复用）。
  *
  * 三档：
- *  - free      免费：每日 10 次 AI（拍照/文字/包装识别/AI 问答共用），
- *              报告看近 7 天，AI 周解读每周 1 次，不能导出数据。
+ *  - free      免费：每日 3 次 AI 拍照识别，报告看近 7 天，AI 周解读每周 1 次，不能导出。
  *  - pro       订阅：pro_until 过期时间，到期自动回落 free。
  *  - lifetime  终身买断：plan='lifetime' 且 pro_until 恒 null，永久解锁。
  *
- * 权益状态存在云端 entitlements 表（一人一行），换设备也生效。
- * pro / lifetime 的功能完全一致，差别只在计费方式与时长。
+ * 计数口径（重要）：
+ *  - **只有「AI 拍照识别」消耗次数**；手动录入、体重/饮水打卡、文字解析、
+ *    包装识别、AI 问答均不计次、不扣额度。
+ *  - 基础额度自然日 0 点重置，不累计、不结转到次日。
+ *  - 识别失败（模糊/非食物/解析报错）不消耗额度（由调用方 refund 实现）。
+ *  - 奖励额度（连续打卡 7 天 +2、完善资料 +3）带 7 天有效期，见 quota_bonus 表。
  *
+ * 权益状态存在云端 entitlements 表（一人一行），换设备也生效。
  * 真实支付（微信 / 支付宝 / App 内购）待企业资质就绪后接入；在此之前用兑换码解锁。
- * 注：额度由前端常量传参给云端 consume_ai_quota(p_limit)，改这里即生效，
- * 数据库侧不存字面量、无需迁移。
  */
 
-export const FREE_DAILY_AI = 10
+export const FREE_DAILY_AI = 3
 export const FREE_INSIGHT_PER_WEEK = 1
 export const FREE_REPORT_DAYS = 7
 export const PRO_REPORT_DAYS = 30
+
+/** 奖励额度规则 */
+export const STREAK_BONUS_DAYS = 7 // 连续打卡 N 天触发奖励
+export const STREAK_BONUS_AMOUNT = 2 // 连续打卡奖励次数
+export const NEWBIE_BONUS_AMOUNT = 3 // 完善资料新手奖励次数
+export const BONUS_TTL_DAYS = 7 // 奖励有效期（防囤积）
 
 export const SCAN_FEATURE = 'scan'
 export const INSIGHT_FEATURE = 'insight'
@@ -112,16 +120,16 @@ export function proUntilFromMonths(months: number): string {
 }
 
 /**
- * 免费 AI 额度用尽时的统一提示。
- * 必须同时讲清三件事，否则用户会误以为「整个应用不能用了」：
+ * 免费拍照额度用尽时的统一提示。
+ * 必须同时讲清：
  * 1）什么时候恢复（按本地自然日计，次日 0 点自动重置）
- * 2）额度是怎么算的（拍照 / 文字 / 包装兜底 / AI 问答共用一个池子）
- * 3）哪些功能不受影响（手动记录与报告都不消耗 AI 次数）
+ * 2）额度是怎么算的（只有拍照识别消耗，其他都不扣）
+ * 3）哪些功能不受影响（手动记录、文字解析、条码、体重饮水运动都不扣）
  */
 export function quotaExhaustedReason(): string {
   return (
-    `今日 ${FREE_DAILY_AI} 次免费 AI 已用完（拍照识别、文字解析、包装识别与 AI 问答共用），` +
-    `明天 0 点自动重置。升级 Pro 可不限次数。` +
-    `手动添加食物、扫条码、记录饮水体重运动、查看近 ${FREE_REPORT_DAYS} 天报告都不受影响。`
+    `今日 ${FREE_DAILY_AI} 次免费拍照识别已用完，明天 0 点自动重置。` +
+    `升级 Pro 可无限次拍照识别。` +
+    `手动录入、文字描述、扫条码、记录饮水体重运动、AI 问答、查看近 ${FREE_REPORT_DAYS} 天报告都不受影响。`
   )
 }

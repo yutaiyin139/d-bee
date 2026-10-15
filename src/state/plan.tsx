@@ -1,12 +1,23 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { cloud } from '../cloud'
-import { consumeAiQuota, getEntitlement, getUsage, releaseAiQuota, saveEntitlement } from '../lib/api'
+import {
+  consumeAiQuota,
+  consumePhotoQuota,
+  getEntitlement,
+  getPhotoQuota,
+  grantPhotoBonus,
+  releaseAiQuota,
+  releasePhotoQuota,
+  saveEntitlement,
+} from '../lib/api'
 import {
   FREE_DAILY_AI,
   FREE_INSIGHT_PER_WEEK,
   INSIGHT_FEATURE,
+  NEWBIE_BONUS_AMOUNT,
   SCAN_FEATURE,
+  STREAK_BONUS_AMOUNT,
   codeIsValid,
   isLifetime,
   isPro,
@@ -28,11 +39,13 @@ interface PlanContextValue {
   pro: boolean
   lifetime: boolean
   entitlement: Entitlement | null
-  /** 今日剩余 AI 次数；Pro 返回 null（无限） */
+  /** 今日剩余拍照次数（基础+奖励）；Pro 返回 null（无限） */
   aiRemaining: number | null
-  /** 原子占用一次 AI 额度：allowed=false 表示今日已用完，调用方应弹付费墙并中止 */
+  /** 奖励额度剩余（连续打卡/新手奖励，带 7 天有效期） */
+  bonusRemaining: number
+  /** 原子占用一次「拍照识别」额度：allowed=false 表示已用完，调用方应弹付费墙并中止 */
   claimAiQuota: () => Promise<{ allowed: boolean; remaining: number | null }>
-  /** AI 调用失败（报错 / 超时）时退还刚占用的额度，避免用户白扣次数 */
+  /** 识别失败（模糊/非食物/报错）时退还刚占用的额度 */
   refundAiQuota: () => Promise<void>
   /** 周洞察配额：原子占用，false 表示本周已用过 */
   claimInsightQuota: () => Promise<boolean>
@@ -43,6 +56,10 @@ interface PlanContextValue {
    * 接入支付后由支付回调调用，写入云端 entitlements。
    */
   activate: (plan: 'pro' | 'lifetime', months?: number) => Promise<void>
+  /** 完善身体数据后发放新手奖励（一次性，防重复） */
+  grantNewbieBonus: () => Promise<boolean>
+  /** 连续打卡达成后发放奖励（按达成日期防重复） */
+  grantStreakBonus: (dateKey: string) => Promise<boolean>
   paywall: { open: boolean; reason: string }
   openPaywall: (reason?: string) => void
   closePaywall: () => void
@@ -54,7 +71,7 @@ const PlanContext = createContext<PlanContextValue | null>(null)
 export function PlanProvider({ children }: { children: ReactNode }) {
   const [entitlement, setEntitlement] = useState<Entitlement | null>(null)
   const [ready, setReady] = useState(false)
-  const [usedToday, setUsedToday] = useState(0)
+  const [photoQuota, setPhotoQuota] = useState({ base: 0, bonus: 0, total: FREE_DAILY_AI })
   const [paywall, setPaywall] = useState({ open: false, reason: '' })
 
   const refresh = useCallback(async () => {
@@ -64,17 +81,23 @@ export function PlanProvider({ children }: { children: ReactNode }) {
     const { data: session } = await cloud.auth.getSession()
     if (!session) {
       setEntitlement(null)
-      setUsedToday(0)
+      setPhotoQuota({ base: 0, bonus: 0, total: FREE_DAILY_AI })
       setReady(true)
       return
     }
     try {
       const ent = await getEntitlement()
       setEntitlement(ent)
-      setUsedToday(await getUsage(todayKey(), SCAN_FEATURE))
+      if (isPro(ent)) {
+        setPhotoQuota({ base: 0, bonus: 0, total: FREE_DAILY_AI })
+      } else {
+        const q = await getPhotoQuota()
+        setPhotoQuota({ base: q.baseRemaining, bonus: q.bonusRemaining, total: q.totalRemaining })
+      }
     } catch {
       // 读不到权益不阻塞使用，按免费档处理
       setEntitlement(null)
+      setPhotoQuota({ base: FREE_DAILY_AI, bonus: 0, total: FREE_DAILY_AI })
     } finally {
       setReady(true)
     }
@@ -91,7 +114,7 @@ export function PlanProvider({ children }: { children: ReactNode }) {
       if (!session) {
         // 未登录 / 已登出：按免费档重置，不发任何数据请求
         setEntitlement(null)
-        setUsedToday(0)
+        setPhotoQuota({ base: 0, bonus: 0, total: FREE_DAILY_AI })
         setReady(true)
         return
       }
@@ -102,19 +125,24 @@ export function PlanProvider({ children }: { children: ReactNode }) {
 
   const pro = useMemo(() => isPro(entitlement), [entitlement])
   const lifetime = useMemo(() => isLifetime(entitlement), [entitlement])
-  const aiRemaining = pro ? null : Math.max(0, FREE_DAILY_AI - usedToday)
+  const aiRemaining = pro ? null : Math.max(0, photoQuota.total)
+  const bonusRemaining = photoQuota.bonus
 
   const claimAiQuota = useCallback(async (): Promise<{ allowed: boolean; remaining: number | null }> => {
     if (pro) return { allowed: true, remaining: null }
-    const res = await consumeAiQuota(todayKey(), SCAN_FEATURE, FREE_DAILY_AI)
-    setUsedToday(res.used)
-    return { allowed: res.allowed, remaining: res.remaining }
-  }, [pro])
+    const res = await consumePhotoQuota()
+    // 消耗后重读额度，拿到准确的剩余（基础+奖励）
+    const q = await getPhotoQuota().catch(() => null)
+    if (q) setPhotoQuota({ base: q.baseRemaining, bonus: q.bonusRemaining, total: q.totalRemaining })
+    else setPhotoQuota((prev) => ({ ...prev, total: Math.max(0, prev.total - 1) }))
+    return { allowed: res.allowed, remaining: q ? q.totalRemaining : Math.max(0, photoQuota.total - 1) }
+  }, [pro, photoQuota.total])
 
   const refundAiQuota = useCallback(async () => {
     if (pro) return
-    await releaseAiQuota(todayKey(), SCAN_FEATURE)
-    setUsedToday((prev) => Math.max(0, prev - 1))
+    await releasePhotoQuota()
+    const q = await getPhotoQuota().catch(() => null)
+    if (q) setPhotoQuota({ base: q.baseRemaining, bonus: q.bonusRemaining, total: q.totalRemaining })
   }, [pro])
 
   const claimInsightQuota = useCallback(async (): Promise<boolean> => {
@@ -162,18 +190,41 @@ export function PlanProvider({ children }: { children: ReactNode }) {
   const openPaywall = useCallback((reason = '') => setPaywall({ open: true, reason }), [])
   const closePaywall = useCallback(() => setPaywall({ open: false, reason: '' }), [])
 
+  /** 完善身体数据 → 一次性赠送新手奖励（grant_key 固定 'newbie'，防重复） */
+  const grantNewbieBonus = useCallback(async (): Promise<boolean> => {
+    const ok = await grantPhotoBonus('newbie', 'newbie', NEWBIE_BONUS_AMOUNT)
+    if (ok) {
+      const q = await getPhotoQuota().catch(() => null)
+      if (q) setPhotoQuota({ base: q.baseRemaining, bonus: q.bonusRemaining, total: q.totalRemaining })
+    }
+    return ok
+  }, [])
+
+  /** 连续打卡 7 天 → 奖励（grant_key 用达成日期，同一天不重复发） */
+  const grantStreakBonus = useCallback(async (dateKey: string): Promise<boolean> => {
+    const ok = await grantPhotoBonus('streak7', dateKey, STREAK_BONUS_AMOUNT)
+    if (ok) {
+      const q = await getPhotoQuota().catch(() => null)
+      if (q) setPhotoQuota({ base: q.baseRemaining, bonus: q.bonusRemaining, total: q.totalRemaining })
+    }
+    return ok
+  }, [])
+
   const value: PlanContextValue = {
     ready,
     pro,
     lifetime,
     entitlement,
     aiRemaining,
+    bonusRemaining,
     claimAiQuota,
     refundAiQuota,
     claimInsightQuota,
     refundInsightQuota,
     redeem,
     activate,
+    grantNewbieBonus,
+    grantStreakBonus,
     paywall,
     openPaywall,
     closePaywall,

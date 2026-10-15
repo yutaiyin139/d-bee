@@ -152,6 +152,23 @@ CREATE TABLE public.ai_usage (
 );
 
 
+-- ── 7b. quota_bonus · 拍照奖励额度（连续打卡 / 完善资料）────────────────────
+-- source：newbie（完善资料新手奖励）/ streak7（连续打卡 7 天）；
+-- grant_key 用于防重复领取（newbie 固定 'newbie'，streak7 用达成日期）；
+-- amount - consumed = 剩余余额，expires_at 过期时间（7 天有效，防囤积）。
+CREATE TABLE public.quota_bonus (
+  id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  owner_id    text        NOT NULL DEFAULT auth.uid(),
+  source      text        NOT NULL,
+  grant_key   text        NOT NULL,
+  amount      integer     NOT NULL DEFAULT 0,
+  consumed    integer     NOT NULL DEFAULT 0,
+  expires_at  timestamptz NOT NULL,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (owner_id, source, grant_key)
+);
+
+
 -- ── 8. recipes · 自定义食谱（一人多模板，一餐 = 若干食物条目）─────────────
 -- items 为 jsonb 数组，元素含 food_name/grams/calories/三大营养素/微营养素，
 -- 均为「实际摄入量」口径（非每 100g）。前端一键复记时直接还原成记录行。
@@ -177,6 +194,7 @@ ALTER TABLE public.water_logs    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exercise_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.entitlements  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_usage      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.quota_bonus   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.recipes       ENABLE ROW LEVEL SECURITY;
 
 -- profiles（4 条分命令风格）
@@ -224,6 +242,10 @@ CREATE POLICY entitlements_own ON public.entitlements FOR ALL USING (owner_id = 
 -- ai_usage（1 条 FOR ALL 风格）
 DROP POLICY IF EXISTS ai_usage_own ON public.ai_usage;
 CREATE POLICY ai_usage_own ON public.ai_usage FOR ALL USING (owner_id = auth.uid()) WITH CHECK (owner_id = auth.uid());
+
+-- quota_bonus（1 条 FOR ALL 风格）
+DROP POLICY IF EXISTS quota_bonus_own ON public.quota_bonus;
+CREATE POLICY quota_bonus_own ON public.quota_bonus FOR ALL USING (owner_id = auth.uid()) WITH CHECK (owner_id = auth.uid());
 
 -- recipes（4 条分命令风格）
 DROP POLICY IF EXISTS recipes_select_own ON public.recipes;

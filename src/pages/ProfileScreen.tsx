@@ -11,7 +11,7 @@ import {
   saveProfile,
   saveWeight,
 } from '../lib/api'
-import { FREE_DAILY_AI, FREE_REPORT_DAYS } from '../lib/entitlement'
+import { FREE_REPORT_DAYS } from '../lib/entitlement'
 import {
   ACTIVITY_LABELS,
   GOAL_LABELS,
@@ -223,7 +223,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
                   ? entitlement?.pro_until
                     ? `有效期至 ${new Date(entitlement.pro_until).toLocaleDateString('zh-CN')}`
                     : '全部功能已解锁'
-                  : `今日剩余 AI ${aiRemaining ?? 0}/${FREE_DAILY_AI} 次 · 报告看近 ${FREE_REPORT_DAYS} 天`}
+                  : `今日剩拍照 ${aiRemaining ?? 0} 次 · 报告看近 ${FREE_REPORT_DAYS} 天`}
             </div>
           </div>
         </div>
