@@ -22,6 +22,12 @@ export interface FoodItem {
   fat: number
   portionG: number
   portionLabel: string
+  /** 钠 mg/100g（可选，内置库暂无此数据，AI 识别与自定义食谱会带） */
+  sodium?: number
+  /** 膳食纤维 g/100g（可选） */
+  fiber?: number
+  /** 添加糖 g/100g（可选） */
+  addedSugar?: number
 }
 
 function parse(raw: string): FoodItem[] {
@@ -43,6 +49,11 @@ function parse(raw: string): FoodItem[] {
     const fat = Number(p[4])
     const portionG = Number(p[5])
     if (!Number.isFinite(kcal) || !Number.isFinite(portionG) || portionG <= 0) continue
+    // 第 8/9/10 列为可选微营养素（钠 mg/100g、膳食纤维 g/100g、添加糖 g/100g），
+    // 兼容旧 7 列格式（缺失时读作 undefined，规则引擎回落关键词判断）。
+    const sodium = p.length > 7 ? Number(p[7]) : NaN
+    const fiber = p.length > 8 ? Number(p[8]) : NaN
+    const addedSugar = p.length > 9 ? Number(p[9]) : NaN
     out.push({
       name: p[0].trim(),
       category,
@@ -52,6 +63,9 @@ function parse(raw: string): FoodItem[] {
       fat: Number.isFinite(fat) ? fat : 0,
       portionG,
       portionLabel: p[6].trim(),
+      sodium: Number.isFinite(sodium) ? sodium : undefined,
+      fiber: Number.isFinite(fiber) ? fiber : undefined,
+      addedSugar: Number.isFinite(addedSugar) ? addedSugar : undefined,
     })
   }
   return out
@@ -174,5 +188,18 @@ export function scaleFood(f: FoodItem, grams: number) {
     protein: Math.round(f.protein * r * 10) / 10,
     carb: Math.round(f.carb * r * 10) / 10,
     fat: Math.round(f.fat * r * 10) / 10,
+    sodium: f.sodium != null ? Math.round(f.sodium * r) : undefined,
+    fiber: f.fiber != null ? Math.round(f.fiber * r * 10) / 10 : undefined,
+    addedSugar: f.addedSugar != null ? Math.round(f.addedSugar * r * 10) / 10 : undefined,
   }
+}
+
+/**
+ * 从「食物名」反查库里的营养数据，返回 null 表示库里没有（应走 AI 估算）。
+ * 与 categoryOf 共用同一套别名反查，但这里要拿到完整 FoodItem。
+ */
+export function lookupFood(name: string): FoodItem | null {
+  const n = (name || '').trim()
+  if (!n) return null
+  return BY_NAME.get(n) ?? null
 }
