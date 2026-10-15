@@ -11,6 +11,13 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
 - 校验：Node 脚本确认可 JSON.parse，7 张表 row_counts 与 tables.<表>.length 及线上实时行数三方一致。
 - 清理：无过期备份（最早为 2026-10-13，远晚于 30 天 cutoff 2026-09-14）。
 
+### 2026-10-15 09:10（第 3 次）
+- 结果：**成功**。产出 `db/backups/2026-10-15.json`。
+- 行数：profiles=10 / meal_entries=19 / water_logs=4 / exercise_logs=6 / weight_logs=0 / entitlements=0 / ai_usage=4
+- 校验：`db/backups/.verify-backup.cjs` 通过——JSON.parse OK、7 表 row_counts 与 tables.<表>.length 及
+  另发一条 count(*) 查询的线上实时行数三方一致。
+- 清理：无过期备份（最早 2026-10-13，cutoff 2026-09-15）。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。

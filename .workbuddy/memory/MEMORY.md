@@ -160,6 +160,20 @@ http://150.158.51.106/，归档在 `backups/d-bee-v1.0.1-20261013.{tar.gz,zip}`�
 3. ~~远程私有仓库放哪~~ ✅ 已定 GitHub（`yutaiyin139/d-bee`）；若推送持续不畅可加 Gitee 镜像
 4. 是否启用自有域名 `d-bee.com.cn`（涉及备案进度）
 
+## P1 数据层新增（2026-10-15，勿重做）
+
+- **云端已新增 `recipes` 表**（自定义食谱）+ `meal_entries` 补 3 列
+  `sodium_mg`/`fiber_g`/`added_sugar_g`（微营养素）。DDL 已通过
+  genie-baas `db_exec_sql`(migrate) 执行，`db/schema.sql` 已同步，
+  migration 在 `db/migrations/0004-micronutrients-and-recipes.sql`。
+- **微营养素口径**：钠 mg、纤维/添加糖 g，均为「实际摄入量」，规则引擎按每 100g
+  折算判断（高钠≥600mg、高纤≥6g、高添加糖≥10g）；字段缺失回落关键词倾向。
+- **内置食物库 foodsData*.ts 已于 2026-10-15 补齐微营养素**：3 个文件从 7 列扩展为
+  **10 列**（追加 钠mg|膳食纤维g|添加糖g，均 /100g），1175 条全部精确补齐、零兜底。
+  数据源《中国食物成分表（第 6 版）》+ 加工食品营养标签典型值；「添加糖」只计额外
+  加入的蔗糖/果葡糖浆。生成脚本 `tools/gen-micronutrients.py`（含完整映射表，可复用）。
+  `foods.ts` 的 parse()/scaleFood() 已支持读这 3 列，`fromFood` 链路贯通规则引擎。
+
 ## 环境备忘
 
 - 项目**已于 2026-10-14 纳入 Git 并完成全量推送**：远端

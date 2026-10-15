@@ -100,6 +100,29 @@
   （safe-delete 要求批量确认，count=1700）。
 - **第二次建议：本自动化指令已彻底过时**，应改为「阶段 1 剩余项跟进」。
 
+## 2026-10-15（第七次执行，自动化复验）
+
+- 阶段 0 持续保持完成态，本轮零源码改动，独立复验全部通过（git status 证实源码零变更，
+  仅截图证据刷新）。
+- 静态：5 抽象层 + cloudConfig 三层 endpoint 优先级在位；业务引用复核
+  （main/AuthScreen/useDiagnosticsEntry→platform、Scanner→scan+capture、
+  LogSheet→capture、ProfileScreen→share）；localStorage/window.Capacitor/
+  a.download/getUserMedia 仅存在于 lib 抽象层内部与 NativeDiagnostics（诊断面板，
+  合理例外），业务零直连。
+- typecheck 退出码 0；build 成功 → 主包 index-Bs4CMMpC.js 404,937 B、
+  分包 36,098 B（不变）、CSS 27,426 B（+242，安全区样式）、wasm 966,895 B（不变）、
+  NativeDiagnostics 分包 7,722 B。主包较阶段 0 基线 401,901 B 的 +3,036 B 全部来自
+  阶段 1 已合入代码（originProxy/微信登录/自检面板），非解耦引入。
+- 运行时回归（dev server 5199 + 无头 Edge）：登录页截图 30,546 B（前几轮 30,686 B，
+  差异为浏览器渲染微差）+ DOM 5/5 HIT（D-Bee/登录/手机号/验证码/微信）；
+  看板截图 63,385 B + DOM 10/10 HIT（近 7 天/kcal/今日餐次/记一餐/连续打卡/
+  早餐/午餐/加餐/饮水/运动）。两图已刷新 docs/verify/phase0-01/02（未提交）。
+- 项目现状：HEAD `7ab55df`（阶段 1 Android 全部完成 + iOS 配置补齐 + 小米真机修复），
+  工作区除本轮截图外干净。阶段 1 剩余 = Mac mini 侧 iOS 首次构建回归。
+- **第三次建议（最强）**：本自动化指令（执行阶段 0）严重过时——阶段 0 于 2026-10-13
+  完成并已复验 7 轮，项目已在阶段 2 准备期。**建议用户停用本自动化**，或改写为
+  「阶段 1 iOS 遗留项跟进」（Swift 编译验证 + Mac 首次构建四项验收）。
+
 ## 复用提示（下次执行时）
 
 - ~~项目不是 git 仓库~~ ✅ 已解除：项目已是 git 仓库（main，最新 `02db199` 微信登录接通）。
