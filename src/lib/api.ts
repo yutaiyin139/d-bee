@@ -1,5 +1,5 @@
 import { cloud } from '../cloud'
-import type { Entitlement, ExerciseLog, MealEntry, Profile, WaterLog, WeightLog } from '../types'
+import type { Entitlement, ExerciseLog, MealEntry, Profile, Recipe, WaterLog, WeightLog } from '../types'
 
 /**
  * 云数据库访问封装。
@@ -32,7 +32,7 @@ interface QueryBuilder extends PromiseLike<QueryResult> {
 }
 
 function db(
-  table: 'profiles' | 'meal_entries' | 'weight_logs' | 'water_logs' | 'exercise_logs' | 'entitlements' | 'ai_usage',
+  table: 'profiles' | 'meal_entries' | 'weight_logs' | 'water_logs' | 'exercise_logs' | 'entitlements' | 'ai_usage' | 'recipes',
 ): QueryBuilder {
   return cloud.database.from(table) as unknown as QueryBuilder
 }
@@ -106,6 +106,27 @@ export async function listMealsBetween(startDate: string, endDate: string): Prom
   return rows<MealEntry>(data)
 }
 
+/** 最近 N 天的记录，按时间倒序，用于「最近吃过」快捷复记 */
+export async function listRecentMeals(days = 30, limit = 200): Promise<MealEntry[]> {
+  const start = shiftDateISO(days)
+  const { data, error } = await db('meal_entries')
+    .select('*')
+    .gte('log_date', start)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error) throw new Error(error.message || '读取最近记录失败')
+  return rows<MealEntry>(data)
+}
+
+/** 返回 days 天前的 YYYY-MM-DD（本地时区） */
+function shiftDateISO(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - days)
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${mm}-${dd}`
+}
+
 export async function insertMeals(list: Omit<MealEntry, 'id'>[]): Promise<MealEntry[]> {
   if (list.length === 0) return []
   const { data, error } = await db('meal_entries').insert(list as unknown as Row[]).select()
@@ -114,6 +135,7 @@ export async function insertMeals(list: Omit<MealEntry, 'id'>[]): Promise<MealEn
 }
 
 export async function deleteMeal(id: number): Promise<void> {
+
   const { data, error } = await db('meal_entries').delete().eq('id', id).select()
   if (error) throw new Error(error.message || '删除失败')
   if (rows<MealEntry>(data).length === 0) throw new Error('删除失败：该记录不属于当前账号')
@@ -208,6 +230,44 @@ export async function deleteExercise(id: number, logDate: string): Promise<Exerc
   if (error) throw new Error(error.message || '删除失败')
   if (rows<ExerciseLog>(data).length === 0) throw new Error('删除失败：该记录不属于当前账号')
   return listExerciseByDate(logDate)
+}
+
+/* ── 自定义食谱 ── */
+
+export async function listRecipes(): Promise<Recipe[]> {
+  const { data, error } = await db('recipes').select('*').order('updated_at', { ascending: false })
+  if (error) throw new Error(error.message || '读取食谱失败')
+  return rows<Recipe>(data).map((r) => ({ ...r, items: normalizeRecipeItems(r.items) }))
+}
+
+export async function saveRecipe(name: string, items: Recipe['items']): Promise<Recipe> {
+  const { data, error } = await db('recipes')
+    .insert({ name, items: items as unknown as Row })
+    .select()
+  if (error) throw new Error(error.message || '保存食谱失败')
+  const created = rows<Recipe>(data)
+  if (created.length === 0) throw new Error('保存食谱失败：服务器没有返回记录')
+  return { ...created[0], items: normalizeRecipeItems(created[0].items) }
+}
+
+export async function deleteRecipe(id: number): Promise<void> {
+  const { data, error } = await db('recipes').delete().eq('id', id).select()
+  if (error) throw new Error(error.message || '删除食谱失败')
+  if (rows<Recipe>(data).length === 0) throw new Error('删除失败：该食谱不属于当前账号')
+}
+
+/** 食谱 items 在库里是 jsonb，读回时可能已是数组也可能还是字符串，这里归一化 */
+function normalizeRecipeItems(items: unknown): Recipe['items'] {
+  if (Array.isArray(items)) return items as Recipe['items']
+  if (typeof items === 'string') {
+    try {
+      const parsed = JSON.parse(items)
+      return Array.isArray(parsed) ? (parsed as Recipe['items']) : []
+    } catch {
+      return []
+    }
+  }
+  return []
 }
 
 /* ── 会员权益与 AI 用量 ── */

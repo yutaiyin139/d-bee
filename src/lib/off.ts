@@ -25,7 +25,7 @@ export interface PackagedFood {
   name: string
   brand: string
   /** 每 100g（或 100ml）营养 */
-  per100g: { kcal: number; protein: number; carb: number; fat: number }
+  per100g: { kcal: number; protein: number; carb: number; fat: number; sodium?: number; fiber?: number; sugar?: number }
   /** 一条常见份量（来自商品的 serving_size / serving_quantity） */
   servingG: number
   servingLabel: string
@@ -77,6 +77,10 @@ export async function lookupBarcode(barcode: string, signal?: AbortSignal): Prom
   const protein = num(n.proteins_100g)
   const carb = num(n.carbohydrates_100g)
   const fat = num(n.fat_100g)
+  // 钠在 OFF 里单位是 g/100g，换算成 mg；纤维与糖单位为 g
+  const sodiumG = num(n.sodium_100g)
+  const fiber = num(n.fiber_100g)
+  const sugar = num(n.sugars_100g)
 
   const name = String(product.product_name_zh || product.product_name || product.generic_name || '').trim()
   if (!name && !kcal) return { status: 'not_found' }
@@ -98,6 +102,9 @@ export async function lookupBarcode(barcode: string, signal?: AbortSignal): Prom
         protein: Math.round(protein * 10) / 10,
         carb: Math.round(carb * 10) / 10,
         fat: Math.round(fat * 10) / 10,
+        sodium: sodiumG > 0 ? Math.round(sodiumG * 1000) : undefined,
+        fiber: fiber > 0 ? Math.round(fiber * 10) / 10 : undefined,
+        sugar: sugar > 0 ? Math.round(sugar * 10) / 10 : undefined,
       },
       servingG,
       servingLabel: servingSize || (servingQty > 0 ? `${Math.round(servingQty)} 克` : '100 克'),

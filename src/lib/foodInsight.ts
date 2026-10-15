@@ -33,6 +33,12 @@ export interface FoodProfile {
   protein: number
   carb: number
   fat: number
+  /** 钠（毫克/100g），可选 */
+  sodium?: number
+  /** 膳食纤维（克/100g），可选 */
+  fiber?: number
+  /** 添加糖（克/100g），可选 */
+  addedSugar?: number
 }
 
 export interface FoodInsight {
@@ -188,6 +194,9 @@ export function analyzeProfile(p: FoodProfile, aiScore?: number | null): FoodIns
   const protein = Number(p.protein) || 0
   const carb = Number(p.carb) || 0
   const fat = Number(p.fat) || 0
+  const sodium = Number(p.sodium) || 0
+  const fiber = Number(p.fiber) || 0
+  const addedSugar = Number(p.addedSugar) || 0
   const cat = p.category || '其他'
 
   if (kcal <= 0 && protein <= 0 && carb <= 0 && fat <= 0) {
@@ -394,6 +403,74 @@ export function analyzeProfile(p: FoodProfile, aiScore?: number | null): FoodIns
     })
   }
 
+  /* ⑥b 微营养素数值驱动判断（有实测/估算值时才触发，缺失则回落到上方的关键词倾向） */
+  // 钠：WHO 建议成人每日 < 2000mg，单份 100g 超过 600mg 即偏高
+  if (sodium > 0) {
+    if (sodium >= 600) {
+      risks.push({
+        key: 'high_sodium',
+        label: '高钠',
+        tone: 'risk',
+        reason: `钠约 ${Math.round(sodium)} mg/100g，一份就可能占掉一天近半的钠额度`,
+        weight: 3,
+      })
+    } else if (sodium >= 300) {
+      risks.push({
+        key: 'moderate_sodium',
+        label: '钠偏高',
+        tone: 'risk',
+        reason: `钠约 ${Math.round(sodium)} mg/100g，留意全天累计`,
+        weight: 2,
+      })
+    } else if (sodium <= 60) {
+      benefits.push({
+        key: 'low_sodium',
+        label: '低钠',
+        tone: 'good',
+        reason: `钠约 ${Math.round(sodium)} mg/100g，对控制水肿和血压友好`,
+        weight: 1,
+      })
+    }
+  }
+
+  // 膳食纤维：每 100g ≥ 6g 算高纤
+  if (fiber >= 6) {
+    benefits.push({
+      key: 'high_fiber',
+      label: '高膳食纤维',
+      tone: 'good',
+      reason: `膳食纤维约 ${fiber} g/100g，饱腹感更持久`,
+      weight: 2,
+    })
+  } else if (fiber >= 3 && fiber > 0) {
+    benefits.push({
+      key: 'some_fiber',
+      label: '含膳食纤维',
+      tone: 'good',
+      reason: `膳食纤维约 ${fiber} g/100g`,
+      weight: 1,
+    })
+  }
+
+  // 添加糖：每 100g ≥ 10g 算高添加糖（饮料按每 100ml）
+  if (addedSugar >= 10) {
+    risks.push({
+      key: 'high_added_sugar',
+      label: '添加糖偏高',
+      tone: 'risk',
+      reason: `添加糖约 ${addedSugar} g/100g，隐形糖是减脂期最容易被忽略的`,
+      weight: 3,
+    })
+  } else if (addedSugar >= 5 && addedSugar > 0) {
+    risks.push({
+      key: 'moderate_added_sugar',
+      label: '含添加糖',
+      tone: 'risk',
+      reason: `添加糖约 ${addedSugar} g/100g`,
+      weight: 2,
+    })
+  }
+
   /* ⑦ 汇总打分 */
   const riskList = uniq(risks, 3)
   const benefitList = uniq(benefits, 3)
@@ -444,7 +521,10 @@ const NO_CATEGORY: CategoryResolver = () => '其他'
  * 此时跳过能量密度规则，只保留与重量无关的判定。
  */
 export function analyzeEntry(
-  entry: Pick<MealEntry, 'food_name' | 'grams' | 'calories' | 'protein_g' | 'carb_g' | 'fat_g' | 'health_score' | 'meal_type'>,
+  entry: Pick<
+    MealEntry,
+    'food_name' | 'grams' | 'calories' | 'protein_g' | 'carb_g' | 'fat_g' | 'health_score' | 'meal_type' | 'sodium_mg' | 'fiber_g' | 'added_sugar_g'
+  >,
   resolve: CategoryResolver = NO_CATEGORY,
 ): FoodInsight {
   const grams = Number(entry.grams) || 0
@@ -458,6 +538,9 @@ export function analyzeEntry(
     protein: (Number(entry.protein_g) || 0) * r,
     carb: (Number(entry.carb_g) || 0) * r,
     fat: (Number(entry.fat_g) || 0) * r,
+    sodium: entry.sodium_mg != null ? (Number(entry.sodium_mg) || 0) * r : undefined,
+    fiber: entry.fiber_g != null ? (Number(entry.fiber_g) || 0) * r : undefined,
+    addedSugar: entry.added_sugar_g != null ? (Number(entry.added_sugar_g) || 0) * r : undefined,
   }
 
   const insight = analyzeProfile(profile, entry.health_score ?? null)

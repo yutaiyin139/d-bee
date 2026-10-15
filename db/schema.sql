@@ -71,6 +71,9 @@ CREATE TABLE public.meal_entries (
   protein_g      numeric     DEFAULT 0,
   carb_g         numeric     DEFAULT 0,
   fat_g          numeric     DEFAULT 0,
+  sodium_mg      numeric,
+  fiber_g        numeric,
+  added_sugar_g  numeric,
   source         text        NOT NULL DEFAULT 'manual',
   image_url      text,
   ai_note        text,
@@ -144,6 +147,19 @@ CREATE TABLE public.ai_usage (
 );
 
 
+-- ── 8. recipes · 自定义食谱（一人多模板，一餐 = 若干食物条目）─────────────
+-- items 为 jsonb 数组，元素含 food_name/grams/calories/三大营养素/微营养素，
+-- 均为「实际摄入量」口径（非每 100g）。前端一键复记时直接还原成记录行。
+CREATE TABLE public.recipes (
+  id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  owner_id    text        NOT NULL DEFAULT auth.uid(),
+  name        text        NOT NULL,
+  items       jsonb       NOT NULL DEFAULT '[]'::jsonb,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+
+
 -- ════════════════════════════════════════════════════════════════════════════
 -- 行级安全（RLS）—— 数据隔离的唯一防线
 -- 全部策略形如 owner_id = auth.uid()：用户只能看到/改到自己的行
@@ -156,6 +172,7 @@ ALTER TABLE public.water_logs    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exercise_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.entitlements  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_usage      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.recipes       ENABLE ROW LEVEL SECURITY;
 
 -- profiles（4 条分命令风格）
 DROP POLICY IF EXISTS profiles_select_own ON public.profiles;
@@ -203,6 +220,16 @@ CREATE POLICY entitlements_own ON public.entitlements FOR ALL USING (owner_id = 
 DROP POLICY IF EXISTS ai_usage_own ON public.ai_usage;
 CREATE POLICY ai_usage_own ON public.ai_usage FOR ALL USING (owner_id = auth.uid()) WITH CHECK (owner_id = auth.uid());
 
+-- recipes（4 条分命令风格）
+DROP POLICY IF EXISTS recipes_select_own ON public.recipes;
+CREATE POLICY recipes_select_own ON public.recipes FOR SELECT USING (owner_id = auth.uid());
+DROP POLICY IF EXISTS recipes_insert_own ON public.recipes;
+CREATE POLICY recipes_insert_own ON public.recipes FOR INSERT WITH CHECK (owner_id = auth.uid());
+DROP POLICY IF EXISTS recipes_update_own ON public.recipes;
+CREATE POLICY recipes_update_own ON public.recipes FOR UPDATE USING (owner_id = auth.uid()) WITH CHECK (owner_id = auth.uid());
+DROP POLICY IF EXISTS recipes_delete_own ON public.recipes;
+CREATE POLICY recipes_delete_own ON public.recipes FOR DELETE USING (owner_id = auth.uid());
+
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- 权限（GRANT）—— 建表与 RLS 是两道独立的门，漏 GRANT 会得到 42501
@@ -229,7 +256,7 @@ CREATE POLICY ai_usage_own ON public.ai_usage FOR ALL USING (owner_id = auth.uid
 
 GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
   ON public.profiles, public.meal_entries, public.weight_logs, public.water_logs,
-     public.exercise_logs, public.entitlements, public.ai_usage
+     public.exercise_logs, public.entitlements, public.ai_usage, public.recipes
   TO authenticated;
 
 

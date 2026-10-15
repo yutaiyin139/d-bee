@@ -42,6 +42,12 @@ export interface MealEntry {
   protein_g: number
   carb_g: number
   fat_g: number
+  /** 钠（毫克） */
+  sodium_mg?: number | null
+  /** 膳食纤维（克） */
+  fiber_g?: number | null
+  /** 添加糖（克） */
+  added_sugar_g?: number | null
   source: RecordSource
   image_url?: string | null
   ai_note?: string | null
@@ -58,8 +64,13 @@ export interface DetectedFood {
   protein_g: number
   carb_g: number
   fat_g: number
+  sodium_mg?: number
+  fiber_g?: number
+  added_sugar_g?: number
   note?: string
   health_score?: number
+  /** 识别置信度 0–100（包装识别有，餐盘识别无） */
+  confidence?: number
 }
 
 export interface WeightLog {
@@ -92,5 +103,28 @@ export interface Entitlement {
   plan: UserPlan
   pro_until: string | null
   redeemed_code: string | null
+  updated_at?: string
+}
+
+/** 自定义食谱里的单条食物（营养按「实际摄入量」存，非每 100g） */
+export interface RecipeItem {
+  food_name: string
+  quantity_text: string
+  grams: number
+  calories: number
+  protein_g: number
+  carb_g: number
+  fat_g: number
+  sodium_mg?: number | null
+  fiber_g?: number | null
+  added_sugar_g?: number | null
+}
+
+/** 用户自定义食谱模板（一餐 = 若干食物条目） */
+export interface Recipe {
+  id?: number
+  name: string
+  items: RecipeItem[]
+  created_at?: string
   updated_at?: string
 }
