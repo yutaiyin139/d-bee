@@ -2,11 +2,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "DbeOriginProxy",
+    name: "DbeeOriginProxy",
     platforms: [.iOS(.v15)],
     products: [
         .library(
-            name: "DbeOriginProxy",
+            name: "DbeeOriginProxy",
             targets: ["OriginProxyPlugin"])
     ],
     dependencies: [
