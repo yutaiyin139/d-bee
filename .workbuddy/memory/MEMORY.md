@@ -73,6 +73,10 @@ http://150.158.51.106/，归档在 `backups/d-bee-v1.0.1-20261013.{tar.gz,zip}`�
 6. **2026-04-28 起 App Store 上传强制要求 Xcode 26+**。
 7. **Service Worker 在 `capacitor://` 协议下不注册**，且原生端要反注册历史 SW。
 8. **微信登录（2026-10-14 接通代码侧，详见 `docs/微信登录接入.md`）**：
+   - **⛔ 2026-10-15 起整体暂缓**：企业营业执照办理中，微信相关（小程序/公众号/
+     扫码登录）全部暂停。`src/lib/wechat.ts` 顶层开关 `WECHAT_LOGIN_ENABLED=false`
+     让 `isWechatLoginAvailable()` 所有端返回 false（隐藏微信入口），登录只走
+     短信+邮箱验证。微信登录完整代码保留，办下执照改回 true 即恢复。
    - Web 走云 Relay 扫码（不需要自己的 AppID）；**原生端卡在云端**——
      `cloud.auth.signInWithWechat()` 只收**小程序** wx.login 的 code（jscode2session），
      移动应用 code 走 sns/oauth2/access_token，不能混用
