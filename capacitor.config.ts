@@ -28,6 +28,12 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https',
   },
+  // iOS 端只纳入白名单插件。微信插件（@capgo/capacitor-wechat）当前因
+  // 营业执照未办、WECHAT_LOGIN_ENABLED=false 而整体关闭，且其 SPM 包名
+  // 带连字符与 Capacitor 8 的 CapApp-SPM 模板叠加会触发 SwiftPM 模块名
+  // 转换兼容 bug（报 Missing package product Wechat_CapgoCapacitorWechat）。
+  // 先排除它让 iOS 编译跑通；办照后启用微信时再单独处理其 SDK 集成。
+  includePlugins: ['@dbee/origin-proxy'],
   plugins: {
     CapacitorHttp: {
       enabled: true,
