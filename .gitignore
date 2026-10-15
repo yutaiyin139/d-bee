@@ -32,6 +32,9 @@ dist-release/
 # cap sync 守卫绕行时临时移出的原生目录（不 repairs 入库）
 .cap-tmp/
 
+# 文档流水线中间产物（最终 .docx 交付后保留在本地，不入库）
+output/
+
 # 原生插件的 Gradle 构建产物不入库
 native-plugins/*/android/build/
 native-plugins/*/android/.gradle/
