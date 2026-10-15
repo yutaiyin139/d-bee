@@ -96,13 +96,21 @@ export interface ExerciseLog {
   created_at?: string
 }
 
-export type UserPlan = 'free' | 'pro'
+/**
+ * 会员三档：
+ *  - free      免费（每日限次 AI）
+ *  - pro       订阅制（pro_until 为过期时间，到期自动回落到 free）
+ *  - lifetime  终身买断（pro_until 恒为 null，永久有效）
+ */
+export type UserPlan = 'free' | 'pro' | 'lifetime'
 
 export interface Entitlement {
   id?: number
   plan: UserPlan
   pro_until: string | null
   redeemed_code: string | null
+  /** 支付来源：redeem(兑换码) / wechat / alipay / apple / google；未接真实支付前为空或 redeem */
+  source?: string | null
   updated_at?: string
 }
 

@@ -32,7 +32,7 @@ interface ProfileScreenProps {
 }
 
 export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged, onSignOut }: ProfileScreenProps) {
-  const { pro, aiRemaining, openPaywall, entitlement } = usePlan()
+  const { pro, lifetime, aiRemaining, openPaywall, entitlement } = usePlan()
   const target = useMemo(() => targetFromProfile(profile), [profile])
   const [editing, setEditing] = useState(false)
   const [barriers] = useState<string[]>(() => (profile.barriers ? profile.barriers.split(',') : []))
@@ -211,19 +211,25 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
         <div className="member-left">
           <IconCrown color={pro ? '#6b4a08' : 'var(--ink-2)'} size={20} />
           <div>
-            <div className="member-title">{pro ? 'D-Bee Pro' : '免费版'}</div>
+            <div className="member-title">
+              {lifetime ? 'D-Bee 终身会员' : pro ? 'D-Bee Pro' : '免费版'}
+            </div>
             <div className="member-sub">
-              {pro
+              {lifetime
                 ? entitlement?.redeemed_code
-                  ? `已通过兑换码 ${entitlement.redeemed_code} 解锁`
-                  : '全部功能已解锁'
-                : `今日剩余 AI ${aiRemaining ?? 0}/${FREE_DAILY_AI} 次 · 报告看近 ${FREE_REPORT_DAYS} 天`}
+                  ? `已通过兑换码 ${entitlement.redeemed_code} 永久解锁`
+                  : '全部功能已永久解锁'
+                : pro
+                  ? entitlement?.pro_until
+                    ? `有效期至 ${new Date(entitlement.pro_until).toLocaleDateString('zh-CN')}`
+                    : '全部功能已解锁'
+                  : `今日剩余 AI ${aiRemaining ?? 0}/${FREE_DAILY_AI} 次 · 报告看近 ${FREE_REPORT_DAYS} 天`}
             </div>
           </div>
         </div>
         {!pro && (
           <button className="member-btn" onClick={() => openPaywall()}>
-            升级 Pro
+            升级
           </button>
         )}
       </div>

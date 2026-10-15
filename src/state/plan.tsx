@@ -8,9 +8,11 @@ import {
   INSIGHT_FEATURE,
   SCAN_FEATURE,
   codeIsValid,
+  isLifetime,
   isPro,
   mondayOf,
   normalizeCode,
+  proUntilFromMonths,
 } from '../lib/entitlement'
 import { todayKey } from '../lib/nutrition'
 import type { Entitlement } from '../types'
@@ -24,6 +26,7 @@ import type { Entitlement } from '../types'
 interface PlanContextValue {
   ready: boolean
   pro: boolean
+  lifetime: boolean
   entitlement: Entitlement | null
   /** 今日剩余 AI 次数；Pro 返回 null（无限） */
   aiRemaining: number | null
@@ -35,6 +38,11 @@ interface PlanContextValue {
   claimInsightQuota: () => Promise<boolean>
   refundInsightQuota: () => Promise<void>
   redeem: (code: string) => Promise<'ok' | 'bad'>
+  /**
+   * 购买/激活一个商品档位。真实支付未接入前由兑换码或后台直达触发；
+   * 接入支付后由支付回调调用，写入云端 entitlements。
+   */
+  activate: (plan: 'pro' | 'lifetime', months?: number) => Promise<void>
   paywall: { open: boolean; reason: string }
   openPaywall: (reason?: string) => void
   closePaywall: () => void
@@ -93,6 +101,7 @@ export function PlanProvider({ children }: { children: ReactNode }) {
   }, [refresh])
 
   const pro = useMemo(() => isPro(entitlement), [entitlement])
+  const lifetime = useMemo(() => isLifetime(entitlement), [entitlement])
   const aiRemaining = pro ? null : Math.max(0, FREE_DAILY_AI - usedToday)
 
   const claimAiQuota = useCallback(async (): Promise<{ allowed: boolean; remaining: number | null }> => {
@@ -123,12 +132,29 @@ export function PlanProvider({ children }: { children: ReactNode }) {
     async (code: string): Promise<'ok' | 'bad'> => {
       if (!codeIsValid(code)) return 'bad'
       const saved = await saveEntitlement({
-        plan: 'pro',
+        plan: 'lifetime',
         pro_until: null,
         redeemed_code: normalizeCode(code),
+        source: 'redeem',
       })
       setEntitlement(saved)
       return 'ok'
+    },
+    [],
+  )
+
+  /**
+   * 激活一个档位（pro 订阅 / lifetime 买断）。
+   * 真实支付接入后，由支付成功回调调用；当前由兑换码或后台直达触发。
+   */
+  const activate = useCallback(
+    async (plan: 'pro' | 'lifetime', months?: number) => {
+      const patch: Partial<Entitlement> =
+        plan === 'lifetime'
+          ? { plan: 'lifetime', pro_until: null, redeemed_code: null, source: 'apple' }
+          : { plan: 'pro', pro_until: proUntilFromMonths(months ?? 1), redeemed_code: null, source: 'apple' }
+      const saved = await saveEntitlement(patch as Parameters<typeof saveEntitlement>[0])
+      setEntitlement(saved)
     },
     [],
   )
@@ -139,6 +165,7 @@ export function PlanProvider({ children }: { children: ReactNode }) {
   const value: PlanContextValue = {
     ready,
     pro,
+    lifetime,
     entitlement,
     aiRemaining,
     claimAiQuota,
@@ -146,6 +173,7 @@ export function PlanProvider({ children }: { children: ReactNode }) {
     claimInsightQuota,
     refundInsightQuota,
     redeem,
+    activate,
     paywall,
     openPaywall,
     closePaywall,

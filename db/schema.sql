@@ -120,16 +120,21 @@ CREATE TABLE public.exercise_logs (
 
 
 -- ── 6. entitlements · 权益（一人一行）──────────────────────────────────────
--- plan：free / pro。pro_until 为过期时间；redeemed_code 记录兑换码来源。
--- 注意：当前**未接入真实支付**，仅兑换码解锁（备案合规要求，见 docs/备案材料清单.md）
+-- plan：free / pro / lifetime。
+--   pro      订阅制，pro_until 为过期时间，到期回落 free；
+--   lifetime 终身买断，pro_until 恒 null；
+--   redeemed_code 记录兑换码来源；source 记录支付来源（redeem/wechat/alipay/apple/google）。
+-- 注意：当前**未接入真实支付**，仅兑换码解锁 lifetime（备案合规要求，见 docs/备案材料清单.md）
 CREATE TABLE public.entitlements (
   id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   owner_id       text        NOT NULL DEFAULT auth.uid() UNIQUE,
   plan           text        NOT NULL DEFAULT 'free',
   pro_until      timestamptz,
   redeemed_code  text,
+  source         text,
   created_at     timestamptz NOT NULL DEFAULT now(),
-  updated_at     timestamptz NOT NULL DEFAULT now()
+  updated_at     timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT entitlements_plan_check CHECK (plan IN ('free', 'pro', 'lifetime'))
 );
 
 
