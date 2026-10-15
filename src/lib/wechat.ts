@@ -1,6 +1,12 @@
 /**
  * 微信登录抽象层。
  *
+ * ⚠️ 当前状态（2026-10-15）：企业营业执照办理中，微信相关能力（小程序 / 公众号 /
+ *    微信扫码登录）**整体暂缓**。登录目前只开放「短信验证 + 邮箱验证」。
+ *    微信登录的完整代码保留在此文件，通过顶层开关 WECHAT_LOGIN_ENABLED 整体关闭；
+ *    营业执照办下来、准备接微信登录时，把 WECHAT_LOGIN_ENABLED 改回 true 即可恢复，
+ *    其余代码（含原生 SDK 路径）无需改动。
+ *
  * Web 与原生是两条**完全不同**的路径，混在一起写就会出 bug，所以在这里一次说清：
  *
  *   Web  —— 走云 Relay 的「网页扫码登录」：
@@ -47,6 +53,12 @@ interface WechatPlugin {
   auth: (opts: { scope: string; state?: string }) => Promise<{ code: string; state?: string }>
 }
 
+/**
+ * 微信登录总开关。营业执照办理完成、准备接入微信登录时改回 true。
+ * 关闭时所有端（Web / 原生）一律不展示微信登录入口，登录仅走短信 + 邮箱验证。
+ */
+const WECHAT_LOGIN_ENABLED = false
+
 /** 云端是否已支持「移动应用 code 换会话」。云端补齐后改为 true 即启用原生微信登录。 */
 const NATIVE_CODE_EXCHANGE_SUPPORTED = false
 
@@ -72,11 +84,15 @@ function getPlugin(): WechatPlugin | null {
 
 /**
  * 微信登录入口是否应该展示给用户。
- * Web 端恒为 true（扫码登录现成可用）；原生端需要「凭据 + 插件 + 云端接口」三者齐备。
- * iOS 额外要求 Universal Link：微信 SDK 未拿到 Universal Link 时初始化会直接崩，
- * 所以宁可隐藏入口，也不能让用户点到一个会崩的按钮。
+ *
+ * 总开关 WECHAT_LOGIN_ENABLED 未打开时，所有端一律返回 false（营业执照办理中，
+ * 微信登录整体暂缓）。开关打开后：
+ *   Web 端恒为 true（扫码登录现成可用）；
+ *   原生端需要「凭据 + 插件 + 云端接口」三者齐备；
+ *   iOS 额外要求 Universal Link（微信 SDK 缺它初始化会崩，宁可隐藏也不能点崩）。
  */
 export function isWechatLoginAvailable(): boolean {
+  if (!WECHAT_LOGIN_ENABLED) return false
   if (!isNative()) return true
   if (!NATIVE_CODE_EXCHANGE_SUPPORTED) return false
   if (!wechatAppId()) return false
@@ -97,6 +113,9 @@ export type WechatNativeResult =
  * 返回 'unsupported' 表示环境不具备条件（未配 AppID / 插件缺失 / 云端未就绪）。
  */
 export async function signInWithWechatNative(): Promise<WechatNativeResult> {
+  if (!WECHAT_LOGIN_ENABLED) {
+    return { status: 'unsupported', message: '微信登录暂未开放，请使用手机号或邮箱登录' }
+  }
   if (!isNative()) {
     return { status: 'unsupported', message: '当前环境不是原生 App' }
   }

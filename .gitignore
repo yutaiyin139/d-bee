@@ -23,6 +23,9 @@ vite.config.ts.timestamp-*.mjs
 # 发布归档包（体积大，含凭据，不入库）
 backups/
 
+# 本地交付的 APK / 发布产物（不入库，跨机从 git 源码重建）
+dist-release/
+
 # WorkBuddy 本地运行产物（memory/ 保留，跨机保留工作上下文；tmp/ 是草稿，不入库）
 .workbuddy/tmp/
 
