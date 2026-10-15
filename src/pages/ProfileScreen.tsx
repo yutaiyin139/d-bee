@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Sheet } from '../components/Sheet'
 import { SiteFooter } from '../components/SiteFooter'
+import { LineChart } from '../components/Charts'
 import type { DocId } from '../content/legal'
 import { IconCrown, IconDownload, IconTrash } from '../components/Icons'
 import {
@@ -48,6 +49,27 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
   const [weightMsg, setWeightMsg] = useState('')
   const [weightErr, setWeightErr] = useState('')
   const [savingWeight, setSavingWeight] = useState(false)
+
+  // 体重趋势：把降序列表反转成升序给折线图，目标体重作参考线
+  const weightPoints = useMemo(
+    () =>
+      weights
+        .slice()
+        .reverse()
+        .map((w) => ({ label: w.log_date.slice(5), value: Number(w.weight_kg) || 0 })),
+    [weights],
+  )
+
+  // 减重里程碑：当前体重 vs 起始体重
+  const weightMilestone = useMemo(() => {
+    const start = Number(profile.start_weight_kg)
+    const cur = Number(profile.current_weight_kg)
+    if (!Number.isFinite(start) || !Number.isFinite(cur) || start <= 0 || cur <= 0) return null
+    const delta = start - cur
+    if (delta >= 0.5) return { text: `已减重 ${Math.round(delta * 10) / 10} kg`, good: true }
+    if (delta <= -0.5) return { text: `较起始 +${Math.round(-delta * 10) / 10} kg`, good: false }
+    return null
+  }, [profile.start_weight_kg, profile.current_weight_kg])
 
   // 身体数据编辑
   const [nickname, setNickname] = useState(profile.nickname ?? '')
@@ -253,6 +275,23 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
 
       <div className="section-title">体重打卡</div>
       <div className="card">
+        {weightMilestone && (
+          <div className={`milestone-banner ${weightMilestone.good ? 'is-good' : ''}`} style={{ marginBottom: 12 }}>
+            {weightMilestone.good ? '🎉' : '📈'} {weightMilestone.text}
+            {weightMilestone.good && ' · 继续保持'}
+          </div>
+        )}
+        {weightPoints.length >= 2 && (
+          <div style={{ marginBottom: 12 }}>
+            <LineChart
+              points={weightPoints}
+              target={profile.target_weight_kg != null ? Number(profile.target_weight_kg) : null}
+              unit="kg"
+              color="var(--green)"
+              fmt={(v) => String(Math.round(v * 10) / 10)}
+            />
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <input
             type="number"

@@ -21,7 +21,7 @@ import type { CoachContext } from '../lib/ai'
 import { categoryOf } from '../lib/foods'
 import { LEVEL_LABELS, levelOfScore, nextMealAdvice, summarizeEntries } from '../lib/foodInsight'
 import { EXERCISES, exerciseKcal, formatDateShort, guessMealType, shiftDate, targetFromProfile, todayKey, waterTargetMl } from '../lib/nutrition'
-import { computeStreak } from '../lib/streak'
+import { computeStreak, MILESTONES } from '../lib/streak'
 import { usePlan } from '../state/plan'
 import { MEAL_LABELS, MEAL_ORDER } from '../types'
 import type { ExerciseLog, MealEntry, MealType, Profile, WaterLog } from '../types'
@@ -96,9 +96,12 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
           acc.p += Number(e.protein_g) || 0
           acc.c += Number(e.carb_g) || 0
           acc.f += Number(e.fat_g) || 0
+          acc.na += Number(e.sodium_mg) || 0
+          acc.fb += Number(e.fiber_g) || 0
+          acc.as += Number(e.added_sugar_g) || 0
           return acc
         },
-        { kcal: 0, p: 0, c: 0, f: 0 },
+        { kcal: 0, p: 0, c: 0, f: 0, na: 0, fb: 0, as: 0 },
       ),
     [entries],
   )
@@ -320,6 +323,79 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
         </div>
       </div>
 
+      {/* 饮食体检：招牌功能上移到这里，一记完餐立刻可见（规则引擎本地算，不消耗 AI 额度） */}
+      {dayInsight.scanned > 0 && dayInsight.avgScore !== null && checkupLevel && (
+        <>
+          <div className="section-title">
+            饮食体检
+            <span className="hint">共 {dayInsight.scanned} 项 · 友好度 {dayInsight.avgScore}</span>
+          </div>
+          <div className="card checkup">
+            <div className="checkup-verdict">
+              <span className={`cu-score ${checkupTone}`}>{dayInsight.avgScore}</span>
+              <span className="cu-main">
+                <span className={`cu-level ${checkupTone}`}>{LEVEL_LABELS[checkupLevel]}</span>
+                <span className="cu-text">{dayInsight.verdict}</span>
+              </span>
+            </div>
+
+            {dayInsight.risks.length > 0 && (
+              <div className="checkup-group">
+                <div className="cg-title risk">建议留意</div>
+                {dayInsight.risks.map((t) => (
+                  <div className="cg-row" key={t.key}>
+                    <span className="cg-label">{t.label}</span>
+                    <span className="cg-badge">{t.count} 项</span>
+                    <span className="cg-reason">{t.reason}</span>
+                    <span className="cg-items">
+                      {t.items.join('、')}
+                      {t.count > t.items.length ? ` 等 ${t.count} 项` : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {dayInsight.benefits.length > 0 && (
+              <div className="checkup-group">
+                <div className="cg-title good">值得肯定</div>
+                {dayInsight.benefits.map((t) => (
+                  <div className="cg-row" key={t.key}>
+                    <span className="cg-label">{t.label}</span>
+                    <span className="cg-badge good">{t.count} 项</span>
+                    <span className="cg-reason">{t.reason}</span>
+                    <span className="cg-items">
+                      {t.items.join('、')}
+                      {t.count > t.items.length ? ` 等 ${t.count} 项` : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {(totals.na > 0 || totals.fb > 0) && (
+              <div className="microline" style={{ marginTop: 10 }}>
+                {totals.na > 0 && (
+                  <span className="micro-pill">今日钠 {Math.round(totals.na)} mg</span>
+                )}
+                {totals.fb > 0 && (
+                  <span className="micro-pill">膳食纤维 {Math.round(totals.fb * 10) / 10} g</span>
+                )}
+                {totals.as > 0 && (
+                  <span className="micro-pill">添加糖 {Math.round(totals.as * 10) / 10} g</span>
+                )}
+              </div>
+            )}
+
+            <div className="helper" style={{ marginTop: 4, lineHeight: 1.7 }}>
+              按营养成分与烹调方式本地推算
+              {dayInsight.aiAssisted > 0 ? `，其中 ${dayInsight.aiAssisted} 项参考了 AI 评分` : ''}，
+              不消耗 AI 次数。仅供参考，不构成医疗建议。
+            </div>
+          </div>
+        </>
+      )}
+
       {/* 卡路里追踪：下一餐的参考额度 */}
       <div className={`advice-strip ${advice.over ? 'is-over' : ''}`}>
         <span className="as-tag">卡路里追踪</span>
@@ -370,6 +446,9 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
             最长 {streak.longest} 天 · 累计 {streak.total} 天
             {streak.nextMilestone && <> · 再坚持 {streak.nextMilestone - streak.current} 天到 {streak.nextMilestone} 天里程碑</>}
           </div>
+          {streak.current > 0 && MILESTONES.includes(streak.current) && (
+            <div className="streak-hit">🎉 达成 {streak.current} 天里程碑！</div>
+          )}
         </div>
       </div>
 
@@ -508,64 +587,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
         })
       )}
 
-      {/* 饮食体检：风险发现 + 益处探索（规则引擎本地算，不消耗 AI 额度） */}
-      {dayInsight.scanned > 0 && dayInsight.avgScore !== null && checkupLevel && (
-        <>
-          <div className="section-title">
-            饮食体检
-            <span className="hint">共 {dayInsight.scanned} 项 · 友好度 {dayInsight.avgScore}</span>
-          </div>
-          <div className="card checkup">
-            <div className="checkup-verdict">
-              <span className={`cu-score ${checkupTone}`}>{dayInsight.avgScore}</span>
-              <span className="cu-main">
-                <span className={`cu-level ${checkupTone}`}>{LEVEL_LABELS[checkupLevel]}</span>
-                <span className="cu-text">{dayInsight.verdict}</span>
-              </span>
-            </div>
-
-            {dayInsight.risks.length > 0 && (
-              <div className="checkup-group">
-                <div className="cg-title risk">建议留意</div>
-                {dayInsight.risks.map((t) => (
-                  <div className="cg-row" key={t.key}>
-                    <span className="cg-label">{t.label}</span>
-                    <span className="cg-badge">{t.count} 项</span>
-                    <span className="cg-reason">{t.reason}</span>
-                    <span className="cg-items">
-                      {t.items.join('、')}
-                      {t.count > t.items.length ? ` 等 ${t.count} 项` : ''}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {dayInsight.benefits.length > 0 && (
-              <div className="checkup-group">
-                <div className="cg-title good">值得肯定</div>
-                {dayInsight.benefits.map((t) => (
-                  <div className="cg-row" key={t.key}>
-                    <span className="cg-label">{t.label}</span>
-                    <span className="cg-badge good">{t.count} 项</span>
-                    <span className="cg-reason">{t.reason}</span>
-                    <span className="cg-items">
-                      {t.items.join('、')}
-                      {t.count > t.items.length ? ` 等 ${t.count} 项` : ''}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="helper" style={{ marginTop: 4, lineHeight: 1.7 }}>
-              按营养成分与烹调方式本地推算
-              {dayInsight.aiAssisted > 0 ? `，其中 ${dayInsight.aiAssisted} 项参考了 AI 评分` : ''}，
-              不消耗 AI 次数。仅供参考，不构成医疗建议。
-            </div>
-          </div>
-        </>
-      )}
+      {/* 饮食体检：已上移到热量卡之后（见上方），这里不再重复 */}
 
       {planAdvice.length > 0 && (
         <>

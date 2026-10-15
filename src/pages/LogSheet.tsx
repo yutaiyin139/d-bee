@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { insertMeals } from '../lib/api'
+import { useEffect, useMemo, useState } from 'react'
+import { deleteRecipe, insertMeals, listRecentMeals, listRecipes, saveRecipe } from '../lib/api'
 import { compressImage, identifyPackagedFood, parseFoodFromText, recognizeFoodFromImage } from '../lib/ai'
 import { lookupBarcode } from '../lib/off'
 import {
@@ -8,19 +8,20 @@ import {
   FOOD_SORTS,
   foodInsight,
   listFoods,
+  lookupFood,
   satiety,
   searchFoods,
   type FoodItem,
   type FoodSort,
 } from '../lib/foods'
-import { analyzeProfile } from '../lib/foodInsight'
+import { analyzeProfile, LEVEL_LABELS, levelOfScore, summarizeEntries } from '../lib/foodInsight'
 import { quotaExhaustedReason } from '../lib/entitlement'
 import { pickFileFromInput, PHOTO_INPUT_PROPS } from '../lib/capture'
 import { FoodTagList } from '../components/FoodTags'
 import { Scanner } from '../components/Scanner'
 import { usePlan } from '../state/plan'
 import { MEAL_LABELS, MEAL_ORDER } from '../types'
-import type { DetectedFood, MealEntry, MealType, RecordSource } from '../types'
+import type { DetectedFood, MealEntry, MealType, Recipe, RecordSource } from '../types'
 
 interface DraftItem {
   key: string
@@ -33,9 +34,25 @@ interface DraftItem {
   pPerG: number
   cPerG: number
   fPerG: number
+  /** 钠 mg/100g */
+  naPerG: number
+  /** 膳食纤维 g/100g */
+  fbPerG: number
+  /** 添加糖 g/100g */
+  asPerG: number
   source: RecordSource
   note?: string
   health_score?: number
+  /** AI 识别给的置信度 0–100（包装识别有，餐盘识别无） */
+  confidence?: number
+}
+
+/** 最近吃过：从历史记录聚合出的「一键复记」项 */
+interface RecentFood {
+  name: string
+  grams: number
+  count: number
+  lastEaten: string
 }
 
 type Mode = 'photo' | 'text' | 'barcode' | 'manual'
@@ -55,6 +72,7 @@ const nextKey = () => `d${++keySeq}`
 
 function toDraft(d: DetectedFood, source: RecordSource): DraftItem {
   const g = Math.max(d.grams, 1)
+  const conf = (d as DetectedFood & { confidence?: number }).confidence
   return {
     key: nextKey(),
     food_name: d.food_name,
@@ -65,9 +83,13 @@ function toDraft(d: DetectedFood, source: RecordSource): DraftItem {
     pPerG: d.protein_g / g,
     cPerG: d.carb_g / g,
     fPerG: d.fat_g / g,
+    naPerG: (d.sodium_mg ?? 0) / g,
+    fbPerG: (d.fiber_g ?? 0) / g,
+    asPerG: (d.added_sugar_g ?? 0) / g,
     source,
     note: d.note,
     health_score: d.health_score,
+    confidence: typeof conf === 'number' && Number.isFinite(conf) ? Math.round(conf) : undefined,
   }
 }
 
@@ -83,15 +105,66 @@ function fromFood(f: FoodItem, grams?: number): DraftItem {
     pPerG: f.protein / 100,
     cPerG: f.carb / 100,
     fPerG: f.fat / 100,
+    naPerG: (f.sodium ?? 0) / 100,
+    fbPerG: (f.fiber ?? 0) / 100,
+    asPerG: (f.addedSugar ?? 0) / 100,
     source: 'manual',
   }
+}
+
+/** 从历史记录聚合「最近吃过」：按食物名去重，取最近一次份量，按频次排序 */
+function aggregateRecent(list: { food_name: string; grams: number | null; created_at?: string }[]): RecentFood[] {
+  const map = new Map<string, RecentFood>()
+  for (const m of list) {
+    const name = (m.food_name || '').trim()
+    if (!name) continue
+    const prev = map.get(name)
+    if (prev) {
+      prev.count += 1
+      if ((m.created_at ?? '') > prev.lastEaten) {
+        prev.lastEaten = m.created_at ?? ''
+        if (m.grams) prev.grams = m.grams
+      }
+    } else {
+      map.set(name, {
+        name,
+        grams: m.grams ?? 100,
+        count: 1,
+        lastEaten: m.created_at ?? '',
+      })
+    }
+  }
+  return Array.from(map.values())
+    .sort((a, b) => b.count - a.count || (b.lastEaten > a.lastEaten ? 1 : -1))
+    .slice(0, 12)
+}
+
+/** 份量快捷档：按当前克数给出「半份 / 整份 / 双份」三个常见档位 */
+function portionPresets(it: DraftItem): { label: string; grams: number }[] {
+  const base = it.origGrams || it.grams || 100
+  return [
+    { label: '半份', grams: Math.max(1, Math.round(base / 2)) },
+    { label: '整份', grams: base },
+    { label: '双份', grams: base * 2 },
+  ]
+}
+
+/** AI 估算的偏差提示：让用户知道这数字是「约数」，可一键修正 */
+function estimateHint(it: DraftItem): string {
+  // 有置信度的（包装识别）优先用置信度，没有的（餐盘识别）给统一口径
+  if (it.confidence !== undefined) {
+    if (it.confidence >= 80) return '营养表识别较可靠'
+    if (it.confidence >= 60) return '营养表可能不够清晰，请核对'
+    return '营养表识别置信度低，建议手动核对'
+  }
+  return 'AI 估算，份量请按实际核对'
 }
 
 /** 由 Open Food Facts 的「每 100g」数据构造待记录项 */
 function fromPackaged(
   name: string,
   grams: number,
-  per100g: { kcal: number; protein: number; carb: number; fat: number },
+  per100g: { kcal: number; protein: number; carb: number; fat: number; sodium?: number; fiber?: number; sugar?: number },
   quantityText: string,
   note: string,
 ): DraftItem {
@@ -106,6 +179,9 @@ function fromPackaged(
     pPerG: per100g.protein / 100,
     cPerG: per100g.carb / 100,
     fPerG: per100g.fat / 100,
+    naPerG: (per100g.sodium ?? 0) / 100,
+    fbPerG: (per100g.fiber ?? 0) / 100,
+    asPerG: (per100g.sugar ?? 0) / 100,
     source: 'barcode',
     note,
   }
@@ -116,7 +192,30 @@ const calc = (it: DraftItem) => ({
   p: Math.round(it.pPerG * it.grams * 10) / 10,
   c: Math.round(it.cPerG * it.grams * 10) / 10,
   f: Math.round(it.fPerG * it.grams * 10) / 10,
+  na: Math.round(it.naPerG * it.grams),
+  fb: Math.round(it.fbPerG * it.grams * 10) / 10,
+  as: Math.round(it.asPerG * it.grams * 10) / 10,
 })
+
+/** 从自定义食谱的一餐构造待记录项（营养已是实际摄入量，回算每克值） */
+function fromRecipeItem(it: Recipe['items'][number]): DraftItem {
+  const g = Math.max(Number(it.grams) || 1, 1)
+  return {
+    key: nextKey(),
+    food_name: it.food_name,
+    quantity_text: it.quantity_text || `${g} 克`,
+    grams: g,
+    origGrams: g,
+    kcalPerG: (Number(it.calories) || 0) / g,
+    pPerG: (Number(it.protein_g) || 0) / g,
+    cPerG: (Number(it.carb_g) || 0) / g,
+    fPerG: (Number(it.fat_g) || 0) / g,
+    naPerG: (Number(it.sodium_mg) || 0) / g,
+    fbPerG: (Number(it.fiber_g) || 0) / g,
+    asPerG: (Number(it.added_sugar_g) || 0) / g,
+    source: 'manual',
+  }
+}
 
 /** 待记录项的风险 / 益处画像（每克值换算回每 100g 后交给规则引擎） */
 const draftInsight = (it: DraftItem) =>
@@ -128,6 +227,9 @@ const draftInsight = (it: DraftItem) =>
       protein: it.pPerG * 100,
       carb: it.cPerG * 100,
       fat: it.fPerG * 100,
+      sodium: it.naPerG * 100,
+      fiber: it.fbPerG * 100,
+      addedSugar: it.asPerG * 100,
     },
     it.health_score ?? null,
   )
@@ -144,6 +246,73 @@ function portionText(it: DraftItem): string {
   if (it.grams !== it.origGrams) return `${it.grams} 克`
   if (/克|ml|毫升|g\b/.test(q)) return q
   return `${q}（${it.grams} 克）`
+}
+
+/**
+ * 保存前的「这一餐体检」即时反馈。
+ * 复用与首页「饮食体检」同一套规则引擎（summarizeEntries），纯本地、不消耗 AI。
+ * 自律茄子与 Cal AI 都只在「识别」层面给数字，不给即时健康判断——这里补上。
+ */
+function MealCheckup({ items }: { items: DraftItem[] }) {
+  const insight = useMemo(() => {
+    const pseudo = items.map((it) => ({
+      log_date: '',
+      quantity_text: it.quantity_text ?? null,
+      food_name: it.food_name,
+      grams: it.grams,
+      calories: calc(it).kcal,
+      protein_g: calc(it).p,
+      carb_g: calc(it).c,
+      fat_g: calc(it).f,
+      sodium_mg: calc(it).na,
+      fiber_g: calc(it).fb,
+      added_sugar_g: calc(it).as,
+      health_score: it.health_score,
+      meal_type: 'snack' as const,
+      source: it.source,
+    }))
+    return summarizeEntries(pseudo as MealEntry[], categoryOf)
+  }, [items])
+
+  if (insight.scanned === 0) return null
+  const level = insight.avgScore === null ? null : levelOfScore(insight.avgScore)
+  const tone = level === 'great' || level === 'good' ? 'is-good' : level === 'ok' ? 'is-ok' : 'is-warn'
+
+  return (
+    <div className="card checkup" style={{ marginBottom: 14, padding: '14px 16px' }}>
+      <div className="checkup-verdict">
+        {level && insight.avgScore !== null && (
+          <span className={`cu-score ${tone}`}>{insight.avgScore}</span>
+        )}
+        <span className="cu-main">
+          {level && <span className={`cu-level ${tone}`}>{LEVEL_LABELS[level]}</span>}
+          <span className="cu-text">{insight.verdict || '这一餐看起来挺均衡。'}</span>
+        </span>
+      </div>
+      {insight.risks.length > 0 && (
+        <div className="checkup-group" style={{ marginTop: 10 }}>
+          <div className="cg-title risk">建议留意</div>
+          {insight.risks.slice(0, 2).map((t) => (
+            <div className="cg-row" key={t.key}>
+              <span className="cg-label">{t.label}</span>
+              <span className="cg-items">{t.items.join('、')}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {insight.benefits.length > 0 && (
+        <div className="checkup-group" style={{ marginTop: 8 }}>
+          <div className="cg-title good">值得肯定</div>
+          {insight.benefits.slice(0, 2).map((t) => (
+            <div className="cg-row" key={t.key}>
+              <span className="cg-label">{t.label}</span>
+              <span className="cg-items">{t.items.join('、')}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budgetText }: LogSheetProps) {
@@ -166,6 +335,55 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   const [scanKey, setScanKey] = useState(0)
   const [scanMsg, setScanMsg] = useState<{ kind: 'ok' | 'info' | 'err'; text: string } | null>(null)
   const [missCode, setMissCode] = useState('')
+
+  // 最近吃过：进入「食物库」页时拉一次历史，聚合出「一键复记」项
+  const [recentFoods, setRecentFoods] = useState<RecentFood[]>([])
+  const [recentLoaded, setRecentLoaded] = useState(false)
+
+  // 我的食谱：进入「食物库」页时拉一次，展示自定义食谱模板
+  const [recipes, setRecipes] = useState<Recipe[]>([])
+  const [recipesLoaded, setRecipesLoaded] = useState(false)
+  const [saveRecipeOpen, setSaveRecipeOpen] = useState(false)
+  const [recipeName, setRecipeName] = useState('')
+  const [savingRecipe, setSavingRecipe] = useState(false)
+
+  useEffect(() => {
+    if (mode !== 'manual' || recentLoaded) return
+    let alive = true
+    void (async () => {
+      try {
+        const list = await listRecentMeals(30, 200)
+        if (!alive) return
+        setRecentFoods(aggregateRecent(list))
+      } catch {
+        // 拉不到历史不阻塞，静默降级为无「最近吃过」条
+      } finally {
+        if (alive) setRecentLoaded(true)
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [mode, recentLoaded])
+
+  useEffect(() => {
+    if (mode !== 'manual' || recipesLoaded) return
+    let alive = true
+    void (async () => {
+      try {
+        const list = await listRecipes()
+        if (!alive) return
+        setRecipes(list)
+      } catch {
+        // 拉不到食谱不阻塞，静默降级
+      } finally {
+        if (alive) setRecipesLoaded(true)
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [mode, recipesLoaded])
 
   const totals = useMemo(
     () =>
@@ -328,6 +546,9 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
           protein_g: v.p,
           carb_g: v.c,
           fat_g: v.f,
+          sodium_mg: v.na || null,
+          fiber_g: v.fb || null,
+          added_sugar_g: v.as || null,
           source: it.source,
           image_url: null,
           ai_note: it.note ?? null,
@@ -340,6 +561,50 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
       setError(e instanceof Error ? e.message : '保存失败，请重试')
     } finally {
       setSaving(false)
+    }
+  }
+
+  /** 把当前待记录项存成自定义食谱模板 */
+  async function handleSaveRecipe() {
+    const name = recipeName.trim()
+    if (!name) return
+    setSavingRecipe(true)
+    setError('')
+    try {
+      const recipeItems = items.map((it) => {
+        const v = calc(it)
+        return {
+          food_name: it.food_name,
+          quantity_text: portionText(it),
+          grams: it.grams,
+          calories: v.kcal,
+          protein_g: v.p,
+          carb_g: v.c,
+          fat_g: v.f,
+          sodium_mg: v.na || null,
+          fiber_g: v.fb || null,
+          added_sugar_g: v.as || null,
+        }
+      })
+      const saved = await saveRecipe(name, recipeItems)
+      setRecipes((prev) => [saved, ...prev])
+      setRecipeName('')
+      setSaveRecipeOpen(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '保存食谱失败，请重试')
+    } finally {
+      setSavingRecipe(false)
+    }
+  }
+
+  async function handleDeleteRecipe(id?: number) {
+    if (!id) return
+    setError('')
+    try {
+      await deleteRecipe(id)
+      setRecipes((prev) => prev.filter((r) => r.id !== id))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '删除食谱失败')
     }
   }
 
@@ -508,6 +773,75 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
 
           {mode === 'manual' && (
             <>
+              {recentFoods.length > 0 && !keyword.trim() && (
+                <div style={{ marginBottom: 14 }}>
+                  <div className="section-title" style={{ marginBottom: 8 }}>
+                    最近吃过
+                    <span className="hint">点一下就记上</span>
+                  </div>
+                  <div className="chips chips-scroll">
+                    {recentFoods.map((r) => (
+                      <button
+                        key={r.name}
+                        className="chip recent-chip"
+                        onClick={() => {
+                          const f = lookupFood(r.name)
+                          setItems((prev) => [
+                            ...prev,
+                            fromFood(
+                              f ?? {
+                                name: r.name,
+                                category: '其他',
+                                kcal: 0,
+                                protein: 0,
+                                carb: 0,
+                                fat: 0,
+                                portionG: r.grams,
+                                portionLabel: `${r.grams} 克`,
+                              },
+                              r.grams,
+                            ),
+                          ])
+                        }}
+                      >
+                        {r.name}
+                        {r.count > 1 && <span className="rc-count">{r.count}次</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {recipes.length > 0 && !keyword.trim() && (
+                <div style={{ marginBottom: 14 }}>
+                  <div className="section-title" style={{ marginBottom: 8 }}>
+                    我的食谱
+                    <span className="hint">一键记一餐</span>
+                  </div>
+                  <div className="recipe-list">
+                    {recipes.map((r) => {
+                      const totalKcal = r.items.reduce((s, it) => s + (Number(it.calories) || 0), 0)
+                      return (
+                        <div key={r.id ?? r.name} className="recipe-row">
+                          <button
+                            className="recipe-main"
+                            onClick={() => setItems((prev) => [...prev, ...r.items.map(fromRecipeItem)])}
+                          >
+                            <span className="recipe-name">{r.name}</span>
+                            <span className="recipe-sub">
+                              {r.items.length} 项 · 约 {Math.round(totalKcal)} kcal
+                            </span>
+                          </button>
+                          <button className="entry-del" onClick={() => void handleDeleteRecipe(r.id)} aria-label="删除食谱">
+                            ×
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="field">
                 <input
                   placeholder="搜索食物，如「米饭」「鸡胸肉」"
@@ -567,34 +901,70 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
             <>
               <div className="section-title">
                 本次将记录 {items.length} 项
-                <span className="hint">共 {totals.kcal} kcal</span>
+                <span className="hint">
+                  共 {totals.kcal} kcal
+                  {items.length >= 2 && (
+                    <button className="btn-text" style={{ marginLeft: 10, color: 'var(--honey-dark)' }} onClick={() => setSaveRecipeOpen(true)}>
+                      存为食谱
+                    </button>
+                  )}
+                </span>
               </div>
+              <MealCheckup items={items} />
               <div className="card card-tight">
                 {items.map((it) => {
                   const v = calc(it)
+                  const ins = draftInsight(it)
+                  const presets = portionPresets(it)
                   return (
-                    <div key={it.key} className="food-row">
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div className="nm">{it.food_name}</div>
-                        <div className="sub">
-                          {v.kcal} kcal · 蛋 {v.p}g · 碳 {v.c}g · 脂 {v.f}g
+                    <div key={it.key} className="food-row" style={{ flexDirection: 'column', alignItems: 'stretch', padding: '12px 0' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div className="nm">{it.food_name}</div>
+                          <div className="sub">
+                            {v.kcal} kcal · 蛋 {v.p}g · 碳 {v.c}g · 脂 {v.f}g
+                          </div>
+                          {(v.na > 0 || v.fb > 0 || v.as > 0) && (
+                            <div className="sub" style={{ color: 'var(--ink-3)' }}>
+                              {v.na > 0 && `钠 ${v.na}mg`}
+                              {v.fb > 0 && ` · 纤维 ${v.fb}g`}
+                              {v.as > 0 && ` · 添加糖 ${v.as}g`}
+                            </div>
+                          )}
+                          {it.note && (
+                            <div className="sub" style={{ color: 'var(--honey-dark)' }}>{it.note}</div>
+                          )}
+                          <FoodTagList tags={ins.tags.slice(0, 2)} />
                         </div>
-                        {it.note && (
-                          <div className="sub" style={{ color: 'var(--honey-dark)' }}>{it.note}</div>
-                        )}
-                        <FoodTagList tags={draftInsight(it).tags.slice(0, 2)} />
-                      </div>
-                      <div className="stepper">
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          value={Math.round(it.grams)}
-                          onChange={(e) => updateGrams(it.key, Math.max(1, Number(e.target.value) || 1))}
-                        />
-                        <span className="unit">g</span>
                         <button className="entry-del" onClick={() => removeItem(it.key)} aria-label="移除">
                           ×
                         </button>
+                      </div>
+
+                      <div className="sub" style={{ marginTop: 6, color: 'var(--ink-3)' }}>
+                        {estimateHint(it)}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8 }}>
+                        {presets.map((p) => (
+                          <button
+                            key={p.label}
+                            className={`chip ${Math.round(it.grams) === p.grams ? 'active' : ''}`}
+                            style={{ fontSize: 12, padding: '5px 11px' }}
+                            onClick={() => updateGrams(it.key, p.grams)}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                        <div className="stepper" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            value={Math.round(it.grams)}
+                            onChange={(e) => updateGrams(it.key, Math.max(1, Number(e.target.value) || 1))}
+                          />
+                          <span className="unit">g</span>
+                        </div>
                       </div>
                     </div>
                   )
@@ -618,6 +988,32 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
                 {saving ? <span className="spinner" /> : `保存到${MEAL_LABELS[meal]}`}
               </button>
             </>
+          )}
+
+          {/* 存为食谱：给这顿饭起个名字，下次一键记入 */}
+          {saveRecipeOpen && (
+            <div className="recipe-save" style={{ marginTop: 16 }}>
+              <div className="section-title" style={{ marginBottom: 8 }}>存为食谱</div>
+              <div className="field">
+                <input
+                  autoFocus
+                  placeholder="例如：我的减脂午餐"
+                  value={recipeName}
+                  onChange={(e) => setRecipeName(e.target.value)}
+                />
+              </div>
+              <div className="helper" style={{ marginBottom: 10, lineHeight: 1.6 }}>
+                会把当前 {items.length} 项食物一起存成模板，下次在「食物库 → 我的食谱」一键记入。
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button className="btn" style={{ flex: 1 }} disabled={savingRecipe || !recipeName.trim()} onClick={handleSaveRecipe}>
+                  {savingRecipe ? <span className="spinner" /> : '保存食谱'}
+                </button>
+                <button className="btn btn-ghost" onClick={() => { setSaveRecipeOpen(false); setRecipeName('') }}>
+                  取消
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>

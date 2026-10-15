@@ -1423,6 +1423,13 @@ select {
   margin-top: 2px;
 }
 
+.streak-hit {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--honey-dark);
+  margin-top: 5px;
+}
+
 .net-line {
   width: 100%;
   margin-top: 12px;
@@ -1962,6 +1969,85 @@ select {
   flex: 0 0 auto;
 }
 
+/* 最近吃过：一键复记的快捷 chip，带次数角标 */
+.recent-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+}
+
+.recent-chip .rc-count {
+  font-size: 11px;
+  color: var(--honey-dark);
+  background: var(--honey-soft);
+  border-radius: 8px;
+  padding: 1px 6px;
+}
+
+/* ── 我的食谱 ── */
+.recipe-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recipe-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 10px 14px;
+}
+
+.recipe-main {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.recipe-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.recipe-sub {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.recipe-save {
+  border-top: 1px solid var(--line-2);
+  padding-top: 14px;
+}
+
+/* ── 里程碑提示条 ── */
+.milestone-banner {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+  background: var(--green-soft);
+  border-radius: 12px;
+  padding: 10px 14px;
+  line-height: 1.5;
+}
+
+.milestone-banner:not(.is-good) {
+  color: #8f382d;
+  background: var(--red-soft);
+}
+
 /* ── 卡路里追踪：建议额度条 ── */
 .advice-strip {
   display: flex;
@@ -2215,6 +2301,23 @@ select {
   font-size: 11.5px;
   color: var(--ink-3);
   line-height: 1.55;
+}
+
+/* 微营养素汇总胶囊（钠 / 膳食纤维 / 添加糖） */
+.microline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.micro-pill {
+  font-size: 11.5px;
+  color: var(--ink-2);
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: 99px;
+  padding: 3px 10px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── 记录页：下一餐额度提示 ── */
