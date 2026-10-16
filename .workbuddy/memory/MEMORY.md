@@ -62,6 +62,27 @@ http://150.158.51.106/，归档在 `backups/d-bee-v1.0.1-20261013.{tar.gz,zip}`�
 
 ## 关键约束与坑
 
+0. **⚠️ 云 SDK RPC 函数安全铁律（2026-10-16 审计发现，最高优先级）**：
+   - 凡涉及「**发放**权益/积分/额度」的函数，**必须 SECURITY DEFINER + 入参白名单校验**。
+     默认 SECURITY INVOKER 会让登录用户在 devtools 直接调 RPC 伪造数据。
+   - 已发生实例：`grant_honey`（发积分）、`grant_photo_bonus`（发拍照额度）曾是无校验 INVOKER，
+     任何人可 RPC 伪造任意积分换终身会员 / 绕过免费额度。已修复（migration 0013）。
+   - **审计方法**：必须用 `pg_get_functiondef` 导出**真实 DDL**，不能信 schema.sql 注释
+     （注释曾写「bind_invite 已接节流」，实际没接）。
+   - 涉及发积分的 reason/金额、发额度的 source/金额，都要有白名单 + 固定值校验。
+   - **⚠️ 更根本的铁律（2026-10-16 二次复查，migration 0015）**：云数据库建表默认
+     `GRANT authenticated 全权限` + RLS `owner_id=auth.uid() FOR ALL`。这个策略只能保证
+     「用户操作自己的行」，**不能阻止用户写自己的行**。所以光加固函数白名单没用——
+     用户可绕过函数**直接 INSERT/UPDATE 表**（直插积分、直改 lifetime、直清额度）。
+     **凡涉及权益/积分/额度的表，必须 `REVOKE authenticated 的 INSERT/UPDATE/DELETE`，
+     只经 SECURITY DEFINER 函数写；前端只保留 SELECT 读。函数白名单 + 表级 REVOKE 缺一不可。**
+   - 已封堵的表（0015）：honey_ledger/entitlements/ai_usage/badges 仅 SELECT、
+     quota_bonus 完全 REVOKE、invite_links 仅 SELECT+INSERT。
+   - 已废弃/删除：release_ai_quota（REVOKE authenticated，0014）、前端 saveEntitlement/activate
+     （预留支付回调直写 entitlements，真实支付接入后由服务端回调写权益，不经前端 authenticated）。
+   - 拍照额度用「预占 token」机制（0014）：consume 落 token 记录扣基础/奖励，release 凭 token
+     一次性精确退还，堵住「清零用量白嫖无限拍照」。
+
 1. **endpoint 必须与页面来源同源（Web）或绝对 HTTPS（原生）。**
    - Web：取 `window.location.origin`，靠本站 Nginx 反代到云端（见 `deploy/nginx.conf.example`）
    - 原生：WebView origin 是 `capacitor://localhost`(iOS) / `https://localhost`(Android)，
