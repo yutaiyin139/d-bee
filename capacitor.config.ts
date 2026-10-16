@@ -33,7 +33,19 @@ const config: CapacitorConfig = {
   // 带连字符与 Capacitor 8 的 CapApp-SPM 模板叠加会触发 SwiftPM 模块名
   // 转换兼容 bug（报 Missing package product Wechat_CapgoCapacitorWechat）。
   // 先排除它让 iOS 编译跑通；办照后启用微信时再单独处理其 SDK 集成。
-  includePlugins: ['@dbee/origin-proxy', '@capacitor/share'],
+  // 插件白名单按平台区分：
+  // - Android 需要微信插件（wxapi 回调 Activity 依赖 @capgo/capacitor-wechat 的类），
+  //   且微信 SDK 已接入（WECHAT_LOGIN_ENABLED=false 只是前端隐藏入口，原生链路保留）。
+  // - iOS 必须排除微信插件：其 SPM 包名带连字符，与 Capacitor 8 的 CapApp-SPM 模板
+  //   叠加会触发 SwiftPM 模块名转换兼容 bug（报 Missing package product
+  //   Wechat_CapgoCapacitorWechat），导致 iOS 编译失败。
+  //   （办照后启用微信时再单独处理其 SDK 集成。）
+  android: {
+    includePlugins: ['@dbee/origin-proxy', '@capacitor/share', '@capgo/capacitor-wechat'],
+  },
+  ios: {
+    includePlugins: ['@dbee/origin-proxy', '@capacitor/share'],
+  },
   plugins: {
     CapacitorHttp: {
       enabled: true,
