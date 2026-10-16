@@ -16,6 +16,7 @@ import {
   listMealsBetween,
   listMealsByDate,
   listWaterByDate,
+  settleInviteCheckin,
   undoLastWater,
   unlockBadge,
   updateMealGrams,
@@ -220,6 +221,13 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
     const badgeKey = STREAK_BADGES[streak.current]
     if (badgeKey) void unlockBadge(badgeKey)
   }, [streak.current, streak.activeToday, today])
+
+  // 受邀人 7 日打卡达标 → 结算双向奖励（新人 +200+7天Pro，邀请人 +250）。
+  // 幂等：settle_invite_checkin 内部用 reason+ref_id UNIQUE 防重复，达标不足时静默返回 false。
+  useEffect(() => {
+    if (!isToday || loading || !profile.invited_by) return
+    if (entries.length > 0) void settleInviteCheckin()
+  }, [isToday, loading, profile.invited_by, entries.length])
 
   const byMeal = useMemo(() => {
     const map: Record<MealType, MealEntry[]> = { breakfast: [], lunch: [], dinner: [], snack: [] }

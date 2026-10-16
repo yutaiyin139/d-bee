@@ -5,6 +5,7 @@ import {
   getHoneyBalance,
   getMyInviteCode,
   listHoneyLedger,
+  listInvitees,
   listMyBadges,
   redeemHoney,
 } from '../lib/api'
@@ -40,6 +41,8 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
   const [balance, setBalance] = useState<HoneyBalance | null>(null)
   const [ledger, setLedger] = useState<HoneyLedger[]>([])
   const [badges, setBadges] = useState<Badge[]>([])
+  const [invitees, setInvitees] = useState(0)
+  const [settled, setSettled] = useState(0)
   const [loading, setLoading] = useState(true)
   const [redeeming, setRedeeming] = useState<string | null>(null)
   const [redeemMsg, setRedeemMsg] = useState('')
@@ -47,16 +50,19 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
   useEffect(() => {
     void (async () => {
       try {
-        const [c, b, l, g] = await Promise.all([
+        const [c, b, l, g, inv] = await Promise.all([
           getMyInviteCode(),
           getHoneyBalance(),
           listHoneyLedger(50),
           listMyBadges(),
+          listInvitees(),
         ])
         setCode(c)
         setBalance(b)
         setLedger(l)
         setBadges(g)
+        setInvitees(inv.invitees)
+        setSettled(inv.settled)
       } catch {
         /* 静默：积分中心读取失败不阻塞 */
       } finally {
@@ -116,7 +122,7 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
               </button>
             </div>
             <div className="helper" style={{ marginTop: 8 }}>
-              好友用此码注册，双方都能获得积分
+              好友用此码注册，双方都能获得积分 · 已邀请 {invitees} 人{settled > 0 ? `（${settled} 人已达标）` : ''}
             </div>
           </div>
 

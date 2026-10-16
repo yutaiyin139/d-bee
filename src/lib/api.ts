@@ -647,57 +647,52 @@ export async function getMyInviteCode(): Promise<string> {
   throw new Error('生成邀请码失败，请重试')
 }
 
-/** 新用户注册后绑定邀请码（绑定后不可改，partial unique 防重复） */
+/** 新用户注册后绑定邀请码（原子：绑定关系 + 双向发积分，见 bind_invite RPC） */
 export async function bindInvite(code: string): Promise<'ok' | 'invalid' | 'self' | 'already'> {
   const normalized = code.trim().toUpperCase()
   if (!normalized) return 'invalid'
 
-  // 1) 已绑定过则直接返回（幂等，避免重复绑定）
-  const me = await getProfile()
-  if (me?.invited_by) return 'already'
-
-  // 2) 按码查邀请人（SECURITY DEFINER 函数，绕过 RLS）
   try {
-    const { data, error } = await callRpc('get_inviter_by_code', { p_code: normalized })
+    const { data, error } = await callRpc('bind_invite', { p_code: normalized })
     if (error) return 'invalid'
-    const inviterId = (Array.isArray(data) ? data[0] : data) as string | null
-    if (!inviterId || typeof inviterId !== 'string') return 'invalid'
-    if (inviterId === (await getCurrentUid())) return 'self'
-
-    // 3) 写入绑定（partial unique 兜底并发重复绑定）。invited_by/invite_code
-    //    不在 PROFILE_WRITABLE 白名单里，直接 update profiles 表。
-    if (me?.id == null) {
-      // 尚无档案行：先建一个最小档案再绑定
-      const { data: insData, error: insErr } = await db('profiles')
-        .insert({ invited_by: inviterId, invite_code: normalized })
-        .select()
-      if (insErr) return 'invalid'
-      const created = rows<Profile>(insData)
-      return created.length > 0 ? 'ok' : 'invalid'
+    const status = (Array.isArray(data) ? data[0] : data) as string | null
+    if (status === 'ok' || status === 'already' || status === 'self' || status === 'invalid') {
+      return status
     }
-    const { data: upData, error: upErr } = await db('profiles')
-      .update({ invited_by: inviterId, invite_code: normalized, updated_at: new Date().toISOString() })
-      .eq('id', me.id)
-      .select()
-    if (upErr) return 'invalid'
-    return rows<Profile>(upData).length > 0 ? 'ok' : 'invalid'
+    return 'invalid'
   } catch {
     return 'invalid'
   }
 }
 
-async function getCurrentUid(): Promise<string> {
-  const { data } = await cloud.auth.getSession()
-  const s = data as { user?: { id?: string } } | null
-  return s?.user?.id ?? ''
+/** 邀请记录：我的邀请码 + 已绑定好友数 + 达标好友数（SECURITY DEFINER 统计） */
+export async function listInvitees(): Promise<{ code: string; invitees: number; settled: number }> {
+  const code = await getMyInviteCode()
+  try {
+    const { data, error } = await callRpc('count_invitees', {})
+    if (error) return { code, invitees: 0, settled: 0 }
+    const stats = (Array.isArray(data) ? data[0] : data) as
+      | { invitees?: number; settled?: number }
+      | null
+    return {
+      code,
+      invitees: Number(stats?.invitees ?? 0) || 0,
+      settled: Number(stats?.settled ?? 0) || 0,
+    }
+  } catch {
+    return { code, invitees: 0, settled: 0 }
+  }
 }
 
-/** 邀请记录：我邀请的好友状态（通过 profiles.invited_by 关联，需 SECURITY DEFINER 查询） */
-export async function listInvitees(): Promise<{ code: string; invitees: number }> {
-  // 好友状态需跨用户查询，V1 简化：只返回我的邀请码 + 已绑定人数（由安全函数统计）
-  // 详细状态面板在阶段 6 UI 实现时再补 SECURITY DEFINER 查询函数
-  const code = await getMyInviteCode()
-  return { code, invitees: 0 }
+/** 受邀人 7 日打卡达标后结算双向奖励（走 settle_invite_checkin RPC，幂等） */
+export async function settleInviteCheckin(): Promise<boolean> {
+  try {
+    const { data, error } = await callRpc('settle_invite_checkin', {})
+    if (error) return false
+    return (Array.isArray(data) ? data[0] : data) === true
+  } catch {
+    return false
+  }
 }
 
 /** 读取我的积分余额（未过期入账 − 未过期消耗） */

@@ -81,6 +81,7 @@ assert('7日内5天 → 达标', inviteCheckinDone(invited, ['2026-10-01','2026-
 assert('7日内4天 → 未达标', inviteCheckinDone(invited, ['2026-10-01','2026-10-02','2026-10-03','2026-10-04']) === false)
 assert('第8天(超窗口)不计 → 未达标', inviteCheckinDone(invited, ['2026-10-01','2026-10-02','2026-10-03','2026-10-04','2026-10-08']) === false)
 assert('无受邀日期 → 未达标', inviteCheckinDone('', ['2026-10-01','2026-10-02','2026-10-03','2026-10-04','2026-10-05']) === false)
+assert('恰好第7天(绑定日+6)计入 → 达标', inviteCheckinDone(invited, ['2026-10-02','2026-10-03','2026-10-04','2026-10-05','2026-10-07']) === true)
 
 console.log('== 兑换价格 ==')
 assert('Pro 1 天 = 100', honeyCost('pro1Day') === 100)
