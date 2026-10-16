@@ -18,6 +18,14 @@ import { analyzeProfile, LEVEL_LABELS, levelOfScore, summarizeEntries } from '..
 import { quotaExhaustedReason } from '../lib/entitlement'
 import { dismissUpsell, markUpsellShown, shouldShowUpsell } from '../lib/upsell'
 import { pickFileFromInput, PHOTO_INPUT_PROPS } from '../lib/capture'
+import {
+  FOOD_KEYWORD_RULE,
+  GRAMS_LIMIT,
+  MEAL_HINT_RULE,
+  MEAL_TEXT_RULE,
+  RECIPE_NAME_RULE,
+  sanitizeNumeric,
+} from '../lib/validate'
 import { FoodTagList } from '../components/FoodTags'
 import { Scanner } from '../components/Scanner'
 import { usePlan } from '../state/plan'
@@ -726,6 +734,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
                 <input
                   id="hint"
                   placeholder="例如：半份、少油、加了两个蛋"
+                  maxLength={MEAL_HINT_RULE.max}
                   value={hint}
                   onChange={(e) => setHint(e.target.value)}
                 />
@@ -785,6 +794,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
                 <textarea
                   id="meal-text"
                   placeholder="例如：一碗牛肉面，加了两个鸡蛋，还有一杯无糖豆浆"
+                  maxLength={MEAL_TEXT_RULE.max}
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                 />
@@ -869,6 +879,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
               <div className="field">
                 <input
                   placeholder="搜索食物，如「米饭」「鸡胸肉」"
+                  maxLength={FOOD_KEYWORD_RULE.max}
                   value={keyword}
                   onChange={(e) => setKeyword(e.target.value)}
                 />
@@ -984,8 +995,15 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
                           <input
                             type="number"
                             inputMode="numeric"
+                            min={GRAMS_LIMIT.min}
+                            max={GRAMS_LIMIT.max}
                             value={Math.round(it.grams)}
-                            onChange={(e) => updateGrams(it.key, Math.max(1, Number(e.target.value) || 1))}
+                            onChange={(e) => {
+                              const s = sanitizeNumeric(e.target.value, { int: true })
+                              if (s === '') return
+                              const n = Math.min(GRAMS_LIMIT.max, Math.max(GRAMS_LIMIT.min, Number(s)))
+                              updateGrams(it.key, Number.isFinite(n) ? n : GRAMS_LIMIT.min)
+                            }}
                           />
                           <span className="unit">g</span>
                         </div>
@@ -1022,6 +1040,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
                 <input
                   autoFocus
                   placeholder="例如：我的减脂午餐"
+                  maxLength={RECIPE_NAME_RULE.max}
                   value={recipeName}
                   onChange={(e) => setRecipeName(e.target.value)}
                 />

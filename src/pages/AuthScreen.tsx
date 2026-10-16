@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { cloud } from '../cloud'
 import { SiteFooter } from '../components/SiteFooter'
 import { bindInvite } from '../lib/api'
+import { PASSWORD_RULE, INVITE_CODE_RULE, checkText, isEmail, isOtpCode, isPhoneCN } from '../lib/validate'
 import { isNative } from '../lib/platform'
 import { isWechatLoginAvailable, signInWithWechatNative } from '../lib/wechat'
 import { useNativeDiagnosticsEntry } from '../native/useDiagnosticsEntry'
@@ -65,8 +66,8 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
   }
 
   async function sendPhoneCode() {
-    if (!/^1\d{10}$/.test(phone)) {
-      setPhoneErr('请输入正确的 11 位手机号')
+    if (!isPhoneCN(phone)) {
+      setPhoneErr(phone.trim() === '' ? '请输入手机号' : '请输入正确的 11 位手机号（大陆号码）')
       return
     }
     setPhoneErr('')
@@ -98,6 +99,10 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
       setError('请先获取当前手机号的验证码')
       return
     }
+    if (!isOtpCode(phoneCode)) {
+      setError('请输入收到的验证码')
+      return
+    }
     setError('')
     setBusy(true)
     try {
@@ -122,8 +127,8 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
   }
 
   async function sendEmailCode() {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError('请输入正确的邮箱地址')
+    if (!isEmail(email)) {
+      setError(email.trim() === '' ? '请输入邮箱地址' : '请输入正确的邮箱地址')
       return
     }
     setError('')
@@ -155,9 +160,16 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
       setError('请先获取当前邮箱的验证码')
       return
     }
-    if (!pending.isExistingUser && password.length < 6) {
-      setError('首次注册需要设置至少 6 位密码')
+    if (!isOtpCode(emailCode)) {
+      setError('请输入收到的验证码')
       return
+    }
+    if (!pending.isExistingUser) {
+      const pw = checkText(password, PASSWORD_RULE)
+      if (!pw.ok) {
+        setError(pw.error || '首次注册需要设置至少 6 位密码')
+        return
+      }
     }
     setError('')
     setBusy(true)
@@ -275,7 +287,7 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
               type="text"
               placeholder="好友邀请你时可填写，注册后不可改"
               value={inviteCode}
-              maxLength={8}
+              maxLength={INVITE_CODE_RULE.max}
               onChange={(e) => setInviteCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
             />
             <div className="helper">填写好友的邀请码，双方都能获得积分奖励</div>
@@ -382,6 +394,7 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
                   id="password"
                   type="password"
                   placeholder="至少 6 位，用于以后登录"
+                  maxLength={PASSWORD_RULE.max}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />

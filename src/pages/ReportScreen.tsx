@@ -17,6 +17,7 @@ import {
   type ReportData,
 } from '../lib/report'
 import { usePlan } from '../state/plan'
+import { WEIGHT_LIMIT, checkNumber, clampNumeric, rangeText, sanitizeNumeric } from '../lib/validate'
 import type { MealEntry, Profile, WeightLog } from '../types'
 
 interface ReportScreenProps {
@@ -171,11 +172,12 @@ export function ReportScreen({ profile }: ReportScreenProps) {
   }
 
   async function handleSaveWeight() {
-    const v = Number(weightDraft)
-    if (!Number.isFinite(v) || v < 20 || v > 300) {
-      setError('请输入 20–300 之间的体重（公斤）')
+    const chk = checkNumber(weightDraft, WEIGHT_LIMIT)
+    if (!chk.ok || chk.value == null) {
+      setError(chk.error || `请输入 ${rangeText(WEIGHT_LIMIT)} 之间的体重`)
       return
     }
+    const v = chk.value
     setSavingWeight(true)
     setError('')
     try {
@@ -347,9 +349,12 @@ export function ReportScreen({ profile }: ReportScreenProps) {
                   type="number"
                   inputMode="decimal"
                   step="0.1"
+                  min={WEIGHT_LIMIT.min}
+                  max={WEIGHT_LIMIT.max}
                   placeholder={todayWeight ? String(todayWeight) : '今日体重'}
                   value={weightDraft}
-                  onChange={(e) => setWeightDraft(e.target.value)}
+                  onChange={(e) => setWeightDraft(sanitizeNumeric(e.target.value, { decimals: WEIGHT_LIMIT.decimals }))}
+                  onBlur={(e) => setWeightDraft(clampNumeric(e.target.value, WEIGHT_LIMIT))}
                 />
                 <span className="unit">kg</span>
               </div>

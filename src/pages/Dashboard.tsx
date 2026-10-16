@@ -35,6 +35,7 @@ import { EXERCISES, exerciseKcal, formatDateShort, guessMealType, shiftDate, tar
 import { createShareCanvas, drawCheckinCard, canvasToBlob } from '../lib/sharecard'
 import { shareImage } from '../lib/share'
 import { computeStreak, MILESTONES } from '../lib/streak'
+import { GRAMS_LIMIT, MINUTES_LIMIT, checkNumber, clampNumeric, sanitizeNumeric } from '../lib/validate'
 import { usePlan } from '../state/plan'
 import { MEAL_LABELS, MEAL_ORDER } from '../types'
 import type { ExerciseLog, MealEntry, MealType, Profile, WaterLog } from '../types'
@@ -313,11 +314,12 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
 
   async function saveEdit() {
     if (editingId == null) return
-    const g = Number(editGrams)
-    if (!Number.isFinite(g) || g <= 0) {
-      setError('请输入大于 0 的份量')
+    const chk = checkNumber(editGrams, GRAMS_LIMIT)
+    if (!chk.ok || chk.value == null) {
+      setError(chk.error || `请输入 ${GRAMS_LIMIT.min}–${GRAMS_LIMIT.max} ${GRAMS_LIMIT.unit} 之间的份量`)
       return
     }
+    const g = chk.value
     setSavingEdit(true)
     setError('')
     try {
@@ -354,13 +356,21 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
 
   // 运动快捷录入
   const [exName, setExName] = useState(EXERCISES[0].name)
-  const [exMinutes, setExMinutes] = useState(30)
-  const exPreview = useMemo(() => exerciseKcal(exName, exMinutes, profile.current_weight_kg), [exName, exMinutes, profile.current_weight_kg])
+  const [exMinutes, setExMinutes] = useState('30')
+  /** 输入过程中的分钟数（空串/非法时按最小值预览，避免 NaN） */
+  const exMinutesNum = useMemo(() => {
+    const chk = checkNumber(exMinutes, MINUTES_LIMIT)
+    return chk.ok && chk.value != null ? chk.value : MINUTES_LIMIT.min
+  }, [exMinutes])
+  const exPreview = useMemo(
+    () => exerciseKcal(exName, exMinutesNum, profile.current_weight_kg),
+    [exName, exMinutesNum, profile.current_weight_kg],
+  )
 
   async function handleAddExercise() {
     setError('')
     try {
-      setExercise(await addExercise({ log_date: logDate, name: exName, minutes: exMinutes, calories: exPreview }))
+      setExercise(await addExercise({ log_date: logDate, name: exName, minutes: exMinutesNum, calories: exPreview }))
     } catch (e) {
       setError(e instanceof Error ? e.message : '记录运动失败')
     }
@@ -748,10 +758,11 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
             <input
               type="number"
               inputMode="numeric"
-              min={5}
-              max={300}
+              min={MINUTES_LIMIT.min}
+              max={MINUTES_LIMIT.max}
               value={exMinutes}
-              onChange={(e) => setExMinutes(Math.max(5, Math.min(300, Number(e.target.value) || 5)))}
+              onChange={(e) => setExMinutes(sanitizeNumeric(e.target.value, { int: true }))}
+              onBlur={(e) => setExMinutes(clampNumeric(e.target.value, MINUTES_LIMIT))}
             />
             <span className="unit">分钟</span>
             <span className="ex-est">≈ {exPreview} kcal</span>
@@ -808,8 +819,11 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
                           <input
                             type="number"
                             inputMode="numeric"
+                            min={GRAMS_LIMIT.min}
+                            max={GRAMS_LIMIT.max}
                             value={editGrams}
-                            onChange={(ev) => setEditGrams(ev.target.value)}
+                            onChange={(ev) => setEditGrams(sanitizeNumeric(ev.target.value, { int: true }))}
+                            onBlur={(ev) => setEditGrams(clampNumeric(ev.target.value, GRAMS_LIMIT))}
                             style={{ width: 76, height: 32, borderRadius: 10, border: '1px solid var(--line-2)', background: 'var(--surface)', padding: '0 8px', outline: 'none' }}
                             aria-label="份量克数"
                           />

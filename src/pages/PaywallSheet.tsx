@@ -7,6 +7,7 @@ import {
   PRO_REPORT_DAYS,
   PRODUCTS,
 } from '../lib/entitlement'
+import { REDEEM_CODE_RULE } from '../lib/validate'
 import { usePlan } from '../state/plan'
 
 /**
@@ -134,6 +135,7 @@ export function PaywallSheet() {
               <input
                 id="redeem"
                 placeholder="输入兑换码"
+                maxLength={REDEEM_CODE_RULE.max}
                 value={code}
                 onChange={(e) => {
                   setCode(e.target.value)

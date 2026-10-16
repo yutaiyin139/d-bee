@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { askCoach, type CoachContext } from '../lib/ai'
+import { COACH_QUESTION_RULE } from '../lib/validate'
 
 interface CoachSheetProps {
   ctx: CoachContext
@@ -98,6 +99,7 @@ export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
         <div className="coach-input">
           <input
             placeholder="输入你的问题…"
+            maxLength={COACH_QUESTION_RULE.max}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {

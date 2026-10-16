@@ -2,6 +2,17 @@ import { useMemo, useState } from 'react'
 import { generatePlan } from '../lib/ai'
 import { saveProfile } from '../lib/api'
 import { ACTIVITY_LABELS, GOAL_LABELS, calcTarget } from '../lib/nutrition'
+import {
+  AGE_LIMIT,
+  HEIGHT_LIMIT,
+  WEIGHT_LIMIT,
+  type NumLimit,
+  checkNumber,
+  checkTargetWeightDiff,
+  clampNumeric,
+  rangeText,
+  sanitizeNumeric,
+} from '../lib/validate'
 import { usePlan } from '../state/plan'
 import type { Profile } from '../types'
 
@@ -44,9 +55,51 @@ export function Onboarding({ nickname, onDone }: OnboardingProps) {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
 
+  /** 身体数据字段的行内校验提示（key: age / height / weight / tw） */
+  const [fieldErr, setFieldErr] = useState<Record<string, string>>({})
+
   const num = (v: string, fallback: number) => {
     const n = Number(v)
     return Number.isFinite(n) && n > 0 ? n : fallback
+  }
+
+  /** 身体数据四项的校验结果（含目标体重与当前体重的差值合理性） */
+  const bodyCheck = useMemo(() => {
+    const a = checkNumber(age, AGE_LIMIT)
+    const h = checkNumber(height, HEIGHT_LIMIT)
+    const w = checkNumber(weight, WEIGHT_LIMIT)
+    const tw = goal === 'keep' ? { ok: true, value: null, error: '' } : checkNumber(targetWeight, WEIGHT_LIMIT)
+    const diff = goal === 'keep' ? { ok: true, error: '' } : checkTargetWeightDiff(tw.value, w.value)
+    return { a, h, w, tw, diff }
+  }, [age, height, weight, targetWeight, goal])
+
+  const bodyOk = bodyCheck.a.ok && bodyCheck.h.ok && bodyCheck.w.ok && bodyCheck.tw.ok && bodyCheck.diff.ok
+
+  /**
+   * 输入过程：过滤非法字符（number 输入框在移动端仍可输入 e/E/+/-）。
+   */
+  function typeNum(raw: string, limit: NumLimit, set: (v: string) => void, field: string) {
+    set(sanitizeNumeric(raw, { int: limit.int, decimals: limit.decimals }))
+    if (fieldErr[field]) setFieldErr((p) => ({ ...p, [field]: '' }))
+  }
+
+  /**
+   * 失焦：把越界值夹回边界。若确实发生了纠正，给出一次性说明（避免「数字自己变了」的困惑）。
+   */
+  function blurNum(raw: string, limit: NumLimit, set: (v: string) => void, field: string) {
+    const before = raw.trim()
+    const fixed = clampNumeric(raw, limit)
+    set(fixed)
+    const chk = checkNumber(fixed, limit)
+    if (before === '') {
+      setFieldErr((p) => ({ ...p, [field]: '' }))
+      return
+    }
+    if (fixed !== before && chk.ok) {
+      setFieldErr((p) => ({ ...p, [field]: `${limit.label}已调整为 ${fixed} ${limit.unit}（可填 ${rangeText(limit)}）` }))
+      return
+    }
+    setFieldErr((p) => ({ ...p, [field]: chk.error }))
   }
 
   const target = useMemo(() => {
@@ -74,7 +127,7 @@ export function Onboarding({ nickname, onDone }: OnboardingProps) {
   const idx = STEPS.indexOf(step)
   const canNext =
     step === 'goal' ||
-    step === 'body' ||
+    (step === 'body' && bodyOk) ||
     step === 'activity' ||
     (step === 'barriers' && barriers.length > 0) ||
     step === 'result'
@@ -117,6 +170,11 @@ export function Onboarding({ nickname, onDone }: OnboardingProps) {
   }
 
   async function finish() {
+    // 防御性门禁：正常流程下「继续」已拦截，此处兜底防止异常路径写入脏数据
+    if (!bodyOk) {
+      setSaveError('身体数据不合法，请返回上一步检查后再继续')
+      return
+    }
     setSaving(true)
     setSaveError('')
     try {
@@ -197,20 +255,70 @@ export function Onboarding({ nickname, onDone }: OnboardingProps) {
               </div>
               <div className="field">
                 <label htmlFor="age">年龄</label>
-                <input id="age" type="number" inputMode="numeric" value={age} onChange={(e) => setAge(e.target.value)} />
+                <input
+                  id="age"
+                  type="number"
+                  inputMode="numeric"
+                  min={AGE_LIMIT.min}
+                  max={AGE_LIMIT.max}
+                  placeholder="如 28"
+                  value={age}
+                  onChange={(e) => typeNum(e.target.value, AGE_LIMIT, setAge, 'age')}
+                  onBlur={(e) => blurNum(e.target.value, AGE_LIMIT, setAge, 'age')}
+                />
+                {fieldErr.age && <div className="err">{fieldErr.age}</div>}
               </div>
               <div className="field">
                 <label htmlFor="height">身高（cm）</label>
-                <input id="height" type="number" inputMode="decimal" value={height} onChange={(e) => setHeight(e.target.value)} />
+                <input
+                  id="height"
+                  type="number"
+                  inputMode="decimal"
+                  min={HEIGHT_LIMIT.min}
+                  max={HEIGHT_LIMIT.max}
+                  placeholder="如 165"
+                  value={height}
+                  onChange={(e) => typeNum(e.target.value, HEIGHT_LIMIT, setHeight, 'height')}
+                  onBlur={(e) => blurNum(e.target.value, HEIGHT_LIMIT, setHeight, 'height')}
+                />
+                {fieldErr.height && <div className="err">{fieldErr.height}</div>}
               </div>
               <div className="field">
                 <label htmlFor="weight">当前体重（kg）</label>
-                <input id="weight" type="number" inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value)} />
+                <input
+                  id="weight"
+                  type="number"
+                  inputMode="decimal"
+                  min={WEIGHT_LIMIT.min}
+                  max={WEIGHT_LIMIT.max}
+                  placeholder="如 62"
+                  value={weight}
+                  onChange={(e) => typeNum(e.target.value, WEIGHT_LIMIT, setWeight, 'weight')}
+                  onBlur={(e) => blurNum(e.target.value, WEIGHT_LIMIT, setWeight, 'weight')}
+                />
+                {fieldErr.weight && <div className="err">{fieldErr.weight}</div>}
               </div>
               {goal !== 'keep' && (
                 <div className="field">
                   <label htmlFor="tw">目标体重（kg）</label>
-                  <input id="tw" type="number" inputMode="decimal" value={targetWeight} onChange={(e) => setTargetWeight(e.target.value)} />
+                  <input
+                    id="tw"
+                    type="number"
+                    inputMode="decimal"
+                    min={WEIGHT_LIMIT.min}
+                    max={WEIGHT_LIMIT.max}
+                    placeholder="如 55"
+                    value={targetWeight}
+                    onChange={(e) => typeNum(e.target.value, WEIGHT_LIMIT, setTargetWeight, 'tw')}
+                    onBlur={(e) => blurNum(e.target.value, WEIGHT_LIMIT, setTargetWeight, 'tw')}
+                  />
+                  {fieldErr.tw && <div className="err">{fieldErr.tw}</div>}
+                  {!fieldErr.tw && !bodyCheck.diff.ok && <div className="err">{bodyCheck.diff.error}</div>}
+                </div>
+              )}
+              {!bodyOk && (
+                <div className="helper" style={{ lineHeight: 1.7 }}>
+                  请先填写合法的身体数据：身高 {rangeText(HEIGHT_LIMIT)}、体重 {rangeText(WEIGHT_LIMIT)}、年龄 {rangeText(AGE_LIMIT)}。
                 </div>
               )}
             </>

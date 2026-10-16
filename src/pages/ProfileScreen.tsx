@@ -24,6 +24,20 @@ import {
 import { usePlan } from '../state/plan'
 import { exportJSON, exportText } from '../lib/share'
 import { connectHealth, getHealthVendor, isHealthConnectable } from '../lib/health'
+import {
+  AGE_LIMIT,
+  HEIGHT_LIMIT,
+  NICKNAME_RULE,
+  WEIGHT_LIMIT,
+  type NumLimit,
+  checkNumber,
+  checkTargetWeightDiff,
+  checkText,
+  clampNumeric,
+  firstError,
+  rangeText,
+  sanitizeNumeric,
+} from '../lib/validate'
 import type { Profile, WeightLog } from '../types'
 import { InviteCenter } from './InviteCenter'
 
@@ -103,6 +117,8 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
   const [goal, setGoal] = useState<'lose' | 'keep' | 'gain'>(profile.goal ?? 'lose')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+  /** 身体数据字段的行内校验提示 */
+  const [fieldErr, setFieldErr] = useState<Record<string, string>>({})
 
   useEffect(() => {
     void (async () => {
@@ -119,7 +135,54 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
     return Number.isFinite(n) && n > 0 ? n : fb
   }
 
+  /** 输入过程：过滤非法字符 */
+  function typeNum(raw: string, limit: NumLimit, set: (v: string) => void, field: string) {
+    set(sanitizeNumeric(raw, { int: limit.int, decimals: limit.decimals }))
+    if (fieldErr[field]) setFieldErr((p) => ({ ...p, [field]: '' }))
+  }
+
+  /** 失焦：夹回边界，并在发生纠正时说明原因 */
+  function blurNum(raw: string, limit: NumLimit, set: (v: string) => void, field: string) {
+    const before = raw.trim()
+    const fixed = clampNumeric(raw, limit)
+    set(fixed)
+    const chk = checkNumber(fixed, limit)
+    if (before === '') {
+      setFieldErr((p) => ({ ...p, [field]: '' }))
+      return
+    }
+    if (fixed !== before && chk.ok) {
+      setFieldErr((p) => ({ ...p, [field]: `${limit.label}已调整为 ${fixed} ${limit.unit}（可填 ${rangeText(limit)}）` }))
+      return
+    }
+    setFieldErr((p) => ({ ...p, [field]: chk.error }))
+  }
+
+  /** 校验身体数据表单，写回行内提示并返回第一条错误 */
+  function validateBody(): string {
+    const a = checkNumber(age, AGE_LIMIT)
+    const h = checkNumber(height, HEIGHT_LIMIT)
+    const w = checkNumber(weight, WEIGHT_LIMIT)
+    const tw = goal === 'keep' ? { ok: true, value: w.value, error: '' } : checkNumber(targetWeight, WEIGHT_LIMIT)
+    const diff = goal === 'keep' ? { ok: true, error: '' } : checkTargetWeightDiff(tw.value, w.value)
+    // 昵称允许留空（云端存 null），只在填了内容时校验长度
+    const nick = nickname.trim() === '' ? { ok: true, error: '' } : checkText(nickname, NICKNAME_RULE)
+    setFieldErr({
+      age: a.error,
+      height: h.error,
+      weight: w.error,
+      tw: tw.error || diff.error,
+      nick: nick.error,
+    })
+    return firstError(a.error, h.error, w.error, tw.error, diff.error, nick.error)
+  }
+
   async function submitBody() {
+    const vErr = validateBody()
+    if (vErr) {
+      setErr(vErr)
+      return
+    }
     setSaving(true)
     setErr('')
     try {
@@ -160,11 +223,12 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
   }
 
   async function submitWeight() {
-    const w = Number(weightInput)
-    if (!Number.isFinite(w) || w < 20 || w > 300) {
-      setWeightErr('请输入 20–300 之间的体重')
+    const chk = checkNumber(weightInput, WEIGHT_LIMIT)
+    if (!chk.ok || chk.value == null) {
+      setWeightErr(chk.error || `请输入 ${rangeText(WEIGHT_LIMIT)} 之间的体重`)
       return
     }
+    const w = chk.value
     setWeightErr('')
     setWeightMsg('')
     setSavingWeight(true)
@@ -382,11 +446,14 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
           <input
             type="number"
             inputMode="decimal"
+            min={WEIGHT_LIMIT.min}
+            max={WEIGHT_LIMIT.max}
             value={weightInput}
             onChange={(e) => {
-              setWeightInput(e.target.value)
+              setWeightInput(sanitizeNumeric(e.target.value, { decimals: WEIGHT_LIMIT.decimals }))
               setWeightErr('')
             }}
+            onBlur={(e) => setWeightInput(clampNumeric(e.target.value, WEIGHT_LIMIT))}
             style={{
               flex: 1,
               minWidth: 0,
@@ -567,7 +634,17 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
           {err && <div className="notice err">{err}</div>}
           <div className="field">
             <label htmlFor="nick">昵称</label>
-            <input id="nick" value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="怎么称呼你" />
+            <input
+              id="nick"
+              value={nickname}
+              maxLength={NICKNAME_RULE.max}
+              onChange={(e) => {
+                setNickname(e.target.value)
+                if (fieldErr.nick) setFieldErr((p) => ({ ...p, nick: '' }))
+              }}
+              placeholder="怎么称呼你"
+            />
+            {fieldErr.nick && <div className="err">{fieldErr.nick}</div>}
           </div>
           <div className="field">
             <label>目标</label>
@@ -588,20 +665,60 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
           </div>
           <div className="field">
             <label htmlFor="e-age">年龄</label>
-            <input id="e-age" type="number" inputMode="numeric" value={age} onChange={(e) => setAge(e.target.value)} />
+            <input
+              id="e-age"
+              type="number"
+              inputMode="numeric"
+              min={AGE_LIMIT.min}
+              max={AGE_LIMIT.max}
+              value={age}
+              onChange={(e) => typeNum(e.target.value, AGE_LIMIT, setAge, 'age')}
+              onBlur={(e) => blurNum(e.target.value, AGE_LIMIT, setAge, 'age')}
+            />
+            {fieldErr.age && <div className="err">{fieldErr.age}</div>}
           </div>
           <div className="field">
             <label htmlFor="e-height">身高（cm）</label>
-            <input id="e-height" type="number" inputMode="decimal" value={height} onChange={(e) => setHeight(e.target.value)} />
+            <input
+              id="e-height"
+              type="number"
+              inputMode="decimal"
+              min={HEIGHT_LIMIT.min}
+              max={HEIGHT_LIMIT.max}
+              value={height}
+              onChange={(e) => typeNum(e.target.value, HEIGHT_LIMIT, setHeight, 'height')}
+              onBlur={(e) => blurNum(e.target.value, HEIGHT_LIMIT, setHeight, 'height')}
+            />
+            {fieldErr.height && <div className="err">{fieldErr.height}</div>}
           </div>
           <div className="field">
             <label htmlFor="e-weight">当前体重（kg）</label>
-            <input id="e-weight" type="number" inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value)} />
+            <input
+              id="e-weight"
+              type="number"
+              inputMode="decimal"
+              min={WEIGHT_LIMIT.min}
+              max={WEIGHT_LIMIT.max}
+              value={weight}
+              onChange={(e) => typeNum(e.target.value, WEIGHT_LIMIT, setWeight, 'weight')}
+              onBlur={(e) => blurNum(e.target.value, WEIGHT_LIMIT, setWeight, 'weight')}
+            />
+            {fieldErr.weight && <div className="err">{fieldErr.weight}</div>}
           </div>
           {goal !== 'keep' && (
             <div className="field">
               <label htmlFor="e-tw">目标体重（kg）</label>
-              <input id="e-tw" type="number" inputMode="decimal" value={targetWeight} onChange={(e) => setTargetWeight(e.target.value)} />
+              <input
+                id="e-tw"
+                type="number"
+                inputMode="decimal"
+                min={WEIGHT_LIMIT.min}
+                max={WEIGHT_LIMIT.max}
+                value={targetWeight}
+                onChange={(e) => typeNum(e.target.value, WEIGHT_LIMIT, setTargetWeight, 'tw')}
+                onBlur={(e) => blurNum(e.target.value, WEIGHT_LIMIT, setTargetWeight, 'tw')}
+              />
+              {fieldErr.tw && <div className="err">{fieldErr.tw}</div>}
             </div>
           )}
           <div className="field">
