@@ -33,7 +33,7 @@ const config: CapacitorConfig = {
   // 带连字符与 Capacitor 8 的 CapApp-SPM 模板叠加会触发 SwiftPM 模块名
   // 转换兼容 bug（报 Missing package product Wechat_CapgoCapacitorWechat）。
   // 先排除它让 iOS 编译跑通；办照后启用微信时再单独处理其 SDK 集成。
-  includePlugins: ['@dbee/origin-proxy'],
+  includePlugins: ['@dbee/origin-proxy', '@capacitor/share'],
   plugins: {
     CapacitorHttp: {
       enabled: true,

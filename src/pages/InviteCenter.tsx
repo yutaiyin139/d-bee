@@ -13,6 +13,8 @@ import {
 import { HONEY_PRICE } from '../lib/invite'
 import { copyText } from '../lib/clipboard'
 import { checkStatBadges } from '../lib/badgeCheck'
+import { createShareCanvas, drawBadgeCard, drawInviteCard, canvasToBlob } from '../lib/sharecard'
+import { shareImage } from '../lib/share'
 import type { Badge, HoneyBalance, HoneyLedger } from '../types'
 
 /**
@@ -49,6 +51,8 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
   const [redeeming, setRedeeming] = useState<string | null>(null)
   const [redeemMsg, setRedeemMsg] = useState('')
   const [shareMsg, setShareMsg] = useState('')
+  const [sharingCard, setSharingCard] = useState<string | null>(null)
+  const [shareCardMsg, setShareCardMsg] = useState('')
   // 分块加载：核心（邀请码/余额/邀请人数）与次要（成就/流水）独立加载，
   // 避免打开面板时整块骨架屏一次性跳变产生顿挫
   const [coreLoading, setCoreLoading] = useState(true)
@@ -150,6 +154,58 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
     setShareMsg(ok ? '邀请口令已复制，去粘贴给好友吧' : '复制失败，请长按邀请码手动复制')
   }, [code])
 
+  /** 分享徽章卡（解锁的徽章） */
+  const shareBadge = useCallback(
+    async (key: string) => {
+      const b = BADGES.find((x) => x.key === key)
+      if (!b) return
+      setSharingCard(key)
+      setShareCardMsg('')
+      try {
+        const canvas = createShareCanvas()
+        drawBadgeCard(canvas, { name: b.name, desc: b.desc, emoji: '🏆' })
+        const blob = await canvasToBlob(canvas)
+        const res = await shareImage(blob, {
+          filename: `d-bee-badge-${key}.png`,
+          title: '自律蜜蜂 · 成就徽章',
+          text: `我在「自律蜜蜂」解锁了「${b.name}」！`,
+        })
+        setShareCardMsg(res.message)
+      } catch (e) {
+        setShareCardMsg(e instanceof Error ? e.message : '生成徽章卡失败')
+      } finally {
+        setSharingCard(null)
+      }
+    },
+    [],
+  )
+
+  /** 分享邀请卡（精美邀请卡，替代纯文字口令） */
+  const shareInviteCard = useCallback(async () => {
+    if (!code) {
+      setShareCardMsg('邀请码加载中，请稍候')
+      return
+    }
+    setSharingCard('invite')
+    setShareCardMsg('')
+    try {
+      const link = `${location.origin}?invite=${encodeURIComponent(code)}`
+      const canvas = createShareCanvas()
+      drawInviteCard(canvas, { code, link })
+      const blob = await canvasToBlob(canvas)
+      const res = await shareImage(blob, {
+        filename: `d-bee-invite-${code}.png`,
+        title: '自律蜜蜂 · 邀请好友',
+        text: `用我的邀请码 ${code} 注册自律蜜蜂，双方都能得积分！`,
+      })
+      setShareCardMsg(res.message)
+    } catch (e) {
+      setShareCardMsg(e instanceof Error ? e.message : '生成邀请卡失败')
+    } finally {
+      setSharingCard(null)
+    }
+  }, [code])
+
   return (
     <Sheet title="蜜糖积分" onClose={onClose}>
       {coreLoading ? (
@@ -163,12 +219,18 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
               <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: 3, fontVariantNumeric: 'tabular-nums' }}>
                 {code || '———'}
               </div>
-              <button className="btn btn-ghost" style={{ marginLeft: 'auto' }} onClick={() => void shareInvite()}>
+              <button className="btn btn-ghost" style={{ marginLeft: 'auto' }} onClick={() => void shareInviteCard()}>
+                {sharingCard === 'invite' ? '生成中…' : '分享卡片'}
+              </button>
+              <button className="btn btn-ghost" onClick={() => void shareInvite()}>
                 分享
               </button>
             </div>
             {shareMsg && (
               <div className="notice" style={{ marginTop: 8, fontSize: 13 }}>{shareMsg}</div>
+            )}
+            {shareCardMsg && (
+              <div className="notice" style={{ marginTop: 8, fontSize: 13 }}>{shareCardMsg}</div>
             )}
             <div className="helper" style={{ marginTop: 8 }}>
               好友用此码注册，双方都能获得积分 · 已邀请 {invitees} 人{settled > 0 ? `（${settled} 人已达标）` : ''}
@@ -230,7 +292,10 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
           </div>
 
           {/* 成就墙 */}
-          <div className="section-title">成就</div>
+          <div className="section-title">
+            成就
+            <span className="hint">点亮后点击可分享</span>
+          </div>
           {extraLoading ? (
             <div className="skeleton" style={{ height: 96, marginBottom: 12 }} />
           ) : (
@@ -238,16 +303,21 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
               {BADGES.map((b) => {
                 const unlocked = unlockedKeys.has(b.key)
                 return (
-                  <div
+                  <button
                     key={b.key}
+                    onClick={() => unlocked && void shareBadge(b.key)}
                     style={{
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
                       width: 64,
                       opacity: unlocked ? 1 : 0.35,
+                      cursor: unlocked ? 'pointer' : 'default',
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
                     }}
-                    title={unlocked ? b.desc : `未解锁：${b.desc}`}
+                    title={unlocked ? `${b.desc}（点击分享）` : `未解锁：${b.desc}`}
                   >
                     <div
                       style={{
@@ -264,7 +334,7 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
                       {unlocked ? '🐝' : '·'}
                     </div>
                     <div style={{ fontSize: 11, marginTop: 4, textAlign: 'center', lineHeight: 1.2 }}>{b.name}</div>
-                  </div>
+                  </button>
                 )
               })}
             </div>

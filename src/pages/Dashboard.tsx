@@ -30,6 +30,8 @@ import { ACTIVITY_EATBACK_RATIO, connectHealth, estimateActivityKcal, getHealthV
 import { CHECKIN_EXERCISE, CHECKIN_MEAL, CHECKIN_WATER, dailyCheckinHoney, streakMilestoneHoney } from '../lib/invite'
 import { kvGet, kvSet } from '../lib/kv'
 import { EXERCISES, exerciseKcal, formatDateShort, guessMealType, shiftDate, targetFromProfile, todayKey, waterTargetMl } from '../lib/nutrition'
+import { createShareCanvas, drawCheckinCard, canvasToBlob } from '../lib/sharecard'
+import { shareImage } from '../lib/share'
 import { computeStreak, MILESTONES } from '../lib/streak'
 import { usePlan } from '../state/plan'
 import { MEAL_LABELS, MEAL_ORDER } from '../types'
@@ -378,6 +380,44 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
 
   const waterPct = Math.min(100, Math.round((waterMl / waterTarget) * 100))
 
+  // 分享打卡卡：完成今日打卡后出现的「分享我的自律」按钮
+  const [sharingCard, setSharingCard] = useState(false)
+  const [shareCardMsg, setShareCardMsg] = useState('')
+
+  async function handleShareCheckin() {
+    setSharingCard(true)
+    setShareCardMsg('')
+    try {
+      const canvas = createShareCanvas()
+      drawCheckinCard(canvas, {
+        streak: streak.current,
+        longest: streak.longest,
+        total: streak.total,
+        nextMilestone: streak.nextMilestone,
+        checkin: {
+          meal: entries.length > 0,
+          water: waterMl >= waterTarget,
+          exercise: exercise.length > 0,
+        },
+        kcal: Math.round(totals.kcal),
+        kcalTarget: target.calories,
+      })
+      const blob = await canvasToBlob(canvas)
+      const res = await shareImage(blob, {
+        filename: `d-bee-checkin-${today}.png`,
+        title: '自律蜜蜂 · 今日打卡',
+        text: '我在「自律蜜蜂」坚持记录饮食，一起变自律吧！',
+      })
+      setShareCardMsg(res.message)
+    } catch (e) {
+      setShareCardMsg(e instanceof Error ? e.message : '生成分享卡失败')
+    } finally {
+      setSharingCard(false)
+    }
+  }
+
+  const checkinDone = entries.length > 0
+
   return (
     <div className="page">
       <div className="page-top" />
@@ -608,7 +648,15 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
             <div className="streak-hit">🎉 达成 {streak.current} 天里程碑！</div>
           )}
         </div>
+        {checkinDone && (
+          <button className="btn-text" style={{ alignSelf: 'flex-start', color: 'var(--honey-dark)', fontSize: 13 }} disabled={sharingCard} onClick={() => void handleShareCheckin()}>
+            {sharingCard ? '生成中…' : '分享我的自律'}
+          </button>
+        )}
       </div>
+      {shareCardMsg && (
+        <div className="notice" style={{ marginBottom: 12, fontSize: 13 }}>{shareCardMsg}</div>
+      )}
 
       {/* 饮水 */}
       <div className="card">

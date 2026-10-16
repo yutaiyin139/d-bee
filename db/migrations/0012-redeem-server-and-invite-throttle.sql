@@ -79,7 +79,13 @@ $$;
 
 REVOKE ALL ON FUNCTION public.redeem_by_code(text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.redeem_by_code(text) TO authenticated;
-REVOKE ALL ON TABLE public.redeem_codes FROM PUBLIC, anon;
+
+-- 兑换码表必须隔离：任何登录用户都不得直接 SELECT/INSERT/UPDATE（否则等于
+-- 把码从「翻包」挪到「SQL 查询」）。启用 RLS + FORCE，并收回 authenticated 直接表权限，
+-- 只能经 redeem_by_code（SECURITY DEFINER，以 owner 身份运行）访问。
+ALTER TABLE public.redeem_codes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.redeem_codes FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.redeem_codes FROM PUBLIC, anon, authenticated;
 
 -- 3. 邀请码枚举爆破风控：给 bind_invite 加「尝试频次」节流。
 --    用一张轻量表记录最近失败/成功尝试，同账号短时间内（60s）失败 ≥5 次即拒。
@@ -91,7 +97,11 @@ CREATE TABLE public.invite_attempts (
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX ON public.invite_attempts (owner_id, created_at);
-REVOKE ALL ON TABLE public.invite_attempts FROM PUBLIC, anon;
+
+-- 同样隔离：attempts 表只经 SECURITY DEFINER 函数写入/读取，authenticated 不得直读
+ALTER TABLE public.invite_attempts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.invite_attempts FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.invite_attempts FROM PUBLIC, anon, authenticated;
 
 -- 节流判定函数：最近 60 秒内失败 ≥5 次则拒绝（返回 true=被限流）
 CREATE OR REPLACE FUNCTION public.invite_throttled(p_owner text)

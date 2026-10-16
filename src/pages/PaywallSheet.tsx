@@ -133,7 +133,7 @@ export function PaywallSheet() {
             <div style={{ display: 'flex', gap: 10 }}>
               <input
                 id="redeem"
-                placeholder="例如 DBEE-PRO-2026"
+                placeholder="输入兑换码"
                 value={code}
                 onChange={(e) => {
                   setCode(e.target.value)

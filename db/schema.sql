@@ -364,5 +364,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
 --   redeem_by_code(text) → text  SECURITY DEFINER（核销+发终身会员，ok/used/bad）
 --   invite_throttled(text) → boolean  SECURITY DEFINER（60s 失败≥5 次限流）
 --   bind_invite 已重写：接入节流，返回增加 throttled 状态码
+--   ⚠️ 两表已 ENABLE+FORCE RLS 且 REVOKE authenticated 直读写权限：
+--       兑换码/尝试记录只能经 SECURITY DEFINER 函数访问，杜绝 SQL 直查拿码。
 --   EXECUTE 均已 REVOKE PUBLIC/anon，仅 GRANT authenticated。
 -- ════════════════════════════════════════════════════════════════════════════

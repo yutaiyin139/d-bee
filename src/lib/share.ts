@@ -16,6 +16,35 @@
 
 import { isNative } from './platform'
 
+/** 原生 Capacitor Share 插件的最小结构（鸭子类型探测，不 import 包） */
+interface CapacitorShare {
+  share: (opts: { title?: string; text?: string; url?: string; dialogTitle?: string }) => Promise<unknown>
+}
+
+function getCapShare(): CapacitorShare | null {
+  if (typeof window === 'undefined') return null
+  const cap = (window as unknown as { Capacitor?: { Plugins?: Record<string, unknown> } }).Capacitor
+  const p = cap?.Plugins?.Share
+  if (!p || typeof p !== 'object') return null
+  const s = p as Partial<CapacitorShare>
+  if (typeof s.share !== 'function') return null
+  return s as CapacitorShare
+}
+
+/** Blob → base64（供 Capacitor 插件使用） */
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      const result = reader.result as string | null
+      if (result) resolve(result.split(',')[1] ?? '')
+      else reject(new Error('读取文件失败'))
+    }
+    reader.onerror = () => reject(new Error('读取文件失败'))
+    reader.readAsDataURL(blob)
+  })
+}
+
 export interface ExportFileOptions {
   /** 文件名，含扩展名，例如 d-bee-export-2026-10-13.json */
   filename: string
@@ -98,4 +127,43 @@ export async function exportText(
   mimeType = 'text/plain;charset=utf-8',
 ): Promise<ExportResult> {
   return exportFile(text, { filename, mimeType })
+}
+
+/**
+ * 分享一张图片（PNG Blob）。
+ * - 原生：用 @capacitor/share 唤起系统分享面板（微信/朋友圈/保存图片）。
+ *   插件不可用时回落到 Web 下载。
+ * - Web：下载 PNG（用户再手动发朋友圈）。
+ */
+export async function shareImage(
+  blob: Blob,
+  opts: { filename: string; title?: string; text?: string },
+): Promise<ExportResult> {
+  const { filename, title, text } = opts
+
+  if (isNative()) {
+    const capShare = getCapShare()
+    if (capShare) {
+      try {
+        const base64 = await blobToBase64(blob)
+        // Capacitor Share 用 data URL 直接分享二进制图片
+        await capShare.share({
+          title: title ?? '自律蜜蜂',
+          text,
+          url: `data:image/png;base64,${base64}`,
+          dialogTitle: title ?? '分享到',
+        })
+        return { channel: 'share', message: '已唤起分享面板' }
+      } catch (e) {
+        // 用户取消（Share 插件 cancel 场景）不报错；其它错误落回下载
+        if (e && typeof e === 'object' && 'message' in e) {
+          const msg = String((e as { message: unknown }).message ?? '')
+          if (/cancel/i.test(msg)) return { channel: 'share', message: '已取消分享' }
+        }
+      }
+    }
+  }
+
+  // Web 兜底：下载 PNG
+  return downloadBlob(blob, filename)
 }
