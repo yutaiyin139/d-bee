@@ -22,6 +22,7 @@ import type { CoachContext } from '../lib/ai'
 import { categoryOf } from '../lib/foods'
 import { LEVEL_LABELS, levelOfScore, nextMealAdvice, summarizeEntries } from '../lib/foodInsight'
 import { ACTIVITY_EATBACK_RATIO, connectHealth, estimateActivityKcal, getHealthVendor, isHealthConnectable } from '../lib/health'
+import { kvGet, kvSet } from '../lib/kv'
 import { EXERCISES, exerciseKcal, formatDateShort, guessMealType, shiftDate, targetFromProfile, todayKey, waterTargetMl } from '../lib/nutrition'
 import { computeStreak, MILESTONES } from '../lib/streak'
 import { usePlan } from '../state/plan'
@@ -62,16 +63,56 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   const [savingEdit, setSavingEdit] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null)
 
+  // 删除确认态：3 秒内未二次确认则自动复位，避免红色「删除?」残留导致后续误删
+  useEffect(() => {
+    if (pendingDeleteId == null) return
+    const t = setTimeout(() => setPendingDeleteId(null), 3000)
+    return () => clearTimeout(t)
+  }, [pendingDeleteId])
+
   // 健康连接：品牌识别 + 步数（第二批 HealthKit 真读，第一批为 0）+ 提示
   const healthVendor = useMemo(() => getHealthVendor(), [])
   const [healthSteps, setHealthSteps] = useState(0)
   const [healthTip, setHealthTip] = useState('')
 
-  // 饮食体检伸缩：默认展开，点击右上角折叠/展开详情区
+  // 饮食体检伸缩：默认展开，点击右上角折叠/展开详情区；折叠偏好记忆到本地，下次打开保持
   const [checkupCollapsed, setCheckupCollapsed] = useState(false)
 
-  // 运动记录输入区伸缩：默认折叠，点「记录运动」展开（让首页更简洁）
+  // 运动记录输入区伸缩：默认折叠，点「记录运动」展开（让首页更简洁）；同样记忆偏好
   const [exerciseCollapsed, setExerciseCollapsed] = useState(true)
+
+  // 折叠偏好：挂载时从本地读取一次，之后用户切换时写回（异步、静默，失败不影响交互）
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      const [c, e] = await Promise.all([
+        kvGet('ui.checkup.collapsed', null),
+        kvGet('ui.exercise.collapsed', null),
+      ])
+      if (!alive) return
+      if (c === '1') setCheckupCollapsed(true)
+      if (e === '1') setExerciseCollapsed(true)
+    })()
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  function toggleCheckup() {
+    setCheckupCollapsed((v) => {
+      const next = !v
+      void kvSet('ui.checkup.collapsed', next ? '1' : '0')
+      return next
+    })
+  }
+
+  function toggleExercise() {
+    setExerciseCollapsed((v) => {
+      const next = !v
+      void kvSet('ui.exercise.collapsed', next ? '1' : '0')
+      return next
+    })
+  }
 
   // 打卡：需要近半年的「有记录日期」集合；同时留一份近窗记录用于卡路里追踪
   const [loggedDates, setLoggedDates] = useState<string[]>([])
@@ -417,7 +458,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
               </span>
               <button
                 className="checkup-toggle"
-                onClick={() => setCheckupCollapsed((v) => !v)}
+                onClick={toggleCheckup}
                 aria-expanded={!checkupCollapsed}
                 aria-label={checkupCollapsed ? '展开体检详情' : '收起体检详情'}
               >
@@ -584,7 +625,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
             <button
               className="checkup-toggle"
               style={{ marginLeft: 8 }}
-              onClick={() => setExerciseCollapsed((v) => !v)}
+              onClick={toggleExercise}
               aria-expanded={!exerciseCollapsed}
               aria-label={exerciseCollapsed ? '展开记录运动' : '收起记录运动'}
             >
