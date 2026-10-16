@@ -6,6 +6,7 @@ import {
   getEntitlement,
   getPhotoQuota,
   grantPhotoBonus,
+  redeemByCode,
   releasePhotoQuota,
   saveEntitlement,
 } from '../lib/api'
@@ -13,10 +14,8 @@ import {
   FREE_DAILY_AI,
   NEWBIE_BONUS_AMOUNT,
   STREAK_BONUS_AMOUNT,
-  codeIsValid,
   isLifetime,
   isPro,
-  normalizeCode,
   proUntilFromMonths,
 } from '../lib/entitlement'
 import type { Entitlement } from '../types'
@@ -40,7 +39,7 @@ interface PlanContextValue {
   claimAiQuota: () => Promise<{ allowed: boolean; remaining: number | null }>
   /** 识别失败（模糊/非食物/报错）时退还刚占用的额度 */
   refundAiQuota: () => Promise<void>
-  redeem: (code: string) => Promise<'ok' | 'bad'>
+  redeem: (code: string) => Promise<'ok' | 'used' | 'bad'>
   /**
    * 购买/激活一个商品档位。真实支付未接入前由兑换码或后台直达触发；
    * 接入支付后由支付回调调用，写入云端 entitlements。
@@ -136,16 +135,15 @@ export function PlanProvider({ children }: { children: ReactNode }) {
   }, [pro])
 
   const redeem = useCallback(
-    async (code: string): Promise<'ok' | 'bad'> => {
-      if (!codeIsValid(code)) return 'bad'
-      const saved = await saveEntitlement({
-        plan: 'lifetime',
-        pro_until: null,
-        redeemed_code: normalizeCode(code),
-        source: 'redeem',
-      })
-      setEntitlement(saved)
-      return 'ok'
+    async (code: string): Promise<'ok' | 'used' | 'bad'> => {
+      // 服务端核销：兑换码已不在前端硬编码，翻包拿不到明文码。
+      const res = await redeemByCode(code)
+      if (res === 'ok') {
+        // 核销成功后刷新权益（entitlements 已由 RPC 写入 lifetime）
+        const ent = await getEntitlement().catch(() => null)
+        if (ent) setEntitlement(ent)
+      }
+      return res
     },
     [],
   )

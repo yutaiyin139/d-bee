@@ -59,6 +59,10 @@ export function PaywallSheet() {
         setErr('兑换码不对，检查一下大小写和连字符。')
         return
       }
+      if (res === 'used') {
+        setErr('该兑换码已被使用。')
+        return
+      }
       setOk(true)
       setTimeout(() => {
         closePaywall()

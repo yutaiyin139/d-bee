@@ -648,7 +648,7 @@ export async function getMyInviteCode(): Promise<string> {
 }
 
 /** 新用户注册后绑定邀请码（原子：绑定关系 + 双向发积分，见 bind_invite RPC） */
-export async function bindInvite(code: string): Promise<'ok' | 'invalid' | 'self' | 'already'> {
+export async function bindInvite(code: string): Promise<'ok' | 'invalid' | 'self' | 'already' | 'throttled'> {
   const normalized = code.trim().toUpperCase()
   if (!normalized) return 'invalid'
 
@@ -656,7 +656,7 @@ export async function bindInvite(code: string): Promise<'ok' | 'invalid' | 'self
     const { data, error } = await callRpc('bind_invite', { p_code: normalized })
     if (error) return 'invalid'
     const status = (Array.isArray(data) ? data[0] : data) as string | null
-    if (status === 'ok' || status === 'already' || status === 'self' || status === 'invalid') {
+    if (status === 'ok' || status === 'already' || status === 'self' || status === 'invalid' || status === 'throttled') {
       return status
     }
     return 'invalid'
@@ -739,6 +739,18 @@ export async function grantHoney(reason: string, refId: string, amount: number, 
     return (Array.isArray(data) ? data[0] : data) === true
   } catch {
     return false
+  }
+}
+
+/** 兑换码核销（SECURITY DEFINER，服务端校验，返回 ok/used/bad） */
+export async function redeemByCode(code: string): Promise<'ok' | 'used' | 'bad'> {
+  try {
+    const { data, error } = await callRpc('redeem_by_code', { p_code: code })
+    if (error) return 'bad'
+    const r = (Array.isArray(data) ? data[0] : data) as string
+    return r === 'ok' || r === 'used' ? r : 'bad'
+  } catch {
+    return 'bad'
   }
 }
 

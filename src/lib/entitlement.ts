@@ -67,8 +67,10 @@ export const PRODUCTS: Product[] = [
   { id: 'lifetime', plan: 'lifetime', name: '终身买断', price: PRICE_LIFETIME },
 ]
 
-/* ── 兑换码（客户端校验；接入真实支付后此列表下线，勿带进 App Store 提审包）── */
-export const REDEEM_CODES = ['DBEE-PRO-2026', 'MIFENG-VIP', 'BEE2026']
+/* ── 兑换码（已服务端化：见 migrations/0012 与 api.ts 的 redeemByCode）────
+ * 兑换码明文不再存在于前端，核销走 redeem_by_code RPC（SECURITY DEFINER）。
+ * 服务端库存表 redeem_codes 一码一次，翻包无法拿到终身会员。
+ * 接入真实支付（微信/支付宝/App 内购）后此过渡通道随之下线。 */
 
 /** 是否为「已解锁会员」（pro 未过期 或 lifetime） */
 export function isPro(ent: Entitlement | null | undefined): boolean {
@@ -107,10 +109,6 @@ export function mondayOf(dateKey: string): string {
 
 export function normalizeCode(raw: string): string {
   return raw.trim().toUpperCase().replace(/\s+/g, '')
-}
-
-export function codeIsValid(raw: string): boolean {
-  return REDEEM_CODES.includes(normalizeCode(raw))
 }
 
 /** 由「订阅月数」算出 pro_until 过期时间（ISO 字符串） */

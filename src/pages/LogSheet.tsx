@@ -16,6 +16,7 @@ import {
 } from '../lib/foods'
 import { analyzeProfile, LEVEL_LABELS, levelOfScore, summarizeEntries } from '../lib/foodInsight'
 import { quotaExhaustedReason } from '../lib/entitlement'
+import { dismissUpsell, markUpsellShown, shouldShowUpsell } from '../lib/upsell'
 import { pickFileFromInput, PHOTO_INPUT_PROPS } from '../lib/capture'
 import { FoodTagList } from '../components/FoodTags'
 import { Scanner } from '../components/Scanner'
@@ -316,7 +317,7 @@ function MealCheckup({ items }: { items: DraftItem[] }) {
 }
 
 export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budgetText }: LogSheetProps) {
-  const { claimAiQuota, refundAiQuota, aiRemaining, openPaywall } = usePlan()
+  const { claimAiQuota, refundAiQuota, aiRemaining, openPaywall, pro } = usePlan()
   const [mode, setMode] = useState<Mode>('photo')
   const [meal, setMeal] = useState<MealType>(initialMeal)
   const [items, setItems] = useState<DraftItem[]>([])
@@ -335,6 +336,9 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   const [scanKey, setScanKey] = useState(0)
   const [scanMsg, setScanMsg] = useState<{ kind: 'ok' | 'info' | 'err'; text: string } | null>(null)
   const [missCode, setMissCode] = useState('')
+
+  // 转化钩子：免费用户用完第 3 次拍照后轻提示升级（每周最多 1 次、可永久关闭）
+  const [upsellVisible, setUpsellVisible] = useState(false)
 
   // 最近吃过：进入「食物库」页时拉一次历史，聚合出「一键复记」项
   const [recentFoods, setRecentFoods] = useState<RecentFood[]>([])
@@ -431,6 +435,14 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
       setPreview(dataUrl)
       const res = await recognizeFoodFromImage(dataUrl, hint.trim() || undefined)
       setItems((prev) => [...prev, ...res.map((d) => toDraft(d, 'photo'))])
+      // 转化钩子：免费用户本次拍照后用尽额度 → 轻提示升级（克制：每周 1 次 + 可永久关闭）
+      void (async () => {
+        const show = await shouldShowUpsell(pro, aiRemaining)
+        if (show) {
+          await markUpsellShown()
+          setUpsellVisible(true)
+        }
+      })()
     } catch (e) {
       if (claimed) await refundAiQuota()
       setError(e instanceof Error ? e.message : '识别失败，请重试')
@@ -628,6 +640,24 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
           </div>
 
           {error && <div className="notice err">{error}</div>}
+
+          {upsellVisible && (
+            <div className="notice info" style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+              <span style={{ flex: 1 }}>今天拍得顺手吗？升级 Pro 可无限次拍照识别、解锁完整报告。</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <button className="btn-text" style={{ fontSize: 13 }} onClick={() => { setUpsellVisible(false); openPaywall() }}>
+                  去看看
+                </button>
+                <button
+                  className="btn-text"
+                  style={{ fontSize: 13, color: 'var(--ink-3)' }}
+                  onClick={() => { setUpsellVisible(false); void dismissUpsell() }}
+                >
+                  不再提醒
+                </button>
+              </span>
+            </div>
+          )}
 
           {budgetText && (
             <div className={`budget-hint ${budget === null ? 'is-over' : ''}`}>

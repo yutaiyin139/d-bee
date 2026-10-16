@@ -357,3 +357,12 @@ GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
 --       结算已过期入账（记 expire 负流水，幂等）
 --   EXECUTE 均已 REVOKE PUBLIC/anon，仅 GRANT authenticated。
 -- ════════════════════════════════════════════════════════════════════════════
+--
+-- ══ 0012 兑换码服务端化 + 邀请码风控（V1.4 优化）════════════════════════════
+--   redeem_codes 表：兑换码服务端库存（前端不再硬编码，翻包拿不到终身会员）
+--   invite_attempts 表：邀请码绑定尝试记录（节流用）
+--   redeem_by_code(text) → text  SECURITY DEFINER（核销+发终身会员，ok/used/bad）
+--   invite_throttled(text) → boolean  SECURITY DEFINER（60s 失败≥5 次限流）
+--   bind_invite 已重写：接入节流，返回增加 throttled 状态码
+--   EXECUTE 均已 REVOKE PUBLIC/anon，仅 GRANT authenticated。
+-- ════════════════════════════════════════════════════════════════════════════
