@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Sheet } from '../components/Sheet'
 import { BADGES } from '../lib/badge'
 import {
+  expireStaleHoney,
   getHoneyBalance,
   getMyInviteCode,
   listHoneyLedger,
@@ -11,6 +12,7 @@ import {
 } from '../lib/api'
 import { HONEY_PRICE } from '../lib/invite'
 import { copyText } from '../lib/clipboard'
+import { checkStatBadges } from '../lib/badgeCheck'
 import type { Badge, HoneyBalance, HoneyLedger } from '../types'
 
 /**
@@ -29,8 +31,8 @@ const REASON_LABEL: Record<string, string> = {
   inviter_register: '邀请好友注册',
   inviter_checkin: '好友打卡达标',
   redeem: '兑换消耗',
-  expire: '过期失效',
-  refund: '风控扣回',
+  expire: '积分过期',
+  refund: '删除记录收回',
 }
 
 interface InviteCenterProps {
@@ -57,6 +59,8 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
     // 核心块：邀请码 + 余额 + 邀请人数（分享/兑换依赖，优先加载）
     void (async () => {
       try {
+        // 先结算过期积分（幂等），再读余额，保证余额已扣掉过期部分
+        await expireStaleHoney()
         const [c, b, inv] = await Promise.all([getMyInviteCode(), getHoneyBalance(), listInvitees()])
         if (!alive) return
         setCode(c)
@@ -76,6 +80,13 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
         if (!alive) return
         setLedger(l)
         setBadges(g)
+        // 后台检查统计类徽章，有新解锁则刷新成就墙
+        void checkStatBadges().then((fresh) => {
+          if (!alive || fresh.length === 0) return
+          void listMyBadges().then((updated) => {
+            if (alive) setBadges(updated)
+          })
+        })
       } catch {
         /* 静默 */
       } finally {

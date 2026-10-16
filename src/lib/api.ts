@@ -753,6 +753,62 @@ export async function unlockBadge(badgeKey: string): Promise<boolean> {
   }
 }
 
+/** 删除当日最后一条饮食记录后收回打卡积分（防刷，幂等，SECURITY DEFINER） */
+export async function refundCheckinHoney(logDate: string): Promise<boolean> {
+  try {
+    const { data, error } = await callRpc('refund_checkin_honey_by_date', { p_log_date: logDate })
+    if (error) return false
+    return (Array.isArray(data) ? data[0] : data) === true
+  } catch {
+    return false
+  }
+}
+
+/** 结算已过期积分（记 expire 负流水，返回失效笔数，幂等） */
+export async function expireStaleHoney(): Promise<number> {
+  try {
+    const { data, error } = await callRpc('expire_stale_honey', {})
+    if (error) return 0
+    const n = Array.isArray(data) ? data[0] : data
+    return Number(n) || 0
+  } catch {
+    return 0
+  }
+}
+
+/** 徽章统计快照（badge_stats RPC，SECURITY DEFINER，一次返回全部徽章所需计数） */
+export interface BadgeStats {
+  photo_count: number
+  barcode_count: number
+  recipe_count: number
+  water_days: number
+  exercise_count: number
+  weight_lost: number
+  invitees: number
+  invite_settled: number
+}
+
+export async function getBadgeStats(): Promise<BadgeStats | null> {
+  try {
+    const { data, error } = await callRpc('badge_stats', {})
+    if (error) return null
+    const d = (Array.isArray(data) ? data[0] : data) as BadgeStats | null
+    if (!d || typeof d !== 'object') return null
+    return {
+      photo_count: Number(d.photo_count) || 0,
+      barcode_count: Number(d.barcode_count) || 0,
+      recipe_count: Number(d.recipe_count) || 0,
+      water_days: Number(d.water_days) || 0,
+      exercise_count: Number(d.exercise_count) || 0,
+      weight_lost: Number(d.weight_lost) || 0,
+      invitees: Number(d.invitees) || 0,
+      invite_settled: Number(d.invite_settled) || 0,
+    }
+  } catch {
+    return null
+  }
+}
+
 /** 读取我已解锁的徽章 */
 export async function listMyBadges(): Promise<Badge[]> {
   const { data, error } = await db('badges').select('*').order('unlocked_at', { ascending: false })

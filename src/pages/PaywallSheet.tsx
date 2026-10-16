@@ -153,6 +153,16 @@ export function PaywallSheet() {
           <div className="helper" style={{ lineHeight: 1.7 }}>
             在线支付（微信 / 支付宝 / 应用商店内购）正在接入中，上线前可先用兑换码体验完整功能。
           </div>
+
+          {/* 透明定价承诺：对标 Cal AI 动态定价/试用陷阱的差异化武器 */}
+          <div className="card" style={{ marginTop: 14, background: 'var(--honey-soft, #FAEEDA)', border: 'none', padding: '12px 14px' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--honey-dark)', marginBottom: 6 }}>我们的承诺</div>
+            <div style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.8 }}>
+              · 统一定价，对所有人一样，永不杀熟<br />
+              · 订阅可随时取消，无隐藏扣费、无自动续费陷阱<br />
+              · 免费版永久可用，不逼你付费
+            </div>
+          </div>
         </>
       )}
     </Sheet>

@@ -16,6 +16,7 @@ import {
   listMealsBetween,
   listMealsByDate,
   listWaterByDate,
+  refundCheckinHoney,
   settleInviteCheckin,
   undoLastWater,
   unlockBadge,
@@ -286,9 +287,14 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
     }
     setPendingDeleteId(null)
     setError('')
+    // 删除前记住该记录的 log_date，删除后若当天再无饮食记录则收回打卡积分（防刷）
+    const target = entries.find((e) => e.id === id)
+    const logDate = target?.log_date
     try {
-      // 删除后统一刷新：当日列表、运动饮水与打卡状态都依赖日期窗数据
       await deleteMeal(id)
+      // 删除的是「今天」的记录且当天已无其它饮食记录 → 收回 checkin_meal 积分
+      if (logDate && logDate === today) void refundCheckinHoney(logDate)
+      // 删除后统一刷新：当日列表、运动饮水与打卡状态都依赖日期窗数据
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : '删除失败')

@@ -345,3 +345,15 @@ GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
 --   count_invitees() → json            邀请记录统计（invitees + settled）
 --   EXECUTE 均已 REVOKE PUBLIC/anon，仅 GRANT authenticated。
 -- ════════════════════════════════════════════════════════════════════════════
+--
+-- ══ 0010 徽章统计快照（V1.4 优化）═════════════════════════════════════════════
+--   badge_stats() → json  SECURITY DEFINER（一次返回 8 枚统计类徽章所需计数）
+--   EXECUTE 已 REVOKE PUBLIC/anon，仅 GRANT authenticated。
+--
+-- ══ 0011 打卡积分删除收回 + 积分过期（V1.4 优化）═════════════════════════════
+--   refund_checkin_honey_by_date(text) → boolean  SECURITY DEFINER
+--       删除当日最后一条饮食记录后收回 checkin_meal 积分（防刷，幂等）
+--   expire_stale_honey() → integer  SECURITY DEFINER
+--       结算已过期入账（记 expire 负流水，幂等）
+--   EXECUTE 均已 REVOKE PUBLIC/anon，仅 GRANT authenticated。
+-- ════════════════════════════════════════════════════════════════════════════
