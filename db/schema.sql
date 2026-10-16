@@ -336,4 +336,12 @@ GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
 --   grant_honey(text,text,integer,integer) → boolean  SECURITY INVOKER（发积分，去重）
 --   unlock_badge(text) → boolean       SECURITY INVOKER（解锁徽章，去重）
 --   EXECUTE 均已 REVOKE PUBLIC/anon，仅 GRANT authenticated。
+--
+-- ══ 0009 邀请奖励闭环补齐（V1.3.0）═══════════════════════════════════════════
+-- 新增 3 个 SECURITY DEFINER 函数（跨用户发积分必需）：
+--   bind_invite(text) → text           绑定关系 + 双向发积分（新人100/邀请人50）
+--                                      返回 ok/invalid/self/already
+--   settle_invite_checkin() → boolean  受邀人7日打卡≥5天 → 新人200+7天Pro/邀请人250
+--   count_invitees() → json            邀请记录统计（invitees + settled）
+--   EXECUTE 均已 REVOKE PUBLIC/anon，仅 GRANT authenticated。
 -- ════════════════════════════════════════════════════════════════════════════
