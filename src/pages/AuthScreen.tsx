@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { cloud } from '../cloud'
 import { SiteFooter } from '../components/SiteFooter'
+import { bindInvite } from '../lib/api'
 import { isNative } from '../lib/platform'
 import { isWechatLoginAvailable, signInWithWechatNative } from '../lib/wechat'
 import { useNativeDiagnosticsEntry } from '../native/useDiagnosticsEntry'
@@ -39,11 +40,25 @@ export function AuthScreen({ onSignedIn, onOpenLegal }: AuthScreenProps) {
   const [emailCodeSent, setEmailCodeSent] = useState(false)
   const [needPassword, setNeedPassword] = useState(false)
 
+  // 邀请码（选填）：新用户注册时填写可绑定邀请关系
+  const [inviteCode, setInviteCode] = useState('')
+
   useEffect(() => {
     if (countdown <= 0) return
     const t = setTimeout(() => setCountdown((c) => c - 1), 1000)
     return () => clearTimeout(t)
   }, [countdown])
+
+  /** 新用户注册成功后绑定邀请码（选填，失败静默不阻断登录） */
+  async function tryBindInvite() {
+    const code = inviteCode.trim()
+    if (!code) return
+    try {
+      await bindInvite(code)
+    } catch {
+      // 绑定失败不阻断登录：邀请码无效/已用/网络异常均静默
+    }
+  }
 
   async function sendPhoneCode() {
     if (!/^1\d{10}$/.test(phone)) {
@@ -93,6 +108,7 @@ export function AuthScreen({ onSignedIn, onOpenLegal }: AuthScreenProps) {
         return
       }
       pendingPhone.current = null
+      if (!pending.isExistingUser) await tryBindInvite()
       onSignedIn()
     } catch (e) {
       setError(e instanceof Error ? e.message : '登录失败')
@@ -154,6 +170,7 @@ export function AuthScreen({ onSignedIn, onOpenLegal }: AuthScreenProps) {
         return
       }
       pendingEmail.current = null
+      if (!pending.isExistingUser) await tryBindInvite()
       onSignedIn()
     } catch (e) {
       setError(e instanceof Error ? e.message : '登录失败')
@@ -233,6 +250,19 @@ export function AuthScreen({ onSignedIn, onOpenLegal }: AuthScreenProps) {
           <button className={channel === 'email' ? 'active' : ''} onClick={() => { setChannel('email'); setError('') }}>
             邮箱
           </button>
+        </div>
+
+        <div className="field" style={{ marginTop: 14 }}>
+          <label htmlFor="invite-code">邀请码（选填）</label>
+          <input
+            id="invite-code"
+            type="text"
+            placeholder="好友邀请你时可填写，注册后不可改"
+            value={inviteCode}
+            maxLength={8}
+            onChange={(e) => setInviteCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+          />
+          <div className="helper">填写好友的邀请码，双方都能获得积分奖励</div>
         </div>
 
         {channel === 'phone' ? (

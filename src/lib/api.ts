@@ -1,5 +1,5 @@
 import { cloud } from '../cloud'
-import type { Entitlement, ExerciseLog, MealEntry, Profile, Recipe, WaterLog, WeightLog } from '../types'
+import type { Badge, Entitlement, ExerciseLog, HoneyBalance, HoneyLedger, InviteLink, MealEntry, Profile, Recipe, WaterLog, WeightLog } from '../types'
 import { BONUS_TTL_DAYS, FREE_DAILY_AI, SCAN_FEATURE } from './entitlement'
 import { todayKey } from './nutrition'
 
@@ -34,7 +34,7 @@ interface QueryBuilder extends PromiseLike<QueryResult> {
 }
 
 function db(
-  table: 'profiles' | 'meal_entries' | 'weight_logs' | 'water_logs' | 'exercise_logs' | 'entitlements' | 'ai_usage' | 'recipes',
+  table: 'profiles' | 'meal_entries' | 'weight_logs' | 'water_logs' | 'exercise_logs' | 'entitlements' | 'ai_usage' | 'recipes' | 'invite_links' | 'honey_ledger' | 'badges',
 ): QueryBuilder {
   return cloud.database.from(table) as unknown as QueryBuilder
 }
@@ -506,7 +506,7 @@ export async function releasePhotoQuota(): Promise<void> {
 
 /** 发放奖励额度（防重复领取靠数据库 UNIQUE 约束） */
 export async function grantPhotoBonus(
-  source: 'newbie' | 'streak7',
+  source: 'newbie' | 'streak7' | 'honey',
   grantKey: string,
   amount: number,
   ttlDays = BONUS_TTL_DAYS,
@@ -617,4 +617,161 @@ export function buildMealsCsv(meals: MealEntry[]): string {
     )
   }
   return '\ufeff' + lines.join('\r\n')
+}
+
+/* ── 邀约拉新 + 蜜糖积分 + 成就徽章 ── */
+
+/** 生成 6 位邀请码（大小写字母+数字，排除易混淆字符） */
+function randomCode(len = 6): string {
+  const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  let out = ''
+  for (let i = 0; i < len; i++) out += ALPHABET[Math.floor(Math.random() * ALPHABET.length)]
+  return out
+}
+
+/** 获取我的邀请码；不存在则创建（一人一码，UNIQUE 约束兜底并发） */
+export async function getMyInviteCode(): Promise<string> {
+  const existing = await db('invite_links').select('code').maybeSingle()
+  const found = existing.data as { code?: string } | null
+  if (found?.code) return found.code
+
+  // 最多重试 3 次，撞码则换码重试（UNIQUE(code) 会拒绝重复）
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const code = randomCode()
+    const { data, error } = await db('invite_links').insert({ code }).select()
+    if (!error) {
+      const row = rows<{ code: string }>(data)[0]
+      if (row?.code) return row.code
+    }
+  }
+  throw new Error('生成邀请码失败，请重试')
+}
+
+/** 新用户注册后绑定邀请码（绑定后不可改，partial unique 防重复） */
+export async function bindInvite(code: string): Promise<'ok' | 'invalid' | 'self' | 'already'> {
+  const normalized = code.trim().toUpperCase()
+  if (!normalized) return 'invalid'
+
+  // 1) 已绑定过则直接返回（幂等，避免重复绑定）
+  const me = await getProfile()
+  if (me?.invited_by) return 'already'
+
+  // 2) 按码查邀请人（SECURITY DEFINER 函数，绕过 RLS）
+  try {
+    const { data, error } = await callRpc('get_inviter_by_code', { p_code: normalized })
+    if (error) return 'invalid'
+    const inviterId = (Array.isArray(data) ? data[0] : data) as string | null
+    if (!inviterId || typeof inviterId !== 'string') return 'invalid'
+    if (inviterId === (await getCurrentUid())) return 'self'
+
+    // 3) 写入绑定（partial unique 兜底并发重复绑定）。invited_by/invite_code
+    //    不在 PROFILE_WRITABLE 白名单里，直接 update profiles 表。
+    if (me?.id == null) {
+      // 尚无档案行：先建一个最小档案再绑定
+      const { data: insData, error: insErr } = await db('profiles')
+        .insert({ invited_by: inviterId, invite_code: normalized })
+        .select()
+      if (insErr) return 'invalid'
+      const created = rows<Profile>(insData)
+      return created.length > 0 ? 'ok' : 'invalid'
+    }
+    const { data: upData, error: upErr } = await db('profiles')
+      .update({ invited_by: inviterId, invite_code: normalized, updated_at: new Date().toISOString() })
+      .eq('id', me.id)
+      .select()
+    if (upErr) return 'invalid'
+    return rows<Profile>(upData).length > 0 ? 'ok' : 'invalid'
+  } catch {
+    return 'invalid'
+  }
+}
+
+async function getCurrentUid(): Promise<string> {
+  const { data } = await cloud.auth.getSession()
+  const s = data as { user?: { id?: string } } | null
+  return s?.user?.id ?? ''
+}
+
+/** 邀请记录：我邀请的好友状态（通过 profiles.invited_by 关联，需 SECURITY DEFINER 查询） */
+export async function listInvitees(): Promise<{ code: string; invitees: number }> {
+  // 好友状态需跨用户查询，V1 简化：只返回我的邀请码 + 已绑定人数（由安全函数统计）
+  // 详细状态面板在阶段 6 UI 实现时再补 SECURITY DEFINER 查询函数
+  const code = await getMyInviteCode()
+  return { code, invitees: 0 }
+}
+
+/** 读取我的积分余额（未过期入账 − 未过期消耗） */
+export async function getHoneyBalance(): Promise<HoneyBalance> {
+  const { data, error } = await db('honey_ledger')
+    .select('amount, expires_at')
+  if (error) throw new Error(error.message || '读取积分失败')
+  const rows_ = rows<{ amount: number; expires_at: string | null }>(data)
+  const now = Date.now()
+  let balance = 0
+  let earned = 0
+  let spent = 0
+  for (const r of rows_) {
+    const amt = Number(r.amount) || 0
+    if (amt >= 0) earned += amt
+    else spent += -amt
+    // 只有「未过期」的入账计入可用余额；负流水（消耗）不受过期影响
+    if (amt > 0 && r.expires_at && new Date(r.expires_at).getTime() <= now) continue
+    balance += amt
+  }
+  return { balance: Math.max(0, balance), totalEarned: earned, totalSpent: spent }
+}
+
+/** 读取积分流水（倒序，最多 200 条） */
+export async function listHoneyLedger(limit = 200): Promise<HoneyLedger[]> {
+  const { data, error } = await db('honey_ledger')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error) throw new Error(error.message || '读取积分流水失败')
+  return rows<HoneyLedger>(data)
+}
+
+/** 发放积分（走 RPC 原子发放 + UNIQUE 防重复，返回是否实际发放） */
+export async function grantHoney(reason: string, refId: string, amount: number, ttlDays = 365): Promise<boolean> {
+  try {
+    const { data, error } = await callRpc('grant_honey', {
+      p_reason: reason,
+      p_ref_id: refId,
+      p_amount: amount,
+      p_ttl_days: ttlDays,
+    })
+    if (error) return false
+    return (Array.isArray(data) ? data[0] : data) === true
+  } catch {
+    return false
+  }
+}
+
+/** 解锁徽章（UNIQUE 防重复，返回是否实际解锁） */
+export async function unlockBadge(badgeKey: string): Promise<boolean> {
+  try {
+    const { data, error } = await callRpc('unlock_badge', { p_badge_key: badgeKey })
+    if (error) return false
+    return (Array.isArray(data) ? data[0] : data) === true
+  } catch {
+    return false
+  }
+}
+
+/** 读取我已解锁的徽章 */
+export async function listMyBadges(): Promise<Badge[]> {
+  const { data, error } = await db('badges').select('*').order('unlocked_at', { ascending: false })
+  if (error) throw new Error(error.message || '读取徽章失败')
+  return rows<Badge>(data)
+}
+
+/** 积分兑换（走 RPC 原子扣积分 + 发权益，返回是否兑换成功） */
+export async function redeemHoney(kind: 'pro1Day' | 'pro30Day' | 'ai1Scan'): Promise<boolean> {
+  try {
+    const { data, error } = await callRpc('redeem_honey', { p_kind: kind })
+    if (error) return false
+    return (Array.isArray(data) ? data[0] : data) === true
+  } catch {
+    return false
+  }
 }

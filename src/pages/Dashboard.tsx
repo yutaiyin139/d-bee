@@ -11,17 +11,21 @@ import {
   addWater,
   deleteExercise,
   deleteMeal,
+  grantHoney,
   listExerciseByDate,
   listMealsBetween,
   listMealsByDate,
   listWaterByDate,
   undoLastWater,
+  unlockBadge,
   updateMealGrams,
 } from '../lib/api'
 import type { CoachContext } from '../lib/ai'
+import { STREAK_BADGES } from '../lib/badge'
 import { categoryOf } from '../lib/foods'
 import { LEVEL_LABELS, levelOfScore, nextMealAdvice, summarizeEntries } from '../lib/foodInsight'
 import { ACTIVITY_EATBACK_RATIO, connectHealth, estimateActivityKcal, getHealthVendor, isHealthConnectable } from '../lib/health'
+import { CHECKIN_EXERCISE, CHECKIN_MEAL, CHECKIN_WATER, dailyCheckinHoney, streakMilestoneHoney } from '../lib/invite'
 import { kvGet, kvSet } from '../lib/kv'
 import { EXERCISES, exerciseKcal, formatDateShort, guessMealType, shiftDate, targetFromProfile, todayKey, waterTargetMl } from '../lib/nutrition'
 import { computeStreak, MILESTONES } from '../lib/streak'
@@ -191,6 +195,31 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
     if (pro) return
     if (streak.streak7Date) void grantStreakBonus(streak.streak7Date)
   }, [streak.streak7Date, pro, grantStreakBonus])
+
+  // 每日打卡积分：记餐 +5 / 饮水达标 +2 / 运动 +2（仅「今天」结算，历史补记不发，
+  // 避免切日期刷分）。三项独立 reason + ref_id=当日日期，靠 UNIQUE 防重复。
+  useEffect(() => {
+    if (!isToday || loading) return
+    const d = dailyCheckinHoney({
+      mealCount: entries.length,
+      waterMl,
+      waterTargetMl: waterTarget,
+      exerciseCount: exercise.length,
+    })
+    const date = today
+    if (d.meal > 0) void grantHoney('checkin_meal', date, CHECKIN_MEAL)
+    if (d.water > 0) void grantHoney('checkin_water', date, CHECKIN_WATER)
+    if (d.exercise > 0) void grantHoney('checkin_exercise', date, CHECKIN_EXERCISE)
+  }, [isToday, loading, entries.length, waterMl, waterTarget, exercise.length, today])
+
+  // 连续打卡里程碑 → 发积分 + 点亮徽章。grant_key 用「里程碑达成日期」防重复。
+  useEffect(() => {
+    if (!streak.activeToday) return
+    const honey = streakMilestoneHoney(streak.current)
+    if (honey > 0) void grantHoney('streak_milestone', `${streak.current}d-${today}`, honey)
+    const badgeKey = STREAK_BADGES[streak.current]
+    if (badgeKey) void unlockBadge(badgeKey)
+  }, [streak.current, streak.activeToday, today])
 
   const byMeal = useMemo(() => {
     const map: Record<MealType, MealEntry[]> = { breakfast: [], lunch: [], dinner: [], snack: [] }

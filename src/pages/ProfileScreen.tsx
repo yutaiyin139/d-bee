@@ -25,6 +25,7 @@ import { usePlan } from '../state/plan'
 import { exportJSON, exportText } from '../lib/share'
 import { connectHealth, getHealthVendor, isHealthConnectable } from '../lib/health'
 import type { Profile, WeightLog } from '../types'
+import { InviteCenter } from './InviteCenter'
 
 interface ProfileScreenProps {
   profile: Profile
@@ -58,6 +59,9 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
     const res = connectHealth()
     if (res.message) setHealthTip(res.message)
   }
+
+  // 蜜糖积分中心
+  const [inviteOpen, setInviteOpen] = useState(false)
 
   const [weights, setWeights] = useState<WeightLog[]>([])
   const [weightInput, setWeightInput] = useState(String(profile.current_weight_kg ?? ''))
@@ -295,6 +299,19 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
             升级
           </button>
         )}
+      </div>
+
+      {/* 蜜糖积分入口 */}
+      <div className="card" style={{ marginBottom: 14, cursor: 'pointer' }} onClick={() => setInviteOpen(true)} role="button" tabIndex={0}>
+        <div className="list-line">
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 16 }}>🍯</span> 蜜糖积分 · 邀请好友
+          </span>
+          <span className="val">
+            查看积分与兑换
+            <span className="arrow" style={{ marginLeft: 6 }}>›</span>
+          </span>
+        </div>
       </div>
 
       <div className="stat-grid" style={{ marginBottom: 14 }}>
@@ -541,6 +558,8 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
       </div>
 
       <SiteFooter onOpen={onOpenLegal} />
+
+      {inviteOpen && <InviteCenter onClose={() => setInviteOpen(false)} />}
 
       {editing && (
         <Sheet title="身体数据与目标" onClose={() => setEditing(false)}>
