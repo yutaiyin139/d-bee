@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { cloud } from '../cloud'
 import {
@@ -8,7 +8,6 @@ import {
   grantPhotoBonus,
   redeemByCode,
   releasePhotoQuota,
-  saveEntitlement,
 } from '../lib/api'
 import {
   FREE_DAILY_AI,
@@ -16,7 +15,6 @@ import {
   STREAK_BONUS_AMOUNT,
   isLifetime,
   isPro,
-  proUntilFromMonths,
 } from '../lib/entitlement'
 import type { Entitlement } from '../types'
 
@@ -40,11 +38,6 @@ interface PlanContextValue {
   /** 识别失败（模糊/非食物/报错）时退还刚占用的额度 */
   refundAiQuota: () => Promise<void>
   redeem: (code: string) => Promise<'ok' | 'used' | 'bad'>
-  /**
-   * 购买/激活一个商品档位。真实支付未接入前由兑换码或后台直达触发；
-   * 接入支付后由支付回调调用，写入云端 entitlements。
-   */
-  activate: (plan: 'pro' | 'lifetime', months?: number) => Promise<void>
   /** 完善身体数据后发放新手奖励（一次性，防重复） */
   grantNewbieBonus: () => Promise<boolean>
   /** 连续打卡达成后发放奖励（按达成日期防重复） */
@@ -117,9 +110,13 @@ export function PlanProvider({ children }: { children: ReactNode }) {
   const aiRemaining = pro ? null : Math.max(0, photoQuota.total)
   const bonusRemaining = photoQuota.bonus
 
+  // 最近一次成功占用的预占 token，供识别失败退还时精确释放（ref 避免额外渲染）
+  const lastTokenRef = useRef<string | null>(null)
+
   const claimAiQuota = useCallback(async (): Promise<{ allowed: boolean; remaining: number | null }> => {
     if (pro) return { allowed: true, remaining: null }
     const res = await consumePhotoQuota()
+    if (res.allowed && res.token) lastTokenRef.current = res.token
     // 消耗后重读额度，拿到准确的剩余（基础+奖励）
     const q = await getPhotoQuota().catch(() => null)
     if (q) setPhotoQuota({ base: q.baseRemaining, bonus: q.bonusRemaining, total: q.totalRemaining })
@@ -129,7 +126,9 @@ export function PlanProvider({ children }: { children: ReactNode }) {
 
   const refundAiQuota = useCallback(async () => {
     if (pro) return
-    await releasePhotoQuota()
+    const token = lastTokenRef.current
+    lastTokenRef.current = null
+    await releasePhotoQuota(token)
     const q = await getPhotoQuota().catch(() => null)
     if (q) setPhotoQuota({ base: q.baseRemaining, bonus: q.bonusRemaining, total: q.totalRemaining })
   }, [pro])
@@ -144,22 +143,6 @@ export function PlanProvider({ children }: { children: ReactNode }) {
         if (ent) setEntitlement(ent)
       }
       return res
-    },
-    [],
-  )
-
-  /**
-   * 激活一个档位（pro 订阅 / lifetime 买断）。
-   * 真实支付接入后，由支付成功回调调用；当前由兑换码或后台直达触发。
-   */
-  const activate = useCallback(
-    async (plan: 'pro' | 'lifetime', months?: number) => {
-      const patch: Partial<Entitlement> =
-        plan === 'lifetime'
-          ? { plan: 'lifetime', pro_until: null, redeemed_code: null, source: 'apple' }
-          : { plan: 'pro', pro_until: proUntilFromMonths(months ?? 1), redeemed_code: null, source: 'apple' }
-      const saved = await saveEntitlement(patch as Parameters<typeof saveEntitlement>[0])
-      setEntitlement(saved)
     },
     [],
   )
@@ -197,7 +180,6 @@ export function PlanProvider({ children }: { children: ReactNode }) {
     claimAiQuota,
     refundAiQuota,
     redeem,
-    activate,
     grantNewbieBonus,
     grantStreakBonus,
     paywall,

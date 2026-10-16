@@ -53,6 +53,8 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
   const [shareMsg, setShareMsg] = useState('')
   const [sharingCard, setSharingCard] = useState<string | null>(null)
   const [shareCardMsg, setShareCardMsg] = useState('')
+  // 分享动作面板（方案 A：一个主按钮 → 弹出选「图片卡/文字口令」）
+  const [shareOpen, setShareOpen] = useState(false)
   // 分块加载：核心（邀请码/余额/邀请人数）与次要（成就/流水）独立加载，
   // 避免打开面板时整块骨架屏一次性跳变产生顿挫
   const [coreLoading, setCoreLoading] = useState(true)
@@ -64,8 +66,9 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
     void (async () => {
       try {
         // 先结算过期积分（幂等），再读余额，保证余额已扣掉过期部分
-        await expireStaleHoney()
-        const [c, b, inv] = await Promise.all([getMyInviteCode(), getHoneyBalance(), listInvitees()])
+        // 结算与读邀请码/人数互不依赖，并行发起，缩短首屏等待
+        const [c, inv] = await Promise.all([getMyInviteCode(), listInvitees(), expireStaleHoney()])
+        const b = await getHoneyBalance()
         if (!alive) return
         setCode(c)
         setBalance(b)
@@ -80,11 +83,13 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
     // 次要块：成就墙 + 流水（后到不影响核心操作）
     void (async () => {
       try {
+        // 结算过期积分会影响统计徽章判定，先幂等结算一次再读徽章/流水，
+        // 避免徽章墙先渲染旧状态、随后又被 checkStatBadges 二次刷新导致闪动
+        await expireStaleHoney()
         const [l, g] = await Promise.all([listHoneyLedger(50), listMyBadges()])
         if (!alive) return
         setLedger(l)
         setBadges(g)
-        // 后台检查统计类徽章，有新解锁则刷新成就墙
         void checkStatBadges().then((fresh) => {
           if (!alive || fresh.length === 0) return
           void listMyBadges().then((updated) => {
@@ -126,7 +131,9 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
     return s
   }, [badges])
 
+  /** 复制邀请口令（文字 + 链接），适合私聊粘贴 */
   const shareInvite = useCallback(async () => {
+    setShareOpen(false)
     if (!code) {
       setShareMsg('邀请码加载中，请稍候')
       return
@@ -136,22 +143,19 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
     const text = `我在用「自律蜜蜂」记录饮食、自律打卡，用我的邀请码 ${code} 注册，双方都能得积分！\n${link}`
     setShareMsg('')
 
-    // 1) 优先系统分享面板（微信/QQ 等）；不可用或失败则降级复制口令
-    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-      try {
-        await navigator.share({ title: '自律蜜蜂', text, url: link })
-        setShareMsg('分享成功')
-        return
-      } catch (e) {
-        // 用户取消（AbortError）不算失败，静默返回
-        if (e instanceof DOMException && e.name === 'AbortError') return
-        // 其它失败落到复制降级
-      }
-    }
-
-    // 2) 降级：复制邀请口令到剪贴板（copyText 内置 http 环境兜底）
+    // 复制邀请口令到剪贴板（copyText 内置 http 环境兜底）
     const ok = await copyText(text)
     setShareMsg(ok ? '邀请口令已复制，去粘贴给好友吧' : '复制失败，请长按邀请码手动复制')
+  }, [code])
+
+  /** 复制纯邀请码（点击邀请码本身） */
+  const copyCode = useCallback(async () => {
+    if (!code) {
+      setShareMsg('邀请码加载中，请稍候')
+      return
+    }
+    const ok = await copyText(code)
+    setShareMsg(ok ? '邀请码已复制' : '复制失败，请长按邀请码手动复制')
   }, [code])
 
   /** 分享徽章卡（解锁的徽章） */
@@ -182,6 +186,7 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
 
   /** 分享邀请卡（精美邀请卡，替代纯文字口令） */
   const shareInviteCard = useCallback(async () => {
+    setShareOpen(false)
     if (!code) {
       setShareCardMsg('邀请码加载中，请稍候')
       return
@@ -209,22 +214,30 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
   return (
     <Sheet title="蜜糖积分" onClose={onClose}>
       {coreLoading ? (
-        <div className="skeleton" style={{ height: 160 }} />
+        <div className="invite-skeleton">
+          <div className="sk-line" style={{ width: '38%' }} />
+          <div className="sk-line sk-line-lg" style={{ width: '56%' }} />
+          <div className="sk-line" style={{ width: '70%' }} />
+          <div className="sk-gap" />
+          <div className="sk-line" style={{ width: '28%' }} />
+          <div className="sk-line sk-line-lg" style={{ width: '44%' }} />
+          <div className="sk-line" style={{ width: '82%' }} />
+        </div>
       ) : (
-        <>
+        <div className="invite-fade-in">
           {/* 邀请码 */}
           <div className="card" style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 6 }}>我的邀请码</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: 3, fontVariantNumeric: 'tabular-nums' }}>
+              <button
+                className="invite-code"
+                style={{ fontSize: 24, fontWeight: 600, letterSpacing: 3, fontVariantNumeric: 'tabular-nums' }}
+                onClick={() => void copyCode()}
+                title="点击复制邀请码"
+              >
                 {code || '———'}
-              </div>
-              <button className="btn btn-ghost" style={{ marginLeft: 'auto' }} onClick={() => void shareInviteCard()}>
-                {sharingCard === 'invite' ? '生成中…' : '分享卡片'}
               </button>
-              <button className="btn btn-ghost" onClick={() => void shareInvite()}>
-                分享
-              </button>
+              <span className="invite-code-hint">点击复制</span>
             </div>
             {shareMsg && (
               <div className="notice" style={{ marginTop: 8, fontSize: 13 }}>{shareMsg}</div>
@@ -232,6 +245,9 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
             {shareCardMsg && (
               <div className="notice" style={{ marginTop: 8, fontSize: 13 }}>{shareCardMsg}</div>
             )}
+            <button className="btn" style={{ marginTop: 12 }} onClick={() => setShareOpen(true)}>
+              🐝 邀请好友
+            </button>
             <div className="helper" style={{ marginTop: 8 }}>
               好友用此码注册，双方都能获得积分 · 已邀请 {invitees} 人{settled > 0 ? `（${settled} 人已达标）` : ''}
             </div>
@@ -297,9 +313,15 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
             <span className="hint">点亮后点击可分享</span>
           </div>
           {extraLoading ? (
-            <div className="skeleton" style={{ height: 96, marginBottom: 12 }} />
+            <div className="invite-skeleton invite-skeleton-badges">
+              <div className="sk-badge" />
+              <div className="sk-badge" />
+              <div className="sk-badge" />
+              <div className="sk-badge" />
+              <div className="sk-badge" />
+            </div>
           ) : (
-            <div className="card" style={{ marginBottom: 12, display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+            <div className="card invite-fade-in" style={{ marginBottom: 12, display: 'flex', flexWrap: 'wrap', gap: 10 }}>
               {BADGES.map((b) => {
                 const unlocked = unlockedKeys.has(b.key)
                 return (
@@ -356,7 +378,34 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
               </div>
             </>
           )}
-        </>
+        </div>
+      )}
+
+      {/* 分享动作面板：一个主按钮 → 选图片卡 / 文字口令 */}
+      {shareOpen && (
+        <div className="share-panel-mask" onClick={() => setShareOpen(false)} role="presentation">
+          <div className="share-panel" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="邀请好友">
+            <div className="share-panel-title">邀请好友</div>
+            <button className="share-option" onClick={() => void shareInviteCard()}>
+              <span className="share-option-emoji">🖼️</span>
+              <span className="share-option-body">
+                <span className="share-option-name">分享邀请卡片</span>
+                <span className="share-option-desc">生成精美图片，适合发朋友圈 / 群</span>
+              </span>
+              {sharingCard === 'invite' && <span className="share-option-loading">生成中…</span>}
+            </button>
+            <button className="share-option" onClick={() => void shareInvite()}>
+              <span className="share-option-emoji">📋</span>
+              <span className="share-option-body">
+                <span className="share-option-name">复制邀请口令</span>
+                <span className="share-option-desc">复制文字 + 链接，适合私聊粘贴</span>
+              </span>
+            </button>
+            <button className="share-panel-cancel" onClick={() => setShareOpen(false)}>
+              取消
+            </button>
+          </div>
+        </div>
       )}
     </Sheet>
   )

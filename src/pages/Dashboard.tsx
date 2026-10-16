@@ -16,7 +16,9 @@ import {
   listMealsBetween,
   listMealsByDate,
   listWaterByDate,
+  refundCheckinExercise,
   refundCheckinHoney,
+  refundCheckinWater,
   settleInviteCheckin,
   undoLastWater,
   unlockBadge,
@@ -343,6 +345,8 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
     try {
       await undoLastWater(logDate)
       setWater(await listWaterByDate(logDate))
+      // 撤销后若当日饮水不再达标，收回 checkin_water 积分（防刷）
+      if (logDate === today) void refundCheckinWater(logDate)
     } catch (e) {
       setError(e instanceof Error ? e.message : '撤销失败')
     }
@@ -367,6 +371,8 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
     setError('')
     try {
       setExercise(await deleteExercise(id, logDate))
+      // 删除后若当日已无运动记录，收回 checkin_exercise 积分（防刷）
+      if (logDate === today) void refundCheckinExercise(logDate)
     } catch (e) {
       setError(e instanceof Error ? e.message : '删除失败')
     }

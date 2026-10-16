@@ -363,8 +363,49 @@ GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
 --   invite_attempts 表：邀请码绑定尝试记录（节流用）
 --   redeem_by_code(text) → text  SECURITY DEFINER（核销+发终身会员，ok/used/bad）
 --   invite_throttled(text) → boolean  SECURITY DEFINER（60s 失败≥5 次限流）
---   bind_invite 已重写：接入节流，返回增加 throttled 状态码
---   ⚠️ 两表已 ENABLE+FORCE RLS 且 REVOKE authenticated 直读写权限：
---       兑换码/尝试记录只能经 SECURITY DEFINER 函数访问，杜绝 SQL 直查拿码。
 --   EXECUTE 均已 REVOKE PUBLIC/anon，仅 GRANT authenticated。
 -- ════════════════════════════════════════════════════════════════════════════
+--
+-- ══ 0013 积分体系安全加固（审计后修复，2026-10-16）════════════════════════
+--   审计发现 4 个「幽灵函数」无版本化 SQL，导出真实 DDL 后确认最致命漏洞：
+--     grant_honey 是 SECURITY INVOKER 且无入参校验，任何登录用户可 RPC 伪造
+--     任意积分换终身会员。
+--   本 migration 修复（均已云端执行）：
+--     grant_photo_bonus 重写为 SECURITY DEFINER + source 白名单（newbie=3/
+--                     streak7=2/honey=1）+ ttl 上限 7 天（复查补充发现的同类漏洞）
+--     grant_honey     重写为 SECURITY DEFINER + reason 白名单 + 金额校验
+--                     （checkin_meal=5/water=2/exercise=2/streak_milestone∈7档）
+--     unlock_badge    重写为 SECURITY DEFINER + 12 枚 badge_key 白名单
+--     redeem_honey    重写：ai1Scan 加单日上限 5 次（ref_id='ai-'+日期计数）
+--     bind_invite     重写：接入 invite_throttled 节流 + 写 invite_attempts +
+--                     邀请人月度返佣上限 3000（inviter_register 也计入）
+--     settle_invite_checkin 重写：邀请人月度返佣上限 3000
+--     refund_checkin_water_by_date / refund_checkin_exercise_by_date 新增：
+--                     撤销饮水/删除运动后收回对应打卡积分（防刷）
+--   ⚠️ 审计结论：grant_honey/redeem_honey/unlock_badge/get_inviter_by_code 此前
+--      均为「云端手工创建、无版本化脚本」，本次已补全为 migration 0013。
+-- ════════════════════════════════════════════════════════════════════════════
+--
+-- ══ 0014 拍照额度「预占 token」机制（堵 release_ai_quota 额度绕过）═════════
+--   ai_quota_claims 表：consume 落 token（记录扣的是基础/奖励额度），release 凭 token
+--     一次性精确退还。ENABLE+FORCE RLS + REVOKE authenticated（只经函数访问）。
+--   consume_photo_quota 重写为 SECURITY DEFINER + 返回 token 列。
+--   release_photo_quota(token) 新增：SECURITY DEFINER，凭 token 精确释放（扣奖励还奖励、
+--     扣基础还基础），每个 token 只能退一次。
+--   release_ai_quota 废弃：REVOKE authenticated（堵住「清零当日用量白嫖无限拍照」旧路径）。
+-- ════════════════════════════════════════════════════════════════════════════
+--
+-- ══ 0015 权益/积分/额度表级直写通道封堵（P0-0 根因）════════════════════════
+--   二次复查发现：honey_ledger/entitlements/quota_bonus/ai_usage/badges/invite_links
+--   的 RLS policy 是 FOR ALL + 表级 GRANT authenticated 全权限 → 用户可绕过函数白名单
+--   直接写表（直插积分、直改 lifetime、直插额度、直清用量）。函数白名单治标不治本。
+--   修复：
+--     consume_ai_quota / get_photo_quota 改 SECURITY DEFINER（避免被 REVOKE 误伤）。
+--     表级 REVOKE authenticated 写权限：
+--       honey_ledger / entitlements / ai_usage / badges → 仅保留 SELECT（读）
+--       quota_bonus → 完全 REVOKE（前端走 get_photo_quota RPC）
+--       invite_links → 保留 SELECT + INSERT（getMyInviteCode 创建邀请码）
+--   前端：删除 saveEntitlement + activate（预留的支付回调直写 entitlements，真实支付
+--     接入后由服务端回调写权益，不经前端 authenticated）。
+-- ════════════════════════════════════════════════════════════════════════════
+--

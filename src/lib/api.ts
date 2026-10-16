@@ -320,23 +320,6 @@ export async function getEntitlement(): Promise<Entitlement | null> {
   return (data as Entitlement | null) ?? null
 }
 
-export async function saveEntitlement(patch: Partial<Entitlement> & { plan: Entitlement['plan'] }): Promise<Entitlement> {
-  const existing = await getEntitlement()
-  const fields = { ...patch, updated_at: new Date().toISOString() }
-  if (existing?.id !== undefined) {
-    const { data, error } = await db('entitlements').update(fields).eq('id', existing.id).select()
-    if (error) throw new Error(error.message || '保存会员信息失败')
-    const list = rows<Entitlement>(data)
-    if (list.length === 0) throw new Error('保存失败：该权益不属于当前账号')
-    return list[0]
-  }
-  const { data, error } = await db('entitlements').insert(fields).select()
-  if (error) throw new Error(error.message || '保存会员信息失败')
-  const list = rows<Entitlement>(data)
-  if (list.length === 0) throw new Error('保存失败：服务器没有返回记录')
-  return list[0]
-}
-
 export interface UsageRow {
   usage_date: string
   feature: string
@@ -384,12 +367,15 @@ export interface QuotaResult {
   used: number
   /** 本周期剩余次数 */
   remaining: number
+  /** 预占 token（识别失败退还时凭它精确释放；仅拍照额度返回，可空） */
+  token?: string | null
 }
 
 interface QuotaRpcRow {
   allowed?: boolean
   used?: number
   remaining?: number
+  token?: string | null
 }
 
 function callRpc(fn: string, args: Record<string, unknown>): PromiseLike<QueryResult> {
@@ -406,7 +392,7 @@ function callRpc(fn: string, args: Record<string, unknown>): PromiseLike<QueryRe
  * 会互相覆盖，免费额度限制形同虚设）。
  *
  * 采用「先占后用」而不是「先用后记」：AI 请求一旦发出就已产生成本，即使用户中途
- * 关掉页面，这次占用也应保留；调用失败时由 releaseAiQuota 退还。
+ * 关掉页面，这次占用也应保留；调用失败时由带 token 的 releasePhotoQuota 退还（拍照额度）。
  *
  * 函数不可用时回退到旧的读改写路径，保证任何情况下功能不中断。
  */
@@ -432,15 +418,6 @@ export async function consumeAiQuota(usageDate: string, feature: string, limit: 
     if (used >= limit) return { allowed: false, used, remaining: 0 }
     await bumpUsage(usageDate, feature, used)
     return { allowed: true, used: used + 1, remaining: Math.max(0, limit - used - 1) }
-  }
-}
-
-/** 退还一次已占用但最终失败的额度（AI 报错 / 超时），失败静默忽略 */
-export async function releaseAiQuota(usageDate: string, feature: string): Promise<void> {
-  try {
-    await callRpc('release_ai_quota', { p_usage_date: usageDate, p_feature: feature, p_amount: 1 })
-  } catch {
-    // 退还失败只意味着用户少一次免费额度，不应阻断主流程
   }
 }
 
@@ -475,6 +452,7 @@ export async function getPhotoQuota(): Promise<PhotoQuota> {
 /**
  * 原子占用一次「拍照识别」额度。
  * 优先扣最早过期的奖励余额，不足再扣基础额度；识别失败由 releasePhotoQuota 退还。
+ * 返回预占 token（releasePhotoQuota 凭它一次性精确释放）。
  */
 export async function consumePhotoQuota(): Promise<QuotaResult> {
   try {
@@ -490,18 +468,18 @@ export async function consumePhotoQuota(): Promise<QuotaResult> {
       allowed: row.allowed,
       used,
       remaining: Number.isFinite(Number(row.remaining)) ? Number(row.remaining) : Math.max(0, FREE_DAILY_AI - used),
+      token: row.token ?? null,
     }
   } catch {
-    // 函数不可用回退：走基础额度的 consume_ai_quota（奖励额度一并失效，但不阻断主流程）
+    // 函数不可用回退：走基础额度的 consume_ai_quota（无 token，奖励额度一并失效，不阻断主流程）
     return consumeAiQuota(todayKey(), SCAN_FEATURE, FREE_DAILY_AI)
   }
 }
 
-/** 退还一次拍照额度（识别失败时调用）。优先还奖励，其次还基础。 */
-export async function releasePhotoQuota(): Promise<void> {
-  // 无法精确判断刚才扣的是奖励还是基础，这里统一还基础额度；
-  // 奖励额度退还精确性由消费侧依赖 get_photo_quota 重读刷新，不阻塞主流程。
-  await releaseAiQuota(todayKey(), SCAN_FEATURE)
+/** 退还一次拍照额度（识别失败时调用，凭 consume 返回的 token 精确释放） */
+export async function releasePhotoQuota(token: string | null): Promise<void> {
+  if (!token) return
+  await callRpc('release_photo_quota', { p_token: token })
 }
 
 /** 发放奖励额度（防重复领取靠数据库 UNIQUE 约束） */
@@ -769,6 +747,28 @@ export async function unlockBadge(badgeKey: string): Promise<boolean> {
 export async function refundCheckinHoney(logDate: string): Promise<boolean> {
   try {
     const { data, error } = await callRpc('refund_checkin_honey_by_date', { p_log_date: logDate })
+    if (error) return false
+    return (Array.isArray(data) ? data[0] : data) === true
+  } catch {
+    return false
+  }
+}
+
+/** 撤销饮水后，若当日总量不再达标则收回 checkin_water 积分（防刷，幂等） */
+export async function refundCheckinWater(logDate: string): Promise<boolean> {
+  try {
+    const { data, error } = await callRpc('refund_checkin_water_by_date', { p_log_date: logDate })
+    if (error) return false
+    return (Array.isArray(data) ? data[0] : data) === true
+  } catch {
+    return false
+  }
+}
+
+/** 删除运动后，若当日已无运动记录则收回 checkin_exercise 积分（防刷，幂等） */
+export async function refundCheckinExercise(logDate: string): Promise<boolean> {
+  try {
+    const { data, error } = await callRpc('refund_checkin_exercise_by_date', { p_log_date: logDate })
     if (error) return false
     return (Array.isArray(data) ? data[0] : data) === true
   } catch {

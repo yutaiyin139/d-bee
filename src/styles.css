@@ -994,6 +994,173 @@ select {
   100% { background-position: 0 50%; }
 }
 
+/* 蜜糖积分弹层：分块骨架屏 + 内容淡入，消除加载完成时的整体跳变顿挫 */
+.invite-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0;
+}
+.sk-line {
+  height: 14px;
+  border-radius: 7px;
+  background: linear-gradient(90deg, var(--bg-2) 25%, #ece6da 37%, var(--bg-2) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.3s ease infinite;
+}
+.sk-line-lg {
+  height: 22px;
+  border-radius: 8px;
+}
+.sk-gap {
+  height: 6px;
+}
+/* 成就墙骨架：按真实徽章（40px 圆 + 名字）拼出的占位，避免高度突变 */
+.invite-skeleton-badges {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  margin-bottom: 12px;
+}
+.sk-badge {
+  width: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.sk-badge::before {
+  content: '';
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
+  background: linear-gradient(90deg, var(--bg-2) 25%, #ece6da 37%, var(--bg-2) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.3s ease infinite;
+}
+.sk-badge::after {
+  content: '';
+  width: 80%;
+  height: 10px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, var(--bg-2) 25%, #ece6da 37%, var(--bg-2) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.3s ease infinite;
+}
+/* 内容淡入：仅透明度过渡，不做位移，避免跳动 */
+.invite-fade-in {
+  animation: inviteFadeIn 0.28s ease;
+}
+@keyframes inviteFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 邀请码：可点击复制 */
+.invite-code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--ink);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  line-height: 1.2;
+}
+.invite-code:active {
+  opacity: 0.6;
+}
+.invite-code-hint {
+  font-size: 11px;
+  color: var(--ink-3);
+  align-self: center;
+  margin-left: 2px;
+}
+
+/* 分享动作面板（方案 A） */
+.share-panel-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(30, 26, 20, 0.42);
+  z-index: 70;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: fade 0.18s ease;
+}
+.share-panel {
+  width: 100%;
+  max-width: 480px;
+  background: var(--bg);
+  border-radius: 22px 22px 0 0;
+  padding: 18px 18px calc(18px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)));
+  animation: slideUp 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.share-panel-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: center;
+  margin-bottom: 14px;
+}
+.share-option {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px;
+  margin-bottom: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+.share-option:active {
+  transform: scale(0.985);
+}
+.share-option-emoji {
+  font-size: 26px;
+  line-height: 1;
+}
+.share-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+.share-option-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.share-option-desc {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.share-option-loading {
+  font-size: 12px;
+  color: var(--honey-dark);
+}
+.share-panel-cancel {
+  width: 100%;
+  height: 46px;
+  margin-top: 2px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-lg);
+  color: var(--ink-2);
+  font-size: 15px;
+  font-weight: 500;
+}
+.share-panel-cancel:active {
+  opacity: 0.7;
+}
+
 .stat-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
