@@ -67,6 +67,12 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   const [healthSteps, setHealthSteps] = useState(0)
   const [healthTip, setHealthTip] = useState('')
 
+  // 饮食体检伸缩：默认展开，点击右上角折叠/展开详情区
+  const [checkupCollapsed, setCheckupCollapsed] = useState(false)
+
+  // 运动记录输入区伸缩：默认折叠，点「记录运动」展开（让首页更简洁）
+  const [exerciseCollapsed, setExerciseCollapsed] = useState(true)
+
   // 打卡：需要近半年的「有记录日期」集合；同时留一份近窗记录用于卡路里追踪
   const [loggedDates, setLoggedDates] = useState<string[]>([])
   const [recentMeals, setRecentMeals] = useState<MealEntry[]>([])
@@ -409,60 +415,71 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
                 <span className={`cu-level ${checkupTone}`}>{LEVEL_LABELS[checkupLevel]}</span>
                 <span className="cu-text">{dayInsight.verdict}</span>
               </span>
+              <button
+                className="checkup-toggle"
+                onClick={() => setCheckupCollapsed((v) => !v)}
+                aria-expanded={!checkupCollapsed}
+                aria-label={checkupCollapsed ? '展开体检详情' : '收起体检详情'}
+              >
+                <span className={`toggle-chevron ${checkupCollapsed ? 'is-folded' : ''}`}>▾</span>
+                <span className="toggle-label">{checkupCollapsed ? '展开' : '收起'}</span>
+              </button>
             </div>
 
-            {dayInsight.risks.length > 0 && (
-              <div className="checkup-group">
-                <div className="cg-title risk">建议留意</div>
-                {dayInsight.risks.map((t) => (
-                  <div className="cg-row" key={t.key}>
-                    <span className="cg-label">{t.label}</span>
-                    <span className="cg-badge">{t.count} 项</span>
-                    <span className="cg-reason">{t.reason}</span>
-                    <span className="cg-items">
-                      {t.items.join('、')}
-                      {t.count > t.items.length ? ` 等 ${t.count} 项` : ''}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className={`checkup-detail ${checkupCollapsed ? 'is-folded' : ''}`}>
+              {dayInsight.risks.length > 0 && (
+                <div className="checkup-group">
+                  <div className="cg-title risk">建议留意</div>
+                  {dayInsight.risks.map((t) => (
+                    <div className="cg-row" key={t.key}>
+                      <span className="cg-label">{t.label}</span>
+                      <span className="cg-badge">{t.count} 项</span>
+                      <span className="cg-reason">{t.reason}</span>
+                      <span className="cg-items">
+                        {t.items.join('、')}
+                        {t.count > t.items.length ? ` 等 ${t.count} 项` : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
-            {dayInsight.benefits.length > 0 && (
-              <div className="checkup-group">
-                <div className="cg-title good">值得肯定</div>
-                {dayInsight.benefits.map((t) => (
-                  <div className="cg-row" key={t.key}>
-                    <span className="cg-label">{t.label}</span>
-                    <span className="cg-badge good">{t.count} 项</span>
-                    <span className="cg-reason">{t.reason}</span>
-                    <span className="cg-items">
-                      {t.items.join('、')}
-                      {t.count > t.items.length ? ` 等 ${t.count} 项` : ''}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
+              {dayInsight.benefits.length > 0 && (
+                <div className="checkup-group">
+                  <div className="cg-title good">值得肯定</div>
+                  {dayInsight.benefits.map((t) => (
+                    <div className="cg-row" key={t.key}>
+                      <span className="cg-label">{t.label}</span>
+                      <span className="cg-badge good">{t.count} 项</span>
+                      <span className="cg-reason">{t.reason}</span>
+                      <span className="cg-items">
+                        {t.items.join('、')}
+                        {t.count > t.items.length ? ` 等 ${t.count} 项` : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
-            {(totals.na > 0 || totals.fb > 0) && (
-              <div className="microline" style={{ marginTop: 10 }}>
-                {totals.na > 0 && (
-                  <span className="micro-pill">今日钠 {Math.round(totals.na)} mg</span>
-                )}
-                {totals.fb > 0 && (
-                  <span className="micro-pill">膳食纤维 {Math.round(totals.fb * 10) / 10} g</span>
-                )}
-                {totals.as > 0 && (
-                  <span className="micro-pill">添加糖 {Math.round(totals.as * 10) / 10} g</span>
-                )}
-              </div>
-            )}
+              {(totals.na > 0 || totals.fb > 0) && (
+                <div className="microline" style={{ marginTop: 10 }}>
+                  {totals.na > 0 && (
+                    <span className="micro-pill">今日钠 {Math.round(totals.na)} mg</span>
+                  )}
+                  {totals.fb > 0 && (
+                    <span className="micro-pill">膳食纤维 {Math.round(totals.fb * 10) / 10} g</span>
+                  )}
+                  {totals.as > 0 && (
+                    <span className="micro-pill">添加糖 {Math.round(totals.as * 10) / 10} g</span>
+                  )}
+                </div>
+              )}
 
-            <div className="helper" style={{ marginTop: 4, lineHeight: 1.7 }}>
-              按营养成分与烹调方式本地推算
-              {dayInsight.aiAssisted > 0 ? `，其中 ${dayInsight.aiAssisted} 项参考了 AI 评分` : ''}，
-              不消耗 AI 次数。仅供参考，不构成医疗建议。
+              <div className="helper" style={{ marginTop: 4, lineHeight: 1.7 }}>
+                按营养成分与烹调方式本地推算
+                {dayInsight.aiAssisted > 0 ? `，其中 ${dayInsight.aiAssisted} 项参考了 AI 评分` : ''}，
+                不消耗 AI 次数。仅供参考，不构成医疗建议。
+              </div>
             </div>
           </div>
         </>
@@ -564,6 +581,16 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
             ) : (
               <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>今天还没动</span>
             )}
+            <button
+              className="checkup-toggle"
+              style={{ marginLeft: 8 }}
+              onClick={() => setExerciseCollapsed((v) => !v)}
+              aria-expanded={!exerciseCollapsed}
+              aria-label={exerciseCollapsed ? '展开记录运动' : '收起记录运动'}
+            >
+              <span className={`toggle-chevron ${exerciseCollapsed ? 'is-folded' : ''}`}>▾</span>
+              <span className="toggle-label">{exerciseCollapsed ? '记录运动' : '收起'}</span>
+            </button>
           </span>
         </div>
 
@@ -596,30 +623,32 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
           </div>
         )}
 
-        <div className="chips chips-scroll" style={{ marginBottom: 10 }}>
-          {EXERCISES.map((e) => (
-            <button key={e.name} className={`chip ${exName === e.name ? 'active' : ''}`} onClick={() => setExName(e.name)}>
-              {e.name}
-            </button>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <div className="stepper" style={{ flex: 1 }}>
-            <input
-              type="number"
-              inputMode="numeric"
-              min={5}
-              max={300}
-              value={exMinutes}
-              onChange={(e) => setExMinutes(Math.max(5, Math.min(300, Number(e.target.value) || 5)))}
-            />
-            <span className="unit">分钟</span>
-            <span className="ex-est">≈ {exPreview} kcal</span>
+        <div className={`checkup-detail ${exerciseCollapsed ? 'is-folded' : ''}`}>
+          <div className="chips chips-scroll" style={{ marginBottom: 10 }}>
+            {EXERCISES.map((e) => (
+              <button key={e.name} className={`chip ${exName === e.name ? 'active' : ''}`} onClick={() => setExName(e.name)}>
+                {e.name}
+              </button>
+            ))}
           </div>
-          <button className="btn btn-ghost" style={{ width: 96, flexShrink: 0 }} onClick={handleAddExercise}>
-            <IconPlus color="var(--ink)" />
-            记录
-          </button>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <div className="stepper" style={{ flex: 1 }}>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={5}
+                max={300}
+                value={exMinutes}
+                onChange={(e) => setExMinutes(Math.max(5, Math.min(300, Number(e.target.value) || 5)))}
+              />
+              <span className="unit">分钟</span>
+              <span className="ex-est">≈ {exPreview} kcal</span>
+            </div>
+            <button className="btn btn-ghost" style={{ width: 96, flexShrink: 0 }} onClick={handleAddExercise}>
+              <IconPlus color="var(--ink)" />
+              记录
+            </button>
+          </div>
         </div>
       </div>
 

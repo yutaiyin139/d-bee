@@ -2228,6 +2228,58 @@ select {
   border-bottom: 1px solid var(--line);
 }
 
+/* 右上角伸缩切换按钮 */
+.checkup-toggle {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 9px;
+  border: 1px solid var(--line-2);
+  border-radius: 99px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.checkup-toggle:active {
+  background: var(--line);
+}
+
+.toggle-chevron {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 1;
+  transition: transform 0.25s ease;
+}
+
+.toggle-chevron.is-folded {
+  transform: rotate(-90deg);
+}
+
+.toggle-label {
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* 详情区折叠：max-height 过渡实现平滑伸缩 */
+.checkup-detail {
+  overflow: hidden;
+  max-height: 1200px;
+  transition: max-height 0.32s ease, opacity 0.24s ease;
+  opacity: 1;
+}
+
+.checkup-detail.is-folded {
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .cu-score {
   flex: 0 0 auto;
   width: 46px;
