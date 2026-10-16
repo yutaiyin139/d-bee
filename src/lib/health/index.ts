@@ -15,7 +15,7 @@
 
 import { detectHealthVendor, isWechatWebView } from './brand'
 import type { HealthVendorInfo } from './brand'
-import { isNative } from '../platform'
+import { isIOS } from '../platform'
 
 export type { HealthVendor, HealthVendorInfo } from './brand'
 
@@ -34,10 +34,14 @@ export function getHealthVendor(): HealthVendorInfo {
 
 /**
  * 是否显示「连接健康」入口。
- * 仅原生 App 显示；Web（含 PWA、桌面浏览器、微信内置浏览器）不显示。
+ *
+ * 仅 iOS 原生 App 显示连接按钮：当前只有 Apple 健康（HealthKit）支持真同步，
+ * 华为/小米/OPPO/vivo 等安卓厂商运动健康均无公开数据读取 API，显示连接按钮
+ * 会误导用户「点一下就能同步」，故安卓端一律不显示按钮。
+ * Web（含 PWA、桌面浏览器、微信内置浏览器）也不显示。
  */
 export function isHealthConnectable(): boolean {
-  return isNative()
+  return isIOS()
 }
 
 /**

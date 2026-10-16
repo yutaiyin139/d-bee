@@ -83,20 +83,13 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   // 饮食体检伸缩：默认展开，点击右上角折叠/展开详情区；折叠偏好记忆到本地，下次打开保持
   const [checkupCollapsed, setCheckupCollapsed] = useState(false)
 
-  // 运动记录输入区伸缩：默认折叠，点「记录运动」展开（让首页更简洁）；同样记忆偏好
-  const [exerciseCollapsed, setExerciseCollapsed] = useState(true)
-
   // 折叠偏好：挂载时从本地读取一次，之后用户切换时写回（异步、静默，失败不影响交互）
   useEffect(() => {
     let alive = true
     void (async () => {
-      const [c, e] = await Promise.all([
-        kvGet('ui.checkup.collapsed', null),
-        kvGet('ui.exercise.collapsed', null),
-      ])
+      const c = await kvGet('ui.checkup.collapsed', null)
       if (!alive) return
       if (c === '1') setCheckupCollapsed(true)
-      if (e === '1') setExerciseCollapsed(true)
     })()
     return () => {
       alive = false
@@ -107,14 +100,6 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
     setCheckupCollapsed((v) => {
       const next = !v
       void kvSet('ui.checkup.collapsed', next ? '1' : '0')
-      return next
-    })
-  }
-
-  function toggleExercise() {
-    setExerciseCollapsed((v) => {
-      const next = !v
-      void kvSet('ui.exercise.collapsed', next ? '1' : '0')
       return next
     })
   }
@@ -659,16 +644,6 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
             ) : (
               <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>今天还没动</span>
             )}
-            <button
-              className="checkup-toggle"
-              style={{ marginLeft: 8 }}
-              onClick={toggleExercise}
-              aria-expanded={!exerciseCollapsed}
-              aria-label={exerciseCollapsed ? '展开记录运动' : '收起记录运动'}
-            >
-              <span className={`toggle-chevron ${exerciseCollapsed ? 'is-folded' : ''}`}>▾</span>
-              <span className="toggle-label">{exerciseCollapsed ? '记录运动' : '收起'}</span>
-            </button>
           </span>
         </div>
 
@@ -701,32 +676,30 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
           </div>
         )}
 
-        <div className={`checkup-detail ${exerciseCollapsed ? 'is-folded' : ''}`}>
-          <div className="chips chips-scroll" style={{ marginBottom: 10 }}>
-            {EXERCISES.map((e) => (
-              <button key={e.name} className={`chip ${exName === e.name ? 'active' : ''}`} onClick={() => setExName(e.name)}>
-                {e.name}
-              </button>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <div className="stepper" style={{ flex: 1 }}>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={5}
-                max={300}
-                value={exMinutes}
-                onChange={(e) => setExMinutes(Math.max(5, Math.min(300, Number(e.target.value) || 5)))}
-              />
-              <span className="unit">分钟</span>
-              <span className="ex-est">≈ {exPreview} kcal</span>
-            </div>
-            <button className="btn btn-ghost" style={{ width: 96, flexShrink: 0 }} onClick={handleAddExercise}>
-              <IconPlus color="var(--ink)" />
-              记录
+        <div className="chips chips-scroll" style={{ marginBottom: 10 }}>
+          {EXERCISES.map((e) => (
+            <button key={e.name} className={`chip ${exName === e.name ? 'active' : ''}`} onClick={() => setExName(e.name)}>
+              {e.name}
             </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div className="stepper" style={{ flex: 1 }}>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={5}
+              max={300}
+              value={exMinutes}
+              onChange={(e) => setExMinutes(Math.max(5, Math.min(300, Number(e.target.value) || 5)))}
+            />
+            <span className="unit">分钟</span>
+            <span className="ex-est">≈ {exPreview} kcal</span>
           </div>
+          <button className="btn btn-ghost" style={{ width: 96, flexShrink: 0 }} onClick={handleAddExercise}>
+            <IconPlus color="var(--ink)" />
+            记录
+          </button>
         </div>
       </div>
 

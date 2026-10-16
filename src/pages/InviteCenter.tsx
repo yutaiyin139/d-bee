@@ -46,6 +46,7 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
   const [loading, setLoading] = useState(true)
   const [redeeming, setRedeeming] = useState<string | null>(null)
   const [redeemMsg, setRedeemMsg] = useState('')
+  const [shareMsg, setShareMsg] = useState('')
 
   useEffect(() => {
     void (async () => {
@@ -95,12 +96,35 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
     return s
   }, [badges])
 
-  const shareInvite = useCallback(() => {
-    const text = `我在用「自律蜜蜂」记录饮食、自律打卡，用我的邀请码 ${code} 注册，一起变自律吧！`
+  const shareInvite = useCallback(async () => {
+    if (!code) {
+      setShareMsg('邀请码加载中，请稍候')
+      return
+    }
+    // 邀请链接：指向 Web 站点，带 ?invite=CODE，好友点开自动带入邀请码注册
+    const link = `${location.origin}?invite=${encodeURIComponent(code)}`
+    const text = `我在用「自律蜜蜂」记录饮食、自律打卡，用我的邀请码 ${code} 注册，双方都能得积分！\n${link}`
+    setShareMsg('')
+
+    // 1) 优先系统分享面板（微信/QQ 等）；失败或不可用则降级复制口令
     if (typeof navigator !== 'undefined' && navigator.share) {
-      void navigator.share({ text }).catch(() => undefined)
-    } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      void navigator.clipboard.writeText(text).catch(() => undefined)
+      try {
+        await navigator.share({ title: '自律蜜蜂', text, url: link })
+        setShareMsg('分享成功')
+        return
+      } catch (e) {
+        // 用户取消（AbortError）不算失败，静默返回
+        if (e instanceof DOMException && e.name === 'AbortError') return
+        // 其它失败落到下面的复制降级
+      }
+    }
+
+    // 2) 降级：复制邀请口令到剪贴板
+    try {
+      await navigator.clipboard.writeText(text)
+      setShareMsg('邀请口令已复制，去粘贴给好友吧')
+    } catch {
+      setShareMsg('复制失败，请手动长按复制邀请码')
     }
   }, [code])
 
@@ -117,10 +141,13 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
               <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: 3, fontVariantNumeric: 'tabular-nums' }}>
                 {code || '———'}
               </div>
-              <button className="btn btn-ghost" style={{ marginLeft: 'auto' }} onClick={shareInvite}>
+              <button className="btn btn-ghost" style={{ marginLeft: 'auto' }} onClick={() => void shareInvite()}>
                 分享
               </button>
             </div>
+            {shareMsg && (
+              <div className="notice" style={{ marginTop: 8, fontSize: 13 }}>{shareMsg}</div>
+            )}
             <div className="helper" style={{ marginTop: 8 }}>
               好友用此码注册，双方都能获得积分 · 已邀请 {invitees} 人{settled > 0 ? `（${settled} 人已达标）` : ''}
             </div>

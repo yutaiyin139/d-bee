@@ -16,6 +16,17 @@ import { PlanProvider } from './state/plan'
 type Stage = 'loading' | 'auth' | 'onboarding' | 'main'
 type Tab = 'today' | 'report' | 'me'
 
+/** 从 URL 读取邀请码（?invite=CODE），好友分享链接落地时自动带入注册 */
+function readInviteFromUrl(): string {
+  try {
+    const params = new URLSearchParams(location.search)
+    const raw = params.get('invite') ?? ''
+    return raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)
+  } catch {
+    return ''
+  }
+}
+
 function maskAccount(user: unknown): string {
   const u = (user ?? {}) as Record<string, unknown>
   const phone = (u.phone ?? u.phone_number) as string | undefined
@@ -51,6 +62,8 @@ function AppInner({ onOpenLegal }: { onOpenLegal: (id: DocId) => void }) {
   const [account, setAccount] = useState('')
   const [tab, setTab] = useState<Tab>('today')
   const [bootError, setBootError] = useState('')
+  // 好友邀请链接带入的邀请码（?invite=CODE），仅在启动时读取一次
+  const [inviteCode] = useState(() => readInviteFromUrl())
 
   const enterApp = useCallback(async (user: unknown) => {
     setAccount(maskAccount(user))
@@ -161,6 +174,7 @@ function AppInner({ onOpenLegal }: { onOpenLegal: (id: DocId) => void }) {
           </div>
         )}
         <AuthScreen
+          initialInviteCode={inviteCode}
           onOpenLegal={onOpenLegal}
           onSignedIn={() => {
             setStage('loading')

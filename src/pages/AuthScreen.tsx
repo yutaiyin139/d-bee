@@ -13,11 +13,13 @@ const WECHAT_LOGIN_AVAILABLE = isWechatLoginAvailable()
 interface AuthScreenProps {
   onSignedIn: () => void
   onOpenLegal: (id: DocId) => void
+  /** 好友邀请链接带入的邀请码（?invite=CODE），预填并展示为已识别标签 */
+  initialInviteCode?: string
 }
 
 type Channel = 'phone' | 'email'
 
-export function AuthScreen({ onSignedIn, onOpenLegal }: AuthScreenProps) {
+export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: AuthScreenProps) {
   // 原生端专用：连接自检面板（懒加载；Web 端恒为 null，分包不会被加载）
   const NativeDiagnostics = useNativeDiagnosticsEntry()
   const [channel, setChannel] = useState<Channel>('phone')
@@ -40,8 +42,10 @@ export function AuthScreen({ onSignedIn, onOpenLegal }: AuthScreenProps) {
   const [emailCodeSent, setEmailCodeSent] = useState(false)
   const [needPassword, setNeedPassword] = useState(false)
 
-  // 邀请码（选填）：新用户注册时填写可绑定邀请关系
-  const [inviteCode, setInviteCode] = useState('')
+  // 邀请码（选填）：新用户注册时填写可绑定邀请关系。
+  // 链接带入（?invite=CODE）时预填；手动场景默认收起，点击「有邀请码？」才展开。
+  const [inviteCode, setInviteCode] = useState(initialInviteCode)
+  const [inviteExpanded, setInviteExpanded] = useState(!!initialInviteCode)
 
   useEffect(() => {
     if (countdown <= 0) return
@@ -252,18 +256,37 @@ export function AuthScreen({ onSignedIn, onOpenLegal }: AuthScreenProps) {
           </button>
         </div>
 
-        <div className="field" style={{ marginTop: 14 }}>
-          <label htmlFor="invite-code">邀请码（选填）</label>
-          <input
-            id="invite-code"
-            type="text"
-            placeholder="好友邀请你时可填写，注册后不可改"
-            value={inviteCode}
-            maxLength={8}
-            onChange={(e) => setInviteCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-          />
-          <div className="helper">填写好友的邀请码，双方都能获得积分奖励</div>
-        </div>
+        {inviteCode ? (
+          <div className="card" style={{ marginTop: 14, padding: '12px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>已识别好友邀请码</span>
+              <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: 2, color: 'var(--honey-dark)' }}>{inviteCode}</span>
+              <button className="btn-text" style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--ink-3)' }} onClick={() => { setInviteCode(''); setInviteExpanded(false) }}>
+                清除
+              </button>
+            </div>
+            <div className="helper" style={{ marginTop: 6 }}>注册成功后自动绑定，双方都能获得积分</div>
+          </div>
+        ) : inviteExpanded ? (
+          <div className="field" style={{ marginTop: 14 }}>
+            <label htmlFor="invite-code">邀请码（选填）</label>
+            <input
+              id="invite-code"
+              type="text"
+              placeholder="好友邀请你时可填写，注册后不可改"
+              value={inviteCode}
+              maxLength={8}
+              onChange={(e) => setInviteCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+            />
+            <div className="helper">填写好友的邀请码，双方都能获得积分奖励</div>
+          </div>
+        ) : (
+          <div style={{ textAlign: 'center', marginTop: 12 }}>
+            <button className="btn-text" style={{ fontSize: 13, color: 'var(--ink-3)' }} onClick={() => setInviteExpanded(true)}>
+              有好友邀请码？点此填写
+            </button>
+          </div>
+        )}
 
         {channel === 'phone' ? (
           <>
