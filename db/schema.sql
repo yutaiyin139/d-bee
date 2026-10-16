@@ -317,3 +317,23 @@ GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
 --   均为 SECURITY INVOKER（RLS 照常生效），owner_id 取 auth.uid()，
 --   EXECUTE 已 REVOKE PUBLIC/anon，仅 GRANT 给 authenticated。
 -- ════════════════════════════════════════════════════════════════════════════
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 2026-10-16 · migrations/0008-invite-honey.sql 新增（邀约 + 蜜糖积分 + 徽章）
+--
+-- 新增 3 张表（完整 DDL 见 migrations/0008）：
+--   invite_links  邀约邀请码（owner_id UNIQUE + code UNIQUE，一人一码）
+--   honey_ledger  蜜糖积分账本（流水式正负记账，余额=SUM(amount)；
+--                 UNIQUE(owner_id, reason, ref_id) WHERE ref_id IS NOT NULL 防重复）
+--   badges        成就徽章（UNIQUE(owner_id, badge_key) 防重复解锁）
+--
+-- profiles 加 2 列：
+--   invited_by  text（邀请人 owner_id，partial unique 防一人被多次邀请）
+--   invite_code text（新人填的码，审计用）
+--
+-- 新增 3 个函数：
+--   get_inviter_by_code(text) → text   SECURITY DEFINER（绕过 RLS 按码查邀请人）
+--   grant_honey(text,text,integer,integer) → boolean  SECURITY INVOKER（发积分，去重）
+--   unlock_badge(text) → boolean       SECURITY INVOKER（解锁徽章，去重）
+--   EXECUTE 均已 REVOKE PUBLIC/anon，仅 GRANT authenticated。
+-- ════════════════════════════════════════════════════════════════════════════
