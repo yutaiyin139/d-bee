@@ -30,6 +30,7 @@ import { categoryOf } from '../lib/foods'
 import { LEVEL_LABELS, levelOfScore, nextMealAdvice, summarizeEntries } from '../lib/foodInsight'
 import { ACTIVITY_EATBACK_RATIO, connectHealth, estimateActivityKcal, getHealthVendor, isHealthConnectable } from '../lib/health'
 import { CHECKIN_EXERCISE, CHECKIN_MEAL, CHECKIN_WATER, dailyCheckinHoney, streakMilestoneHoney } from '../lib/invite'
+import { errText } from '../lib/errmsg'
 import { kvGet, kvSet } from '../lib/kv'
 import { EXERCISES, exerciseKcal, formatDateShort, guessMealType, shiftDate, targetFromProfile, todayKey, waterTargetMl } from '../lib/nutrition'
 import { createShareCanvas, drawCheckinCard, canvasToBlob } from '../lib/sharecard'
@@ -40,6 +41,7 @@ import { usePlan } from '../state/plan'
 import { MEAL_LABELS, MEAL_ORDER } from '../types'
 import type { ExerciseLog, MealEntry, MealType, Profile, WaterLog } from '../types'
 import { CoachSheet } from './CoachSheet'
+import { InviteCenter } from './InviteCenter'
 import { LogSheet } from './LogSheet'
 
 interface DashboardProps {
@@ -67,6 +69,8 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   const [sheetMeal, setSheetMeal] = useState<MealType | null>(null)
   const [coachOpen, setCoachOpen] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
+  // 邀请中心直接在本页可达：增长主入口不再只藏在「我的」二级页
+  const [inviteOpen, setInviteOpen] = useState(false)
 
   // 原位编辑与删除确认：避免竞品「提交后不能改」「误触删除」两个差评点
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -134,7 +138,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
       setRecentMeals(recent)
       setLoggedDates(Array.from(new Set(recent.map((r) => r.log_date))))
     } catch (e) {
-      setError(e instanceof Error ? e.message : '加载失败')
+      setError(errText(e, '加载失败'))
     } finally {
       setLoading(false)
     }
@@ -302,7 +306,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
       // 删除后统一刷新：当日列表、运动饮水与打卡状态都依赖日期窗数据
       await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : '删除失败')
+      setError(errText(e, '删除失败'))
     }
   }
 
@@ -327,7 +331,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
       setEditingId(null)
       await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : '修改失败')
+      setError(errText(e, '修改失败'))
     } finally {
       setSavingEdit(false)
     }
@@ -338,7 +342,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
     try {
       setWater(await addWater(logDate, ml))
     } catch (e) {
-      setError(e instanceof Error ? e.message : '记录饮水失败')
+      setError(errText(e, '记录饮水失败'))
     }
   }
 
@@ -350,7 +354,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
       // 撤销后若当日饮水不再达标，收回 checkin_water 积分（防刷）
       if (logDate === today) void refundCheckinWater(logDate)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '撤销失败')
+      setError(errText(e, '撤销失败'))
     }
   }
 
@@ -372,7 +376,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
     try {
       setExercise(await addExercise({ log_date: logDate, name: exName, minutes: exMinutesNum, calories: exPreview }))
     } catch (e) {
-      setError(e instanceof Error ? e.message : '记录运动失败')
+      setError(errText(e, '记录运动失败'))
     }
   }
 
@@ -384,7 +388,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
       // 删除后若当日已无运动记录，收回 checkin_exercise 积分（防刷）
       if (logDate === today) void refundCheckinExercise(logDate)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '删除失败')
+      setError(errText(e, '删除失败'))
     }
   }
 
@@ -426,7 +430,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
       })
       setShareCardMsg(res.message)
     } catch (e) {
-      setShareCardMsg(e instanceof Error ? e.message : '生成分享卡失败')
+      setShareCardMsg(errText(e, '生成分享卡失败'))
     } finally {
       setSharingCard(false)
     }
@@ -435,7 +439,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   const checkinDone = entries.length > 0
 
   return (
-    <div className="page">
+    <div className="page page-with-fab">
       <div className="page-top" />
 
       {/* 顶部：应用名 + 日期导航（点日期打开日历选任意一天） */}
@@ -879,19 +883,21 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
         饮食上有拿不准的？问问小蜜 →
       </button>
       {!pro && (
-        <div className="helper" style={{ textAlign: 'center', marginTop: 6 }}>
-          免费版每日 {aiRemaining ?? 0} 次 AI 额度（识别与问答共用）
-        </div>
+        <>
+          <div className="helper" style={{ textAlign: 'center', marginTop: 6 }}>
+            免费版每日 {aiRemaining ?? 0} 次 AI 额度（识别与问答共用）
+          </div>
+          {/* 拉新入口：首页直达，不再只藏在「我的」二级页 */}
+          <button className="invite-strip" onClick={() => setInviteOpen(true)}>
+            <span className="is-ico">🍯</span>
+            <span className="is-text">
+              邀请好友一起自律
+              <small>你得蜜糖，好友得 7 天 Pro</small>
+            </span>
+            <span className="arrow">›</span>
+          </button>
+        </>
       )}
-
-      <button
-        className="btn"
-        style={{ marginTop: 16 }}
-        onClick={() => setSheetMeal(guessMealType())}
-      >
-        <IconPlus color="#4a3208" />
-        记一餐
-      </button>
 
       {pickerOpen && (
         <MonthPicker
@@ -924,6 +930,22 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
 
       {/* 首页也放页脚：备案号与法律文档入口必须在首页可达 */}
       <SiteFooter onOpen={onOpenLegal} />
+
+      {/*
+        主操作「记一餐」改为吸底悬浮：原先压在页面最底部，要滚过 10+ 张卡片才够得到。
+        悬浮后任意滚动位置一键记录；各餐次行的「+」仍保留作为就地补录入口。
+        z-index 25 —— 高于内容、低于 tabbar(30) 与各类弹层(60/70)，弹层打开时自动被盖住。
+      */}
+      <button
+        className="btn fab-meal"
+        onClick={() => setSheetMeal(guessMealType())}
+        aria-label="记一餐"
+      >
+        <IconPlus color="#4a3208" />
+        记一餐
+      </button>
+
+      {inviteOpen && <InviteCenter onClose={() => setInviteOpen(false)} />}
     </div>
   )
 }

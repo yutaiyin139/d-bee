@@ -7,6 +7,7 @@ import { isNative } from '../lib/platform'
 import { isWechatLoginAvailable, signInWithWechatNative } from '../lib/wechat'
 import { useNativeDiagnosticsEntry } from '../native/useDiagnosticsEntry'
 import type { DocId } from '../content/legal'
+import { errText } from '../lib/errmsg'
 
 /** 静态判断，无需随渲染变化：Web 恒可用；原生需凭据与云端接口齐备 */
 const WECHAT_LOGIN_AVAILABLE = isWechatLoginAvailable()
@@ -87,7 +88,7 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
       setPhoneCodeSent(true)
       setCountdown(60)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '验证码发送失败')
+      setError(errText(e, '验证码发送失败'))
     } finally {
       setBusy(false)
     }
@@ -120,7 +121,7 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
       if (!pending.isExistingUser) await tryBindInvite()
       onSignedIn()
     } catch (e) {
-      setError(e instanceof Error ? e.message : '登录失败')
+      setError(errText(e, '登录失败'))
     } finally {
       setBusy(false)
     }
@@ -148,7 +149,7 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
       setEmailCodeSent(true)
       setCountdown(60)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '验证码发送失败')
+      setError(errText(e, '验证码发送失败'))
     } finally {
       setBusy(false)
     }
@@ -189,7 +190,7 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
       if (!pending.isExistingUser) await tryBindInvite()
       onSignedIn()
     } catch (e) {
-      setError(e instanceof Error ? e.message : '登录失败')
+      setError(errText(e, '登录失败'))
     } finally {
       setBusy(false)
     }
@@ -223,7 +224,7 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
       }
       location.assign(res.data.url)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '微信登录发起失败')
+      setError(errText(e, '微信登录发起失败'))
     }
   }
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { askCoach, type CoachContext } from '../lib/ai'
 import { COACH_QUESTION_RULE } from '../lib/validate'
+import { errText } from '../lib/errmsg'
 
 interface CoachSheetProps {
   ctx: CoachContext
@@ -65,7 +66,7 @@ export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
       const answer = await askCoach(q, ctx)
       setMessages((prev) => [...prev, { role: 'coach', text: answer }])
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '回答失败，请重试')
+      setErr(errText(e, '回答失败，请重试'))
     } finally {
       setBusy(false)
     }

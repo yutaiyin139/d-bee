@@ -16,6 +16,7 @@ import { checkStatBadges } from '../lib/badgeCheck'
 import { createShareCanvas, drawBadgeCard, drawInviteCard, canvasToBlob } from '../lib/sharecard'
 import { shareImage } from '../lib/share'
 import type { Badge, HoneyBalance, HoneyLedger } from '../types'
+import { errText } from '../lib/errmsg'
 
 /**
  * 蜜糖积分中心（底部弹层）。
@@ -176,7 +177,7 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
         })
         setShareCardMsg(res.message)
       } catch (e) {
-        setShareCardMsg(e instanceof Error ? e.message : '生成徽章卡失败')
+        setShareCardMsg(errText(e, '生成徽章卡失败'))
       } finally {
         setSharingCard(null)
       }
@@ -205,7 +206,7 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
       })
       setShareCardMsg(res.message)
     } catch (e) {
-      setShareCardMsg(e instanceof Error ? e.message : '生成邀请卡失败')
+      setShareCardMsg(errText(e, '生成邀请卡失败'))
     } finally {
       setSharingCard(null)
     }

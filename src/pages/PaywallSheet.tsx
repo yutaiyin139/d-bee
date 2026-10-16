@@ -9,6 +9,7 @@ import {
 } from '../lib/entitlement'
 import { REDEEM_CODE_RULE } from '../lib/validate'
 import { usePlan } from '../state/plan'
+import { errText } from '../lib/errmsg'
 
 /**
  * 付费墙。
@@ -71,7 +72,7 @@ export function PaywallSheet() {
         setCode('')
       }, 1400)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '兑换失败，请重试')
+      setErr(errText(e, '兑换失败，请重试'))
     } finally {
       setBusy(false)
     }

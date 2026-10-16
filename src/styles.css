@@ -660,6 +660,26 @@ select {
   margin-left: 10px;
 }
 
+/*
+ * 触控热区补强：移动端可点区域应 ≥ 44×44。
+ * 用不可见伪元素向外扩热区，视觉尺寸与布局完全不变（改宽高会挤动既有排版）。
+ */
+.meal-add,
+.entry-del {
+  position: relative;
+}
+
+.meal-add::after,
+.entry-del::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
 .meal-empty {
   padding: 0 16px 14px;
   font-size: 13px;
@@ -811,6 +831,9 @@ select {
   font-size: 22px;
   color: var(--ink-3);
   line-height: 1;
+  /* 22px 内容 + 11px 内边距 = 44px 热区；负外边距抵消，视觉位置不变 */
+  padding: 11px;
+  margin: -11px;
 }
 
 .sheet-body {
@@ -1673,6 +1696,67 @@ select {
   margin-top: 16px;
   color: var(--honey-dark);
   border-color: var(--honey);
+}
+
+/* ── 首页吸底主操作「记一餐」 ─────────────────────────────────────
+ * 原先压在页面最底部，需滚过 10+ 张卡片才够得到；改为吸底悬浮后
+ * 任意滚动位置一键可达。层级刻意取 25：高于内容、低于 tabbar(30)
+ * 与各类弹层(60/70)，弹层打开时自动被盖住，不会穿模。
+ */
+.fab-meal {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(84px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)));
+  width: min(480px, 100vw - 36px);
+  z-index: 25;
+  box-shadow: 0 8px 22px rgba(233, 168, 21, 0.38);
+}
+
+/* 给吸底按钮让出空间，避免遮住页脚与最后一张卡片 */
+.page-with-fab {
+  padding-bottom: calc(164px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)));
+}
+
+/* ── 首页邀请入口（拉新） ── */
+
+.invite-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 56px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--honey-soft);
+  color: var(--ink);
+  text-align: left;
+}
+
+.invite-strip .is-ico {
+  font-size: 19px;
+  line-height: 1;
+}
+
+.invite-strip .is-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.invite-strip .is-text small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-3);
+}
+
+.invite-strip .arrow {
+  color: var(--ink-3);
+  font-size: 18px;
 }
 
 /* ── 会员卡 ── */

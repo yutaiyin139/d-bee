@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { decodeFromImage, startScan, warmUpDecoder, type ScanSession } from '../lib/scan'
 import { pickFileFromInput, PHOTO_INPUT_PROPS } from '../lib/capture'
 import { IconScan } from './Icons'
+import { errText } from '../lib/errmsg'
 
 interface ScannerProps {
   /** 解码成功后回调，父组件负责查库与入库 */
@@ -50,7 +51,7 @@ export function Scanner({ onDetected, busy = false }: ScannerProps) {
       } catch (e) {
         if (!alive) return
         setStarting(false)
-        setError(e instanceof Error ? e.message : '扫码启动失败')
+        setError(errText(e, '扫码启动失败'))
       }
     })()
 

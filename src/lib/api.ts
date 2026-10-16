@@ -1,6 +1,7 @@
 import { cloud } from '../cloud'
 import type { Badge, Entitlement, ExerciseLog, HoneyBalance, HoneyLedger, InviteLink, MealEntry, Profile, Recipe, WaterLog, WeightLog } from '../types'
 import { BONUS_TTL_DAYS, FREE_DAILY_AI, SCAN_FEATURE } from './entitlement'
+import { zh } from './errmsg'
 import { todayKey } from './nutrition'
 
 /**
@@ -60,7 +61,7 @@ function pickProfileFields(patch: Partial<Profile>): Row {
 
 export async function getProfile(): Promise<Profile | null> {
   const { data, error } = await db('profiles').select('*').maybeSingle()
-  if (error) throw new Error(error.message || '读取档案失败')
+  if (error) throw new Error(zh(error.message, '读取档案失败'))
   return (data as Profile | null) ?? null
 }
 
@@ -70,7 +71,7 @@ export async function saveProfile(patch: Partial<Profile>): Promise<Profile> {
 
   if (!existing) {
     const { data, error } = await db('profiles').insert(fields).select()
-    if (error) throw new Error(error.message || '创建档案失败')
+    if (error) throw new Error(zh(error.message, '创建档案失败'))
     const created = rows<Profile>(data)
     if (created.length === 0) throw new Error('创建档案失败：服务器没有返回记录')
     return created[0]
@@ -82,7 +83,7 @@ export async function saveProfile(patch: Partial<Profile>): Promise<Profile> {
     .update({ ...fields, updated_at: new Date().toISOString() })
     .eq('id', existing.id)
     .select()
-  if (error) throw new Error(error.message || '保存档案失败')
+  if (error) throw new Error(zh(error.message, '保存档案失败'))
   const updated = rows<Profile>(data)
   if (updated.length === 0) throw new Error('保存失败：该档案不属于当前账号')
   return updated[0]
@@ -93,7 +94,7 @@ export async function listMealsByDate(logDate: string): Promise<MealEntry[]> {
     .select('*')
     .eq('log_date', logDate)
     .order('created_at', { ascending: true })
-  if (error) throw new Error(error.message || '读取记录失败')
+  if (error) throw new Error(zh(error.message, '读取记录失败'))
   return rows<MealEntry>(data)
 }
 
@@ -104,7 +105,7 @@ export async function listMealsBetween(startDate: string, endDate: string): Prom
     .gte('log_date', startDate)
     .lte('log_date', endDate)
     .order('log_date', { ascending: true })
-  if (error) throw new Error(error.message || '读取记录失败')
+  if (error) throw new Error(zh(error.message, '读取记录失败'))
   return rows<MealEntry>(data)
 }
 
@@ -116,7 +117,7 @@ export async function listRecentMeals(days = 30, limit = 200): Promise<MealEntry
     .gte('log_date', start)
     .order('created_at', { ascending: false })
     .limit(limit)
-  if (error) throw new Error(error.message || '读取最近记录失败')
+  if (error) throw new Error(zh(error.message, '读取最近记录失败'))
   return rows<MealEntry>(data)
 }
 
@@ -132,14 +133,14 @@ function shiftDateISO(days: number): string {
 export async function insertMeals(list: Omit<MealEntry, 'id'>[]): Promise<MealEntry[]> {
   if (list.length === 0) return []
   const { data, error } = await db('meal_entries').insert(list as unknown as Row[]).select()
-  if (error) throw new Error(error.message || '保存饮食记录失败')
+  if (error) throw new Error(zh(error.message, '保存饮食记录失败'))
   return rows<MealEntry>(data)
 }
 
 export async function deleteMeal(id: number): Promise<void> {
 
   const { data, error } = await db('meal_entries').delete().eq('id', id).select()
-  if (error) throw new Error(error.message || '删除失败')
+  if (error) throw new Error(zh(error.message, '删除失败'))
   if (rows<MealEntry>(data).length === 0) throw new Error('删除失败：该记录不属于当前账号')
 }
 
@@ -153,7 +154,7 @@ export async function updateMealGrams(id: number, grams: number): Promise<MealEn
     .select('*')
     .eq('id', id)
     .maybeSingle()
-  if (findErr) throw new Error(findErr.message || '读取记录失败')
+  if (findErr) throw new Error(zh(findErr.message, '读取记录失败'))
   const existing = found as MealEntry | null
   if (!existing) throw new Error('该记录不存在或不属于当前账号')
 
@@ -177,7 +178,7 @@ export async function updateMealGrams(id: number, grams: number): Promise<MealEn
   }
 
   const { data, error } = await db('meal_entries').update(patch).eq('id', id).select()
-  if (error) throw new Error(error.message || '修改失败')
+  if (error) throw new Error(zh(error.message, '修改失败'))
   const list = rows<MealEntry>(data)
   if (list.length === 0) throw new Error('修改失败：该记录不属于当前账号')
   return list[0]
@@ -188,7 +189,7 @@ export async function listWeightLogs(limit = 90): Promise<WeightLog[]> {
     .select('*')
     .order('log_date', { ascending: false })
     .limit(limit)
-  if (error) throw new Error(error.message || '读取体重记录失败')
+  if (error) throw new Error(zh(error.message, '读取体重记录失败'))
   return rows<WeightLog>(data)
 }
 
@@ -203,7 +204,7 @@ export async function saveWeight(logDate: string, weightKg: number, note?: strin
     .select('id')
     .eq('log_date', logDate)
     .maybeSingle()
-  if (findErr) throw new Error(findErr.message || '查询体重记录失败')
+  if (findErr) throw new Error(zh(findErr.message, '查询体重记录失败'))
 
   const existing = found as { id?: number } | null
 
@@ -212,7 +213,7 @@ export async function saveWeight(logDate: string, weightKg: number, note?: strin
       .update({ weight_kg: weightKg, note: note ?? null })
       .eq('id', existing.id)
       .select()
-    if (error) throw new Error(error.message || '更新体重失败')
+    if (error) throw new Error(zh(error.message, '更新体重失败'))
     if (rows<WeightLog>(data).length === 0) throw new Error('更新失败：该记录不属于当前账号')
     return
   }
@@ -220,7 +221,7 @@ export async function saveWeight(logDate: string, weightKg: number, note?: strin
   const { error } = await db('weight_logs')
     .insert({ log_date: logDate, weight_kg: weightKg, note: note ?? null })
     .select()
-  if (error) throw new Error(error.message || '保存体重失败')
+  if (error) throw new Error(zh(error.message, '保存体重失败'))
 }
 
 /* ── 饮水 ── */
@@ -230,13 +231,13 @@ export async function listWaterByDate(logDate: string): Promise<WaterLog[]> {
     .select('*')
     .eq('log_date', logDate)
     .order('created_at', { ascending: true })
-  if (error) throw new Error(error.message || '读取饮水记录失败')
+  if (error) throw new Error(zh(error.message, '读取饮水记录失败'))
   return rows<WaterLog>(data)
 }
 
 export async function addWater(logDate: string, amountMl: number): Promise<WaterLog[]> {
   const { error } = await db('water_logs').insert({ log_date: logDate, amount_ml: Math.round(amountMl) }).select()
-  if (error) throw new Error(error.message || '记录饮水失败')
+  if (error) throw new Error(zh(error.message, '记录饮水失败'))
   return listWaterByDate(logDate)
 }
 
@@ -246,7 +247,7 @@ export async function undoLastWater(logDate: string): Promise<void> {
   const last = list[list.length - 1]
   if (!last?.id) return
   const { data, error } = await db('water_logs').delete().eq('id', last.id).select()
-  if (error) throw new Error(error.message || '撤销失败')
+  if (error) throw new Error(zh(error.message, '撤销失败'))
   if (rows<WaterLog>(data).length === 0) throw new Error('撤销失败：该记录不属于当前账号')
 }
 
@@ -257,19 +258,19 @@ export async function listExerciseByDate(logDate: string): Promise<ExerciseLog[]
     .select('*')
     .eq('log_date', logDate)
     .order('created_at', { ascending: true })
-  if (error) throw new Error(error.message || '读取运动记录失败')
+  if (error) throw new Error(zh(error.message, '读取运动记录失败'))
   return rows<ExerciseLog>(data)
 }
 
 export async function addExercise(log: Omit<ExerciseLog, 'id'>): Promise<ExerciseLog[]> {
   const { error } = await db('exercise_logs').insert(log as unknown as Row).select()
-  if (error) throw new Error(error.message || '记录运动失败')
+  if (error) throw new Error(zh(error.message, '记录运动失败'))
   return listExerciseByDate(log.log_date)
 }
 
 export async function deleteExercise(id: number, logDate: string): Promise<ExerciseLog[]> {
   const { data, error } = await db('exercise_logs').delete().eq('id', id).select()
-  if (error) throw new Error(error.message || '删除失败')
+  if (error) throw new Error(zh(error.message, '删除失败'))
   if (rows<ExerciseLog>(data).length === 0) throw new Error('删除失败：该记录不属于当前账号')
   return listExerciseByDate(logDate)
 }
@@ -278,7 +279,7 @@ export async function deleteExercise(id: number, logDate: string): Promise<Exerc
 
 export async function listRecipes(): Promise<Recipe[]> {
   const { data, error } = await db('recipes').select('*').order('updated_at', { ascending: false })
-  if (error) throw new Error(error.message || '读取食谱失败')
+  if (error) throw new Error(zh(error.message, '读取食谱失败'))
   return rows<Recipe>(data).map((r) => ({ ...r, items: normalizeRecipeItems(r.items) }))
 }
 
@@ -286,7 +287,7 @@ export async function saveRecipe(name: string, items: Recipe['items']): Promise<
   const { data, error } = await db('recipes')
     .insert({ name, items: items as unknown as Row })
     .select()
-  if (error) throw new Error(error.message || '保存食谱失败')
+  if (error) throw new Error(zh(error.message, '保存食谱失败'))
   const created = rows<Recipe>(data)
   if (created.length === 0) throw new Error('保存食谱失败：服务器没有返回记录')
   return { ...created[0], items: normalizeRecipeItems(created[0].items) }
@@ -294,7 +295,7 @@ export async function saveRecipe(name: string, items: Recipe['items']): Promise<
 
 export async function deleteRecipe(id: number): Promise<void> {
   const { data, error } = await db('recipes').delete().eq('id', id).select()
-  if (error) throw new Error(error.message || '删除食谱失败')
+  if (error) throw new Error(zh(error.message, '删除食谱失败'))
   if (rows<Recipe>(data).length === 0) throw new Error('删除失败：该食谱不属于当前账号')
 }
 
@@ -316,7 +317,7 @@ function normalizeRecipeItems(items: unknown): Recipe['items'] {
 
 export async function getEntitlement(): Promise<Entitlement | null> {
   const { data, error } = await db('entitlements').select('*').maybeSingle()
-  if (error) throw new Error(error.message || '读取会员信息失败')
+  if (error) throw new Error(zh(error.message, '读取会员信息失败'))
   return (data as Entitlement | null) ?? null
 }
 
@@ -332,7 +333,7 @@ export async function getUsage(usageDate: string, feature: string): Promise<numb
     .eq('usage_date', usageDate)
     .eq('feature', feature)
     .maybeSingle()
-  if (error) throw new Error(error.message || '读取用量失败')
+  if (error) throw new Error(zh(error.message, '读取用量失败'))
   const row = data as { count?: number } | null
   return row?.count ?? 0
 }
@@ -348,16 +349,16 @@ export async function bumpUsage(usageDate: string, feature: string, current: num
       .eq('usage_date', usageDate)
       .eq('feature', feature)
       .maybeSingle()
-    if (error) throw new Error(error.message || '读取用量失败')
+    if (error) throw new Error(zh(error.message, '读取用量失败'))
     const found = data as { id?: number } | null
     if (found?.id !== undefined) {
       const { error: upErr } = await db('ai_usage').update({ count: current + 1 }).eq('id', found.id).select()
-      if (upErr) throw new Error(upErr.message || '记录用量失败')
+      if (upErr) throw new Error(zh(upErr.message, '记录用量失败'))
       return
     }
   }
   const { error } = await db('ai_usage').insert({ usage_date: usageDate, feature, count: 1 }).select()
-  if (error) throw new Error(error.message || '记录用量失败')
+  if (error) throw new Error(zh(error.message, '记录用量失败'))
 }
 
 export interface QuotaResult {
@@ -404,7 +405,7 @@ export async function consumeAiQuota(usageDate: string, feature: string, limit: 
       p_limit: limit,
       p_amount: 1,
     })
-    if (error) throw new Error(error.message || '配额函数调用失败')
+    if (error) throw new Error(zh(error.message, '配额函数调用失败'))
     const row = (Array.isArray(data) ? data[0] : data) as QuotaRpcRow | null
     if (!row || typeof row.allowed !== 'boolean') throw new Error('配额函数返回格式异常')
     const used = Number(row.used ?? 0)
@@ -435,7 +436,7 @@ export interface PhotoQuota {
 /** 查询当前拍照额度（基础 + 未过期奖励） */
 export async function getPhotoQuota(): Promise<PhotoQuota> {
   const { data, error } = await callRpc('get_photo_quota', { p_base_limit: FREE_DAILY_AI })
-  if (error) throw new Error(error.message || '读取额度失败')
+  if (error) throw new Error(zh(error.message, '读取额度失败'))
   const row = (Array.isArray(data) ? data[0] : data) as {
     base_remaining?: number
     bonus_remaining?: number
@@ -460,7 +461,7 @@ export async function consumePhotoQuota(): Promise<QuotaResult> {
       p_usage_date: todayKey(),
       p_base_limit: FREE_DAILY_AI,
     })
-    if (error) throw new Error(error.message || '配额函数调用失败')
+    if (error) throw new Error(zh(error.message, '配额函数调用失败'))
     const row = (Array.isArray(data) ? data[0] : data) as QuotaRpcRow | null
     if (!row || typeof row.allowed !== 'boolean') throw new Error('配额函数返回格式异常')
     const used = Number(row.used ?? 0)
@@ -496,7 +497,7 @@ export async function grantPhotoBonus(
       p_amount: amount,
       p_ttl_days: ttlDays,
     })
-    if (error) throw new Error(error.message || '发放奖励失败')
+    if (error) throw new Error(zh(error.message, '发放奖励失败'))
     return (Array.isArray(data) ? data[0] : data) === true
   } catch {
     return false
@@ -543,11 +544,11 @@ export async function clearAllRecords(): Promise<void> {
   for (const table of ['meal_entries', 'weight_logs', 'water_logs', 'exercise_logs'] as const) {
     for (let guard = 0; guard < 500; guard++) {
       const { data, error } = await db(table).select('id').limit(500)
-      if (error) throw new Error(error.message || '清空记录失败')
+      if (error) throw new Error(zh(error.message, '清空记录失败'))
       const ids = rows<{ id: number }>(data).map((r) => r.id)
       if (ids.length === 0) break
       const { error: delErr } = await db(table).delete().in('id', ids).select()
-      if (delErr) throw new Error(delErr.message || '清空记录失败')
+      if (delErr) throw new Error(zh(delErr.message, '清空记录失败'))
     }
   }
 }
@@ -677,7 +678,7 @@ export async function settleInviteCheckin(): Promise<boolean> {
 export async function getHoneyBalance(): Promise<HoneyBalance> {
   const { data, error } = await db('honey_ledger')
     .select('amount, expires_at')
-  if (error) throw new Error(error.message || '读取积分失败')
+  if (error) throw new Error(zh(error.message, '读取积分失败'))
   const rows_ = rows<{ amount: number; expires_at: string | null }>(data)
   const now = Date.now()
   let balance = 0
@@ -700,7 +701,7 @@ export async function listHoneyLedger(limit = 200): Promise<HoneyLedger[]> {
     .select('*')
     .order('created_at', { ascending: false })
     .limit(limit)
-  if (error) throw new Error(error.message || '读取积分流水失败')
+  if (error) throw new Error(zh(error.message, '读取积分流水失败'))
   return rows<HoneyLedger>(data)
 }
 
@@ -824,7 +825,7 @@ export async function getBadgeStats(): Promise<BadgeStats | null> {
 /** 读取我已解锁的徽章 */
 export async function listMyBadges(): Promise<Badge[]> {
   const { data, error } = await db('badges').select('*').order('unlocked_at', { ascending: false })
-  if (error) throw new Error(error.message || '读取徽章失败')
+  if (error) throw new Error(zh(error.message, '读取徽章失败'))
   return rows<Badge>(data)
 }
 

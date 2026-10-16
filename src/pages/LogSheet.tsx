@@ -31,6 +31,7 @@ import { Scanner } from '../components/Scanner'
 import { usePlan } from '../state/plan'
 import { MEAL_LABELS, MEAL_ORDER } from '../types'
 import type { DetectedFood, MealEntry, MealType, Recipe, RecordSource } from '../types'
+import { errText } from '../lib/errmsg'
 
 interface DraftItem {
   key: string
@@ -423,13 +424,18 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
    * 只有拍照识别消耗次数；文字解析、包装识别、条码、手动录入、AI 问答都不计。
    * 识别失败（模糊/非食物/报错）时由 handleFile 的 catch 退还。
    */
-  async function guardAiQuota(): Promise<boolean> {
+  /**
+   * 占用一次拍照额度。
+   * 返回本次「占用后」的剩余额度 —— 必须用这个实时值判转化钩子，
+   * 不能用组件闭包里的 aiRemaining（那是渲染时的旧值，永远 ≥1，钩子永不触发）。
+   */
+  async function guardAiQuota(): Promise<{ ok: boolean; remaining: number | null }> {
     const q = await claimAiQuota()
     if (!q.allowed) {
       openPaywall(quotaExhaustedReason())
-      return false
+      return { ok: false, remaining: null }
     }
-    return true
+    return { ok: true, remaining: q.remaining }
   }
 
   async function handleFile(file: File) {
@@ -437,7 +443,8 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
     setBusy(true)
     let claimed = false
     try {
-      if (!(await guardAiQuota())) return
+      const guard = await guardAiQuota()
+      if (!guard.ok) return
       claimed = true
       const dataUrl = await compressImage(file)
       setPreview(dataUrl)
@@ -445,7 +452,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
       setItems((prev) => [...prev, ...res.map((d) => toDraft(d, 'photo'))])
       // 转化钩子：免费用户本次拍照后用尽额度 → 轻提示升级（克制：每周 1 次 + 可永久关闭）
       void (async () => {
-        const show = await shouldShowUpsell(pro, aiRemaining)
+        const show = await shouldShowUpsell(pro, guard.remaining)
         if (show) {
           await markUpsellShown()
           setUpsellVisible(true)
@@ -453,7 +460,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
       })()
     } catch (e) {
       if (claimed) await refundAiQuota()
-      setError(e instanceof Error ? e.message : '识别失败，请重试')
+      setError(errText(e, '识别失败，请重试'))
     } finally {
       setBusy(false)
     }
@@ -469,7 +476,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
       setItems((prev) => [...prev, ...res.map((d) => toDraft(d, 'text'))])
       setText('')
     } catch (e) {
-      setError(e instanceof Error ? e.message : '解析失败，请重试')
+      setError(errText(e, '解析失败，请重试'))
     } finally {
       setBusy(false)
     }
@@ -511,7 +518,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
         setScanMsg({ kind: 'err', text: `${res.message}。可以拍包装照片让我直接读营养表。` })
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : '查询商品库失败')
+      setError(errText(e, '查询商品库失败'))
     } finally {
       setBusy(false)
     }
@@ -529,7 +536,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
       setScanMsg({ kind: 'ok', text: '已按包装上的营养表识别，请核对份量是否与实物一致。' })
       setMissCode('')
     } catch (e) {
-      setError(e instanceof Error ? e.message : '识别包装失败，请重试')
+      setError(errText(e, '识别包装失败，请重试'))
     } finally {
       setBusy(false)
     }
@@ -572,7 +579,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
       await insertMeals(rows)
       onSaved()
     } catch (e) {
-      setError(e instanceof Error ? e.message : '保存失败，请重试')
+      setError(errText(e, '保存失败，请重试'))
     } finally {
       setSaving(false)
     }
@@ -605,7 +612,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
       setRecipeName('')
       setSaveRecipeOpen(false)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '保存食谱失败，请重试')
+      setError(errText(e, '保存食谱失败，请重试'))
     } finally {
       setSavingRecipe(false)
     }
@@ -618,7 +625,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
       await deleteRecipe(id)
       setRecipes((prev) => prev.filter((r) => r.id !== id))
     } catch (e) {
-      setError(e instanceof Error ? e.message : '删除食谱失败')
+      setError(errText(e, '删除食谱失败'))
     }
   }
 

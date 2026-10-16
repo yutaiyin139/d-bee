@@ -77,8 +77,11 @@ export function isPro(ent: Entitlement | null | undefined): boolean {
   if (!ent) return false
   if (ent.plan === 'lifetime') return true
   if (ent.plan === 'pro') {
-    if (ent.pro_until) return new Date(ent.pro_until).getTime() > Date.now()
-    return true
+    // 订阅档必须带有效 pro_until 才判为会员；缺失按「已过期」处理。
+    // 永久解锁只走 plan='lifetime'（其 pro_until 恒为 null，见 redeem_by_code 与 0015）。
+    // 若这里对 null pro_until 放行，一条字段缺失的 pro 记录就会变成永久会员（收入漏洞）。
+    if (!ent.pro_until) return false
+    return new Date(ent.pro_until).getTime() > Date.now()
   }
   return false
 }

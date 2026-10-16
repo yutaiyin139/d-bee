@@ -15,6 +15,7 @@ import {
 } from '../lib/validate'
 import { usePlan } from '../state/plan'
 import type { Profile } from '../types'
+import { errText } from '../lib/errmsg'
 
 interface OnboardingProps {
   nickname: string | null
@@ -129,7 +130,8 @@ export function Onboarding({ nickname, onDone }: OnboardingProps) {
     step === 'goal' ||
     (step === 'body' && bodyOk) ||
     step === 'activity' ||
-    (step === 'barriers' && barriers.length > 0) ||
+    // barriers 可跳过：不认同任何选项的用户不该被卡在这一步（原先要求至少选 1 项）
+    step === 'barriers' ||
     step === 'result'
 
   function next() {
@@ -163,7 +165,7 @@ export function Onboarding({ nickname, onDone }: OnboardingProps) {
       })
       setPlan(res)
     } catch (e) {
-      setPlanError(e instanceof Error ? e.message : 'AI 计划生成失败')
+      setPlanError(errText(e, 'AI 计划生成失败'))
     } finally {
       setPlanLoading(false)
     }
@@ -202,7 +204,7 @@ export function Onboarding({ nickname, onDone }: OnboardingProps) {
       void grantNewbieBonus()
       onDone(saved)
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : '保存失败，请重试')
+      setSaveError(errText(e, '保存失败，请重试'))
     } finally {
       setSaving(false)
     }
@@ -341,7 +343,7 @@ export function Onboarding({ nickname, onDone }: OnboardingProps) {
           {step === 'barriers' && (
             <>
               <h2>什么在拖你后腿？</h2>
-              <p className="desc">可多选。AI 会针对这些具体问题给建议。</p>
+              <p className="desc">可多选，也可以直接跳过。AI 会针对这些具体问题给建议。</p>
               <div className="chips" style={{ gap: 10 }}>
                 {BARRIERS.map((b) => (
                   <button

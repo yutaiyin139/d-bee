@@ -19,6 +19,7 @@ import {
 import { usePlan } from '../state/plan'
 import { WEIGHT_LIMIT, checkNumber, clampNumeric, rangeText, sanitizeNumeric } from '../lib/validate'
 import type { MealEntry, Profile, WeightLog } from '../types'
+import { errText } from '../lib/errmsg'
 
 interface ReportScreenProps {
   profile: Profile
@@ -113,7 +114,7 @@ export function ReportScreen({ profile }: ReportScreenProps) {
       setRecentMeals(m)
       setWeights(w)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '加载报告失败')
+      setError(errText(e, '加载报告失败'))
     } finally {
       setLoading(false)
     }
@@ -185,7 +186,7 @@ export function ReportScreen({ profile }: ReportScreenProps) {
       setWeightDraft('')
       await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : '保存体重失败')
+      setError(errText(e, '保存体重失败'))
     } finally {
       setSavingWeight(false)
     }
@@ -219,7 +220,7 @@ export function ReportScreen({ profile }: ReportScreenProps) {
       })
       setInsight(res)
     } catch (e) {
-      setInsightError(e instanceof Error ? e.message : '生成解读失败，请重试')
+      setInsightError(errText(e, '生成解读失败，请重试'))
     } finally {
       setInsightBusy(false)
     }

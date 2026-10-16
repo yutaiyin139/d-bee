@@ -40,6 +40,7 @@ import {
 } from '../lib/validate'
 import type { Profile, WeightLog } from '../types'
 import { InviteCenter } from './InviteCenter'
+import { errText } from '../lib/errmsg'
 
 interface ProfileScreenProps {
   profile: Profile
@@ -65,6 +66,8 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
   // 注销账号（Apple 5.1.1(v) 合规入口）：两步确认
   const [confirmDeleteAcct, setConfirmDeleteAcct] = useState(false)
   const [deletingAcct, setDeletingAcct] = useState(false)
+  // 退出登录与「清空记录 / 注销账号」保持同一标准：两步确认，防误触登出
+  const [confirmSignOut, setConfirmSignOut] = useState(false)
 
   // 健康数据源
   const healthVendor = useMemo(() => getHealthVendor(), [])
@@ -216,7 +219,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
       onProfileChanged(saved)
       setEditing(false)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '保存失败')
+      setErr(errText(e, '保存失败'))
     } finally {
       setSaving(false)
     }
@@ -240,7 +243,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
       setWeights(await listWeightLogs(30))
       setWeightMsg('已记录今天的体重')
     } catch (e) {
-      setWeightErr(e instanceof Error ? e.message : '记录失败')
+      setWeightErr(errText(e, '记录失败'))
     } finally {
       setSavingWeight(false)
     }
@@ -259,7 +262,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
       })
       setDataMsg(res.message)
     } catch (e) {
-      setDataErr(e instanceof Error ? e.message : '导出失败')
+      setDataErr(errText(e, '导出失败'))
     } finally {
       setExporting(false)
     }
@@ -280,7 +283,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
       const res = await exportText(csv, `d-bee-饮食记录-${todayKey()}.csv`, 'text/csv;charset=utf-8')
       setDataMsg(res.message)
     } catch (e) {
-      setDataErr(e instanceof Error ? e.message : '导出失败')
+      setDataErr(errText(e, '导出失败'))
     } finally {
       setExporting(false)
     }
@@ -296,7 +299,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
       setConfirmClear(false)
       setDataMsg('已清空全部饮食、体重、饮水与运动记录。账号与身体档案保留。')
     } catch (e) {
-      setDataErr(e instanceof Error ? e.message : '清空失败')
+      setDataErr(errText(e, '清空失败'))
     } finally {
       setClearing(false)
     }
@@ -323,7 +326,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
       setConfirmDeleteAcct(false)
       onSignOut()
     } catch (e) {
-      setDataErr(e instanceof Error ? e.message : '注销失败，请重试')
+      setDataErr(errText(e, '注销失败，请重试'))
     } finally {
       setDeletingAcct(false)
     }
@@ -592,9 +595,20 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
         {dataErr && <div className="notice err" style={{ marginTop: 12, marginBottom: 0 }}>{dataErr}</div>}
       </div>
 
-      <button className="btn btn-ghost" style={{ marginTop: 8 }} onClick={onSignOut}>
-        退出登录
-      </button>
+      {confirmSignOut ? (
+        <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+          <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setConfirmSignOut(false)}>
+            取消
+          </button>
+          <button className="btn btn-ghost" style={{ flex: 1, color: 'var(--red)', borderColor: 'var(--red)' }} onClick={onSignOut}>
+            确认退出
+          </button>
+        </div>
+      ) : (
+        <button className="btn btn-ghost" style={{ marginTop: 8 }} onClick={() => setConfirmSignOut(true)}>
+          退出登录
+        </button>
+      )}
 
       <div className="section-title" style={{ marginTop: 24 }}>账号管理</div>
       <div className="card">

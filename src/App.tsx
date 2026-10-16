@@ -12,6 +12,7 @@ import { PaywallSheet } from './pages/PaywallSheet'
 import { ProfileScreen } from './pages/ProfileScreen'
 import { ReportScreen } from './pages/ReportScreen'
 import { PlanProvider } from './state/plan'
+import { errText } from './lib/errmsg'
 
 type Stage = 'loading' | 'auth' | 'onboarding' | 'main'
 type Tab = 'today' | 'report' | 'me'
@@ -87,7 +88,7 @@ function AppInner({ onOpenLegal }: { onOpenLegal: (id: DocId) => void }) {
         if (attempt < 2) await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)))
       }
     }
-    setBootError(lastErr instanceof Error ? lastErr.message : '读取档案失败')
+    setBootError(errText(lastErr, '读取档案失败'))
     setStage('onboarding')
   }, [])
 
@@ -117,7 +118,7 @@ function AppInner({ onOpenLegal }: { onOpenLegal: (id: DocId) => void }) {
         await checkSession()
       } catch (e) {
         if (!alive) return
-        setBootError(e instanceof Error ? e.message : '初始化失败')
+        setBootError(errText(e, '初始化失败'))
         setStage('auth')
       }
     })()
@@ -179,7 +180,7 @@ function AppInner({ onOpenLegal }: { onOpenLegal: (id: DocId) => void }) {
           onSignedIn={() => {
             setStage('loading')
             void checkSession().catch((e) => {
-              setBootError(e instanceof Error ? e.message : '登录状态读取失败')
+              setBootError(errText(e, '登录状态读取失败'))
               setStage('auth')
             })
           }}
