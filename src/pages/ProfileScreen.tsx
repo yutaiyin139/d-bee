@@ -3,7 +3,7 @@ import { Sheet } from '../components/Sheet'
 import { SiteFooter } from '../components/SiteFooter'
 import { LineChart } from '../components/Charts'
 import type { DocId } from '../content/legal'
-import { IconCrown, IconDownload, IconTrash } from '../components/Icons'
+import { IconCrown, IconDownload, IconRun, IconTrash } from '../components/Icons'
 import {
   buildMealsCsv,
   clearAllRecords,
@@ -23,6 +23,7 @@ import {
 } from '../lib/nutrition'
 import { usePlan } from '../state/plan'
 import { exportJSON, exportText } from '../lib/share'
+import { connectHealth, getHealthVendor, isHealthConnectable } from '../lib/health'
 import type { Profile, WeightLog } from '../types'
 
 interface ProfileScreenProps {
@@ -49,6 +50,14 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
   // 注销账号（Apple 5.1.1(v) 合规入口）：两步确认
   const [confirmDeleteAcct, setConfirmDeleteAcct] = useState(false)
   const [deletingAcct, setDeletingAcct] = useState(false)
+
+  // 健康数据源
+  const healthVendor = useMemo(() => getHealthVendor(), [])
+  const [healthTip, setHealthTip] = useState('')
+  function handleConnectHealth() {
+    const res = connectHealth()
+    if (res.message) setHealthTip(res.message)
+  }
 
   const [weights, setWeights] = useState<WeightLog[]>([])
   const [weightInput, setWeightInput] = useState(String(profile.current_weight_kg ?? ''))
@@ -399,6 +408,30 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
               {barriers.map((b) => (
                 <span key={b} className="chip" style={{ pointerEvents: 'none' }}>{b}</span>
               ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {isHealthConnectable() && (
+        <>
+          <div className="section-title">健康数据源</div>
+          <div className="card">
+            <div className="list-line" onClick={handleConnectHealth} role="button" tabIndex={0}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <IconRun color="var(--green)" size={16} />
+                {healthVendor.label}
+              </span>
+              <span className="val" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>
+                  {healthVendor.canSync ? '连接' : '查看'}
+                </span>
+                <span className="arrow">›</span>
+              </span>
+            </div>
+            {healthTip && <div className="notice" style={{ margin: 10, fontSize: 13 }}>{healthTip}</div>}
+            <div className="hint" style={{ padding: '0 16px 12px' }}>
+              未来将支持微信运动、Keep、手环手表等更多数据源。
             </div>
           </div>
         </>

@@ -21,6 +21,7 @@ import {
 import type { CoachContext } from '../lib/ai'
 import { categoryOf } from '../lib/foods'
 import { LEVEL_LABELS, levelOfScore, nextMealAdvice, summarizeEntries } from '../lib/foodInsight'
+import { ACTIVITY_EATBACK_RATIO, connectHealth, estimateActivityKcal, getHealthVendor, isHealthConnectable } from '../lib/health'
 import { EXERCISES, exerciseKcal, formatDateShort, guessMealType, shiftDate, targetFromProfile, todayKey, waterTargetMl } from '../lib/nutrition'
 import { computeStreak, MILESTONES } from '../lib/streak'
 import { usePlan } from '../state/plan'
@@ -60,6 +61,11 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   const [editGrams, setEditGrams] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null)
+
+  // 健康连接：品牌识别 + 步数（第二批 HealthKit 真读，第一批为 0）+ 提示
+  const healthVendor = useMemo(() => getHealthVendor(), [])
+  const [healthSteps, setHealthSteps] = useState(0)
+  const [healthTip, setHealthTip] = useState('')
 
   // 打卡：需要近半年的「有记录日期」集合；同时留一份近窗记录用于卡路里追踪
   const [loggedDates, setLoggedDates] = useState<string[]>([])
@@ -115,7 +121,15 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
 
   const waterMl = useMemo(() => water.reduce((s, w) => s + (Number(w.amount_ml) || 0), 0), [water])
   const burnKcal = useMemo(() => exercise.reduce((s, x) => s + (Number(x.calories) || 0), 0), [exercise])
-  const netKcal = Math.round(totals.kcal - burnKcal)
+
+  // 活动消耗：来自健康 App 的步数/活动能量（第二批 HealthKit 真读后填充）。
+  // 第一批步数源未接，activityKcal 恒为 0，但算法链路已就位。
+  const activityKcal = useMemo(
+    () => estimateActivityKcal(healthSteps, profile.current_weight_kg, profile.height_cm),
+    [healthSteps, profile.current_weight_kg, profile.height_cm],
+  )
+  // 净摄入 = 摄入 − 手动运动消耗；活动消耗按 50% 计入「可吃回」，让缺口更真实
+  const netKcal = Math.round(totals.kcal - burnKcal - activityKcal * ACTIVITY_EATBACK_RATIO)
 
   const remain = Math.round(target.calories - netKcal)
   const over = remain < 0
@@ -281,6 +295,12 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
     }
   }
 
+  // 连接健康：按品牌路由（苹果跳设置 / 安卓弹提示）
+  function handleConnectHealth() {
+    const res = connectHealth()
+    if (res.message) setHealthTip(res.message)
+  }
+
   const waterPct = Math.min(100, Math.round((waterMl / waterTarget) * 100))
 
   return (
@@ -342,7 +362,12 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
               已消耗
               <IconFire color="var(--red)" size={15} />
             </div>
-            <div className="side-num">{Math.round(burnKcal)}</div>
+            <div className="side-num">{Math.round(burnKcal + activityKcal)}</div>
+            {activityKcal > 0 && (
+              <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 2 }}>
+                含活动 {Math.round(activityKcal)}
+              </div>
+            )}
           </div>
         </div>
 
@@ -541,6 +566,23 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
             )}
           </span>
         </div>
+
+        {isHealthConnectable() && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 10px' }}>
+              <button className="chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={handleConnectHealth}>
+                <IconRun color="var(--green)" size={13} />
+                连接{healthVendor.label}
+              </button>
+              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                {healthVendor.canSync ? '同步步数，自动计入活动消耗' : '引导查看运动数据'}
+              </span>
+            </div>
+            {healthTip && (
+              <div className="notice" style={{ margin: '0 0 10px', fontSize: 13 }}>{healthTip}</div>
+            )}
+          </>
+        )}
 
         {exercise.length > 0 && (
           <div style={{ margin: '4px 0 10px' }}>

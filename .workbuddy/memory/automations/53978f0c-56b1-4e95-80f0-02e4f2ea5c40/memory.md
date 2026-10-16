@@ -18,6 +18,15 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
   另发一条 count(*) 查询的线上实时行数三方一致。
 - 清理：无过期备份（最早 2026-10-13，cutoff 2026-09-15）。
 
+### 2026-10-16 08:58（第 4 次）
+- 结果：**成功**。产出 `db/backups/2026-10-16.json`（32888 字节，4 天中最大）。
+- 行数：profiles=12 / meal_entries=27 / water_logs=9 / exercise_logs=9 / weight_logs=1 / entitlements=0 / ai_usage=5
+- 校验：`.verify-backup.cjs` 通过——JSON.parse OK、7 表 row_counts 与 tables.<表>.length 及
+  另发 count(*) 查询的线上实时行数三方一致。
+- 清理：无过期备份（最早 2026-10-13，cutoff 2026-09-16）。
+- 观察：weight_logs 首次产出数据（id=1，54.6kg，owner 2109869577155379200）；
+  entitlements 仍为 0 行（免费期，符合预期）。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。
