@@ -389,6 +389,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
             }}
             style={{
               flex: 1,
+              minWidth: 0,
               height: 48,
               borderRadius: 14,
               border: '1px solid var(--line-2)',
