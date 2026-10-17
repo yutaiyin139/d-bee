@@ -48,7 +48,7 @@ export async function requestHealthAuthorization(): Promise<boolean> {
   if (!plugin) return false
   try {
     const res = await plugin.requestAuthorization({
-      read: ['stepCount', 'activeEnergyBurned', 'workoutType'],
+      read: ['stepCount', 'activeEnergyBurned'],
     })
     return res.authorized === true
   } catch {

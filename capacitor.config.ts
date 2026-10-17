@@ -44,7 +44,7 @@ const config: CapacitorConfig = {
     includePlugins: ['@dbee/origin-proxy', '@capacitor/share', '@capgo/capacitor-wechat'],
   },
   ios: {
-    includePlugins: ['@dbee/origin-proxy', '@capacitor/share', '@dbee/health'],
+    includePlugins: ['@dbee/origin-proxy', '@capacitor/share', '@dbee/health', '@dbee/iap'],
   },
   plugins: {
     CapacitorHttp: {

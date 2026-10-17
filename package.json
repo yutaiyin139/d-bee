@@ -1,7 +1,7 @@
 {
   "name": "d-bee",
   "private": true,
-  "version": "1.5.1",
+  "version": "1.6.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
@@ -21,6 +21,7 @@
     "@capgo/capacitor-wechat": "^8.0.52",
     "@dbee/origin-proxy": "file:native-plugins/dbee-origin-proxy",
     "@dbee/health": "file:native-plugins/dbee-health",
+    "@dbee/iap": "file:native-plugins/dbee-iap",
     "@tencent-ai/workbuddy-cloud-sdk": "dev",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

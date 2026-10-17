@@ -29,12 +29,11 @@ public class DbeeHealthPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private let healthStore = HKHealthStore()
 
-    /// 要读取的数据类型（步数 / 活动能量 / 运动）
+    /// 要读取的数据类型（步数 / 活动能量）
     private var readTypes: Set<HKObjectType> {
         var set = Set<HKObjectType>()
         if let step = HKObjectType.quantityType(forIdentifier: .stepCount) { set.insert(step) }
         if let energy = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) { set.insert(energy) }
-        if let workout = HKObjectType.workoutType() as HKObjectType? { set.insert(workout) }
         return set
     }
 
