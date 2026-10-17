@@ -10,7 +10,7 @@ import {
   listMyBadges,
   redeemHoney,
 } from '../lib/api'
-import { HONEY_PRICE } from '../lib/invite'
+import { HONEY_PRICE, formatHoneyTime } from '../lib/invite'
 import { copyText } from '../lib/clipboard'
 import { checkStatBadges } from '../lib/badgeCheck'
 import { createShareCanvas, drawBadgeCard, drawInviteCard, canvasToBlob } from '../lib/sharecard'
@@ -366,13 +366,32 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
           {/* 积分流水 */}
           {!extraLoading && ledger.length > 0 && (
             <>
-              <div className="section-title">积分明细</div>
+              <div className="section-title">
+                积分明细
+                <span className="hint" style={{ marginLeft: 8 }}>
+                  <span style={{ color: 'var(--honey-dark)' }}>+ 获得</span>
+                  <span style={{ color: 'var(--ink-3)', marginLeft: 8 }}>− 消耗</span>
+                </span>
+              </div>
               <div className="card">
                 {ledger.slice(0, 20).map((l) => (
                   <div className="list-line" key={l.id}>
-                    <span>{REASON_LABEL[l.reason] ?? l.reason}</span>
-                    <span className="val" style={{ color: l.amount >= 0 ? 'var(--honey-dark)' : 'var(--ink-3)' }}>
-                      {l.amount >= 0 ? '+' : ''}{l.amount}
+                    <span style={{ fontSize: 12, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+                      {formatHoneyTime(l.created_at)}
+                    </span>
+                    <span style={{ fontSize: 13, color: 'var(--ink-2)', minWidth: 0, flex: 1, textAlign: 'right' }}>
+                      {REASON_LABEL[l.reason] ?? l.reason}
+                    </span>
+                    <span
+                      className="val"
+                      style={{
+                        color: l.amount >= 0 ? 'var(--honey-dark)' : 'var(--ink-3)',
+                        fontVariantNumeric: 'tabular-nums',
+                        fontWeight: 600,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {l.amount >= 0 ? `+${l.amount}` : `${l.amount}`}
                     </span>
                   </div>
                 ))}

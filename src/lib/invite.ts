@@ -122,3 +122,19 @@ export function honeyCost(kind: HoneyRewardKind): number {
 export function monthlyInviteCapOk(currentMonthlyHoney: number, amount: number): boolean {
   return currentMonthlyHoney + amount <= MAX_MONTHLY_INVITE_HONEY
 }
+
+/**
+ * 积分流水时间格式化：ISO 时间 → 本地 `YYYY-MM-DD HH:mm`。
+ * 入参可能为 ISO 字符串、时间戳或空；异常/缺失时返回空串，不抛错。
+ */
+export function formatHoneyTime(ts: string | number | null | undefined): string {
+  if (ts == null || ts === '') return ''
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${y}-${m}-${day} ${hh}:${mm}`
+}

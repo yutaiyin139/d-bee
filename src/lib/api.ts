@@ -451,6 +451,24 @@ export async function getPhotoQuota(): Promise<PhotoQuota> {
 }
 
 /**
+ * 查询「当日成功拍照次数」（云端唯一真相源，跨设备一致）。
+ * 统计 ai_quota_claims 中当日未释放（released_at IS NULL）的占用记录数；
+ * 识别失败/重复会调 release 置 released_at，故不计入。
+ * RPC 不可用时回退 0（阶梯提示降级为「不拦截」，安全边界仍由 DB 额度保证）。
+ */
+export async function getTodayPhotoCount(): Promise<number> {
+  try {
+    const { data, error } = await callRpc('get_today_photo_count', {})
+    if (error) return 0
+    const n = Number(Array.isArray(data) ? data[0] : data)
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
+  } catch {
+    return 0
+  }
+}
+
+
+/**
  * 原子占用一次「拍照识别」额度。
  * 优先扣最早过期的奖励余额，不足再扣基础额度；识别失败由 releasePhotoQuota 退还。
  * 返回预占 token（releasePhotoQuota 凭它一次性精确释放）。

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { deleteRecipe, insertMeals, listRecentMeals, listRecipes, saveRecipe } from '../lib/api'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { deleteRecipe, getHoneyBalance, insertMeals, listRecentMeals, listRecipes, saveRecipe } from '../lib/api'
 import { compressImage, identifyPackagedFood, parseFoodFromText, recognizeFoodFromImage } from '../lib/ai'
 import { lookupBarcode } from '../lib/off'
 import {
@@ -16,6 +16,13 @@ import {
 } from '../lib/foods'
 import { analyzeProfile, LEVEL_LABELS, levelOfScore, summarizeEntries } from '../lib/foodInsight'
 import { quotaExhaustedReason } from '../lib/entitlement'
+import {
+  photoLadderHint,
+  isDuplicatePhoto,
+  summarizePhoto,
+  type PhotoSummary,
+} from '../lib/photoGuard'
+import { getTodayPhotoCount } from '../lib/api'
 import { dismissUpsell, markUpsellShown, shouldShowUpsell } from '../lib/upsell'
 import { pickFileFromInput, PHOTO_INPUT_PROPS } from '../lib/capture'
 import {
@@ -75,6 +82,8 @@ interface LogSheetProps {
   /** 今日剩余热量下这一餐的建议额度，仅作提示 */
   budget?: number | null
   budgetText?: string
+  /** 打开蜜糖积分中心（额度用尽、有积分时的兑换引导入口） */
+  onOpenInviteCenter?: () => void
 }
 
 let keySeq = 0
@@ -325,7 +334,7 @@ function MealCheckup({ items }: { items: DraftItem[] }) {
   )
 }
 
-export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budgetText }: LogSheetProps) {
+export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budgetText, onOpenInviteCenter }: LogSheetProps) {
   const { claimAiQuota, refundAiQuota, aiRemaining, openPaywall, pro } = usePlan()
   const [mode, setMode] = useState<Mode>('photo')
   const [meal, setMeal] = useState<MealType>(initialMeal)
@@ -333,6 +342,14 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  // 拍照分流提示：redeem=积分兑换 / inviteOrPro=拉人+Pro / pro=直接Pro
+  const [quotaHint, setQuotaHint] = useState<{ kind: 'redeem' | 'inviteOrPro' | 'pro'; text: string } | null>(null)
+  // 当日已成功拍照次数（本地计数，驱动阶梯提示）
+  const [todayPhotoCount, setTodayPhotoCount] = useState(0)
+  // 上一次成功识别的结果摘要（用于反复拍照判定）
+  const lastPhotoSummaryRef = useRef<PhotoSummary | null>(null)
+  // 反复拍照提示
+  const [dupHint, setDupHint] = useState<string | null>(null)
 
   const [text, setText] = useState('')
   const [preview, setPreview] = useState<string | null>(null)
@@ -359,6 +376,18 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   const [saveRecipeOpen, setSaveRecipeOpen] = useState(false)
   const [recipeName, setRecipeName] = useState('')
   const [savingRecipe, setSavingRecipe] = useState(false)
+
+  // 挂载时读「当日已成功拍照次数」（云端唯一真相源），驱动阶梯提示
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      const n = await getTodayPhotoCount()
+      if (alive) setTodayPhotoCount(n)
+    })()
+    return () => {
+      alive = false
+    }
+  }, [])
 
   useEffect(() => {
     if (mode !== 'manual' || recentLoaded) return
@@ -425,13 +454,55 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
    * 识别失败（模糊/非食物/报错）时由 handleFile 的 catch 退还。
    */
   /**
-   * 占用一次拍照额度。
-   * 返回本次「占用后」的剩余额度 —— 必须用这个实时值判转化钩子，
-   * 不能用组件闭包里的 aiRemaining（那是渲染时的旧值，永远 ≥1，钩子永不触发）。
+   * 占用一次拍照额度，并按「单日拍照次数阶梯」分流提示。
+   *
+   * 阶梯（nth = 本次是当日第几次）：
+   *  - nth ≤ 3：基础免费，正常占用
+   *  - nth ∈ {4,5}：有积分 → 引导兑换；无积分 → 引导拉人 + Pro
+   *  - nth ≥ 6：直接引导 Pro（不再兑换）
+   *
+   * 返回 ok=false 表示被阶梯拦截（额度未占用），调用方应直接中止本次拍照。
    */
   async function guardAiQuota(): Promise<{ ok: boolean; remaining: number | null }> {
+    // 免费用户才走阶梯；Pro 用户无限次，直接占用
+    if (pro) {
+      const q = await claimAiQuota()
+      return { ok: q.allowed, remaining: q.remaining }
+    }
+
+    // 先按阶梯分流（用当前计数，未包含本次）
+    const bal = await getHoneyBalance().catch(() => null)
+    const balance = bal ? bal.balance : 0
+    const ladder = photoLadderHint(todayPhotoCount, balance)
+
+    setQuotaHint(null)
+    setDupHint(null)
+
+    if (ladder.kind !== 'none') {
+      if (ladder.kind === 'redeem') {
+        setQuotaHint({
+          kind: 'redeem',
+          text: `今日免费拍照已用完，你还有 ${balance} 积分，可兑换 ${ladder.redeemCount} 次拍照。`,
+        })
+      } else if (ladder.kind === 'inviteOrPro') {
+        setQuotaHint({
+          kind: 'inviteOrPro',
+          text: '今日免费拍照已用完。邀请好友可赚积分兑换拍照，或升级 Pro 无限次拍照。',
+        })
+      } else {
+        setQuotaHint({
+          kind: 'pro',
+          text: quotaExhaustedReason(),
+        })
+      }
+      return { ok: false, remaining: null }
+    }
+
+    // 基础免费（nth ≤ 3）：占用额度
     const q = await claimAiQuota()
     if (!q.allowed) {
+      // 理论上第 1-3 次不该被拒，但若奖励/基础状态异常仍兜底提示 Pro
+      setQuotaHint({ kind: 'pro', text: quotaExhaustedReason() })
       openPaywall(quotaExhaustedReason())
       return { ok: false, remaining: null }
     }
@@ -449,7 +520,21 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
       const dataUrl = await compressImage(file)
       setPreview(dataUrl)
       const res = await recognizeFoodFromImage(dataUrl, hint.trim() || undefined)
-      setItems((prev) => [...prev, ...res.map((d) => toDraft(d, 'photo'))])
+      const drafts = res.map((d) => toDraft(d, 'photo'))
+      const summary = summarizePhoto(drafts)
+
+      // 反复拍照判定：与上一次成功识别结果比对，基本一致则提示并退还本次额度
+      if (lastPhotoSummaryRef.current && isDuplicatePhoto(lastPhotoSummaryRef.current, summary)) {
+        await refundAiQuota()
+        setDupHint('识别结果与上一次几乎一致，疑似重复拍照。本次额度已退还，如需保留请继续，否则请更换照片。')
+        return
+      }
+
+      lastPhotoSummaryRef.current = summary
+      setItems((prev) => [...prev, ...drafts])
+      // 当日成功拍照次数由云端 claim 承载；重读一次同步 state（识别成功不 release，claim 计数已 +1）
+      void getTodayPhotoCount().then((n) => setTodayPhotoCount(n))
+
       // 转化钩子：免费用户本次拍照后用尽额度 → 轻提示升级（克制：每周 1 次 + 可永久关闭）
       void (async () => {
         const show = await shouldShowUpsell(pro, guard.remaining)
@@ -655,6 +740,53 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
           </div>
 
           {error && <div className="notice err">{error}</div>}
+
+          {dupHint && (
+            <div className="notice info" style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+              <span style={{ flex: 1 }}>{dupHint}</span>
+              <button className="btn-text" style={{ fontSize: 13, flexShrink: 0 }} onClick={() => setDupHint(null)}>
+                知道了
+              </button>
+            </div>
+          )}
+
+          {quotaHint && (
+            <div
+              className="notice info"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}
+            >
+              <span style={{ flex: 1 }}>{quotaHint.text}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                {quotaHint.kind === 'redeem' && (
+                  <button
+                    className="btn-text"
+                    style={{ fontSize: 13 }}
+                    onClick={() => {
+                      setQuotaHint(null)
+                      if (onOpenInviteCenter) onOpenInviteCenter()
+                    }}
+                  >
+                    去兑换
+                  </button>
+                )}
+                {quotaHint.kind === 'inviteOrPro' && (
+                  <button
+                    className="btn-text"
+                    style={{ fontSize: 13 }}
+                    onClick={() => {
+                      setQuotaHint(null)
+                      if (onOpenInviteCenter) onOpenInviteCenter()
+                    }}
+                  >
+                    去邀请
+                  </button>
+                )}
+                <button className="btn-text" style={{ fontSize: 13 }} onClick={() => { setQuotaHint(null); openPaywall() }}>
+                  升级 Pro
+                </button>
+              </span>
+            </div>
+          )}
 
           {upsellVisible && (
             <div className="notice info" style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>

@@ -923,6 +923,10 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
             setSheetMeal(null)
             void load()
           }}
+          onOpenInviteCenter={() => {
+            setSheetMeal(null)
+            setInviteOpen(true)
+          }}
         />
       )}
 
