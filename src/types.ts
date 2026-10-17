@@ -33,6 +33,10 @@ export interface Profile {
   invited_by?: string | null
   /** 注册时填写的邀请码（审计用） */
   invite_code?: string | null
+  /** 是否已连接 Apple 健康（云端唯一真相源，跨设备一致） */
+  health_connected?: boolean | null
+  /** Apple 健康连接时间 */
+  health_connected_at?: string | null
 }
 
 export interface MealEntry {

@@ -2,20 +2,25 @@
  * 运动健康对接 · 统一门面。
  *
  * 业务代码只从这里取数据/发起连接，不直接嗅探品牌或插件。
- * 平台差异、品牌差异全部封在 health/ 内部。
+ * 平台差异、品牌差异、HealthKit 授权全部封在 health/ 内部。
  *
- * 第一批（零原生依赖）实现：
- *   - getHealthVendor()            品牌识别
- *   - isHealthConnectable()        是否显示「连接健康」入口（原生端才显示）
- *   - connectHealth()              点击连接后的行为路由（苹果跳设置 / 安卓各品牌提示）
- *   - estimateActivityKcal()       步数 → 活动消耗换算（融入热量缺口公式）
+ * 连接状态（health_connected）存云端 profiles 表（跨设备一致），
+ * 授权成功后置 true，下次登录据此「自动获取 + 连接按钮消失」。
  *
- * 第二批（iOS HealthKit 落地后）：syncFromHealth() 替换占位，读真实步数/活动能量。
+ * 当前实现分层：
+ *   - getHealthVendor()           品牌识别（纯函数，零依赖）
+ *   - isHealthConnectable()       是否显示「连接健康」入口（iOS + 插件可用）
+ *   - isHealthConnected()         是否已连接（读云端 profile.health_connected）
+ *   - connectHealth()             点击连接 → 调 HealthKit 授权 → 存云端状态
+ *   - syncFromHealth()            拉取当天步数 + 活动能量
+ *   - estimateActivityKcal()      步数 → 活动消耗换算（融热量缺口）
  */
 
 import { detectHealthVendor, isWechatWebView } from './brand'
 import type { HealthVendorInfo } from './brand'
+import { getHealthAuthorizationStatus, isHealthKitAvailable, requestHealthAuthorization, fetchTodayHealth } from './healthkit'
 import { isIOS } from '../platform'
+import { getProfile, saveProfile } from '../api'
 
 export type { HealthVendor, HealthVendorInfo } from './brand'
 
@@ -23,8 +28,15 @@ export interface ConnectResult {
   ok: boolean
   /** 展示给用户的提示文案 */
   message: string
-  /** 已连接的数据源标识（第一批只有 apple 会返回，但同步仍未真接） */
+  /** 已连接的数据源标识 */
   vendor: HealthVendorInfo['vendor']
+}
+
+export interface HealthSyncData {
+  /** 当天步数 */
+  steps: number
+  /** 当天活动能量（kcal，HealthKit activeEnergyBurned 直接值） */
+  activeKcal: number
 }
 
 /** 品牌识别入口 */
@@ -35,40 +47,56 @@ export function getHealthVendor(): HealthVendorInfo {
 /**
  * 是否显示「连接健康」入口。
  *
- * 仅 iOS 原生 App 显示连接按钮：当前只有 Apple 健康（HealthKit）支持真同步，
- * 华为/小米/OPPO/vivo 等安卓厂商运动健康均无公开数据读取 API，显示连接按钮
- * 会误导用户「点一下就能同步」，故安卓端一律不显示按钮。
- * Web（含 PWA、桌面浏览器、微信内置浏览器）也不显示。
+ * 仅 iOS 原生 App 且 HealthKit 插件可用时显示：当前只有 Apple 健康支持真同步。
+ * 安卓厂商运动健康无公开读取 API；Web 也不显示。
  */
 export function isHealthConnectable(): boolean {
-  return isIOS()
+  return isHealthKitAvailable()
 }
 
 /**
- * 点击「连接健康」后的行为路由。
- *
- * 第一批的诚实策略（不新增原生依赖、不做深链跳转）：
- *   - apple：跳 iPhone「设置 → 健康」+ 提示「同步即将开放」
- *   - huawei/xiaomi/vivo/oppo/android-other：弹提示引导手动查看
- *   - 微信内置浏览器：提示用微信运动
- *   - web：不显示入口（本函数不应被调用，兜底返回空）
- *
- * 跳转「设置 → 健康」通过 location.href 的 App-Prefs 方案，WebView 内会由系统接管。
+ * 是否已连接 Apple 健康（读云端 profile.health_connected）。
+ * 已连接时 UI 隐藏「连接」按钮；下次登录据此自动拉取数据。
  */
-export function connectHealth(): ConnectResult {
+export async function isHealthConnected(): Promise<boolean> {
+  try {
+    const p = await getProfile()
+    return p?.health_connected === true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 点击「连接 Apple 健康」：调 HealthKit 授权，成功后写云端状态。
+ *
+ * 流程（参考自律茄子的授权交互）：
+ *   ① 调原生 requestAuthorization → 系统弹健康权限配置
+ *   ② 用户在系统弹窗勾选步数/活动能量并同意
+ *   ③ 授权成功 → saveProfile({ health_connected: true, health_connected_at })
+ *   ④ 返回 ok，前端据此隐藏按钮 + 触发一次同步
+ */
+export async function connectHealth(): Promise<ConnectResult> {
   const v = detectHealthVendor()
 
   if (v.vendor === 'apple') {
-    // 跳 iPhone「设置 → 健康」；失败时静默降级，仅提示
-    try {
-      if (typeof window !== 'undefined' && window.location) {
-        // App-Prefs 是 iOS 通用的设置跳转 scheme
-        window.location.href = 'App-Prefs:HEALTH'
-      }
-    } catch {
-      /* 忽略跳转失败，仅提示 */
+    if (!isHealthKitAvailable()) {
+      // 插件未注入（非原生 iOS / 尚未编译插件）：保留原占位提示
+      return { ok: false, message: 'Apple 健康同步正在接入中，当前请先手动记录运动。', vendor: 'apple' }
     }
-    return { ok: true, message: 'Apple 健康同步即将开放，已为你打开系统健康设置，当前请先手动记录运动。', vendor: 'apple' }
+
+    const authorized = await requestHealthAuthorization()
+    if (!authorized) {
+      return { ok: false, message: '未授权访问 Apple 健康，请在系统弹窗中允许后重试。', vendor: 'apple' }
+    }
+
+    // 授权成功 → 存云端连接状态（跨设备一致）
+    try {
+      await saveProfile({ health_connected: true, health_connected_at: new Date().toISOString() })
+    } catch {
+      // 存状态失败不阻断，仅提示；下次授权状态查询仍可兜底
+    }
+    return { ok: true, message: '已连接 Apple 健康，步数与活动能量将自动同步。', vendor: 'apple' }
   }
 
   if (v.vendor === 'web') {
@@ -79,6 +107,18 @@ export function connectHealth(): ConnectResult {
   }
 
   return { ok: false, message: v.tip, vendor: v.vendor }
+}
+
+/**
+ * 拉取当天步数 + 活动能量。
+ * 仅 iOS + 已授权时返回真实数据；否则返回 0。
+ * 登录后（Dashboard 加载时）若已连接，调用本函数自动同步。
+ */
+export async function syncFromHealth(): Promise<HealthSyncData> {
+  if (!isHealthKitAvailable()) return { steps: 0, activeKcal: 0 }
+  const authorized = await getHealthAuthorizationStatus()
+  if (!authorized) return { steps: 0, activeKcal: 0 }
+  return fetchTodayHealth()
 }
 
 /**

@@ -20,6 +20,7 @@
     "@capacitor/share": "^8.0.3",
     "@capgo/capacitor-wechat": "^8.0.52",
     "@dbee/origin-proxy": "file:native-plugins/dbee-origin-proxy",
+    "@dbee/health": "file:native-plugins/dbee-health",
     "@tencent-ai/workbuddy-cloud-sdk": "dev",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

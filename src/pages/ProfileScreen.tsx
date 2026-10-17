@@ -72,8 +72,8 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
   // 健康数据源
   const healthVendor = useMemo(() => getHealthVendor(), [])
   const [healthTip, setHealthTip] = useState('')
-  function handleConnectHealth() {
-    const res = connectHealth()
+  async function handleConnectHealth() {
+    const res = await connectHealth()
     if (res.message) setHealthTip(res.message)
   }
 

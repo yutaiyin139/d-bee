@@ -28,7 +28,7 @@ import type { CoachContext } from '../lib/ai'
 import { STREAK_BADGES } from '../lib/badge'
 import { categoryOf } from '../lib/foods'
 import { LEVEL_LABELS, levelOfScore, nextMealAdvice, summarizeEntries } from '../lib/foodInsight'
-import { ACTIVITY_EATBACK_RATIO, connectHealth, estimateActivityKcal, getHealthVendor, isHealthConnectable } from '../lib/health'
+import { ACTIVITY_EATBACK_RATIO, connectHealth, estimateActivityKcal, getHealthVendor, isHealthConnectable, isHealthConnected, syncFromHealth } from '../lib/health'
 import { CHECKIN_EXERCISE, CHECKIN_MEAL, CHECKIN_WATER, dailyCheckinHoney, streakMilestoneHoney } from '../lib/invite'
 import { errText } from '../lib/errmsg'
 import { kvGet, kvSet } from '../lib/kv'
@@ -85,13 +85,34 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
     return () => clearTimeout(t)
   }, [pendingDeleteId])
 
-  // 健康连接：品牌识别 + 步数（第二批 HealthKit 真读，第一批为 0）+ 提示
+  // 健康连接：品牌识别 + 连接状态（云端）+ 步数/活动能量 + 提示
   const healthVendor = useMemo(() => getHealthVendor(), [])
+  const [healthConnected, setHealthConnected] = useState(false)
   const [healthSteps, setHealthSteps] = useState(0)
+  const [healthActiveKcal, setHealthActiveKcal] = useState(0)
   const [healthTip, setHealthTip] = useState('')
 
   // 饮食体检伸缩：默认展开，点击右上角折叠/展开详情区；折叠偏好记忆到本地，下次打开保持
   const [checkupCollapsed, setCheckupCollapsed] = useState(false)
+
+  // 健康连接：挂载时读云端连接状态；已连接则自动同步步数/活动能量
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      const connected = await isHealthConnected()
+      if (!alive) return
+      setHealthConnected(connected)
+      if (connected) {
+        const data = await syncFromHealth()
+        if (!alive) return
+        setHealthSteps(data.steps)
+        setHealthActiveKcal(data.activeKcal)
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [])
 
   // 折叠偏好：挂载时从本地读取一次，之后用户切换时写回（异步、静默，失败不影响交互）
   useEffect(() => {
@@ -169,11 +190,10 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   const waterMl = useMemo(() => water.reduce((s, w) => s + (Number(w.amount_ml) || 0), 0), [water])
   const burnKcal = useMemo(() => exercise.reduce((s, x) => s + (Number(x.calories) || 0), 0), [exercise])
 
-  // 活动消耗：来自健康 App 的步数/活动能量（第二批 HealthKit 真读后填充）。
-  // 第一批步数源未接，activityKcal 恒为 0，但算法链路已就位。
+  // 活动消耗：优先用 HealthKit 的活动能量（activeKcal）；未连接时用步数估算兜底。
   const activityKcal = useMemo(
-    () => estimateActivityKcal(healthSteps, profile.current_weight_kg, profile.height_cm),
-    [healthSteps, profile.current_weight_kg, profile.height_cm],
+    () => (healthActiveKcal > 0 ? healthActiveKcal : estimateActivityKcal(healthSteps, profile.current_weight_kg, profile.height_cm)),
+    [healthActiveKcal, healthSteps, profile.current_weight_kg, profile.height_cm],
   )
   // 净摄入 = 摄入 − 手动运动消耗；活动消耗按 50% 计入「可吃回」，让缺口更真实
   const netKcal = Math.round(totals.kcal - burnKcal - activityKcal * ACTIVITY_EATBACK_RATIO)
@@ -392,10 +412,16 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
     }
   }
 
-  // 连接健康：按品牌路由（苹果跳设置 / 安卓弹提示）
-  function handleConnectHealth() {
-    const res = connectHealth()
+  // 连接健康：调 HealthKit 授权 → 成功后存云端状态 + 按钮消失 + 自动同步
+  async function handleConnectHealth() {
+    const res = await connectHealth()
     if (res.message) setHealthTip(res.message)
+    if (res.ok) {
+      setHealthConnected(true)
+      const data = await syncFromHealth()
+      setHealthSteps(data.steps)
+      setHealthActiveKcal(data.activeKcal)
+    }
   }
 
   const waterPct = Math.min(100, Math.round((waterMl / waterTarget) * 100))
@@ -723,15 +749,25 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
 
         {isHealthConnectable() && (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 10px' }}>
-              <button className="chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={handleConnectHealth}>
+            {healthConnected ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 10px' }}>
                 <IconRun color="var(--green)" size={13} />
-                连接{healthVendor.label}
-              </button>
-              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
-                {healthVendor.canSync ? '同步步数，自动计入活动消耗' : '引导查看运动数据'}
-              </span>
-            </div>
+                <span style={{ fontSize: 13, color: 'var(--green)' }}>已连接 {healthVendor.label}</span>
+                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                  {healthSteps > 0 ? `今日 ${healthSteps} 步` : '自动同步步数与活动能量'}
+                </span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 10px' }}>
+                <button className="chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={handleConnectHealth}>
+                  <IconRun color="var(--green)" size={13} />
+                  连接{healthVendor.label}
+                </button>
+                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                  {healthVendor.canSync ? '同步步数，自动计入活动消耗' : '引导查看运动数据'}
+                </span>
+              </div>
+            )}
             {healthTip && (
               <div className="notice" style={{ margin: '0 0 10px', fontSize: 13 }}>{healthTip}</div>
             )}
