@@ -154,12 +154,11 @@ export function waterTargetMl(weightKg: number | null | undefined): number {
 /* ── 运动消耗（MET 估算法）── */
 
 /** 常见运动的 MET 强度，用于估算消耗：kcal = MET × 3.5 × 体重kg ÷ 200 × 分钟 */
-/** steps=true 表示「步数型」运动（走路/跑步等），Apple 健康的活动能量已含，iOS 已连接时手动记录需去重 */
-export const EXERCISES: { name: string; met: number; steps?: boolean }[] = [
-  { name: '散步', met: 3.5, steps: true },
-  { name: '快走', met: 4.3, steps: true },
-  { name: '慢跑', met: 8.0, steps: true },
-  { name: '骑行', met: 6.8, steps: true },
+export const EXERCISES: { name: string; met: number }[] = [
+  { name: '散步', met: 3.5 },
+  { name: '快走', met: 4.3 },
+  { name: '慢跑', met: 8.0 },
+  { name: '骑行', met: 6.8 },
   { name: '游泳', met: 8.0 },
   { name: '跳绳', met: 11.0 },
   { name: '瑜伽', met: 3.0 },
@@ -167,7 +166,7 @@ export const EXERCISES: { name: string; met: number; steps?: boolean }[] = [
   { name: 'HIIT', met: 10.0 },
   { name: '羽毛球', met: 5.5 },
   { name: '篮球', met: 8.0 },
-  { name: '爬山', met: 7.0, steps: true },
+  { name: '爬山', met: 7.0 },
 ]
 
 export const DEFAULT_WEIGHT = 60
@@ -176,11 +175,6 @@ export function exerciseKcal(name: string, minutes: number, weightKg: number | n
   const met = EXERCISES.find((e) => e.name === name)?.met ?? 4.5
   const w = weightKg && weightKg > 0 ? weightKg : DEFAULT_WEIGHT
   return Math.round(((met * 3.5 * w) / 200) * minutes)
-}
-
-/** 某运动是否「步数型」（走路/跑步等，Apple 健康活动能量已含） */
-export function isStepExercise(name: string): boolean {
-  return EXERCISES.find((e) => e.name === name)?.steps === true
 }
 
 /** 月历：把某月补齐成「周一开头」的 6×7 网格（含前后月补位，值为 null） */

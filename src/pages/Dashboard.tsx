@@ -32,7 +32,7 @@ import { ACTIVITY_EATBACK_RATIO, connectHealth, DEFAULT_STEP_GOAL, estimateActiv
 import { CHECKIN_EXERCISE, CHECKIN_MEAL, CHECKIN_WATER, dailyCheckinHoney, streakMilestoneHoney } from '../lib/invite'
 import { errText } from '../lib/errmsg'
 import { kvGet, kvSet } from '../lib/kv'
-import { EXERCISES, exerciseKcal, formatDateShort, guessMealType, isStepExercise, shiftDate, targetFromProfile, todayKey, waterTargetMl } from '../lib/nutrition'
+import { EXERCISES, exerciseKcal, formatDateShort, guessMealType, shiftDate, targetFromProfile, todayKey, waterTargetMl } from '../lib/nutrition'
 import { createShareCanvas, drawCheckinCard, canvasToBlob } from '../lib/sharecard'
 import { shareImage } from '../lib/share'
 import { computeStreak, MILESTONES } from '../lib/streak'
@@ -403,12 +403,6 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
 
   async function handleAddExercise() {
     setError('')
-    // 去重：iOS 已连接 Apple 健康时，步数型运动（散步/快走/慢跑等）已由健康活动能量覆盖，
-    // 手动再记会重复计算，提示用户即可，不落库。
-    if (healthConnected && isStepExercise(exName)) {
-      setError('「' + exName + '」已由 Apple 健康自动同步步数与活动能量，无需手动记录。')
-      return
-    }
     try {
       setExercise(await addExercise({ log_date: logDate, name: exName, minutes: exMinutesNum, calories: exPreview }))
     } catch (e) {
@@ -837,20 +831,11 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
         )}
 
         <div className="chips chips-scroll" style={{ marginBottom: 10 }}>
-          {EXERCISES.map((e) => {
-            // iOS 已连接健康时，步数型运动已被自动同步，chip 置灰并标记「已同步」
-            const synced = healthConnected && e.steps === true
-            return (
-              <button
-                key={e.name}
-                className={`chip ${exName === e.name ? 'active' : ''}`}
-                style={synced ? { opacity: 0.5 } : undefined}
-                onClick={() => setExName(e.name)}
-              >
-                {e.name}{synced ? ' ✓' : ''}
-              </button>
-            )
-          })}
+          {EXERCISES.map((e) => (
+            <button key={e.name} className={`chip ${exName === e.name ? 'active' : ''}`} onClick={() => setExName(e.name)}>
+              {e.name}
+            </button>
+          ))}
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <div className="stepper" style={{ flex: 1 }}>
