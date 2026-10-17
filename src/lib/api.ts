@@ -857,3 +857,56 @@ export async function redeemHoney(kind: 'pro1Day' | 'pro30Day' | 'ai1Scan'): Pro
     return false
   }
 }
+
+/* ── 统一支付（订单 + 核销，走服务端 RPC）── */
+
+/** 服务端下单返回的订单信息 */
+export interface PaymentOrder {
+  order_no: string
+  product_id: string
+  plan: 'pro' | 'lifetime'
+  months: number | null
+  amount_cents: number
+  currency: string
+}
+
+/** 创建支付订单（服务端查价，客户端只传 product_id + provider） */
+export async function createPaymentOrder(
+  productId: string,
+  provider: 'apple' | 'google' | 'wechat' | 'alipay',
+): Promise<PaymentOrder> {
+  const { data, error } = await callRpc('create_payment_order', {
+    p_product_id: productId,
+    p_provider: provider,
+  })
+  if (error) throw new Error(zh(error.message, '创建订单失败'))
+  const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null
+  if (!row || row.error) throw new Error('创建订单失败')
+  return {
+    order_no: String(row.order_no),
+    product_id: String(row.product_id),
+    plan: row.plan as 'pro' | 'lifetime',
+    months: row.months == null ? null : Number(row.months),
+    amount_cents: Number(row.amount_cents),
+    currency: String(row.currency),
+  }
+}
+
+/** 核销订单（回传平台凭证，服务端幂等发权益） */
+export async function verifyPaymentOrder(
+  orderNo: string,
+  providerTxnId: string,
+  receipt: string,
+): Promise<boolean> {
+  try {
+    const { data, error } = await callRpc('verify_payment_order', {
+      p_order_no: orderNo,
+      p_provider_txn_id: providerTxnId,
+      p_receipt: receipt,
+    })
+    if (error) return false
+    return (Array.isArray(data) ? data[0] : data) === true
+  } catch {
+    return false
+  }
+}
