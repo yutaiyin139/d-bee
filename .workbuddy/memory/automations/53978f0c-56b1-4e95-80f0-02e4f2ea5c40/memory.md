@@ -27,6 +27,16 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
 - 观察：weight_logs 首次产出数据（id=1，54.6kg，owner 2109869577155379200）；
   entitlements 仍为 0 行（免费期，符合预期）。
 
+### 2026-10-17 09:11（第 5 次）
+- 结果：**成功**。产出 `db/backups/2026-10-17.json`（42162 字节，史上最大）。
+- 行数：profiles=15 / meal_entries=33 / water_logs=15 / exercise_logs=12 / weight_logs=2 / entitlements=0 / ai_usage=5
+- 校验：`.verify-backup.cjs` PASS——JSON.parse OK、7 表 row_counts 与 tables.<表>.length 及
+  另发 count(*) 的线上实时行数三方一致；另抽查 profiles id=1/15 的 owner_id 与线上一致。
+- 清理：无过期备份（cutoff 2026-09-17，现存最早 2026-10-13）。目录内共 5 份每日备份。
+- 流程改进：新增 `.build-backup.cjs`——先把 MCP 返回的原始 dump 落到临时 `.YYYY-MM-DD.raw.json`，
+  再用脚本按 schema 顺序重排 tables 并计算 row_counts（避免手工编辑 JSON 引入错误），
+  校验通过后删除临时文件。本次一次通过。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。
