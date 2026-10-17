@@ -48,6 +48,10 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
   // 链接带入（?invite=CODE）时预填；手动场景默认收起，点击「有邀请码？」才展开。
   const [inviteCode, setInviteCode] = useState(initialInviteCode)
   const [inviteExpanded, setInviteExpanded] = useState(!!initialInviteCode)
+  // 邀请码是否来自分享链接（?invite=CODE）。只有链接带入才显示「已识别」卡片，
+  // 手动展开的输入框不受 inviteCode 是否非空影响，避免输入第一个字符后输入框被顶掉。
+  // 清除链接带入的码后置 false，此后走手动输入分支。
+  const [fromLink, setFromLink] = useState(!!initialInviteCode)
 
   useEffect(() => {
     if (countdown <= 0) return
@@ -269,12 +273,12 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
           </button>
         </div>
 
-        {inviteCode ? (
+        {fromLink && inviteCode ? (
           <div className="card" style={{ marginTop: 14, padding: '12px 14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>已识别好友邀请码</span>
               <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: 2, color: 'var(--honey-dark)' }}>{inviteCode}</span>
-              <button className="btn-text" style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--ink-3)' }} onClick={() => { setInviteCode(''); setInviteExpanded(false) }}>
+              <button className="btn-text" style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--ink-3)' }} onClick={() => { setInviteCode(''); setFromLink(false); setInviteExpanded(false) }}>
                 清除
               </button>
             </div>
