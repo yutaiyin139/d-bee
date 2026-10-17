@@ -28,7 +28,7 @@ import type { CoachContext } from '../lib/ai'
 import { STREAK_BADGES } from '../lib/badge'
 import { categoryOf } from '../lib/foods'
 import { LEVEL_LABELS, levelOfScore, nextMealAdvice, summarizeEntries } from '../lib/foodInsight'
-import { ACTIVITY_EATBACK_RATIO, connectHealth, estimateActivityKcal, getHealthVendor, isHealthConnectable, isHealthConnected, syncFromHealth } from '../lib/health'
+import { ACTIVITY_EATBACK_RATIO, connectHealth, estimateActivityKcal, getHealthVendor, HEALTH_STEP_TARGET, isHealthConnectable, isHealthConnected, syncFromHealth } from '../lib/health'
 import { CHECKIN_EXERCISE, CHECKIN_MEAL, CHECKIN_WATER, dailyCheckinHoney, streakMilestoneHoney } from '../lib/invite'
 import { errText } from '../lib/errmsg'
 import { kvGet, kvSet } from '../lib/kv'
@@ -95,10 +95,12 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   // 饮食体检伸缩：默认展开，点击右上角折叠/展开详情区；折叠偏好记忆到本地，下次打开保持
   const [checkupCollapsed, setCheckupCollapsed] = useState(false)
 
-  // 健康连接：挂载时读云端连接状态；已连接则自动同步步数/活动能量
+  // 健康连接：挂载时读云端连接状态；已连接则自动同步步数/活动能量。
+  // 另注册 visibilitychange：用户从系统健康设置页切回 App 时自动回检并刷新数据
+  // （授权可能刚在设置里完成，回到 App 必须立即可见，而不是等下次登录）。
   useEffect(() => {
     let alive = true
-    void (async () => {
+    async function refreshHealth() {
       const connected = await isHealthConnected()
       if (!alive) return
       setHealthConnected(connected)
@@ -108,9 +110,15 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
         setHealthSteps(data.steps)
         setHealthActiveKcal(data.activeKcal)
       }
-    })()
+    }
+    void refreshHealth()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refreshHealth()
+    }
+    document.addEventListener('visibilitychange', onVisible)
     return () => {
       alive = false
+      document.removeEventListener('visibilitychange', onVisible)
     }
   }, [])
 
@@ -747,31 +755,65 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
           </span>
         </div>
 
-        {isHealthConnectable() && (
+        {isHealthConnectable() && !healthConnected && (
           <>
-            {healthConnected ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 10px' }}>
+              <button className="chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={handleConnectHealth}>
                 <IconRun color="var(--green)" size={13} />
-                <span style={{ fontSize: 13, color: 'var(--green)' }}>已连接 {healthVendor.label}</span>
-                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
-                  {healthSteps > 0 ? `今日 ${healthSteps} 步` : '自动同步步数与活动能量'}
-                </span>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 10px' }}>
-                <button className="chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={handleConnectHealth}>
-                  <IconRun color="var(--green)" size={13} />
-                  连接{healthVendor.label}
-                </button>
-                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
-                  {healthVendor.canSync ? '同步步数，自动计入活动消耗' : '引导查看运动数据'}
-                </span>
-              </div>
-            )}
+                连接{healthVendor.label}
+              </button>
+              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                同步步数与活动能量，自动计入活动消耗
+              </span>
+            </div>
             {healthTip && (
               <div className="notice" style={{ margin: '0 0 10px', fontSize: 13 }}>{healthTip}</div>
             )}
           </>
+        )}
+
+        {healthConnected && (
+          <div style={{ margin: '8px 0 12px' }}>
+            {/* 步数行：图标 + 标题 + 「今日步数 / 目标」 + 进度条 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{
+                width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+                background: 'var(--green-50, #EAF3DE)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <IconRun color="var(--green)" size={16} />
+              </span>
+              <span style={{ fontSize: 14, fontWeight: 500 }}>步数</span>
+              <span style={{ marginLeft: 'auto', fontSize: 14 }}>
+                <b>{healthSteps.toLocaleString()}</b>
+                <span style={{ color: 'var(--ink-3)' }}> / {HEALTH_STEP_TARGET.toLocaleString()}</span>
+              </span>
+            </div>
+            <div className="macro-track" style={{ margin: '8px 0 12px' }}>
+              <div className="macro-fill" style={{
+                width: `${Math.min(100, Math.round((healthSteps / HEALTH_STEP_TARGET) * 100))}%`,
+                background: 'var(--green)',
+              }} />
+            </div>
+            {/* 活动能量行：火焰图标 + 「其他 · 健康」 + 大卡 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{
+                width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+                background: 'var(--honey-50, #FAEEDA)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <IconFire color="var(--honey-dark)" size={16} />
+              </span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <span style={{ fontSize: 14, fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  其他
+                  <span style={{
+                    fontSize: 11, color: 'var(--red)', background: 'var(--red-50, #FCEBEB)',
+                    borderRadius: 6, padding: '1px 6px', display: 'inline-flex', alignItems: 'center', gap: 3,
+                  }}>❤ 健康</span>
+                </span>
+                <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>{healthActiveKcal} 大卡</span>
+              </div>
+            </div>
+          </div>
         )}
 
         {exercise.length > 0 && (

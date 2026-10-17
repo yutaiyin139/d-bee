@@ -152,3 +152,6 @@ export function estimateActivityKcal(
  * （Cal AI 用 80%、自律茄子用 100%，均被第三方评测点名）。50% 是安全折中。
  */
 export const ACTIVITY_EATBACK_RATIO = 0.5
+
+/** 每日步数目标（运动卡片进度条用；后续可按个人档案动态化） */
+export const HEALTH_STEP_TARGET = 6000
