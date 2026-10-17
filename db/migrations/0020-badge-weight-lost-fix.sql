@@ -69,15 +69,21 @@ BEGIN
   SELECT COUNT(*) INTO v_exercise FROM exercise_logs WHERE owner_id = v_uid;
 
   -- 减重 = 起始体重 − 最新体重。
+  -- 口径约束：仅 goal='lose'（减重目标）才计算有效减重量；增重/保持目标恒为 0，
+  -- 避免增肥用户体重下降也点亮「减重 3kg」徽章。
   -- 最新体重优先取 weight_logs 最新记录；无记录时回退 current_weight_kg（注册时=起始体重，
   -- 打卡后同步更新），再回退 0。避免「无体重记录」被 COALESCE(...,0) 误当成「体重 0」。
-  SELECT COALESCE(
-    (SELECT start_weight_kg FROM profiles WHERE owner_id = v_uid), 0
-  ) - COALESCE(
-    (SELECT weight_kg FROM weight_logs WHERE owner_id = v_uid ORDER BY log_date DESC, id DESC LIMIT 1),
-    (SELECT current_weight_kg FROM profiles WHERE owner_id = v_uid),
-    0
-  ) INTO v_lost;
+  IF (SELECT goal FROM profiles WHERE owner_id = v_uid) = 'lose' THEN
+    SELECT COALESCE(
+      (SELECT start_weight_kg FROM profiles WHERE owner_id = v_uid), 0
+    ) - COALESCE(
+      (SELECT weight_kg FROM weight_logs WHERE owner_id = v_uid ORDER BY log_date DESC, id DESC LIMIT 1),
+      (SELECT current_weight_kg FROM profiles WHERE owner_id = v_uid),
+      0
+    ) INTO v_lost;
+  ELSE
+    v_lost := 0;
+  END IF;
 
   SELECT COUNT(*) INTO v_invitees FROM profiles WHERE invited_by = v_uid;
 
