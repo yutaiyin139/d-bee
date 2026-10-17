@@ -55,6 +55,8 @@ ALTER TABLE public.profiles ADD COLUMN invited_by text;
 ALTER TABLE public.profiles ADD COLUMN invite_code text;
 COMMENT ON COLUMN public.profiles.invited_by IS '邀请人 owner_id（绑定后不可改）';
 COMMENT ON COLUMN public.profiles.invite_code IS '新人注册时填写的邀请码（审计用）';
--- 一人只能被邀请一次（partial unique，仅非空）
-CREATE UNIQUE INDEX profiles_invited_once ON public.profiles (invited_by)
+-- ⚠️ 原约束方向错误（已在 0019 修正）：这里曾建在 invited_by 上，语义变成
+--   「一个邀请人只能邀请一个新用户」。正确语义是「一个新人只能被邀请一次」，
+--   应在 owner_id（新人）上建唯一。见 0019-invite-once-fix.sql。
+CREATE UNIQUE INDEX profiles_invited_once ON public.profiles (owner_id)
   WHERE invited_by IS NOT NULL;

@@ -63,11 +63,24 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
   async function tryBindInvite() {
     const code = inviteCode.trim()
     if (!code) return
-    try {
-      await bindInvite(code)
-    } catch {
-      // 绑定失败不阻断登录：邀请码无效/已用/网络异常均静默
+
+    // verifyOtp 后云 SDK 会话（JWT）可能尚未完全就绪，此时 bind_invite 的 auth.uid()
+    // 为 null，会在写任何记录前直接返回 invalid（静默失败）。这里先等会话建立，
+    // 再对 invalid 做有限次延迟重试，尽可能在会话就绪后绑定成功。
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 1000 * attempt))
+      try {
+        const { data: session } = await cloud.auth.getSession()
+        if (!session) continue // 会话未建立，等下一轮重试
+        const status = await bindInvite(code)
+        // ok / already / self 都是「绑定关系已正确确定」的终态，无需再试；
+        // throttled / invalid 可能是会话/环境问题，继续重试。
+        if (status === 'ok' || status === 'already' || status === 'self') return
+      } catch {
+        // 网络/鉴权异常：继续重试
+      }
     }
+    // 三次仍失败：静默放弃（不阻断登录，符合「选填、失败不阻断」的产品设定）
   }
 
   async function sendPhoneCode() {
@@ -122,7 +135,9 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
         return
       }
       pendingPhone.current = null
-      if (!pending.isExistingUser) await tryBindInvite()
+      // 只要有邀请码就尝试绑定，不依赖 isExistingUser（该字段在部分场景下可能误判）。
+      // bind_invite 内部有 already/self 幂等保护，老用户重复绑定无副作用。
+      await tryBindInvite()
       onSignedIn()
     } catch (e) {
       setError(errText(e, '登录失败'))
@@ -191,7 +206,8 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
         return
       }
       pendingEmail.current = null
-      if (!pending.isExistingUser) await tryBindInvite()
+      // 同手机号：只要有邀请码就尝试绑定，不依赖 isExistingUser，bind_invite 幂等。
+      await tryBindInvite()
       onSignedIn()
     } catch (e) {
       setError(errText(e, '登录失败'))
