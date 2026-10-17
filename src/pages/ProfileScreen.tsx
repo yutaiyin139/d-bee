@@ -29,6 +29,7 @@ import {
   HEIGHT_LIMIT,
   NICKNAME_RULE,
   WEIGHT_LIMIT,
+  STEP_GOAL_LIMIT,
   type NumLimit,
   checkNumber,
   checkTargetWeightDiff,
@@ -114,6 +115,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
   const [height, setHeight] = useState(String(profile.height_cm ?? 165))
   const [weight, setWeight] = useState(String(profile.current_weight_kg ?? 62))
   const [targetWeight, setTargetWeight] = useState(String(profile.target_weight_kg ?? 55))
+  const [stepGoal, setStepGoal] = useState(String(profile.step_goal ?? 6000))
   const [activity, setActivity] = useState<keyof typeof ACTIVITY_LABELS>(
     (profile.activity_level as keyof typeof ACTIVITY_LABELS) ?? 'light',
   )
@@ -167,6 +169,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
     const h = checkNumber(height, HEIGHT_LIMIT)
     const w = checkNumber(weight, WEIGHT_LIMIT)
     const tw = goal === 'keep' ? { ok: true, value: w.value, error: '' } : checkNumber(targetWeight, WEIGHT_LIMIT)
+    const sg = checkNumber(stepGoal, STEP_GOAL_LIMIT)
     const diff = goal === 'keep' ? { ok: true, error: '' } : checkTargetWeightDiff(tw.value, w.value)
     // 昵称允许留空（云端存 null），只在填了内容时校验长度
     const nick = nickname.trim() === '' ? { ok: true, error: '' } : checkText(nickname, NICKNAME_RULE)
@@ -176,8 +179,9 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
       weight: w.error,
       tw: tw.error || diff.error,
       nick: nick.error,
+      stepGoal: sg.error,
     })
-    return firstError(a.error, h.error, w.error, tw.error, diff.error, nick.error)
+    return firstError(a.error, h.error, w.error, tw.error, diff.error, nick.error, sg.error)
   }
 
   async function submitBody() {
@@ -215,6 +219,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
         protein_target_g: t.protein_g,
         carb_target_g: t.carb_g,
         fat_target_g: t.fat_g,
+        step_goal: num(stepGoal, 6000),
       })
       onProfileChanged(saved)
       setEditing(false)
@@ -423,6 +428,10 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
         <div className="list-line" style={{ alignItems: 'flex-start' }}>
           <span style={{ flexShrink: 0 }}>目标体重</span>
           <span className="val" style={{ textAlign: 'right' }}>{profile.target_weight_kg ?? '—'} kg</span>
+        </div>
+        <div className="list-line">
+          <span>每日步数目标</span>
+          <span className="val">{profile.step_goal ?? 6000} 步</span>
         </div>
       </div>
 
@@ -744,6 +753,20 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
                 </button>
               ))}
             </div>
+          </div>
+          <div className="field">
+            <label htmlFor="e-step-goal">每日步数目标</label>
+            <input
+              id="e-step-goal"
+              type="number"
+              inputMode="numeric"
+              min={STEP_GOAL_LIMIT.min}
+              max={STEP_GOAL_LIMIT.max}
+              value={stepGoal}
+              onChange={(e) => typeNum(e.target.value, STEP_GOAL_LIMIT, setStepGoal, 'stepGoal')}
+              onBlur={(e) => blurNum(e.target.value, STEP_GOAL_LIMIT, setStepGoal, 'stepGoal')}
+            />
+            {fieldErr.stepGoal && <div className="err">{fieldErr.stepGoal}</div>}
           </div>
           <div className="helper" style={{ marginBottom: 16 }}>
             保存后会按新数据重新计算每日热量与营养素目标。历史记录不会被改动。

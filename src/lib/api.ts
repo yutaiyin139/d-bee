@@ -50,6 +50,7 @@ const PROFILE_WRITABLE = [
   'daily_calorie_target', 'protein_target_g', 'carb_target_g', 'fat_target_g',
   'barriers', 'plan_summary', 'onboarded',
   'health_connected', 'health_connected_at',
+  'step_goal',
 ] as const
 
 function pickProfileFields(patch: Partial<Profile>): Row {

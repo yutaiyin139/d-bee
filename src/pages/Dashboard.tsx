@@ -28,7 +28,7 @@ import type { CoachContext } from '../lib/ai'
 import { STREAK_BADGES } from '../lib/badge'
 import { categoryOf } from '../lib/foods'
 import { LEVEL_LABELS, levelOfScore, nextMealAdvice, summarizeEntries } from '../lib/foodInsight'
-import { ACTIVITY_EATBACK_RATIO, connectHealth, estimateActivityKcal, getHealthVendor, HEALTH_STEP_TARGET, isHealthConnectable, isHealthConnected, syncFromHealth } from '../lib/health'
+import { ACTIVITY_EATBACK_RATIO, connectHealth, DEFAULT_STEP_GOAL, estimateActivityKcal, getHealthVendor, isHealthConnectable, isHealthConnected, syncFromHealth } from '../lib/health'
 import { CHECKIN_EXERCISE, CHECKIN_MEAL, CHECKIN_WATER, dailyCheckinHoney, streakMilestoneHoney } from '../lib/invite'
 import { errText } from '../lib/errmsg'
 import { kvGet, kvSet } from '../lib/kv'
@@ -91,6 +91,8 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   const [healthSteps, setHealthSteps] = useState(0)
   const [healthActiveKcal, setHealthActiveKcal] = useState(0)
   const [healthTip, setHealthTip] = useState('')
+  // 步数目标：优先用户自定义（profile.step_goal），缺省用默认值
+  const stepGoal = profile.step_goal && profile.step_goal > 0 ? profile.step_goal : DEFAULT_STEP_GOAL
 
   // 饮食体检伸缩：默认展开，点击右上角折叠/展开详情区；折叠偏好记忆到本地，下次打开保持
   const [checkupCollapsed, setCheckupCollapsed] = useState(false)
@@ -785,12 +787,12 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
               <span style={{ fontSize: 14, fontWeight: 500 }}>步数</span>
               <span style={{ marginLeft: 'auto', fontSize: 14 }}>
                 <b>{healthSteps.toLocaleString()}</b>
-                <span style={{ color: 'var(--ink-3)' }}> / {HEALTH_STEP_TARGET.toLocaleString()}</span>
+                <span style={{ color: 'var(--ink-3)' }}> / {stepGoal.toLocaleString()}</span>
               </span>
             </div>
             <div className="macro-track" style={{ margin: '8px 0 12px' }}>
               <div className="macro-fill" style={{
-                width: `${Math.min(100, Math.round((healthSteps / HEALTH_STEP_TARGET) * 100))}%`,
+                width: `${Math.min(100, Math.round((healthSteps / stepGoal) * 100))}%`,
                 background: 'var(--green)',
               }} />
             </div>

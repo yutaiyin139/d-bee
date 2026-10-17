@@ -44,6 +44,8 @@ export const MINUTES_LIMIT: NumLimit = { label: '运动时长', min: 5, max: 300
 export const KCAL_LIMIT: NumLimit = { label: '热量', min: 1, max: 10000, int: true, unit: 'kcal' }
 /** 饮水量：50–3000 ml（整数） */
 export const WATER_ML_LIMIT: NumLimit = { label: '饮水量', min: 50, max: 3000, int: true, unit: 'ml' }
+/** 每日步数目标：1000–50000 步（整数） */
+export const STEP_GOAL_LIMIT: NumLimit = { label: '步数目标', min: 1000, max: 50000, int: true, unit: '步' }
 
 /* ────────────────────────── 文本规则 ────────────────────────── */
 

@@ -37,6 +37,8 @@ export interface Profile {
   health_connected?: boolean | null
   /** Apple 健康连接时间 */
   health_connected_at?: string | null
+  /** 每日步数目标（运动卡片进度条；默认 6000，可在「我的」里设置） */
+  step_goal?: number | null
 }
 
 export interface MealEntry {

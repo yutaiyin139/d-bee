@@ -153,5 +153,5 @@ export function estimateActivityKcal(
  */
 export const ACTIVITY_EATBACK_RATIO = 0.5
 
-/** 每日步数目标（运动卡片进度条用；后续可按个人档案动态化） */
-export const HEALTH_STEP_TARGET = 6000
+/** 每日步数目标默认值（用户未在「我的」里自定义时使用） */
+export const DEFAULT_STEP_GOAL = 6000
