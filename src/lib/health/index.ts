@@ -86,7 +86,10 @@ export async function connectHealth(): Promise<ConnectResult> {
     }
 
     const authorized = await requestHealthAuthorization()
-    if (!authorized) {
+    // 双保险：requestAuthorization 的返回值可能因用户部分拒绝而不准，
+    // 再查一次真实授权状态确认确实拿到了读取权限。
+    const confirmed = authorized && (await getHealthAuthorizationStatus())
+    if (!confirmed) {
       return { ok: false, message: '未授权访问 Apple 健康，请在系统弹窗中允许后重试。', vendor: 'apple' }
     }
 

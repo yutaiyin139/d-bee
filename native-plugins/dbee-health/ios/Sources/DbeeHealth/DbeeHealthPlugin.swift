@@ -54,14 +54,28 @@ public class DbeeHealthPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        healthStore.requestAuthorization(toShare: nil, read: types) { success, error in
+        healthStore.requestAuthorization(toShare: nil, read: types) { [weak self] success, error in
+            guard let self = self else { return }
             if let error = error {
                 call.reject("DbeeHealth.requestAuthorization failed: \(error.localizedDescription)")
                 return
             }
-            // 授权成功与否按 success 返回；用户可能只勾选部分，但只要有读取权限即视为已连接
-            call.resolve(["authorized": success])
+            // ⚠️ success 只表示「授权请求本身是否成功发出」，不代表用户真的勾选了读取权限。
+            // 用户可在弹窗里拒绝，success 仍可能为 true。因此授权请求发出后，
+            // 必须再查一次 authorizationStatus 确认是否真的拿到了读取权限。
+            let actuallyAuthorized = self.isAnyReadAuthorized()
+            call.resolve(["authorized": actuallyAuthorized])
         }
+    }
+
+    /// 任一读取类型已授权即视为「已连接」
+    private func isAnyReadAuthorized() -> Bool {
+        for type in readTypes {
+            if healthStore.authorizationStatus(for: type) == .sharingAuthorized {
+                return true
+            }
+        }
+        return false
     }
 
     @objc func authorizationStatus(_ call: CAPPluginCall) {
@@ -69,17 +83,7 @@ public class DbeeHealthPlugin: CAPPlugin, CAPBridgedPlugin {
             call.resolve(["authorized": false])
             return
         }
-
-        // 任一读取类型已授权即视为「已连接」
-        var anyAuthorized = false
-        for type in readTypes {
-            let status = healthStore.authorizationStatus(for: type)
-            if status == .sharingAuthorized {
-                anyAuthorized = true
-                break
-            }
-        }
-        call.resolve(["authorized": anyAuthorized])
+        call.resolve(["authorized": isAnyReadAuthorized()])
     }
 
     @objc func fetchToday(_ call: CAPPluginCall) {

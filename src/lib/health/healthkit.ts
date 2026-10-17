@@ -31,7 +31,7 @@ function getPlugin(): HealthPlugin | null {
   const p = cap?.Plugins?.DbeeHealth
   if (!p || typeof p !== 'object') return null
   const candidate = p as Partial<HealthPlugin>
-  if (typeof candidate.requestAuthorization !== 'function' || typeof candidate.fetchToday !== 'function') {
+  if (typeof candidate.requestAuthorization !== 'function' || typeof candidate.fetchToday !== 'function' || typeof candidate.authorizationStatus !== 'function') {
     return null
   }
   return candidate as HealthPlugin
