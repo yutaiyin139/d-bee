@@ -19,6 +19,11 @@
 import { detectHealthVendor, isWechatWebView } from './brand'
 import type { HealthVendorInfo } from './brand'
 import { isHealthKitAvailable, requestHealthAuthorization, fetchTodayHealth } from './healthkit'
+import {
+  isAndroidVendorHealthAvailable,
+  requestAndroidVendorAuthorization,
+  fetchAndroidVendorToday,
+} from './android'
 import { isIOS } from '../platform'
 import { getProfile, saveProfile } from '../api'
 
@@ -47,11 +52,13 @@ export function getHealthVendor(): HealthVendorInfo {
 /**
  * 是否显示「连接健康」入口。
  *
- * 仅 iOS 原生 App 且 HealthKit 插件可用时显示：当前只有 Apple 健康支持真同步。
- * 安卓厂商运动健康无公开读取 API；Web 也不显示。
+ * 仅原生 App 且健康平台插件可用时显示：
+ *   - iOS    ：Apple 健康（HealthKit）真同步
+ *   - Android：华为 Health Kit / 小米运动健康数据服务 真同步（依赖资质，未就绪时授权降级为引导）
+ * 其它安卓厂商无公开读取 API；Web 也不显示。
  */
 export function isHealthConnectable(): boolean {
-  return isHealthKitAvailable()
+  return isHealthKitAvailable() || isAndroidVendorHealthAvailable()
 }
 
 /**
@@ -107,6 +114,38 @@ export async function connectHealth(): Promise<ConnectResult> {
     return { ok: true, message: '已连接 Apple 健康，步数与活动能量将自动同步。', vendor: 'apple' }
   }
 
+  if (v.vendor === 'huawei' || v.vendor === 'xiaomi') {
+    if (!isAndroidVendorHealthAvailable()) {
+      // 插件未注入（非对应 Android / 尚未编译插件）：保留原占位提示
+      return { ok: false, message: `${v.label}同步正在接入中，当前请先手动记录运动。`, vendor: v.vendor }
+    }
+
+    const auth = await requestAndroidVendorAuthorization()
+    if (auth.notReady) {
+      // 厂商资质未就绪（无真实授权 SDK），诚实引导，不误导为「用户拒绝授权」
+      return {
+        ok: false,
+        message: `${v.label}接入正在申请资质，当前请先手动记录运动。`,
+        vendor: v.vendor,
+      }
+    }
+    if (!auth.completed) {
+      return {
+        ok: false,
+        message: '授权未完成，可稍后在「我的 > 健康数据源」里重新连接。',
+        vendor: v.vendor,
+      }
+    }
+
+    // 授权流程完成 → 存云端连接状态（跨设备一致，与 Apple 端同一字段）
+    try {
+      await saveProfile({ health_connected: true, health_connected_at: new Date().toISOString() })
+    } catch {
+      // 存状态失败不阻断；本地连接态未落云端时按钮仍在，可重试
+    }
+    return { ok: true, message: `已连接${v.label}，步数与活动能量将自动同步。`, vendor: v.vendor }
+  }
+
   if (v.vendor === 'web') {
     if (isWechatWebView()) {
       return { ok: false, message: '微信运动数据请在微信内查看；D-Bee 已支持手动记录运动。', vendor: 'web' }
@@ -119,12 +158,20 @@ export async function connectHealth(): Promise<ConnectResult> {
 
 /**
  * 拉取当天步数 + 活动能量。
- * 仅 iOS + 插件可用时返回真实数据；否则返回 0。
+ * 按品牌分派：iOS → HealthKit；华为/小米 → 各自 Health Kit；否则返回 0。
  * 登录后（Dashboard 加载时）若已连接，调用本函数自动同步。
  */
 export async function syncFromHealth(): Promise<HealthSyncData> {
-  if (!isHealthKitAvailable()) return { steps: 0, activeKcal: 0 }
-  return fetchTodayHealth()
+  const v = detectHealthVendor()
+  if (v.vendor === 'apple') {
+    if (!isHealthKitAvailable()) return { steps: 0, activeKcal: 0 }
+    return fetchTodayHealth()
+  }
+  if (v.vendor === 'huawei' || v.vendor === 'xiaomi') {
+    if (!isAndroidVendorHealthAvailable()) return { steps: 0, activeKcal: 0 }
+    return fetchAndroidVendorToday()
+  }
+  return { steps: 0, activeKcal: 0 }
 }
 
 /**

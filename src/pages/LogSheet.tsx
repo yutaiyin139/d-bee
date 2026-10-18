@@ -20,11 +20,12 @@ import {
   photoLadderHint,
   isDuplicatePhoto,
   summarizePhoto,
+  FREE_DAILY_AI,
   type PhotoSummary,
 } from '../lib/photoGuard'
-import { getTodayPhotoCount } from '../lib/api'
+import { getTodayPhotoCount, getPhotoQuota } from '../lib/api'
 import { dismissUpsell, markUpsellShown, shouldShowUpsell } from '../lib/upsell'
-import { pickFileFromInput, PHOTO_INPUT_PROPS } from '../lib/capture'
+import { takePhoto } from '../lib/capture'
 import {
   FOOD_KEYWORD_RULE,
   GRAMS_LIMIT,
@@ -449,59 +450,51 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   }, [keyword, category, sort])
 
   /**
-   * 「AI 拍照识别」专用闸门：原子占用一次拍照额度（基础 3 次 + 奖励余额）。
-   * 只有拍照识别消耗次数；文字解析、包装识别、条码、手动录入、AI 问答都不计。
-   * 识别失败（模糊/非食物/报错）时由 handleFile 的 catch 退还。
+   * 「AI 拍照识别」专用闸门：占用的是「识别」额度，不是「拍照」额度。
+   * 计次口径：识别成功（照片里识别出食物并展示结果）才算一次；识别失败（模糊/非食物/报错）
+   * 由 handleFile 的 catch 退还，拍照但没识别不算。文字解析、包装识别、条码、手动录入不计。
    */
+
   /**
-   * 占用一次拍照额度，并按「单日拍照次数阶梯」分流提示。
-   *
-   * 阶梯（nth = 本次是当日第几次）：
-   *  - nth ≤ 3：基础免费，正常占用
-   *  - nth ∈ {4,5}：有积分 → 引导兑换；无积分 → 引导拉人 + Pro
-   *  - nth ≥ 6：直接引导 Pro（不再兑换）
-   *
-   * 返回 ok=false 表示被阶梯拦截（额度未占用），调用方应直接中止本次拍照。
+   * 只读额度预检（点击「拍照」按钮时先调）：额度用完 → 提示兑换/Pro 并返回 false，
+   * 调用方应直接中止（不调相机/选图），避免用户拍完照才被拦（白拍一次）。
    */
-  async function guardAiQuota(): Promise<{ ok: boolean; remaining: number | null }> {
-    // 免费用户才走阶梯；Pro 用户无限次，直接占用
-    if (pro) {
-      const q = await claimAiQuota()
-      return { ok: q.allowed, remaining: q.remaining }
-    }
-
-    // 先按阶梯分流（用当前计数，未包含本次）
-    const bal = await getHoneyBalance().catch(() => null)
-    const balance = bal ? bal.balance : 0
-    const ladder = photoLadderHint(todayPhotoCount, balance)
-
+  async function checkPhotoQuota(): Promise<boolean> {
+    if (pro) return true
     setQuotaHint(null)
     setDupHint(null)
 
-    if (ladder.kind !== 'none') {
-      if (ladder.kind === 'redeem') {
-        setQuotaHint({
-          kind: 'redeem',
-          text: `今日免费拍照已用完，你还有 ${balance} 积分，可兑换 ${ladder.redeemCount} 次拍照。`,
-        })
-      } else if (ladder.kind === 'inviteOrPro') {
-        setQuotaHint({
-          kind: 'inviteOrPro',
-          text: '今日免费拍照已用完。邀请好友可赚积分兑换拍照，或升级 Pro 无限次拍照。',
-        })
-      } else {
-        setQuotaHint({
-          kind: 'pro',
-          text: quotaExhaustedReason(),
-        })
-      }
-      return { ok: false, remaining: null }
-    }
+    const quota = await getPhotoQuota().catch(() => null)
+    const totalRemaining = quota ? quota.totalRemaining : (aiRemaining ?? FREE_DAILY_AI)
+    if (totalRemaining > 0) return true
 
-    // 基础免费（nth ≤ 3）：占用额度
+    // 确实没有额度了，才按阶梯引导「兑换」或「升级 Pro」
+    const bal = await getHoneyBalance().catch(() => null)
+    const balance = bal ? bal.balance : 0
+    const ladder = photoLadderHint(todayPhotoCount, balance)
+    if (ladder.kind === 'redeem') {
+      setQuotaHint({
+        kind: 'redeem',
+        text: `今日免费识别已用完，你还有 ${balance} 积分，可兑换 ${ladder.redeemCount} 次识别。`,
+      })
+    } else if (ladder.kind === 'inviteOrPro') {
+      setQuotaHint({
+        kind: 'inviteOrPro',
+        text: '今日免费识别已用完。邀请好友可赚积分兑换识别，或升级 Pro 无限次识别。',
+      })
+    } else {
+      setQuotaHint({ kind: 'pro', text: quotaExhaustedReason() })
+    }
+    return false
+  }
+
+  /**
+   * 原子占用一次识别额度（consume_photo_quota 会优先扣奖励额度）。
+   * 额度已由 checkPhotoQuota 预检，这里只做占用；仍兜底处理并发下额度被抢空的情况。
+   */
+  async function guardAiQuota(): Promise<{ ok: boolean; remaining: number | null }> {
     const q = await claimAiQuota()
     if (!q.allowed) {
-      // 理论上第 1-3 次不该被拒，但若奖励/基础状态异常仍兜底提示 Pro
       setQuotaHint({ kind: 'pro', text: quotaExhaustedReason() })
       openPaywall(quotaExhaustedReason())
       return { ok: false, remaining: null }
@@ -549,6 +542,14 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
     } finally {
       setBusy(false)
     }
+  }
+
+  // 拍餐盘照片：先预检识别额度（用完直接提示兑换/Pro，不调相机），有额度才调相机/选图。
+  // 原生走 @capacitor/camera（绕开华为 WebView 对 <input capture> 的兼容问题），web 走 pickWithInput。
+  async function handlePickMealPhoto() {
+    if (!(await checkPhotoQuota())) return
+    const f = await takePhoto({ preferCamera: true })
+    if (f) void handleFile(f)
   }
 
   async function handleTextParse() {
@@ -625,6 +626,12 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
     } finally {
       setBusy(false)
     }
+  }
+
+  // 原生端拍包装正面：走 @capacitor/camera（同 handlePickMealPhoto）
+  async function handlePickPackagePhoto() {
+    const f = await takePhoto({ preferCamera: true })
+    if (f) void handlePackagePhoto(f)
   }
 
   function updateGrams(key: string, grams: number) {
@@ -721,7 +728,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
           <h2>记录饮食</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {mode !== 'manual' && aiRemaining !== null && (
-              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>今日剩 {aiRemaining} 次拍照</span>
+              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>今日剩 {aiRemaining} 次识别</span>
             )}
             <button className="sheet-close" onClick={onClose} aria-label="关闭">×</button>
           </div>
@@ -833,17 +840,14 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
               {preview ? (
                 <img src={preview} alt="这一餐的照片" className="preview-img" />
               ) : (
-                <label className="dropzone" style={{ display: 'block' }}>
+                <button
+                  className="dropzone"
+                  style={{ display: 'block', width: '100%', cursor: 'pointer', font: 'inherit' }}
+                  onClick={() => void handlePickMealPhoto()}
+                >
                   <strong>拍一张这一餐的照片</strong>
                   AI 会自动识别食物并估算热量
-                  <input
-                    {...PHOTO_INPUT_PROPS}
-                    onChange={(e) => {
-                      const f = pickFileFromInput(e)
-                      if (f) void handleFile(f)
-                    }}
-                  />
-                </label>
+                </button>
               )}
 
               {busy && (
@@ -855,16 +859,9 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
 
               {preview && !busy && (
                 <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-                  <label className="btn btn-ghost" style={{ flex: 1 }}>
+                  <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => void handlePickMealPhoto()}>
                     换一张照片
-                    <input
-                      {...PHOTO_INPUT_PROPS}
-                      onChange={(e) => {
-                        const f = pickFileFromInput(e)
-                        if (f) void handleFile(f)
-                      }}
-                    />
-                  </label>
+                  </button>
                 </div>
               )}
 
@@ -892,16 +889,13 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
               )}
 
               {missCode && (
-                <label className="btn btn-ghost" style={{ marginTop: 12, display: 'block', textAlign: 'center' }}>
+                <button
+                  className="btn btn-ghost"
+                  style={{ marginTop: 12, display: 'block', width: '100%', textAlign: 'center' }}
+                  onClick={() => void handlePickPackagePhoto()}
+                >
                   {busy ? '正在识别包装…' : '拍包装正面，读营养表'}
-                  <input
-                    {...PHOTO_INPUT_PROPS}
-                    onChange={(e) => {
-                      const f = pickFileFromInput(e)
-                      if (f) void handlePackagePhoto(f)
-                    }}
-                  />
-                </label>
+                </button>
               )}
 
               <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>

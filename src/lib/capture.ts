@@ -24,21 +24,56 @@ export interface TakePhotoOptions {
 /**
  * 以编程方式唤起系统相机/相册，返回用户选中的文件。
  *
- * 返回 null 表示用户取消（原生端会走这个分支；Web 端 <input> 取消时不一定触发回调，
- * 所以 Web 场景仍推荐用 pickPhotoInput() 的受控方式）。
+ * - 原生（iOS/Android）：走 @capacitor/camera 的原生相机，绕开 WebView 对
+ *   `<input capture>` 的厂商兼容差异（华为 EMUI/HarmonyOS 会忽略 capture 属性）。
+ * - Web：临时创建隐藏 input，程序化点击（与改造前行为一致）。
+ *
+ * 返回 null 表示用户取消或相机不可用；业务代码拿到的始终是 File。
  */
 export async function takePhoto(opts: TakePhotoOptions = {}): Promise<File | null> {
   if (isNative()) {
-    // ── 原生分支占位 ──────────────────────────────────────────────
-    // 接入 @capacitor/camera 后在此实现：
-    //   const photo = await Camera.getPhoto({
-    //     quality: 82, resultType: CameraResultType.Uri, source: CameraSource.Camera,
-    //   })
-    //   再把 webPath 读成 File 返回（保证下游签名不变）。
-    // 阶段 0 不改行为：原生环境尚未接入，直接落回 Web 实现。
-    // ──────────────────────────────────────────────────────────────
+    const camera = getCameraPlugin()
+    if (camera) {
+      try {
+        const photo = await camera.getPhoto({
+          resultType: 'DataUrl',
+          source: 'CAMERA',
+          quality: 82,
+          correctOrientation: true,
+        })
+        const dataUrl = photo.dataUrl
+        if (!dataUrl) return null
+        const resp = await fetch(dataUrl)
+        const blob = await resp.blob()
+        return new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' })
+      } catch {
+        // 用户取消（Camera 抛 'User cancelled photos app'）或相机不可用 → 返回 null
+        return null
+      }
+    }
+    // 插件未注入（旧包 / 未同步）：落回 Web input 实现，保证不白屏
   }
   return pickWithInput(opts)
+}
+
+/** @capacitor/camera 插件的最小接口（鸭子类型探测，不 import 包，Web 零新增依赖） */
+interface CameraPluginLike {
+  getPhoto: (options: {
+    resultType?: 'Uri' | 'Base64' | 'DataUrl'
+    source?: 'PROMPT' | 'CAMERA' | 'PHOTOS'
+    quality?: number
+    correctOrientation?: boolean
+  }) => Promise<{ dataUrl?: string; base64String?: string; path?: string; webPath?: string }>
+}
+
+function getCameraPlugin(): CameraPluginLike | null {
+  if (typeof window === 'undefined') return null
+  const cap = (window as unknown as { Capacitor?: { Plugins?: Record<string, unknown> } }).Capacitor
+  const p = cap?.Plugins?.Camera
+  if (!p || typeof p !== 'object') return null
+  const c = p as Partial<CameraPluginLike>
+  if (typeof c.getPhoto !== 'function') return null
+  return c as CameraPluginLike
 }
 
 /** Web 端实现：临时创建一个隐藏 input，程序化点击 */

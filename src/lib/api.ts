@@ -849,14 +849,27 @@ export async function listMyBadges(): Promise<Badge[]> {
   return rows<Badge>(data)
 }
 
-/** 积分兑换（走 RPC 原子扣积分 + 发权益，返回是否兑换成功） */
-export async function redeemHoney(kind: 'pro1Day' | 'pro30Day' | 'ai1Scan'): Promise<boolean> {
+/** 积分兑换结果（走 RPC 原子扣积分 + 发权益） */
+export interface RedeemOutcome {
+  ok: boolean
+  /** 可直接展示的提示文案 */
+  message: string
+}
+
+export async function redeemHoney(kind: 'pro1Day' | 'pro30Day' | 'ai1Scan'): Promise<RedeemOutcome> {
   try {
     const { data, error } = await callRpc('redeem_honey', { p_kind: kind })
-    if (error) return false
-    return (Array.isArray(data) ? data[0] : data) === true
+    if (error) {
+      // 透传后端/网络错误，让用户知道是「登录过期」还是「网络异常」，而非笼统「兑换失败」
+      return { ok: false, message: zh(error.message, '兑换失败，请稍后重试') }
+    }
+    const v = Array.isArray(data) ? data[0] : data
+    if (v === true || v === 'true' || v === 1 || v === '1') {
+      return { ok: true, message: '兑换成功' }
+    }
+    return { ok: false, message: '兑换失败，请稍后重试' }
   } catch {
-    return false
+    return { ok: false, message: '兑换失败，请稍后重试' }
   }
 }
 

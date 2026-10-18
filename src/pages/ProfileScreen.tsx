@@ -72,6 +72,17 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
 
   // 健康数据源（可重连 / 可解除连接；连接意图存云端 profiles.health_connected）
   const healthVendor = useMemo(() => getHealthVendor(), [])
+  // 步数为 0 时的排查引导，按机型给对应路径（苹果走系统设置，华为/小米走各自健康 App）
+  const healthHint = useMemo(() => {
+    switch (healthVendor.vendor) {
+      case 'huawei':
+        return '华为运动健康接入需应用上架华为应用市场（资质申请中）；步数一直为 0 时，请确认已在华为运动健康 App 登录并同步。'
+      case 'xiaomi':
+        return '小米运动健康数据服务资质申请中；步数一直为 0 时，请确认已在小米运动健康 App 登录并同步。'
+      default:
+        return '步数一直为 0？到 iOS「设置 > 健康 > 数据访问权限 > 自律蜜蜂」确认已勾选步数与活动能量。'
+    }
+  }, [healthVendor.vendor])
   const [healthTip, setHealthTip] = useState('')
   const [healthBusy, setHealthBusy] = useState(false)
   async function handleConnectHealth() {
@@ -560,8 +571,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
               </div>
             )}
             <div className="hint" style={{ padding: '0 16px 12px' }}>
-              步数一直为 0？到 iOS「设置 &gt; 健康 &gt; 数据访问权限 &gt; 自律蜜蜂」确认已勾选步数与活动能量。
-              未来将支持 Health Connect、华为运动健康、小米运动健康等更多数据源。
+              {healthHint}
             </div>
           </div>
         </>

@@ -5,8 +5,14 @@ project(':capacitor-android').projectDir = new File('../node_modules/@capacitor/
 include ':dbee-origin-proxy'
 project(':dbee-origin-proxy').projectDir = new File('../native-plugins/dbee-origin-proxy/android')
 
+include ':dbee-health'
+project(':dbee-health').projectDir = new File('../native-plugins/dbee-health/android')
+
 include ':capacitor-share'
 project(':capacitor-share').projectDir = new File('../node_modules/@capacitor/share/android')
 
 include ':capgo-capacitor-wechat'
 project(':capgo-capacitor-wechat').projectDir = new File('../node_modules/@capgo/capacitor-wechat/android')
+
+include ':capacitor-camera'
+project(':capacitor-camera').projectDir = new File('../node_modules/@capacitor/camera/android')

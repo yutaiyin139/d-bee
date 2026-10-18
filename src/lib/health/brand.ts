@@ -53,19 +53,19 @@ export function detectHealthVendor(): HealthVendorInfo {
 
   if (isNative()) {
     const ua = userAgent()
-    if (/HUAWEI|HONOR/i.test(ua)) {
+    if (/HUAWEI|HONOR|HarmonyOS/i.test(ua)) {
       return {
         vendor: 'huawei',
         label: '华为运动健康',
-        canSync: false,
+        canSync: true,
         tip: '请在华为运动健康 App 中查看运动数据，当前 D-Bee 支持手动记录运动。',
       }
     }
-    if (/Xiaomi|Redmi|MI \d/i.test(ua)) {
+    if (/Xiaomi|Redmi|MI \d|MIUI|HyperOS/i.test(ua)) {
       return {
         vendor: 'xiaomi',
         label: '小米运动健康',
-        canSync: false,
+        canSync: true,
         tip: '请在小米运动健康 App 中查看运动数据，当前 D-Bee 支持手动记录运动。',
       }
     }

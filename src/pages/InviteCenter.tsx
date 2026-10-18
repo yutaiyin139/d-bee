@@ -17,6 +17,7 @@ import { createShareCanvas, drawBadgeCard, drawInviteCard, canvasToBlob } from '
 import { shareImage } from '../lib/share'
 import type { Badge, HoneyBalance, HoneyLedger } from '../types'
 import { errText } from '../lib/errmsg'
+import { usePlan } from '../state/plan'
 
 /**
  * 蜜糖积分中心（底部弹层）。
@@ -43,6 +44,7 @@ interface InviteCenterProps {
 }
 
 export function InviteCenter({ onClose }: InviteCenterProps) {
+  const { lifetime } = usePlan()
   const [code, setCode] = useState('')
   const [balance, setBalance] = useState<HoneyBalance | null>(null)
   const [ledger, setLedger] = useState<HoneyLedger[]>([])
@@ -112,12 +114,24 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
     setRedeeming(kind)
     setRedeemMsg('')
     try {
-      const ok = await redeemHoney(kind)
-      if (ok) {
+      // 终身会员不能兑换 Pro（ai1Scan 兑换不受会员档位限制）
+      if (kind !== 'ai1Scan' && lifetime) {
+        setRedeemMsg('已是终身会员，无需兑换')
+        return
+      }
+      // 实时读余额，精确判断「积分不足」（不依赖后端模糊的 false）
+      const bal = await getHoneyBalance().catch(() => null)
+      if (bal && bal.balance < cost) {
+        setRedeemMsg('积分不足')
+        return
+      }
+      const res = await redeemHoney(kind)
+      if (res.ok) {
         setRedeemMsg('兑换成功！')
         setBalance(await getHoneyBalance())
       } else {
-        setRedeemMsg('积分不足或已是终身会员，无法兑换')
+        // 余额与会员状态已提前校验，此处失败 = 后端/网络异常，透传具体原因
+        setRedeemMsg(res.message)
       }
     } catch {
       setRedeemMsg('兑换失败，请稍后重试')
@@ -274,22 +288,22 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
               <span>Pro 会员 1 天</span>
               <button
                 className="btn-text"
-                style={{ color: 'var(--honey-dark)' }}
-                disabled={redeeming === 'pro1Day'}
+                style={{ color: lifetime ? 'var(--ink-3)' : 'var(--honey-dark)' }}
+                disabled={redeeming === 'pro1Day' || lifetime}
                 onClick={() => void handleRedeem('pro1Day', HONEY_PRICE.pro1Day)}
               >
-                {redeeming === 'pro1Day' ? '兑换中…' : `${HONEY_PRICE.pro1Day} 积分`}
+                {lifetime ? '已是终身会员' : redeeming === 'pro1Day' ? '兑换中…' : `${HONEY_PRICE.pro1Day} 积分`}
               </button>
             </div>
             <div className="list-line">
               <span>Pro 会员 30 天</span>
               <button
                 className="btn-text"
-                style={{ color: 'var(--honey-dark)' }}
-                disabled={redeeming === 'pro30Day'}
+                style={{ color: lifetime ? 'var(--ink-3)' : 'var(--honey-dark)' }}
+                disabled={redeeming === 'pro30Day' || lifetime}
                 onClick={() => void handleRedeem('pro30Day', HONEY_PRICE.pro30Day)}
               >
-                {redeeming === 'pro30Day' ? '兑换中…' : `${HONEY_PRICE.pro30Day} 积分`}
+                {lifetime ? '已是终身会员' : redeeming === 'pro30Day' ? '兑换中…' : `${HONEY_PRICE.pro30Day} 积分`}
               </button>
             </div>
             <div className="list-line">
