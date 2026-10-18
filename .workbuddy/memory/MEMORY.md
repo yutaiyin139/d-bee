@@ -1,15 +1,23 @@
 # D-Bee（自律蜜蜂）· 项目长期记忆（精简版，细节看当日日志与 docs/）
 
-## 进度快照（2026-10-16）
+## 进度快照（2026-10-18）
 
-- **Web V1.5.0 已发布**（http://150.158.51.106/ ，主包 `index-B8FUnA-W.js`，
-  commit `fe8ba53` 已推 GitHub）。V1.0.1 归档在 `backups/`。
-- **主线：PWA → 原生 App**（Capacitor 8.5.3，方案文档 `docs/原生App化方案.md`）。
-  阶段 0 解耦 ✅；阶段 1 Android 全过 ✅、iOS 待 Mac mini 首次构建
-  （OriginProxyPlugin.swift 从未编译过，Mac 侧第一件事）。
-- 阶段 3 前置已做：会员三档 free/pro/lifetime（¥18/¥128/¥328），
-  核心 `src/lib/entitlement.ts` + `src/state/plan.tsx`。
-- 微信相关整体暂缓（营业执照办理中）：`src/lib/wechat.ts` 开关 false 即全端隐藏。
+- **Web V1.6.1 已发布**（http://150.158.51.106/ ，主包 `index-C_bYKczG.js`，commit `570924c`）。
+- **主线：PWA → 原生 App**（Capacitor 8.5.3）。阶段 0 解耦 ✅；Android 全过 ✅；
+  iOS 待 Mac mini 首次构建（origin-proxy/health/iap 三个 Swift 插件从未编译，Mac 侧第一件事）。
+- **健康数据源**：只读系统健康平台（iOS HealthKit / Android 阶段2 Health Connect），不直连手环；
+  HealthKit 读授权不可探测→插件只报 completed，连接真源=云端 health_connected；
+  运动消耗 `effectiveBurnKcal=max(burnKcal,activityKcal)` 不叠加（防重复计）。
+- **会员三档** free/pro/lifetime（¥18/¥128/¥328）；IAP 骨架就绪但真实支付未启用
+  （verifyReceipt 未接，等 Apple 开发者账号），当前仅兑换码解锁。
+- 微信相关整体暂缓（营业执照办理中）。
+
+## 三条主线（开发 / 备份 / 运营）
+
+1. **开发**：进度看板在本文件「进度快照」，由自动化「D-Bee 开发进度盘点」每日收敛；
+   细节看当日日志 `.workbuddy/memory/YYYY-MM-DD.md`。
+2. **备份**：自动化「D-Bee 每日数据备份」每日产出 `db/backups/YYYY-MM-DD.json`。
+3. **运营**：宣传彩页、技术交流、社群运营等，由自动化「D-Bee 运营事项」每周提醒。
 
 ## 已定技术路线（勿再讨论）
 
