@@ -15,6 +15,10 @@
 
 Capacitor 8.5.3 混合壳；React18+Vite5+TS；appId `com.dbee.app`；
 Windows 出 Android、Mac mini M4 出 iOS；Node≥22 / JDK21 / Xcode≥26。
+健康数据源：**只读系统健康平台，不直连手环**（iOS HealthKit / Android 阶段2 Health
+Connect / 华为阶段3 需企业资质）；HealthKit 读授权不可探测——Swift 插件只报
+`completed`（流程走完），连接真源=云端 health_connected，重连入口在「我的>健康
+数据源」常驻；详见 docs/健康数据源方案.md。
 
 ## 架构铁律
 

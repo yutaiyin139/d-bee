@@ -1,26 +1,22 @@
 /**
- * Apple HealthKit 原生插件探测（自研 dbee-health 插件）。
+ * Apple HealthKit 原生插件对接（自研 dbee-health 插件）。
  *
- * ⚠️ 当前状态（2026-10-17）：插件骨架，尚未在 Mac 上编译验证。
- *   原生侧还没有 dbee-health 插件（见 native-plugins/dbee-health，待 Mac 编译）。
- *   本文件用「运行时鸭子类型探测」预留插件接口（沿用 wechat.ts / originProxy.ts 风格），
- *   真实 Swift 插件实现后，只需让插件满足下面的 HealthPlugin 接口即可。
+ * 与 Swift 插件接口逐条对齐（见 native-plugins/dbee-health/.../DbeeHealthPlugin.swift）：
+ *   - requestAuthorization({ read }) → { completed }  授权流程走完即 true
+ *   - fetchToday() → { steps, activeKcal }            真实数据
  *
- * HealthKit 关键点（实现 Swift 插件时对照）：
- *   - 授权：HKHealthStore.requestAuthorization(toShare:read:)，
- *     读 stepCount + activeEnergyBurned + workoutType
- *   - 读步数/活动能量：HKSampleQuery 按当天起止时间聚合
- *   - 授权状态：HKHealthStore.authorizationStatus(for:)
+ * ⚠️ HealthKit 铁律：读授权状态不可探测（authorizationStatus 对读取类型恒返回
+ *   .notDetermined）。因此本层不做「是否真的授权了」的判断——是否真有数据
+ *   以 fetchToday 返回为准；连接意图存云端 profiles.health_connected，
+ *   用户可随时在「我的 > 健康数据源」重连/解除。
  */
 
 import { isIOS } from '../platform'
 
 /** dbee-health 原生插件的最小接口 */
 interface HealthPlugin {
-  /** 请求 HealthKit 授权（读步数 + 活动能量） */
-  requestAuthorization: (opts: { read: string[] }) => Promise<{ authorized: boolean }>
-  /** 查询授权状态 */
-  authorizationStatus: () => Promise<{ authorized: boolean }>
+  /** 请求 HealthKit 授权（读步数 + 活动能量）；completed = 授权流程已走完 */
+  requestAuthorization: (opts: { read: string[] }) => Promise<{ completed: boolean }>
   /** 读当天步数 + 活动能量 */
   fetchToday: () => Promise<{ steps: number; activeKcal: number }>
 }
@@ -31,7 +27,7 @@ function getPlugin(): HealthPlugin | null {
   const p = cap?.Plugins?.DbeeHealth
   if (!p || typeof p !== 'object') return null
   const candidate = p as Partial<HealthPlugin>
-  if (typeof candidate.requestAuthorization !== 'function' || typeof candidate.fetchToday !== 'function' || typeof candidate.authorizationStatus !== 'function') {
+  if (typeof candidate.requestAuthorization !== 'function' || typeof candidate.fetchToday !== 'function') {
     return null
   }
   return candidate as HealthPlugin
@@ -42,7 +38,11 @@ export function isHealthKitAvailable(): boolean {
   return isIOS() && getPlugin() !== null
 }
 
-/** 请求授权；返回是否已授权 */
+/**
+ * 发起授权；返回授权流程是否完成。
+ * 注意：completed=true 不代表用户勾选了读取权限（读授权不可探测），
+ * 用户拒绝/取消时流程同样走完，是否真有数据以 fetchToday 为准。
+ */
 export async function requestHealthAuthorization(): Promise<boolean> {
   const plugin = getPlugin()
   if (!plugin) return false
@@ -50,19 +50,7 @@ export async function requestHealthAuthorization(): Promise<boolean> {
     const res = await plugin.requestAuthorization({
       read: ['stepCount', 'activeEnergyBurned'],
     })
-    return res.authorized === true
-  } catch {
-    return false
-  }
-}
-
-/** 查询当前授权状态（已授权 = 已连接） */
-export async function getHealthAuthorizationStatus(): Promise<boolean> {
-  const plugin = getPlugin()
-  if (!plugin) return false
-  try {
-    const res = await plugin.authorizationStatus()
-    return res.authorized === true
+    return res.completed === true
   } catch {
     return false
   }

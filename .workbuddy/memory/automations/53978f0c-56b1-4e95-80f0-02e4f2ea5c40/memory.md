@@ -37,6 +37,15 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
   再用脚本按 schema 顺序重排 tables 并计算 row_counts（避免手工编辑 JSON 引入错误），
   校验通过后删除临时文件。本次一次通过。
 
+### 2026-10-18 09:20（第 6 次）
+- 结果：**成功**。产出 `db/backups/2026-10-18.json`（56533 字节，再创最大纪录）。
+- 行数：profiles=17 / meal_entries=48 / water_logs=17 / exercise_logs=14 / weight_logs=2 / entitlements=0 / ai_usage=7
+- 校验：`.build-backup.cjs` + `.verify-backup.cjs` PASS——JSON.parse OK、7 表 row_counts 与
+  tables.<表>.length 及另发 count(*) 的线上实时行数三方一致。
+- 清理：无过期备份（cutoff 2026-09-18，现存最早 2026-10-13）。目录内共 6 份每日备份。
+- 观察：profiles 16 号缺失（id 跳号）；meal_entries id 39-42 缺失（有删除发生）；
+  新增用户 id=17/18（邀请码 4ZCNJB 邀请链继续扩张，已 3 人经此码注册）。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。

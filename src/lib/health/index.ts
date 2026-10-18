@@ -18,7 +18,7 @@
 
 import { detectHealthVendor, isWechatWebView } from './brand'
 import type { HealthVendorInfo } from './brand'
-import { getHealthAuthorizationStatus, isHealthKitAvailable, requestHealthAuthorization, fetchTodayHealth } from './healthkit'
+import { isHealthKitAvailable, requestHealthAuthorization, fetchTodayHealth } from './healthkit'
 import { isIOS } from '../platform'
 import { getProfile, saveProfile } from '../api'
 
@@ -68,13 +68,17 @@ export async function isHealthConnected(): Promise<boolean> {
 }
 
 /**
- * 点击「连接 Apple 健康」：调 HealthKit 授权，成功后写云端状态。
+ * 点击「连接 Apple 健康」：调 HealthKit 授权流程，走完后写云端连接状态。
  *
- * 流程（参考自律茄子的授权交互）：
- *   ① 调原生 requestAuthorization → 系统弹健康权限配置
- *   ② 用户在系统弹窗勾选步数/活动能量并同意
- *   ③ 授权成功 → saveProfile({ health_connected: true, health_connected_at })
- *   ④ 返回 ok，前端据此隐藏按钮 + 触发一次同步
+ * 流程：
+ *   ① 调原生 requestAuthorization → 系统弹健康权限配置（首次）；
+ *      已询问过时系统不再弹窗，流程直接走完（所以这里永远可以重连）
+ *   ② 授权流程完成 → saveProfile({ health_connected: true, health_connected_at })
+ *   ③ 返回 ok，前端据此隐藏按钮 + 触发一次同步
+ *
+ * ⚠️ 读授权不可探测：用户即使拒绝，流程也返回 completed=true。
+ *   是否真有数据以 fetchToday 为准；步数一直为 0 时引导用户到
+ *   iOS「设置 > 健康 > 数据访问权限 > D-Bee」勾选（见健康数据源页提示）。
  */
 export async function connectHealth(): Promise<ConnectResult> {
   const v = detectHealthVendor()
@@ -85,19 +89,20 @@ export async function connectHealth(): Promise<ConnectResult> {
       return { ok: false, message: 'Apple 健康同步正在接入中，当前请先手动记录运动。', vendor: 'apple' }
     }
 
-    const authorized = await requestHealthAuthorization()
-    // 双保险：requestAuthorization 的返回值可能因用户部分拒绝而不准，
-    // 再查一次真实授权状态确认确实拿到了读取权限。
-    const confirmed = authorized && (await getHealthAuthorizationStatus())
-    if (!confirmed) {
-      return { ok: false, message: '未授权访问 Apple 健康，请在系统弹窗中允许后重试。', vendor: 'apple' }
+    const completed = await requestHealthAuthorization()
+    if (!completed) {
+      return {
+        ok: false,
+        message: '授权未完成，可稍后在「我的 > 健康数据源」里重新连接。',
+        vendor: 'apple',
+      }
     }
 
-    // 授权成功 → 存云端连接状态（跨设备一致）
+    // 授权流程完成 → 存云端连接状态（跨设备一致）
     try {
       await saveProfile({ health_connected: true, health_connected_at: new Date().toISOString() })
     } catch {
-      // 存状态失败不阻断，仅提示；下次授权状态查询仍可兜底
+      // 存状态失败不阻断；本地连接态未落云端时按钮仍在，可重试
     }
     return { ok: true, message: '已连接 Apple 健康，步数与活动能量将自动同步。', vendor: 'apple' }
   }
@@ -114,14 +119,25 @@ export async function connectHealth(): Promise<ConnectResult> {
 
 /**
  * 拉取当天步数 + 活动能量。
- * 仅 iOS + 已授权时返回真实数据；否则返回 0。
+ * 仅 iOS + 插件可用时返回真实数据；否则返回 0。
  * 登录后（Dashboard 加载时）若已连接，调用本函数自动同步。
  */
 export async function syncFromHealth(): Promise<HealthSyncData> {
   if (!isHealthKitAvailable()) return { steps: 0, activeKcal: 0 }
-  const authorized = await getHealthAuthorizationStatus()
-  if (!authorized) return { steps: 0, activeKcal: 0 }
   return fetchTodayHealth()
+}
+
+/**
+ * 解除连接：清云端状态，UI 恢复「连接」入口。
+ * 不清系统侧授权（iOS 无 API 可撤销第三方读授权），
+ * 重新连接时系统大概率不再弹窗、直接走完流程。
+ */
+export async function disconnectHealth(): Promise<void> {
+  try {
+    await saveProfile({ health_connected: false, health_connected_at: null })
+  } catch {
+    // 状态清除失败不抛出：下次连接会重新覆盖
+  }
 }
 
 /**

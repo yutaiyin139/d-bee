@@ -23,7 +23,7 @@ import {
 } from '../lib/nutrition'
 import { usePlan } from '../state/plan'
 import { exportJSON, exportText } from '../lib/share'
-import { connectHealth, getHealthVendor, isHealthConnectable } from '../lib/health'
+import { connectHealth, disconnectHealth, getHealthVendor, isHealthConnectable } from '../lib/health'
 import {
   AGE_LIMIT,
   HEIGHT_LIMIT,
@@ -70,12 +70,33 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
   // 退出登录与「清空记录 / 注销账号」保持同一标准：两步确认，防误触登出
   const [confirmSignOut, setConfirmSignOut] = useState(false)
 
-  // 健康数据源
+  // 健康数据源（可重连 / 可解除连接；连接意图存云端 profiles.health_connected）
   const healthVendor = useMemo(() => getHealthVendor(), [])
   const [healthTip, setHealthTip] = useState('')
+  const [healthBusy, setHealthBusy] = useState(false)
   async function handleConnectHealth() {
-    const res = await connectHealth()
-    if (res.message) setHealthTip(res.message)
+    if (healthBusy) return
+    setHealthBusy(true)
+    try {
+      const res = await connectHealth()
+      if (res.message) setHealthTip(res.message)
+      if (res.ok) {
+        onProfileChanged({ ...profile, health_connected: true, health_connected_at: new Date().toISOString() })
+      }
+    } finally {
+      setHealthBusy(false)
+    }
+  }
+  async function handleDisconnectHealth() {
+    if (healthBusy) return
+    setHealthBusy(true)
+    try {
+      await disconnectHealth()
+      onProfileChanged({ ...profile, health_connected: false, health_connected_at: null })
+      setHealthTip('已解除连接，可随时重新连接。')
+    } finally {
+      setHealthBusy(false)
+    }
   }
 
   // 蜜糖积分中心
@@ -514,21 +535,33 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
         <>
           <div className="section-title">健康数据源</div>
           <div className="card">
-            <div className="list-line" onClick={handleConnectHealth} role="button" tabIndex={0}>
+            <div className="list-line" onClick={handleConnectHealth} role="button" tabIndex={0} aria-disabled={healthBusy}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <IconRun color="var(--green)" size={16} />
                 {healthVendor.label}
               </span>
               <span className="val" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>
-                  {healthVendor.canSync ? '连接' : '查看'}
+                  {healthBusy ? '处理中…' : profile.health_connected ? '已连接 · 点击重新授权' : healthVendor.canSync ? '连接' : '查看'}
                 </span>
                 <span className="arrow">›</span>
               </span>
             </div>
             {healthTip && <div className="notice" style={{ margin: 10, fontSize: 13 }}>{healthTip}</div>}
+            {profile.health_connected && (
+              <div className="list-line" onClick={handleDisconnectHealth} role="button" tabIndex={0} aria-disabled={healthBusy}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 16 }}>解除连接</span>
+                </span>
+                <span className="val">
+                  <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>{healthBusy ? '处理中…' : ''}</span>
+                  <span className="arrow">›</span>
+                </span>
+              </div>
+            )}
             <div className="hint" style={{ padding: '0 16px 12px' }}>
-              未来将支持微信运动、Keep、手环手表等更多数据源。
+              步数一直为 0？到 iOS「设置 &gt; 健康 &gt; 数据访问权限 &gt; 自律蜜蜂」确认已勾选步数与活动能量。
+              未来将支持 Health Connect、华为运动健康、小米运动健康等更多数据源。
             </div>
           </div>
         </>

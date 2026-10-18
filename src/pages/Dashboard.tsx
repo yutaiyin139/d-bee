@@ -93,6 +93,8 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   const [healthTip, setHealthTip] = useState('')
   // 步数目标：优先用户自定义（profile.step_goal），缺省用默认值
   const stepGoal = profile.step_goal && profile.step_goal > 0 ? profile.step_goal : DEFAULT_STEP_GOAL
+  // 是否已有健康数据（步数或活动能量任一 > 0）：决定是否渲染健康数据块，避免空块观感差
+  const hasHealthData = healthSteps > 0 || healthActiveKcal > 0
 
   // 饮食体检伸缩：默认展开，点击右上角折叠/展开详情区；折叠偏好记忆到本地，下次打开保持
   const [checkupCollapsed, setCheckupCollapsed] = useState(false)
@@ -200,13 +202,19 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   const waterMl = useMemo(() => water.reduce((s, w) => s + (Number(w.amount_ml) || 0), 0), [water])
   const burnKcal = useMemo(() => exercise.reduce((s, x) => s + (Number(x.calories) || 0), 0), [exercise])
 
-  // 活动消耗：优先用 HealthKit 的活动能量（activeKcal）；未连接时用步数估算兜底。
-  const activityKcal = useMemo(
-    () => (healthActiveKcal > 0 ? healthActiveKcal : estimateActivityKcal(healthSteps, profile.current_weight_kg, profile.height_cm)),
-    [healthActiveKcal, healthSteps, profile.current_weight_kg, profile.height_cm],
-  )
-  // 净摄入 = 摄入 − 手动运动消耗；活动消耗按 50% 计入「可吃回」，让缺口更真实
-  const netKcal = Math.round(totals.kcal - burnKcal - activityKcal * ACTIVITY_EATBACK_RATIO)
+  // 健康数据源 = 手动运动的有效补充，不是替代：
+  //   - 拿得到健康数据（活动能量或步数 > 0）→ 参与计算
+  //   - 拿不到（未连接 / 无数据）→ 完全不影响，手动运动照常算
+  // 活动能量（activeEnergyBurned）已含全天活动（含手动运动），若再叠加手动运动 burnKcal
+  // 会重复计。故「活动能量」与「手动运动」二者取较大者，避免高估消耗、保证数据合理。
+  const activityKcal = useMemo(() => {
+    if (healthActiveKcal > 0) return healthActiveKcal
+    return estimateActivityKcal(healthSteps, profile.current_weight_kg, profile.height_cm)
+  }, [healthActiveKcal, healthSteps, profile.current_weight_kg, profile.height_cm])
+  // 有效运动消耗：活动能量与手动运动取较大者（防止重复计、保守不虚高）
+  const effectiveBurnKcal = Math.max(burnKcal, activityKcal)
+  // 净摄入 = 摄入 − 有效运动消耗；活动部分按 50% 计入「可吃回」，让缺口更真实
+  const netKcal = Math.round(totals.kcal - effectiveBurnKcal * ACTIVITY_EATBACK_RATIO)
 
   const remain = Math.round(target.calories - netKcal)
   const over = remain < 0
@@ -422,15 +430,22 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
     }
   }
 
-  // 连接健康：调 HealthKit 授权 → 成功后存云端状态 + 按钮消失 + 自动同步
+  // 连接健康：调 HealthKit 授权 → 走完后存云端状态 + 按钮消失 + 自动同步
+  const [healthConnecting, setHealthConnecting] = useState(false)
   async function handleConnectHealth() {
-    const res = await connectHealth()
-    if (res.message) setHealthTip(res.message)
-    if (res.ok) {
-      setHealthConnected(true)
-      const data = await syncFromHealth()
-      setHealthSteps(data.steps)
-      setHealthActiveKcal(data.activeKcal)
+    if (healthConnecting) return
+    setHealthConnecting(true)
+    try {
+      const res = await connectHealth()
+      if (res.message) setHealthTip(res.message)
+      if (res.ok) {
+        setHealthConnected(true)
+        const data = await syncFromHealth()
+        setHealthSteps(data.steps)
+        setHealthActiveKcal(data.activeKcal)
+      }
+    } finally {
+      setHealthConnecting(false)
     }
   }
 
@@ -533,8 +548,8 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
               已消耗
               <IconFire color="var(--red)" size={15} />
             </div>
-            <div className="side-num">{Math.round(burnKcal + activityKcal)}</div>
-            {activityKcal > 0 && (
+            <div className="side-num">{Math.round(effectiveBurnKcal)}</div>
+            {activityKcal > burnKcal && (
               <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 2 }}>
                 含活动 {Math.round(activityKcal)}
               </div>
@@ -760,9 +775,9 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
         {isHealthConnectable() && !healthConnected && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 10px' }}>
-              <button className="chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={handleConnectHealth}>
+              <button className="chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} disabled={healthConnecting} onClick={handleConnectHealth}>
                 <IconRun color="var(--green)" size={13} />
-                连接{healthVendor.label}
+                {healthConnecting ? '连接中…' : `连接${healthVendor.label}`}
               </button>
               <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
                 同步步数与活动能量，自动计入活动消耗
@@ -774,7 +789,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
           </>
         )}
 
-        {healthConnected && (
+        {healthConnected && hasHealthData && (
           <div style={{ margin: '8px 0 12px' }}>
             {/* 步数行：图标 + 标题 + 「今日步数 / 目标」 + 进度条 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -815,6 +830,12 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
                 <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>{healthActiveKcal} 大卡</span>
               </div>
             </div>
+          </div>
+        )}
+
+        {healthConnected && !hasHealthData && (
+          <div style={{ margin: '8px 0 12px', fontSize: 13, color: 'var(--ink-3)' }}>
+            已连接 {healthVendor.label}，同步到数据后将在此展示步数与活动能量。
           </div>
         )}
 
