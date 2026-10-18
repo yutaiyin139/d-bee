@@ -1,11 +1,12 @@
 # D-Bee（自律蜜蜂）· 项目长期记忆（精简版，细节看当日日志与 docs/）
 
-## 进度快照（2026-10-18 深夜，git 已提交推送）
+## 进度快照（2026-10-18 深夜，V1.6.8 已发布）
 
-- **Web V1.6.2 已发布**（http://150.158.51.106/ ，主包已含华为/小米厂商健康+原生拍照+兑换计次修复）；
-  Android debug APK V1.6.2 已打包（versionCode 8，归档 dist-release/）。
+- **Web V1.6.8 已发布**（http://150.158.51.106/ ，主包 `index-B5oKeajs.js`，commit `e1833a3`）；
+  Android debug APK V1.6.8 已打包（versionCode 9，归档 dist-release/D-Bee-debug-v1.6.8-20261018.apk）。
 - **主线：PWA → 原生 App**（Capacitor 8.5.3）。阶段 0 解耦 ✅；Android 全过 ✅；
-  iOS 待 Mac mini 首次构建（origin-proxy/health/iap 三个 Swift 插件从未编译，Mac 侧第一件事）。
+  iOS 待 Mac mini 首次构建（origin-proxy/health/iap 三个自研 Swift 插件 + @capacitor/camera 均未编译，
+  Mac 侧第一件事：`npm install && npx cap sync ios` 重生成 CapApp-SPM 依赖再 Xcode 编译）。
 - **健康数据源**：只读系统健康平台，不直连手环；HealthKit 读授权不可探测→插件只报 completed，
   连接真源=云端 health_connected；`effectiveBurnKcal=max(burnKcal,activityKcal)` 不叠加（防重复计）。
   Android 厂商接入：华为 Health Kit **阶段 3a 已落地**（前端同构 + DbeeHealth 插件 Android 反射骨架，
