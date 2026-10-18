@@ -2,7 +2,7 @@
 
 ## 进度快照（2026-10-18）
 
-- **Web V1.6.1 已发布**（http://150.158.51.106/ ，主包 `index-C_bYKczG.js`，commit `570924c`）。
+- **Web V1.6.2 已发布**（http://150.158.51.106/ ，主包 `index-BMiTa5Bb.js`，commit `d96d9d4`）。
 - **主线：PWA → 原生 App**（Capacitor 8.5.3）。阶段 0 解耦 ✅；Android 全过 ✅；
   iOS 待 Mac mini 首次构建（origin-proxy/health/iap 三个 Swift 插件从未编译，Mac 侧第一件事）。
 - **健康数据源**：只读系统健康平台（iOS HealthKit / Android 阶段2 Health Connect），不直连手环；
