@@ -889,6 +889,17 @@ select {
   font-weight: 600;
 }
 
+/* 连接健康按钮：字号小一号 + 强制不换行，避免「连接 Apple 健康」折成两行 */
+.chip-connect {
+  font-size: 12px;
+  padding: 7px 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  color: var(--green);
+  border-color: rgba(63, 148, 99, 0.28);
+  background: var(--green-soft);
+}
+
 .dropzone {
   border: 1.5px dashed var(--line-2);
   border-radius: var(--radius-lg);

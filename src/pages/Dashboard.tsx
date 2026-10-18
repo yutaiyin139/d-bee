@@ -58,6 +58,9 @@ const MACRO_META = [
 
 const STREAK_WINDOW_DAYS = 185
 
+// 健康数据自动同步间隔：已连接 Apple 健康后，每 60s 拉一次当天步数/活动能量
+const HEALTH_SYNC_INTERVAL_MS = 60_000
+
 export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   const { pro, aiRemaining, openPaywall, grantStreakBonus } = usePlan()
   const [logDate, setLogDate] = useState(todayKey())
@@ -100,10 +103,14 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   const [checkupCollapsed, setCheckupCollapsed] = useState(false)
 
   // 健康连接：挂载时读云端连接状态；已连接则自动同步步数/活动能量。
-  // 另注册 visibilitychange：用户从系统健康设置页切回 App 时自动回检并刷新数据
-  // （授权可能刚在设置里完成，回到 App 必须立即可见，而不是等下次登录）。
+  // ① visibilitychange：从系统健康设置页切回 App 时立即回检并刷新
+  //   （授权可能刚在设置里完成，回到 App 必须立即可见，而不是等下次登录）。
+  // ② 定时轮询：已连接后每 60s 拉一次当天步数/活动能量，步数走路时实时上涨、
+  //   自动刷新「今天还没动」/进度条，无需手动刷新页面。
   useEffect(() => {
     let alive = true
+    let timer: ReturnType<typeof setInterval> | undefined
+
     async function refreshHealth() {
       const connected = await isHealthConnected()
       if (!alive) return
@@ -115,13 +122,27 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
         setHealthActiveKcal(data.activeKcal)
       }
     }
+
     void refreshHealth()
+    // 定时自动同步：仅在已连接时才轮询（未连接时无数据可拉）
+    timer = setInterval(() => {
+      void isHealthConnected().then((connected) => {
+        if (!alive || !connected) return
+        void syncFromHealth().then((data) => {
+          if (!alive) return
+          setHealthSteps(data.steps)
+          setHealthActiveKcal(data.activeKcal)
+        })
+      })
+    }, HEALTH_SYNC_INTERVAL_MS)
+
     const onVisible = () => {
       if (document.visibilityState === 'visible') void refreshHealth()
     }
     document.addEventListener('visibilitychange', onVisible)
     return () => {
       alive = false
+      if (timer) clearInterval(timer)
       document.removeEventListener('visibilitychange', onVisible)
     }
   }, [])
@@ -766,8 +787,12 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
               <>
                 消耗 <b>{Math.round(burnKcal)}</b> kcal
               </>
+            ) : hasHealthData ? (
+              <span style={{ fontSize: 13 }}>今日 <b>{healthSteps.toLocaleString()}</b> 步</span>
+            ) : healthConnected ? (
+              <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>正在同步步数…</span>
             ) : (
-              <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>今天还没动</span>
+              <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>连接运动健康，自动同步步数</span>
             )}
           </span>
         </div>
@@ -775,7 +800,12 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
         {isHealthConnectable() && !healthConnected && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 10px' }}>
-              <button className="chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} disabled={healthConnecting} onClick={handleConnectHealth}>
+              <button
+                className="chip chip-connect"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                disabled={healthConnecting}
+                onClick={handleConnectHealth}
+              >
                 <IconRun color="var(--green)" size={13} />
                 {healthConnecting ? '连接中…' : `连接${healthVendor.label}`}
               </button>
@@ -835,7 +865,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
 
         {healthConnected && !hasHealthData && (
           <div style={{ margin: '8px 0 12px', fontSize: 13, color: 'var(--ink-3)' }}>
-            已连接 {healthVendor.label}，同步到数据后将在此展示步数与活动能量。
+            已连接 {healthVendor.label}，正在读取今天的步数，稍候自动展示。
           </div>
         )}
 
