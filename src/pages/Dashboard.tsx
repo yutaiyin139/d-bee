@@ -249,7 +249,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
 
   const streak = useMemo(() => computeStreak(loggedDates, today), [loggedDates, today])
 
-  // 连续打卡满 7 天 → 自动发放奖励（+2 次拍照，7 天有效）。
+  // 连续打卡每满 7 天 → 自动发放识别次数奖励（7/14/21…各送 2 次识别）。
   // 以「当前连续段第 7 天的日期」作 grant_key，同一连续段只发一次；
   // 数据库 UNIQUE(owner_id, source, grant_key) 兜底防重复。
   useEffect(() => {

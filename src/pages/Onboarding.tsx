@@ -200,7 +200,7 @@ export function Onboarding({ nickname, onDone }: OnboardingProps) {
         plan_summary: plan ? JSON.stringify(plan) : null,
         onboarded: true,
       })
-      // 首次完善身体数据 → 一次性新手奖励（+3 次拍照，7 天有效；数据库 UNIQUE 防重复）
+      // 首次完善身体数据 → 一次性新手奖励（发蜜糖积分，不再发识别次数；数据库 UNIQUE 防重复）
       void grantNewbieBonus()
       onDone(saved)
     } catch (e) {

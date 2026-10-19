@@ -490,7 +490,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   }
 
   /**
-   * 原子占用一次识别额度（consume_photo_quota 会优先扣奖励额度）。
+   * 原子占用一次识别额度（consume_photo_quota 优先扣积分兑换额度，再扣基础免费额度）。
    * 额度已由 checkPhotoQuota 预检，这里只做占用；仍兜底处理并发下额度被抢空的情况。
    */
   async function guardAiQuota(): Promise<{ ok: boolean; remaining: number | null }> {

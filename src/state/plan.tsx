@@ -5,11 +5,13 @@ import {
   consumePhotoQuota,
   getEntitlement,
   getPhotoQuota,
+  grantHoney,
   grantPhotoBonus,
   redeemByCode,
   releasePhotoQuota,
 } from '../lib/api'
 import {
+  BONUS_TTL_DAYS,
   FREE_DAILY_AI,
   NEWBIE_BONUS_AMOUNT,
   STREAK_BONUS_AMOUNT,
@@ -150,17 +152,13 @@ export function PlanProvider({ children }: { children: ReactNode }) {
   const openPaywall = useCallback((reason = '') => setPaywall({ open: true, reason }), [])
   const closePaywall = useCallback(() => setPaywall({ open: false, reason: '' }), [])
 
-  /** 完善身体数据 → 一次性赠送新手奖励（grant_key 固定 'newbie'，防重复） */
+  /** 完善身体数据后发放新手奖励（一次性，防重复）—— 发蜜糖积分，不再发识别次数 */
   const grantNewbieBonus = useCallback(async (): Promise<boolean> => {
-    const ok = await grantPhotoBonus('newbie', 'newbie', NEWBIE_BONUS_AMOUNT)
-    if (ok) {
-      const q = await getPhotoQuota().catch(() => null)
-      if (q) setPhotoQuota({ base: q.baseRemaining, bonus: q.bonusRemaining, total: q.totalRemaining })
-    }
+    const ok = await grantHoney('newbie', 'newbie', NEWBIE_BONUS_AMOUNT, BONUS_TTL_DAYS)
     return ok
   }, [])
 
-  /** 连续打卡 7 天 → 奖励（grant_key 用达成日期，同一天不重复发） */
+  /** 连续打卡每满 7 天发放识别次数奖励（7/14/21…各送 2 次；按达成日期防重复） */
   const grantStreakBonus = useCallback(async (dateKey: string): Promise<boolean> => {
     const ok = await grantPhotoBonus('streak7', dateKey, STREAK_BONUS_AMOUNT)
     if (ok) {

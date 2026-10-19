@@ -39,8 +39,9 @@ export function computeStreak(loggedDates: string[], today: string): StreakInfo 
 
   let streak7Date: string | null = null
   if (current >= 7) {
-    const start = shiftDate(cursor, 1)
-    streak7Date = shiftDate(start, 6)
+    const start = shiftDate(cursor, 1) // 连续段起点（第一天）
+    const weeks = Math.floor(current / 7) // 已满的完整周数
+    streak7Date = shiftDate(start, weeks * 7 - 1) // 第 weeks×7 天的日期
   }
 
   const nextMilestone = MILESTONES.find((m) => m > current) ?? null

@@ -17,11 +17,15 @@ export const FREE_REPORT_DAYS = 7
 /** 会员饮食报告可回看天数 */
 export const PRO_REPORT_DAYS = 30
 
-/* ── 奖励额度规则 ─────────────────────────────────────────── */
-export const STREAK_BONUS_DAYS = 7 // 连续打卡 N 天触发奖励
-export const STREAK_BONUS_AMOUNT = 2 // 连续打卡奖励次数
-export const NEWBIE_BONUS_AMOUNT = 3 // 完善资料新手奖励次数
-export const BONUS_TTL_DAYS = 7 // 奖励有效期（防囤积）
+/* ── 奖励规则 ───────────────────────────────────────────── */
+// 产品规则（2026-10-19 调整）：每日严格「3 次免费识别 + 2 次积分兑换」。
+//   - 新手完善资料 → 发 150 蜜糖积分（积分只能兑换识别，受每日 2 次上限约束）。
+//   - 连续打卡 7 天 → 直接送 2 次识别（每满 7 天循环发放，7/14/21…各送 2 次），
+//     少一次「兑换」点击，直接到账。
+export const STREAK_BONUS_DAYS = 7 // 连续打卡每满 N 天触发一次奖励
+export const STREAK_BONUS_AMOUNT = 2 // 连续打卡每满 7 天送的识别次数
+export const NEWBIE_BONUS_AMOUNT = 150 // 完善资料新手奖励积分（= 3 次识别）
+export const BONUS_TTL_DAYS = 7 // 识别次数奖励有效期（防囤积）
 
 /** 消耗额度的 feature 标识（ai_usage.feature） */
 export const SCAN_FEATURE = 'scan'

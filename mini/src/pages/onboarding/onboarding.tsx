@@ -2,13 +2,13 @@ import { useMemo, useState } from 'react'
 import { View, Text, Button, Input } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { generatePlan } from '../../lib/ai'
-import { saveProfile, grantPhotoBonus } from '../../lib/api'
+import { saveProfile, grantHoney } from '../../lib/api'
 import { ACTIVITY_LABELS, GOAL_LABELS, calcTarget } from '../../lib/nutrition'
 import {
   AGE_LIMIT, HEIGHT_LIMIT, WEIGHT_LIMIT, type NumLimit,
   checkNumber, checkTargetWeightDiff, clampNumeric, rangeText, sanitizeNumeric,
 } from '../../lib/validate'
-import { NEWBIE_BONUS_AMOUNT } from '@dbee/shared'
+import { NEWBIE_BONUS_AMOUNT, BONUS_TTL_DAYS } from '@dbee/shared'
 import type { Profile } from '../../lib/api'
 import './onboarding.scss'
 
@@ -162,8 +162,8 @@ export default function Onboarding() {
         plan_summary: plan ? JSON.stringify(plan) : null,
         onboarded: true,
       })
-      // 首次完善身体数据 → 一次性新手奖励（+3 次拍照，7 天有效；数据库 UNIQUE 防重复）
-      void grantPhotoBonus('newbie', 'newbie', NEWBIE_BONUS_AMOUNT)
+      // 首次完善身体数据 → 一次性新手奖励（发蜜糖积分，不再发识别次数；数据库 UNIQUE 防重复）
+      void grantHoney('newbie', 'newbie', NEWBIE_BONUS_AMOUNT, BONUS_TTL_DAYS)
       // 回到首页
       Taro.reLaunch({ url: '/pages/index/index' })
     } catch (e) {

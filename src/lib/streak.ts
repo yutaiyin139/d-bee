@@ -17,8 +17,9 @@ export interface StreakInfo {
   nextMilestone: number | null
   /** 当前连续是否包含今天 */
   activeToday: boolean
-  /** 当前连续段达到第 7 天时的日期（YYYY-MM-DD）；当前连续不足 7 天则 null。
-   *  用于「连续打卡 7 天奖励」的去重：同一连续段的第 7 天日期固定，断签重来才会变。 */
+  /** 当前连续段达到的「最后一个 7 的倍数天」的日期（YYYY-MM-DD）；不足 7 天则 null。
+   *  用于「连续打卡每满 7 天送 2 次识别」的去重：第 7/14/21…天各返回一个不同日期，
+   *  作为 grant_key 保证每满一周发一次（断签重来会从第 7 天重新计）。 */
   streak7Date: string | null
 }
 
@@ -46,11 +47,12 @@ export function computeStreak(loggedDates: string[], today: string): StreakInfo 
     cursor = shiftDate(cursor, -1)
   }
 
-  // 当前连续段的第 7 天日期：从连续段起点（cursor 的下一天）往后推 6 天
+  // 当前连续段达到的最后一个「7 的倍数天」日期：连续段起点 + (周数×7 - 1) 天
   let streak7Date: string | null = null
   if (current >= 7) {
-    const start = shiftDate(cursor, 1)
-    streak7Date = shiftDate(start, 6)
+    const start = shiftDate(cursor, 1) // 连续段起点（第一天）
+    const weeks = Math.floor(current / 7) // 已满的完整周数
+    streak7Date = shiftDate(start, weeks * 7 - 1) // 第 weeks×7 天的日期
   }
 
   const nextMilestone = MILESTONES.find((m) => m > current) ?? null

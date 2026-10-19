@@ -157,8 +157,8 @@ export default function Index() {
 
   /* ── 积分与奖励结算引擎（严格对齐主工程 Dashboard，四端逻辑一致）── */
 
-  // 连续打卡满 7 天 → 自动发放奖励（+2 次拍照，7 天有效）。
-  // 以「当前连续段第 7 天的日期」作 grant_key，同一连续段只发一次。
+  // 连续打卡每满 7 天 → 自动发放识别次数奖励（7/14/21…各送 2 次识别）。
+  // 以「当前连续段满周那天的日期」作 grant_key，每满一周发一次。
   useEffect(() => {
     if (streak.streak7Date) void grantPhotoBonus('streak7', streak.streak7Date, STREAK_BONUS_AMOUNT)
   }, [streak.streak7Date])
