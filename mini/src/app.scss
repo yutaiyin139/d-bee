@@ -1,3 +1,6 @@
 page {
-  background: #f7f8fa;
+  background: $bg;
+  font-family: $font-family;
+  color: $ink;
+  -webkit-font-smoothing: antialiased;
 }

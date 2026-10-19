@@ -1,0 +1,318 @@
+// Onboarding 引导页样式（对齐主工程 src/styles.css 的 onboard-* 系列）
+// designWidth=750，主工程 px → rpx（1px = 2rpx）
+
+.onboard-wrap {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 44px calc(48px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: $bg;
+}
+
+.onboard-progress {
+  display: flex;
+  gap: 12px;
+  padding: 32px 0 52px;
+
+  .ob-bar {
+    flex: 1;
+    height: 6px;
+    border-radius: 99px;
+    background: $line-2;
+
+    &.done {
+      background: $honey;
+    }
+  }
+}
+
+.onboard-body {
+  flex: 1;
+
+  .ob-h2 {
+    display: block;
+    font-size: 48px;
+    font-weight: 600;
+    letter-spacing: -0.6px;
+    color: $ink;
+  }
+
+  .ob-desc {
+    display: block;
+    color: $ink-2;
+    font-size: 28px;
+    margin: 16px 0 48px;
+  }
+}
+
+.option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 32px;
+  border-radius: $radius;
+  border: 1px solid $line-2;
+  background: $surface;
+  font-size: 30px;
+  text-align: left;
+  line-height: 1.4;
+
+  &.active {
+    border-color: $honey;
+    background: $honey-soft;
+  }
+
+  .t {
+    font-weight: 500;
+    color: $ink;
+  }
+
+  .d {
+    font-size: 24px;
+    color: $ink-3;
+    margin-top: 6px;
+    font-weight: 400;
+  }
+}
+
+.field {
+  margin-bottom: 28px;
+
+  .field-label {
+    display: block;
+    font-size: 26px;
+    color: $ink-2;
+    margin-bottom: 14px;
+    font-weight: 500;
+  }
+
+  .field-input {
+    width: 100%;
+    height: 96px;
+    border-radius: $radius;
+    border: 1px solid $line-2;
+    background: $surface;
+    padding: 0 28px;
+    font-size: 30px;
+    color: $ink;
+    box-sizing: border-box;
+  }
+
+  .err {
+    display: block;
+    color: $red;
+    font-size: 24px;
+    margin-top: 10px;
+  }
+}
+
+.chips {
+  display: flex;
+  gap: 16px;
+
+  &.wrap {
+    flex-wrap: wrap;
+  }
+
+  .chip {
+    padding: 0 32px;
+    height: 72px;
+    line-height: 72px;
+    font-size: 27px;
+    color: $ink-2;
+    background: $bg-2;
+    border-radius: 99px;
+    border: none;
+
+    &.active {
+      background: $honey-soft;
+      color: $honey-dark;
+      font-weight: 600;
+    }
+  }
+}
+
+.helper {
+  display: block;
+  font-size: 24px;
+  color: $ink-3;
+  line-height: 1.7;
+  margin-top: 10px;
+}
+
+// ── 结果页 ──
+.result-card {
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: $radius-lg;
+  padding: 48px 36px;
+  text-align: center;
+  margin-bottom: 24px;
+
+  .rc-label {
+    display: block;
+    font-size: 24px;
+    color: $ink-3;
+  }
+
+  .rc-num {
+    display: block;
+    font-size: 80px;
+    font-weight: 600;
+    letter-spacing: -2px;
+    margin: 8px 0 4px;
+    color: $ink;
+  }
+
+  .rc-unit {
+    display: block;
+    font-size: 26px;
+    color: $ink-2;
+  }
+
+  .rc-sub {
+    display: block;
+    font-size: 24px;
+    color: $ink-3;
+    margin-top: 20px;
+  }
+}
+
+.stat-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-bottom: 28px;
+
+  .stat {
+    flex: 1;
+    min-width: calc(50% - 12px);
+    background: $surface;
+    border: 1px solid $line;
+    border-radius: $radius;
+    padding: 28px;
+    box-sizing: border-box;
+
+    .l {
+      display: block;
+      font-size: 24px;
+      color: $ink-3;
+    }
+
+    .v {
+      font-size: 42px;
+      font-weight: 600;
+      margin-top: 8px;
+      color: $ink;
+
+      .small {
+        font-size: 24px;
+        font-weight: 400;
+        color: $ink-3;
+        margin-left: 6px;
+      }
+    }
+  }
+}
+
+.plan-skeleton {
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: $radius-lg;
+  padding: 36px;
+  margin-bottom: 24px;
+
+  .ps-line {
+    height: 26px;
+    border-radius: 8px;
+    background: $bg-2;
+    margin-bottom: 16px;
+  }
+}
+
+.notice {
+  display: block;
+  padding: 20px 24px;
+  border-radius: $radius;
+  font-size: 26px;
+  margin-bottom: 24px;
+  background: $bg-2;
+  color: $ink-2;
+
+  &.err {
+    background: $red-soft;
+    color: $red;
+  }
+}
+
+.plan-card {
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: $radius-lg;
+  padding: 36px;
+  margin-bottom: 24px;
+
+  .pc-summary {
+    display: block;
+    font-size: 28px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    color: $ink;
+  }
+
+  .pc-advice {
+    display: flex;
+    gap: 18px;
+    font-size: 27px;
+    color: $ink-2;
+    margin-bottom: 16px;
+
+    .pc-idx {
+      color: $honey-dark;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .pc-text {
+      flex: 1;
+      line-height: 1.5;
+    }
+  }
+}
+
+.onboard-foot {
+  padding-top: 36px;
+  display: flex;
+  gap: 24px;
+
+  .btn {
+    flex: 1;
+    height: 96px;
+    line-height: 96px;
+    font-size: 32px;
+    font-weight: 600;
+    color: $honey-btn-ink;
+    background: $honey;
+    border-radius: $radius;
+    border: none;
+    text-align: center;
+  }
+
+  .btn-ghost {
+    background: $surface;
+    border: 1px solid $line-2;
+    color: $ink;
+    font-weight: 500;
+  }
+
+  .ob-back {
+    flex: 0 0 160px;
+  }
+}

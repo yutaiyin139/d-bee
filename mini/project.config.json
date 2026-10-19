@@ -1,0 +1,42 @@
+{
+  "miniprogramRoot": "dist/",
+  "projectname": "d-bee-mini",
+  "description": "D-Bee 自律蜜蜂小程序（Taro 4 编译产物）",
+  "appid": "wxb7c7122de9c3ab1f",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": false,
+    "minified": false,
+    "compileHotReLoad": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    },
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": true,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": true
+  },
+  "compileType": "miniprogram",
+  "libVersion": "3.4.10",
+  "condition": {},
+  "simulatorPluginLibVersion": {
+    "wxext14566970e7e9f62": "2.27.3"
+  },
+  "packOptions": {
+    "ignore": [],
+    "include": []
+  },
+  "editorSetting": {},
+  "projectArchitecture": "multiPlatform"
+}

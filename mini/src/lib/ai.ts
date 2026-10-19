@@ -129,6 +129,45 @@ function normalizeItems(raw: unknown): DetectedFood[] {
     .filter((it) => it.calories > 0 || it.food_name !== '未识别食物')
 }
 
+const PLAN_SYSTEM = `你是一位务实的中式减脂教练。用简体中文输出，语气直接、具体、不打鸡血。
+只输出一个 JSON 对象，不要代码围栏。格式：
+{"summary":"一句话总目标","advice":["建议1","建议2","建议3"]}
+每条建议不超过 40 字，必须针对用户给出的阻碍因素，给出可当天执行的动作。`
+
+/** 生成个性化减脂计划（新手引导最后一步，纯文本 AI，不消耗拍照额度） */
+export async function generatePlan(input: {
+  goal: string
+  gender: string
+  age: number
+  heightCm: number
+  weightKg: number
+  targetWeightKg: number
+  activity: string
+  barriers: string[]
+  calories: number
+}): Promise<{ summary: string; advice: string[] }> {
+  const user = `用户情况：
+- 目标：${input.goal}
+- 性别/年龄：${input.gender === 'male' ? '男' : '女'} / ${input.age} 岁
+- 身高体重：${input.heightCm} cm / ${input.weightKg} kg，目标体重 ${input.targetWeightKg} kg
+- 活动水平：${input.activity}
+- 每日推荐热量：${input.calories} kcal
+- 主要阻碍：${input.barriers.join('、') || '未填写'}
+请给出总目标和 3 条针对性建议。`
+  const reply = await collectText(
+    [
+      { role: 'system', content: PLAN_SYSTEM },
+      { role: 'user', content: user },
+    ],
+    0.6,
+  )
+  const obj = extractJson(reply) as { summary?: string; advice?: unknown }
+  return {
+    summary: String(obj.summary ?? '').trim() || '先稳住三餐，再谈热量缺口。',
+    advice: Array.isArray(obj.advice) ? obj.advice.map((a) => String(a)).slice(0, 5) : [],
+  }
+}
+
 const NUTRITION_SYSTEM = `你是一位严谨的中式饮食营养师，负责把食物换算成可入库的营养数据。
 规则：
 1. 只输出一个 JSON 对象，不要输出任何解释文字、Markdown 代码围栏或注释。
@@ -151,6 +190,59 @@ export async function parseFoodFromText(text: string): Promise<DetectedFood[]> {
   const items = normalizeItems(extractJson(reply))
   if (items.length === 0) throw new Error('没能识别出食物，换成更具体的描述再试一次。')
   return items
+}
+
+const REPORT_SYSTEM = `你是一位务实的中式饮食教练，正在给用户解读他的饮食统计。
+只输出一个 JSON 对象，不要代码围栏。格式：
+{"summary":"一句话总评，不超过 30 字","points":["点评1","点评2","点评3"]}
+要求：
+1. 每一条点评不超过 45 字，必须引用用户数据里的具体数字，不要空泛。
+2. 先指出最值得改的一个问题，再给一条能明天就执行的动作。
+3. 数据正常的地方也要肯定一句，不要只批评。
+4. 不要建议吃补剂、代餐或极端节食。`
+
+export interface ReportStats {
+  days: number
+  loggedDays: number
+  avgKcal: number
+  targetKcal: number
+  onTargetDays: number
+  overDays: number
+  avgProtein: number
+  proteinTarget: number
+  proteinRatio: number
+  carbRatio: number
+  fatRatio: number
+  mealSplit: { name: string; kcal: number }[]
+  topFoods: { name: string; count: number; kcal: number }[]
+  weightChange: number | null
+  goal: string
+}
+
+/** 生成本期 AI 解读（长文本复盘，对齐主工程 generateReportInsight） */
+export async function generateReportInsight(stats: ReportStats): Promise<{ summary: string; points: string[] }> {
+  const goalText = stats.goal === 'lose' ? '减脂' : stats.goal === 'gain' ? '增重增肌' : '保持体重'
+  const user = `统计区间：最近 ${stats.days} 天，其中 ${stats.loggedDays} 天有记录。
+目标：${goalText}，每日热量预算 ${stats.targetKcal} kcal。
+- 日均摄入：${stats.avgKcal} kcal（达标 ${stats.onTargetDays} 天，超标 ${stats.overDays} 天）
+- 日均蛋白质：${stats.avgProtein} g（目标 ${stats.proteinTarget} g）
+- 三大营养素供能比：蛋白 ${stats.proteinRatio}%、碳水 ${stats.carbRatio}%、脂肪 ${stats.fatRatio}%
+- 餐次热量分布：${stats.mealSplit.map((m) => `${m.name} ${m.kcal} kcal`).join('，') || '无数据'}
+- 出现最多的食物：${stats.topFoods.map((f) => `${f.name}(${f.count} 次)`).join('，') || '无数据'}
+- 体重变化：${stats.weightChange === null ? '没有记录' : `${stats.weightChange > 0 ? '+' : ''}${stats.weightChange} kg`}
+请给出总评与 3 条点评。`
+  const reply = await collectText(
+    [
+      { role: 'system', content: REPORT_SYSTEM },
+      { role: 'user', content: user },
+    ],
+    0.5,
+  )
+  const obj = extractJson(reply) as { summary?: unknown; points?: unknown }
+  return {
+    summary: String(obj.summary ?? '').trim(),
+    points: Array.isArray(obj.points) ? obj.points.map((p) => String(p)).slice(0, 4) : [],
+  }
 }
 
 /**

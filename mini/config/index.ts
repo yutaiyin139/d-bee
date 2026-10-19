@@ -34,6 +34,11 @@ export default defineConfig<'webpack5'>(async (merge, { command, mode }) => {
         pxtransform: { enable: true, config: {} },
         cssModules: { enable: false }
       }
+    },
+    sass: {
+      resource: ['src/styles/tokens.scss'],
+      projectDirectory: '.',
+      data: ''
     }
   }
 

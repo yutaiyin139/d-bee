@@ -1,16 +1,15 @@
 .checkin {
-  display: flex;
-  flex-direction: column;
   min-height: 100vh;
-  padding: 24px;
+  padding: 32px 28px calc(40px + env(safe-area-inset-bottom));
   box-sizing: border-box;
 
   .summary {
     display: flex;
     justify-content: space-between;
     padding: 28px;
-    background: #fff;
-    border-radius: 16px;
+    background: $surface;
+    border: 1px solid $line;
+    border-radius: $radius-lg;
 
     .summary-item {
       display: flex;
@@ -19,14 +18,14 @@
 
       .summary-num {
         font-size: 40px;
-        font-weight: 600;
-        color: #1f2430;
+        font-weight: 700;
+        color: $honey-dark;
       }
 
       .summary-label {
         margin-top: 8px;
         font-size: 22px;
-        color: #8b8b9e;
+        color: $ink-3;
       }
     }
   }
@@ -34,31 +33,32 @@
   .quota-bar {
     margin-top: 24px;
     padding: 20px 28px;
-    background: #fff7e6;
-    border-radius: 12px;
+    background: $honey-soft;
+    border-radius: $radius;
 
     .quota-text {
       font-size: 26px;
-      color: #b8860b;
+      color: $honey-dark;
     }
   }
 
   .msg {
     margin-top: 20px;
     font-size: 26px;
-    color: #e5484d;
+    color: $red;
   }
 
   .form-card {
     margin-top: 24px;
     padding: 28px;
-    background: #fff;
-    border-radius: 16px;
+    background: $surface;
+    border: 1px solid $line;
+    border-radius: $radius-lg;
 
     .form-title {
       font-size: 30px;
       font-weight: 600;
-      color: #1f2430;
+      color: $ink;
       margin-bottom: 20px;
     }
 
@@ -69,22 +69,27 @@
 
       .input {
         flex: 1;
-        height: 80px;
+        height: 84px;
+        line-height: 84px;
         padding: 0 24px;
+        box-sizing: border-box;
         font-size: 28px;
-        background: #f2f3f7;
-        border-radius: 12px;
+        color: $ink;
+        background: $bg;
+        border: 1px solid $line;
+        border-radius: $radius;
       }
     }
 
     .btn {
       width: 100%;
-      height: 80px;
-      line-height: 80px;
+      height: 84px;
+      line-height: 84px;
       font-size: 30px;
-      color: #fff;
-      background: #ffb300;
-      border-radius: 40px;
+      font-weight: 600;
+      color: $honey-btn-ink;
+      background: $honey;
+      border-radius: $radius;
       border: none;
     }
   }

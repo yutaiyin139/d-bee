@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { View, Text, Button, Input } from '@tarojs/components'
 import { useLoad } from '@tarojs/taro'
+import { IconBee } from '../../components/Icons'
+import { bindInvite } from '../../lib/api'
+import { cloud } from '../../lib/cloud'
 import {
   signIn,
   sendPhoneOtp,
@@ -26,6 +29,10 @@ export default function Login() {
   const [otpSent, setOtpSent] = useState(false)
   const [sending, setSending] = useState(false)
 
+  // 邀请码（选填）：新用户注册时填写可绑定邀请关系，双方得积分
+  const [inviteCode, setInviteCode] = useState('')
+  const [inviteExpanded, setInviteExpanded] = useState(false)
+
   const native = canNativeSignIn()
   const platform = currentPlatformName()
 
@@ -40,11 +47,29 @@ export default function Login() {
     }
   })
 
+  /** 登录成功后绑定邀请码（选填，失败静默不阻断登录，对齐主工程 tryBindInvite） */
+  async function tryBindInvite() {
+    const codeStr = inviteCode.trim()
+    if (!codeStr) return
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 1000 * attempt))
+      try {
+        const { data: session } = await cloud.auth.getSession()
+        if (!session) continue
+        const status = await bindInvite(codeStr)
+        if (status === 'ok' || status === 'already' || status === 'self') return
+      } catch {
+        /* 继续重试 */
+      }
+    }
+  }
+
   const onNativeLogin = async () => {
     setLoading(true)
     setError('')
     try {
       setSession(await signIn())
+      await tryBindInvite()
     } catch (e) {
       setError(e instanceof Error ? e.message : '登录失败')
     } finally {
@@ -80,6 +105,7 @@ export default function Login() {
     setError('')
     try {
       setSession(await signInWithPhone(phone, code, verificationId, isExistingUser))
+      await tryBindInvite()
     } catch (e) {
       setError(e instanceof Error ? e.message : '登录失败')
     } finally {
@@ -96,18 +122,26 @@ export default function Login() {
 
   return (
     <View className='login'>
-      <Text className='title'>登录 D-Bee</Text>
-      <Text className='desc'>多端同步你的打卡数据（{platform}）</Text>
+      <View className='brand'>
+        <View className='brand-logo'>
+          <IconBee size={54} />
+        </View>
+        <Text className='title'>自律蜜蜂</Text>
+        <Text className='tagline'>拍一张照片，就知道这餐吃了多少热量。</Text>
+        <Text className='desc'>多端同步你的打卡数据（{platform}）</Text>
+      </View>
 
       {!session ? (
         <>
           {native ? (
             <>
-              <Button className='btn' loading={loading} disabled={loading} onClick={onNativeLogin}>
+              <Button className='btn-primary' loading={loading} disabled={loading} onClick={onNativeLogin}>
                 微信一键登录
               </Button>
               <View className='divider'>
+                <View className='divider-line' />
                 <Text className='divider-text'>或使用手机号登录</Text>
+                <View className='divider-line' />
               </View>
             </>
           ) : null}
@@ -132,8 +166,20 @@ export default function Login() {
                 {otpSent ? '重新发送' : '获取验证码'}
               </Button>
             </View>
+
+            {!inviteExpanded ? (
+              <Text className='invite-toggle' onClick={() => setInviteExpanded(true)}>有好友邀请码？点此填写（双方得积分）</Text>
+            ) : (
+              <Input
+                className='input invite-input'
+                placeholder='邀请码（选填）'
+                value={inviteCode}
+                onInput={(e) => setInviteCode(e.detail.value.toUpperCase())}
+              />
+            )}
+
             {otpSent ? (
-              <Button className='btn' loading={loading} disabled={loading} onClick={onPhoneLogin}>
+              <Button className='btn-login' loading={loading} disabled={loading} onClick={onPhoneLogin}>
                 登录 / 注册
               </Button>
             ) : null}

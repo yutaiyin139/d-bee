@@ -1,79 +1,862 @@
-.index {
+// =============================================================
+// 首页 Dashboard 样式（严格对齐主工程 src/styles.css 的暖米色蜂蜜设计）
+// designWidth=750，主工程 px → 此处 rpx（1px = 2rpx）
+// =============================================================
+
+.index.dash {
+  min-height: 100vh;
+  padding: 16px 36px calc(60px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: $bg;
+}
+
+// ── 未登录引导 ──
+.auth-gate {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-height: 100vh;
-  padding: 40px;
-  box-sizing: border-box;
+  padding-top: 240px;
+  text-align: center;
 
-  .title {
-    font-size: 40px;
-    font-weight: 600;
-    color: #1f2430;
+  .auth-title {
+    font-size: 56px;
+    font-weight: 700;
+    color: $ink;
   }
 
-  .desc {
-    margin-top: 20px;
+  .auth-desc {
+    margin-top: 24px;
     font-size: 28px;
-    color: #8b8b9e;
+    color: $ink-2;
+    line-height: 1.6;
   }
 
-  .btn-row {
+  .btn-primary {
+    margin-top: 48px;
+    width: 100%;
+    height: 96px;
+    line-height: 96px;
+    font-size: 32px;
+    font-weight: 600;
+    color: $honey-btn-ink;
+    background: $honey;
+    border-radius: $radius;
+    border: none;
+  }
+}
+
+// ── 顶部 ──
+.dash-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px 0 8px;
+
+  .dash-title {
+    font-size: 48px;
+    font-weight: 700;
+    letter-spacing: -0.6px;
+    color: $ink;
+  }
+
+  .date-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+
+    .date-arrow {
+      width: 68px;
+      height: 68px;
+      line-height: 60px;
+      border-radius: 50%;
+      font-size: 42px;
+      color: $ink-2;
+      background: transparent;
+      padding: 0;
+      border: none;
+    }
+
+    .date-label {
+      padding: 0 20px;
+      height: 60px;
+      line-height: 60px;
+      font-size: 28px;
+      font-weight: 500;
+      color: $ink;
+      background: transparent;
+      border: none;
+    }
+  }
+}
+
+// ── 周历条 ──
+.week-strip {
+  display: flex;
+  margin: 16px 0 32px;
+
+  .ws-day {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 14px 0 12px;
+    border-radius: 28px;
+
+    .wd {
+      font-size: 24px;
+      color: $ink-2;
+    }
+
+    .dn {
+      font-size: 32px;
+      font-weight: 600;
+      line-height: 1.35;
+      color: $ink;
+    }
+
+    .ws-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: transparent;
+
+      &.on {
+        background: $honey;
+      }
+    }
+
+    &.is-selected {
+      background: $honey-soft;
+
+      .wd {
+        color: $honey-dark;
+      }
+    }
+
+    &.is-today:not(.is-selected) .dn {
+      color: $honey-dark;
+    }
+
+    &.is-future .dn {
+      color: $ink-3;
+      font-weight: 500;
+    }
+  }
+}
+
+// ── 简易月历弹层 ──
+.picker-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(42, 39, 35, 0.4);
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+
+  .picker-panel {
+    width: 100%;
+    background: $surface;
+    border-radius: 40px 40px 0 0;
+    padding: 36px 32px calc(40px + env(safe-area-inset-bottom));
+
+    .picker-title {
+      font-size: 32px;
+      font-weight: 600;
+      color: $ink;
+    }
+
+    .picker-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin: 24px 0;
+
+      .picker-day {
+        width: calc((100% - 96px) / 7);
+        height: 72px;
+        line-height: 72px;
+        text-align: center;
+        font-size: 24px;
+        color: $ink-2;
+        background: $bg-2;
+        border-radius: 16px;
+        border: none;
+        padding: 0;
+
+        &.is-selected {
+          background: $honey;
+          color: $honey-btn-ink;
+          font-weight: 700;
+        }
+      }
+    }
+
+    .btn-text {
+      width: 100%;
+      height: 80px;
+      line-height: 80px;
+      color: $honey-dark;
+      font-size: 28px;
+      background: transparent;
+      border: 1px solid $line-2;
+      border-radius: $radius;
+    }
+  }
+}
+
+// ── 通知 / 提示 ──
+.notice {
+  margin-bottom: 24px;
+  padding: 20px 24px;
+  border-radius: $radius;
+  font-size: 26px;
+  background: $bg-2;
+  color: $ink-2;
+
+  &.err {
+    background: $red-soft;
+    color: $red;
+  }
+}
+
+// ── 热量卡 ──
+.ring-card {
+  background: $surface;
+  border-radius: $radius-lg;
+  border: 1px solid $line;
+  padding: 44px 36px 36px;
+  margin-bottom: 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  .ring-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+
+    .side-stat {
+      flex: 1;
+      text-align: center;
+
+      .side-label {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        font-size: 25px;
+        color: $ink-2;
+        white-space: nowrap;
+      }
+
+      .side-num {
+        font-size: 42px;
+        font-weight: 700;
+        margin-top: 6px;
+        color: $ink;
+      }
+    }
+  }
+
+  .ring-remain {
+    font-size: 60px;
+    font-weight: 600;
+    line-height: 1.05;
+    letter-spacing: -1px;
+    color: $ink;
+
+    &.over {
+      color: $red;
+    }
+  }
+
+  .ring-sub {
+    font-size: 24px;
+    color: $ink-3;
+    margin-top: 8px;
+  }
+
+  .ring-macros {
+    width: 100%;
+    margin-top: 32px;
+    padding-top: 28px;
+    border-top: 1px solid $line;
     display: flex;
     gap: 24px;
-    margin-top: 40px;
-    flex-wrap: wrap;
-    justify-content: center;
+
+    .rm-col {
+      flex: 1;
+      min-width: 0;
+
+      .rm-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 24px;
+        color: $ink-2;
+        white-space: nowrap;
+      }
+
+      .rm-track {
+        height: 12px;
+        border-radius: 99px;
+        background: $bg-2;
+        margin: 14px 0 12px;
+        overflow: hidden;
+
+        .rm-fill {
+          height: 100%;
+          border-radius: 99px;
+        }
+      }
+
+      .rm-val {
+        font-size: 22px;
+        color: $ink-3;
+        white-space: nowrap;
+      }
+    }
+  }
+}
+
+// ── 通用卡片 ──
+.card {
+  background: $surface;
+  border-radius: $radius-lg;
+  border: 1px solid $line;
+  padding: 36px;
+  margin-bottom: 28px;
+}
+
+.section-title {
+  font-size: 30px;
+  font-weight: 600;
+  margin: 44px 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: $ink;
+
+  .hint {
+    font-size: 24px;
+    font-weight: 400;
+    color: $ink-3;
+  }
+}
+
+// ── 饮食体检 ──
+.checkup-wrap {
+  .checkup {
+    margin-top: 0;
+  }
+}
+
+.checkup-verdict {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+
+  .cu-score {
+    font-size: 60px;
+    font-weight: 700;
+    color: $ink;
+
+    &.is-good { color: $green; }
+    &.is-ok { color: $honey-dark; }
+    &.is-warn { color: $red; }
   }
 
-  .login-btn,
-  .checkin-btn,
-  .scan-btn {
-    width: 200px;
-    height: 80px;
-    line-height: 80px;
-    font-size: 30px;
-    color: #fff;
-    background: #ffb300;
-    border-radius: 40px;
+  .cu-main {
+    flex: 1;
+    min-width: 0;
+
+    .cu-level {
+      font-size: 30px;
+      font-weight: 600;
+      color: $ink;
+
+      &.is-good { color: $green; }
+      &.is-ok { color: $honey-dark; }
+      &.is-warn { color: $red; }
+    }
+
+    .cu-text {
+      display: block;
+      margin-top: 6px;
+      font-size: 26px;
+      color: $ink-2;
+      line-height: 1.5;
+    }
+  }
+}
+
+// ── 卡路里追踪 ──
+.advice-strip {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 22px 28px;
+  margin-bottom: 28px;
+  border-radius: $radius;
+  background: $honey-soft;
+  border: 1px solid rgba(242, 169, 59, 0.28);
+  font-size: 25px;
+  line-height: 1.6;
+  color: #7a5a12;
+
+  &.is-over {
+    background: $red-soft;
+    border-color: rgba(208, 92, 78, 0.26);
+    color: #8f382d;
+  }
+
+  .as-tag {
+    flex: 0 0 auto;
+    font-weight: 600;
+    font-size: 22px;
+    padding: 4px 14px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, 0.72);
+  }
+
+  .as-text {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+// ── 连续打卡 ──
+.streak-card {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: $radius-lg;
+  padding: 28px 32px;
+  margin-bottom: 28px;
+
+  .streak-flame {
+    width: 84px;
+    height: 84px;
+    border-radius: 28px;
+    background: $honey-soft;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .streak-main {
+    min-width: 0;
+
+    .streak-num {
+      font-size: 29px;
+      font-weight: 600;
+      color: $ink;
+    }
+
+    .streak-sub {
+      font-size: 24px;
+      color: $ink-3;
+      margin-top: 4px;
+    }
+
+    .streak-hit {
+      font-size: 25px;
+      font-weight: 600;
+      color: $honey-dark;
+      margin-top: 10px;
+    }
+  }
+}
+
+// ── 饮水 / 运动 ──
+.water-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  .water-title {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-weight: 600;
+    font-size: 29px;
+    color: $ink;
+  }
+
+  .water-val {
+    font-size: 26px;
+    color: $ink-2;
+  }
+}
+
+.macro-track {
+  height: 14px;
+  border-radius: 99px;
+  background: $bg-2;
+  overflow: hidden;
+  margin: 20px 0 24px;
+
+  .macro-fill {
+    height: 100%;
+    border-radius: 99px;
+  }
+}
+
+.chip-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+
+  .chip {
+    padding: 0 32px;
+    height: 68px;
+    line-height: 68px;
+    font-size: 26px;
+    font-weight: 500;
+    color: $ink;
+    background: $bg-2;
+    border-radius: 99px;
     border: none;
   }
 
-  .checkin-btn {
-    background: #18a058;
+  .water-chip {
+    color: $blue;
+    background: rgba(61, 123, 184, 0.12);
   }
 
-  .scan-btn {
-    background: #4a6ee0;
+  .btn-text {
+    margin-left: auto;
+    color: $ink-3;
+    font-size: 26px;
+    background: transparent;
+    border: none;
+    height: auto;
+    line-height: 1;
+    padding: 0;
+  }
+}
+
+.ex-list {
+  margin: 16px 0 20px;
+
+  .ex-row {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 14px 0;
+    font-size: 27px;
+
+    .ex-name {
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: $ink;
+    }
+
+    .ex-kcal {
+      color: $ink-2;
+    }
+
+    .entry-del {
+      width: 52px;
+      height: 52px;
+      line-height: 52px;
+      border-radius: 50%;
+      color: $ink-3;
+      font-size: 32px;
+      background: transparent;
+      border: none;
+      padding: 0;
+    }
+  }
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 20px;
+
+  .chip {
+    padding: 0 28px;
+    height: 64px;
+    line-height: 64px;
+    font-size: 25px;
+    color: $ink-2;
+    background: $bg-2;
+    border-radius: 99px;
+    border: none;
+
+    &.active {
+      background: $honey-soft;
+      color: $honey-dark;
+      font-weight: 600;
+    }
+  }
+}
+
+.ex-input-row {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+
+  .stepper {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 88px;
+    padding: 0 24px;
+    background: $bg-2;
+    border-radius: $radius;
+
+    input {
+      flex: 1;
+      height: 60px;
+      font-size: 28px;
+      color: $ink;
+      background: transparent;
+    }
+
+    .unit {
+      font-size: 26px;
+      color: $ink-2;
+    }
+
+    .ex-est {
+      font-size: 24px;
+      color: $ink-3;
+      white-space: nowrap;
+    }
   }
 
-  .rule-card {
-    width: 100%;
-    margin-top: 32px;
-    padding: 28px;
-    box-sizing: border-box;
-    background: #f7f8fa;
-    border-radius: 16px;
+  .btn-ghost {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 88px;
+    padding: 0 36px;
+    font-size: 28px;
+    font-weight: 500;
+    color: $ink;
+    background: $surface;
+    border: 1px solid $line-2;
+    border-radius: $radius;
+  }
+}
+
+// ── 餐次 ──
+.meal-block {
+  background: $surface;
+  border-radius: $radius-lg;
+  border: 1px solid $line;
+  margin-bottom: 24px;
+  overflow: hidden;
+
+  .meal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 28px 32px;
+
+    .left {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+
+      .meal-dot {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: $honey;
+      }
+
+      .meal-name {
+        font-weight: 600;
+        font-size: 30px;
+        color: $ink;
+      }
+    }
+
+    .meal-right {
+      display: flex;
+      align-items: center;
+
+      .meal-kcal {
+        font-size: 28px;
+        color: $ink-2;
+        margin-right: 20px;
+      }
+
+      .meal-add {
+        width: 56px;
+        height: 56px;
+        line-height: 56px;
+        border-radius: 50%;
+        background: $honey-soft;
+        color: $honey-dark;
+        font-size: 34px;
+        text-align: center;
+        border: none;
+        padding: 0;
+      }
+    }
+  }
+
+  .meal-empty {
+    padding: 0 32px 28px;
+    font-size: 26px;
+    color: $ink-3;
+  }
+
+  .entry {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 22px 32px;
+    border-top: 1px solid $line;
+
+    .entry-main {
+      flex: 1;
+      min-width: 0;
+
+      .entry-name {
+        font-size: 28px;
+        font-weight: 500;
+        color: $ink;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .entry-meta {
+        font-size: 24px;
+        color: $ink-3;
+        margin-top: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .entry-edit {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 16px;
+
+        input {
+          width: 150px;
+          height: 60px;
+          font-size: 26px;
+          background: $surface;
+          border: 1px solid $line-2;
+          border-radius: 12px;
+          padding: 0 16px;
+          color: $ink;
+        }
+
+        .btn-text {
+          color: $honey-dark;
+          font-size: 24px;
+          background: transparent;
+          border: none;
+          height: auto;
+          line-height: 1;
+          padding: 0;
+        }
+      }
+
+      .edit-link {
+        color: $ink-3;
+        font-size: 24px;
+        margin-top: 8px;
+        background: transparent;
+        border: none;
+        height: auto;
+        line-height: 1;
+        padding: 0;
+      }
+    }
+
+    .entry-kcal {
+      font-size: 28px;
+      color: $ink-2;
+      flex-shrink: 0;
+    }
+
+    .entry-del {
+      flex-shrink: 0;
+      width: 52px;
+      height: 52px;
+      line-height: 52px;
+      border-radius: 50%;
+      color: $ink-3;
+      font-size: 32px;
+      background: transparent;
+      border: none;
+      padding: 0;
+
+      &.confirming {
+        background: $red;
+        color: #fff;
+        font-size: 24px;
+      }
+    }
+  }
+}
+
+.skeleton {
+  height: 136px;
+  margin-bottom: 24px;
+  border-radius: $radius-lg;
+  background: $bg-2;
+}
+
+.bottom-space {
+  height: 80px;
+}
+
+// ── 底部导航（对齐主工程 tabbar）──
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  background: $surface;
+  border-top: 1px solid $line;
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 50;
+
+  .tab-item {
+    flex: 1;
     display: flex;
     flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 14px 0 10px;
 
-    .rule-title {
-      font-size: 30px;
-      font-weight: 600;
-      color: #1f2430;
-      margin-bottom: 16px;
+    .tab-label {
+      font-size: 22px;
+      color: $ink-3;
     }
 
-    .rule-line {
-      font-size: 26px;
-      color: #4a4f5e;
-      line-height: 1.8;
-    }
-
-    .rule-text {
-      font-size: 24px;
-      color: #6b7080;
-      line-height: 1.6;
+    &.is-active {
+      .tab-label {
+        color: $honey-dark;
+        font-weight: 600;
+      }
     }
   }
 }

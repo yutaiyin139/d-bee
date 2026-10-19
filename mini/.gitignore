@@ -3,3 +3,6 @@ dist
 .temp
 .rn_temp
 .swc
+
+# 微信开发者工具本地私有配置（含 urlCheck 等本地调试项，不入库）
+project.private.config.json

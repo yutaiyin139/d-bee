@@ -10,8 +10,10 @@ import {
   getPhotoQuota,
   getHoneyBalance,
   redeemHoney,
+  getEntitlement,
+  getTodayPhotoCount,
 } from '../../lib/api'
-import { photoLadderHint, quotaExhaustedReason, FREE_DAILY_AI } from '@dbee/shared'
+import { photoLadderHint, quotaExhaustedReason, isPro, FREE_DAILY_AI, HONEY_PRICE, AI_REDEEM_DAILY_LIMIT } from '@dbee/shared'
 import './scan.scss'
 
 export default function Scan() {
@@ -21,6 +23,8 @@ export default function Scan() {
   const [msg, setMsg] = useState('')
   const [honey, setHoney] = useState(0)
   const [quota, setQuota] = useState(0)
+  const [pro, setPro] = useState(false)
+  const [todayPhotoCount, setTodayPhotoCount] = useState(0)
 
   useLoad(async () => {
     await refreshStats()
@@ -28,12 +32,35 @@ export default function Scan() {
 
   async function refreshStats() {
     try {
-      const [h, q] = await Promise.all([getHoneyBalance(), getPhotoQuota()])
+      const [h, q, ent, n] = await Promise.all([getHoneyBalance(), getPhotoQuota(), getEntitlement(), getTodayPhotoCount()])
       setHoney(h.balance)
       setQuota(q.totalRemaining)
+      setPro(isPro(ent))
+      setTodayPhotoCount(n)
     } catch {
       /* 静默 */
     }
+  }
+
+  /** 只读额度预检：Pro 无限次；免费额度用完则按阶梯引导（对齐主工程 checkPhotoQuota） */
+  async function checkPhotoQuota(): Promise<boolean> {
+    if (pro) return true
+    setMsg('')
+    const quota = await getPhotoQuota().catch(() => null)
+    const totalRemaining = quota ? quota.totalRemaining : FREE_DAILY_AI
+    if (totalRemaining > 0) return true
+
+    const bal = await getHoneyBalance().catch(() => null)
+    const balance = bal ? bal.balance : 0
+    const ladder = photoLadderHint(todayPhotoCount, balance)
+    if (ladder.kind === 'redeem') {
+      setMsg(`今日 ${FREE_DAILY_AI} 次免费识别已用完，可用 ${HONEY_PRICE.ai1Scan} 积分兑 1 次（每日最多兑 ${AI_REDEEM_DAILY_LIMIT} 次），你还有 ${balance} 积分。`)
+    } else if (ladder.kind === 'inviteOrPro') {
+      setMsg(`今日 ${FREE_DAILY_AI} 次免费识别已用完。邀请好友赚积分可兑换识别（每日最多 ${AI_REDEEM_DAILY_LIMIT} 次），或升级 Pro 无限次识别。`)
+    } else {
+      setMsg(quotaExhaustedReason())
+    }
+    return false
   }
 
   /** 临时文件路径 → base64 dataUrl */
@@ -51,12 +78,23 @@ export default function Scan() {
   async function onTakePhoto() {
     setMsg('')
     try {
-      // 1. 预占额度（识别成功才扣，失败退还）
-      const claim = await consumePhotoQuota()
-      if (!claim.allowed) {
-        setMsg(quotaExhaustedReason())
+      // 0. 额度预检：Pro 无限次；免费额度用完直接提示（对齐主工程 checkPhotoQuota）
+      const ok = await checkPhotoQuota()
+      if (!ok) {
         await refreshStats()
         return
+      }
+
+      // 1. 预占额度（Pro 会员跳过占用；识别成功才扣，失败退还）
+      let claim: { allowed: boolean; token?: string | null } | null = null
+      if (!pro) {
+        const c = await consumePhotoQuota()
+        if (!c.allowed) {
+          setMsg(quotaExhaustedReason())
+          await refreshStats()
+          return
+        }
+        claim = c
       }
 
       // 2. 拍照
@@ -66,7 +104,7 @@ export default function Scan() {
         sourceType: ['camera', 'album'],
       })
       const filePath = chooseRes.tempFilePaths[0]
-      if (!filePath) { await releasePhotoQuota(claim.token); return }
+      if (!filePath) { if (claim) await releasePhotoQuota(claim.token ?? null); return }
 
       setImageUrl(filePath)
       setLoading(true)
