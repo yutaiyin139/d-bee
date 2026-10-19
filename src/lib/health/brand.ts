@@ -11,7 +11,7 @@
  * Web 端（普通浏览器）恒返回 'web'，不显示连接入口，行为可预测。
  */
 
-import { isIOS, isNative, platformName } from '../platform'
+import { isIOS, isNative, isWechatMiniProgram, platformName } from '../platform'
 
 export type HealthVendor =
   | 'apple'
@@ -20,6 +20,7 @@ export type HealthVendor =
   | 'vivo'
   | 'oppo'
   | 'android-other'
+  | 'wechat-miniprogram'
   | 'web'
 
 export interface HealthVendorInfo {
@@ -39,9 +40,20 @@ function userAgent(): string {
 
 /**
  * 识别当前机型对应的运动健康品牌。
- * 优先级：iOS 原生 > 安卓品牌关键字 > 其它安卓 > Web。
+ * 优先级：微信小程序 > iOS 原生 > 安卓品牌关键字 > 其它安卓 > Web。
  */
 export function detectHealthVendor(): HealthVendorInfo {
+  // 微信小程序：微信运动（wx.getWeRunData）是真同步通道，规划中接入。
+  // 识别置于最前，保证既不被 iOS/Android 原生分支命中，也不落到 Web 分支。
+  if (isWechatMiniProgram()) {
+    return {
+      vendor: 'wechat-miniprogram',
+      label: '微信运动',
+      canSync: true,
+      tip: '请在微信「设置 > 通用 > 辅助功能」里开启微信运动后使用。',
+    }
+  }
+
   if (isIOS()) {
     return {
       vendor: 'apple',

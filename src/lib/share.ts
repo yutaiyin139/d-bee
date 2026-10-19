@@ -14,7 +14,7 @@
  * 业务代码只关心数据内容，不关心平台差异。
  */
 
-import { isNative } from './platform'
+import { isNative, isWechatMiniProgram } from './platform'
 
 /** 原生 Capacitor Share 插件的最小结构（鸭子类型探测，不 import 包） */
 interface CapacitorShare {
@@ -85,6 +85,12 @@ export async function exportFile(
     //   return { channel: 'share', message: '已生成文件，请在分享面板中保存或发送。' }
     // 阶段 0 不改行为：原生环境尚未接入，直接落回浏览器下载实现。
     // ──────────────────────────────────────────────────────────────
+  }
+
+  // 微信小程序：无 DOM，走 wx.saveFile / wx.shareFileMessage（规划中接入）。
+  // 当前返回安全结果，不影响现有三端。
+  if (isWechatMiniProgram()) {
+    return { channel: 'share', message: '导出功能正在接入小程序，敬请期待。' }
   }
 
   return downloadBlob(blob, filename)
@@ -162,6 +168,12 @@ export async function shareImage(
         }
       }
     }
+  }
+
+  // 微信小程序：无 DOM，走 wx.showShareImageMenu / 转发（规划中接入）。
+  // 当前返回安全结果，不影响现有三端。
+  if (isWechatMiniProgram()) {
+    return { channel: 'share', message: '分享功能正在接入小程序，敬请期待。' }
   }
 
   // Web 兜底：下载 PNG

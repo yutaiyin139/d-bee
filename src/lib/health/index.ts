@@ -24,7 +24,7 @@ import {
   requestAndroidVendorAuthorization,
   fetchAndroidVendorToday,
 } from './android'
-import { isIOS } from '../platform'
+import { isIOS, isWechatMiniProgram } from '../platform'
 import { getProfile, saveProfile } from '../api'
 
 export type { HealthVendor, HealthVendorInfo } from './brand'
@@ -52,13 +52,18 @@ export function getHealthVendor(): HealthVendorInfo {
 /**
  * 是否显示「连接健康」入口。
  *
- * 仅原生 App 且健康平台插件可用时显示：
+ * 原生 App 且健康平台插件可用时显示，微信小程序（微信运动）也显示：
  *   - iOS    ：Apple 健康（HealthKit）真同步
  *   - Android：华为 Health Kit / 小米运动健康数据服务 真同步（依赖资质，未就绪时授权降级为引导）
+ *   - 微信小程序：微信运动（wx.getWeRunData）真同步（规划中）
  * 其它安卓厂商无公开读取 API；Web 也不显示。
+ *
+ * ⚠️ 零影响保证：现有三端走的是 isHealthKitAvailable()/isAndroidVendorHealthAvailable()，
+ *   两者在非对应平台恒为 false；新增的 isWechatMiniProgram() 仅在小程序环境为 true，
+ *   对 Web/iOS/Android 返回值不变。
  */
 export function isHealthConnectable(): boolean {
-  return isHealthKitAvailable() || isAndroidVendorHealthAvailable()
+  return isWechatMiniProgram() || isHealthKitAvailable() || isAndroidVendorHealthAvailable()
 }
 
 /**
@@ -146,6 +151,15 @@ export async function connectHealth(): Promise<ConnectResult> {
     return { ok: true, message: `已连接${v.label}，步数与活动能量将自动同步。`, vendor: v.vendor }
   }
 
+  if (v.vendor === 'wechat-miniprogram') {
+    // 微信运动接入规划中：当前诚实引导，不写云端连接态、不误导为「已连接」。
+    return {
+      ok: false,
+      message: '微信运动接入正在准备中，当前请先手动记录运动。',
+      vendor: 'wechat-miniprogram',
+    }
+  }
+
   if (v.vendor === 'web') {
     if (isWechatWebView()) {
       return { ok: false, message: '微信运动数据请在微信内查看；D-Bee 已支持手动记录运动。', vendor: 'web' }
@@ -171,6 +185,8 @@ export async function syncFromHealth(): Promise<HealthSyncData> {
     if (!isAndroidVendorHealthAvailable()) return { steps: 0, activeKcal: 0 }
     return fetchAndroidVendorToday()
   }
+  // 微信小程序（wechat-miniprogram）：微信运动真同步规划中，当前返回 0 安全值，
+  // 不影响任何现有端；接入后在此补 wx.getWeRunData 拉取。
   return { steps: 0, activeKcal: 0 }
 }
 

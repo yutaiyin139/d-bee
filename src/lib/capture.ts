@@ -12,7 +12,7 @@
  * 因此原生分支接入后，下游的 compressImage / AI 识别逻辑完全不用改。
  */
 
-import { isNative } from './platform'
+import { isNative, isWechatMiniProgram } from './platform'
 
 export interface TakePhotoOptions {
   /** 是否优先唤起相机（原生端映射为 CameraSource.Camera）；Web 端即 capture 属性 */
@@ -53,6 +53,13 @@ export async function takePhoto(opts: TakePhotoOptions = {}): Promise<File | nul
     }
     // 插件未注入（旧包 / 未同步）：落回 Web input 实现，保证不白屏
   }
+
+  // 微信小程序：无 DOM，走 wx.chooseImage（规划中接入）。当前返回 null，
+  // 不影响现有三端（小程序环境本就不会命中原生/Web 分支）。
+  if (isWechatMiniProgram()) {
+    return null
+  }
+
   return pickWithInput(opts)
 }
 

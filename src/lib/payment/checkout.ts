@@ -18,7 +18,8 @@ import type { CheckoutResult, PaymentAdapter } from './types'
 
 /**
  * 按当前平台选择支付适配器。
- * 当前只实现 iOS；Android / Web / 小程序接支付时在此补分支。
+ * 当前只实现 iOS；Android / Web / 微信小程序接支付时在此补分支。
+ * 微信小程序端规划走 wx.requestPayment，届时新增 miniprogram adapter 并在此返回。
  */
 export async function getAdapter(): Promise<PaymentAdapter | null> {
   const platform = platformName()
@@ -26,7 +27,8 @@ export async function getAdapter(): Promise<PaymentAdapter | null> {
     const { createIosIapAdapter } = await import('./iosIap')
     return createIosIapAdapter()
   }
-  // TODO(资质就绪后补)：android → googlePlay / wechatPay / alipay；web → wechatPay / alipay
+  // TODO(资质就绪后补)：android → googlePlay / wechatPay / alipay；
+  //   web → wechatPay / alipay；wechat-miniprogram → wx.requestPayment
   return null
 }
 
@@ -76,11 +78,16 @@ export async function checkout(
   }
 }
 
-/** 由平台推导支付渠道标识（与服务端 provider 字段对齐） */
+/**
+ * 由平台推导支付渠道标识（与服务端 provider 字段对齐）。
+ * 微信小程序：微信支付（规划中，getAdapter 尚未实现小程序适配器，故 checkout 仍会
+ * 走「暂不支持在线支付」的兜底，不影响现有三端）。
+ */
 function currentProvider(): 'apple' | 'google' | 'wechat' | 'alipay' | null {
   const platform = platformName()
   if (platform === 'ios') return 'apple'
   if (platform === 'android') return 'wechat' // Android 默认微信；未来可按需切换 google/alipay
   if (platform === 'web') return 'wechat'
+  if (platform === 'wechat-miniprogram') return 'wechat'
   return null
 }

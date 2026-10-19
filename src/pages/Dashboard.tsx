@@ -90,6 +90,9 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
 
   // 健康连接：品牌识别 + 连接状态（云端）+ 步数/活动能量 + 提示
   const healthVendor = useMemo(() => getHealthVendor(), [])
+  // 是否支持健康数据源连接（仅原生 App：iOS HealthKit / 华为·小米 Health Kit）。
+  // Web 端恒 false：不显示任何健康同步/连接相关提示。
+  const healthConnectable = useMemo(() => isHealthConnectable(), [])
   const [healthConnected, setHealthConnected] = useState(false)
   const [healthSteps, setHealthSteps] = useState(0)
   const [healthActiveKcal, setHealthActiveKcal] = useState(0)
@@ -112,6 +115,8 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
     let timer: ReturnType<typeof setInterval> | undefined
 
     async function refreshHealth() {
+      // Web 端不支持健康数据源，直接跳过（不读云端连接态，也不渲染同步提示）
+      if (!healthConnectable) return
       const connected = await isHealthConnected()
       if (!alive) return
       setHealthConnected(connected)
@@ -126,6 +131,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
     void refreshHealth()
     // 定时自动同步：仅在已连接时才轮询（未连接时无数据可拉）
     timer = setInterval(() => {
+      if (!healthConnectable) return
       void isHealthConnected().then((connected) => {
         if (!alive || !connected) return
         void syncFromHealth().then((data) => {
@@ -787,17 +793,17 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
               <>
                 消耗 <b>{Math.round(burnKcal)}</b> kcal
               </>
-            ) : hasHealthData ? (
+            ) : healthConnectable && hasHealthData ? (
               <span style={{ fontSize: 13 }}>今日 <b>{healthSteps.toLocaleString()}</b> 步</span>
-            ) : healthConnected ? (
+            ) : healthConnectable && healthConnected ? (
               <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>正在同步步数…</span>
-            ) : (
+            ) : healthConnectable ? (
               <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>连接运动健康，自动同步步数</span>
-            )}
+            ) : null}
           </span>
         </div>
 
-        {isHealthConnectable() && !healthConnected && (
+        {healthConnectable && !healthConnected && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 10px' }}>
               <button
@@ -819,7 +825,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
           </>
         )}
 
-        {healthConnected && hasHealthData && (
+        {healthConnectable && healthConnected && hasHealthData && (
           <div style={{ margin: '8px 0 12px' }}>
             {/* 步数行：图标 + 标题 + 「今日步数 / 目标」 + 进度条 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -863,7 +869,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
           </div>
         )}
 
-        {healthConnected && !hasHealthData && (
+        {healthConnectable && healthConnected && !hasHealthData && (
           <div style={{ margin: '8px 0 12px', fontSize: 13, color: 'var(--ink-3)' }}>
             已连接 {healthVendor.label}，正在读取今天的步数，稍候自动展示。
           </div>
@@ -1016,7 +1022,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
       {!pro && (
         <>
           <div className="helper" style={{ textAlign: 'center', marginTop: 6 }}>
-            免费版每日 {aiRemaining ?? 0} 次 AI 额度（识别与问答共用）
+            免费版每日 3 次拍照识别，今日还剩 {aiRemaining ?? 0} 次，可用积分再兑 2 次
           </div>
           {/* 拉新入口：首页直达，不再只藏在「我的」二级页 */}
           <button className="invite-strip" onClick={() => setInviteOpen(true)}>

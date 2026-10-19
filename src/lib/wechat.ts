@@ -20,6 +20,13 @@
  *           而且 OAuth 跳出 WebView 之后回不来。必须改用微信开放平台
  *           「移动应用」+ 原生 SDK 拿 code。
  *
+ *   微信小程序 —— 又是第三条路：小程序里既没有 `location.assign` 扫码回流，
+ *           也没有移动应用 SDK，而是 `wx.login()` 拿临时 code，云端走 jscode2session
+ *           换会话（这正是 cloud.auth.signInWithWechat(code, appid) 原生支持的场景）。
+ *           当前总开关 WECHAT_LOGIN_ENABLED=false，小程序端登录一并关闭；
+ *           未来接小程序时，在 isWechatLoginAvailable() 里增加 isWechatMiniProgram()
+ *           分支即可，不影响 Web / 原生两条既有路径。
+ *
  * ── 原生路径的前置条件（四条缺一不可）────────────────────────────────
  *   1. 微信开放平台「移动应用」审核通过，拿到 AppID
  *      （构建时注入 VITE_WECHAT_APPID，见 .env.example）
@@ -93,6 +100,8 @@ function getPlugin(): WechatPlugin | null {
  */
 export function isWechatLoginAvailable(): boolean {
   if (!WECHAT_LOGIN_ENABLED) return false
+  // 微信小程序：走 wx.login + jscode2session（规划中），当前总开关关闭故不会到达；
+  // 未来启用时在此用 isWechatMiniProgram() 分流，避免小程序误走下方「Web 扫码」分支。
   if (!isNative()) return true
   if (!NATIVE_CODE_EXCHANGE_SUPPORTED) return false
   if (!wechatAppId()) return false

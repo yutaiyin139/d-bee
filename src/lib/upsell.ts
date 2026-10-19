@@ -14,9 +14,7 @@
  */
 
 import { kvGet, kvSet } from './kv'
-
-/** 免费拍照额度（与 entitlement.ts 的 FREE_DAILY_AI 对齐） */
-const FREE_DAILY_AI = 3
+import { FREE_DAILY_AI } from './entitlement'
 
 /** 当前「周序号」（跨年用 ISO 周年份+周号，避免元旦周重复误判） */
 function isoWeekKey(): string {

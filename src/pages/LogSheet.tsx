@@ -15,7 +15,8 @@ import {
   type FoodSort,
 } from '../lib/foods'
 import { analyzeProfile, LEVEL_LABELS, levelOfScore, summarizeEntries } from '../lib/foodInsight'
-import { quotaExhaustedReason } from '../lib/entitlement'
+import { quotaExhaustedReason, AI_REDEEM_DAILY_LIMIT } from '../lib/entitlement'
+import { HONEY_PRICE } from '../lib/invite'
 import {
   photoLadderHint,
   isDuplicatePhoto,
@@ -475,12 +476,12 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
     if (ladder.kind === 'redeem') {
       setQuotaHint({
         kind: 'redeem',
-        text: `今日免费识别已用完，你还有 ${balance} 积分，可兑换 ${ladder.redeemCount} 次识别。`,
+        text: `今日 3 次免费识别已用完，可用 ${HONEY_PRICE.ai1Scan} 积分兑 1 次（每日最多兑 ${AI_REDEEM_DAILY_LIMIT} 次），你还有 ${balance} 积分。`,
       })
     } else if (ladder.kind === 'inviteOrPro') {
       setQuotaHint({
         kind: 'inviteOrPro',
-        text: '今日免费识别已用完。邀请好友可赚积分兑换识别，或升级 Pro 无限次识别。',
+        text: `今日 3 次免费识别已用完。邀请好友赚积分可兑换识别（每日最多 ${AI_REDEEM_DAILY_LIMIT} 次），或升级 Pro 无限次识别。`,
       })
     } else {
       setQuotaHint({ kind: 'pro', text: quotaExhaustedReason() })
@@ -728,7 +729,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
           <h2>记录饮食</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {mode !== 'manual' && aiRemaining !== null && (
-              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>今日剩 {aiRemaining} 次识别</span>
+              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>今日免费识别还剩 {aiRemaining} 次</span>
             )}
             <button className="sheet-close" onClick={onClose} aria-label="关闭">×</button>
           </div>

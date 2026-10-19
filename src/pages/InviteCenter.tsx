@@ -130,8 +130,9 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
         setRedeemMsg('兑换成功！')
         setBalance(await getHoneyBalance())
       } else {
-        // 余额与会员状态已提前校验，此处失败 = 后端/网络异常，透传具体原因
-        setRedeemMsg(res.message)
+        // 余额已提前校验，此处 false 对 ai1Scan 而言基本是「已达每日兑换上限」，
+        // 给精准提示而非笼统报错；其余档位透传具体原因。
+        setRedeemMsg(kind === 'ai1Scan' ? '今日兑换次数已用完（每日最多 2 次），明天再试' : res.message)
       }
     } catch {
       setRedeemMsg('兑换失败，请稍后重试')
@@ -307,7 +308,7 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
               </button>
             </div>
             <div className="list-line">
-              <span>AI 拍照 1 次</span>
+              <span>AI 拍照识别 1 次（每日最多兑 2 次）</span>
               <button
                 className="btn-text"
                 style={{ color: 'var(--honey-dark)' }}
