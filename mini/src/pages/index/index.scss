@@ -1,0 +1,79 @@
+.index {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  padding: 40px;
+  box-sizing: border-box;
+
+  .title {
+    font-size: 40px;
+    font-weight: 600;
+    color: #1f2430;
+  }
+
+  .desc {
+    margin-top: 20px;
+    font-size: 28px;
+    color: #8b8b9e;
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 24px;
+    margin-top: 40px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .login-btn,
+  .checkin-btn,
+  .scan-btn {
+    width: 200px;
+    height: 80px;
+    line-height: 80px;
+    font-size: 30px;
+    color: #fff;
+    background: #ffb300;
+    border-radius: 40px;
+    border: none;
+  }
+
+  .checkin-btn {
+    background: #18a058;
+  }
+
+  .scan-btn {
+    background: #4a6ee0;
+  }
+
+  .rule-card {
+    width: 100%;
+    margin-top: 32px;
+    padding: 28px;
+    box-sizing: border-box;
+    background: #f7f8fa;
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+
+    .rule-title {
+      font-size: 30px;
+      font-weight: 600;
+      color: #1f2430;
+      margin-bottom: 16px;
+    }
+
+    .rule-line {
+      font-size: 26px;
+      color: #4a4f5e;
+      line-height: 1.8;
+    }
+
+    .rule-text {
+      font-size: 24px;
+      color: #6b7080;
+      line-height: 1.6;
+    }
+  }
+}
