@@ -1,9 +1,14 @@
 # D-Bee（自律蜜蜂）· 项目长期记忆（精简版，细节看当日日志与 docs/）
 
-## 进度快照（2026-10-18 深夜，V1.6.8 已发布）
+## 进度快照（2026-10-19 上午，V1.6.8 已发布）
 
 - **Web V1.6.8 已发布**（http://150.158.51.106/ ，主包 `index-B5oKeajs.js`，commit `e1833a3`）；
   Android debug APK V1.6.8 已打包（versionCode 9，归档 dist-release/D-Bee-debug-v1.6.8-20261018.apk）。
+- **当日新进展（10-19，免费拍照识别额度规则统一，尚未 commit/发布）**：用户拍板「每日 AI 拍照识别
+  = 3 次免费 + 最多 2 次积分兑换（50 积分/次）」。云端 `redeem_honey('ai1Scan')` 单日兑换上限 5→2
+  （已改云库 + 迁移 0025）；前端 `entitlement.ts` 新增 `AI_REDEEM_DAILY_LIMIT=2`，Dashboard/LogSheet/
+  PaywallSheet/InviteCenter 四处文案去歧义（修正「剩余当总额」「识别与问答共用」两处硬错误）。
+  已 typecheck 0 错 + quota-honey 自测全过，**待 commit / 待发布**。
 - **主线：PWA → 原生 App**（Capacitor 8.5.3）。阶段 0 解耦 ✅；Android 全过 ✅；
   iOS 待 Mac mini 首次构建（origin-proxy/health/iap 三个自研 Swift 插件 + @capacitor/camera 均未编译，
   Mac 侧第一件事：`npm install && npx cap sync ios` 重生成 CapApp-SPM 依赖再 Xcode 编译）。
@@ -21,15 +26,24 @@
 - **会员三档** free/pro/lifetime（¥18/¥128/¥328）；IAP 骨架就绪但真实支付未启用
   （verifyReceipt 未接，等 Apple 开发者账号），当前仅兑换码解锁。
 - 微信相关整体暂缓（营业执照办理中）。
-- **git 状态**：最新 commit `32705b1`（docs 记录），工作区**干净**（main）。已提交推送
-  `3717932` `feat: 华为/小米端运动健康与相机接入 + 兑换/识别计次修复`（25 文件，14M+11A，
-  push 一次重试即通），涵盖：华为/小米三端一致 + @dbee/health 插件（含运行时注册修复）、
-  @capacitor/camera 原生拍照（绕华为 WebView 忽略 `<input capture>`）、兑换 ref_id 唯一索引修复
-  （迁移 0024）+ 失败提示精确定位、识别计次口径与额度检查时机、品牌识别自测。
-- **下一步**：①Mac mini 首次构建 iOS（编译 origin-proxy/health/iap 三 Swift 插件 + 新加的
-  @capacitor/camera）+ 真机回归「IAP 拉商品→购买→核销」与「HealthKit 授权→读步数→计活动消耗」两链路；
-  ②华为/小米资质就绪后替换 dbee-health 插件方法体并真机验收（当前返回 reason=not_ready，前端已诚实引导）；
-  ③用户 Android 真机复测本轮 APK（华为/小米拍照 + 兑换额度）。
+- **git 状态**：最新 commit `5252f31`（docs 记录 V1.6.8 发布结果），工作区**有未提交改动**（main）：
+  额度规则统一（entitlement/photoGuard/Dashboard/InviteCenter/LogSheet/PaywallSheet/types 8 文件）
+  + 健康门控（Dashboard/health/*）+ 小程序预留分支（platform/capture/share/clipboard/payment/wechat/globals）
+  + 迁移 0025 + 阶段0/1（`mini/` Taro 工程、`packages/shared/` 共享包、entitlement/photoGuard 薄壳化、
+  types re-export、upsell 去重）——**均尚未 commit/发布**。历史已提交推送
+  `3717932` `feat: 华为/小米端运动健康与相机接入 + 兑换/识别计次修复`（25 文件）。
+- **多端架构（已拍板，阶段0/1完成）**：Taro 4（React）+ **双工程 + shared 共享包**，不重构 monorepo。
+  现有工程（src/）+ `mini/`（Taro 4.3.0，微信/支付宝/抖音三端已编译通过）+ `packages/shared/`（@dbee/shared
+  纯逻辑真相源，tsc 产 dist/）。阶段1已完成：`entitlement.ts`/`photoGuard.ts` 薄壳 re-export 指向 shared，
+  `types.ts` 的 UserPlan/Entitlement、`upsell.ts` 的 FREE_DAILY_AI 均已收敛到 shared 单一真相源；主工程 typecheck
+  0 错 + Vite build 成功。`file:` 依赖路径 = `file:packages/shared`（勿写 `../`，会解析错目录）。
+- **下一步**：①提交并发布（额度规则统一 + 健康门控 + 小程序预留 + 多端阶段0/1/2/3 一并或分批 commit）；
+  ②Mac mini 首次构建 iOS（编译 origin-proxy/health/iap 三 Swift 插件 + 新加的 @capacitor/camera）
+  + 真机回归「IAP 拉商品→购买→核销」与「HealthKit 授权→读步数→计活动消耗」两链路；
+  ③华为/小米资质就绪后替换 dbee-health 插件方法体并真机验收（当前返回 reason=not_ready，前端已诚实引导）；
+  ④用户 Android 真机复测本轮 APK（华为/小米拍照 + 兑换额度）；
+  ⑤小程序真机联调（微信开发者工具 / 支付宝 / 抖音验证登录与拍照识别链路），
+  后续再补健康步数（微信 getWeRunData 需资质）与支付（三套）。
 - **待拍板决策**：无新阻塞项；长期待办 = Apple 开发者账号（启用真实 IAP）、营业执照（重启微信）、
   华为应用市场上架（Health Kit 前置硬门槛，可并入软著/备案推进）。
 

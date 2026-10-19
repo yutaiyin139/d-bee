@@ -46,6 +46,16 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
 - 观察：profiles 16 号缺失（id 跳号）；meal_entries id 39-42 缺失（有删除发生）；
   新增用户 id=17/18（邀请码 4ZCNJB 邀请链继续扩张，已 3 人经此码注册）。
 
+### 2026-10-19 08:56（第 7 次）
+- 结果：**失败**，未产出 `db/backups/2026-10-19.json`（未写空备份、未覆盖 2026-10-18）。
+- 原因：`mcp__genie-baas__workbuddy_cloudservice_db_exec_sql` 本次会话未注册——
+  ToolSearch 精确名/关键词均无此工具，直接 DeferExecuteTool 报 not found in deferred tools index；
+  `workbuddy_cloud_service(inspect)` → applications 为空（本会话未绑定应用）；
+  `list_installed_plugins` → No connectors installed（无可重连连接器）。
+- 已落 `db/backups/FAILED-2026-10-19.md`（时间、SQL 原文、错误串、已排除替代路径）。
+- 清理：无过期备份（cutoff 2026-09-19）。
+- 结论：备份链最后一个有效快照为 2026-10-18；需恢复 genie-baas 通道后手动重跑补齐。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。
@@ -58,3 +68,6 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
    FAILED-*.md 不参与清理（不受保留策略影响）。
 5. 表顺序在源 JSON 中为 ai_usage/entitlements/exercise_logs/meal_entries/profiles/water_logs/weight_logs
    （Postgres json_build_object 不保证键序），落盘时重排为 schema 顺序，不影响校验。
+6. **唯一的硬依赖是 genie-baas 只读工具在会话中已注册**。它不在索引里时无第二条合规通道：
+   本地无云端凭据（anon 表权限已撤）、服务器无业务库（dbee 只是 10-13 的镜像）、
+   SSH 无 sshpass/私钥。此时必须走 FAILED 分支，**不要用服务器镜像顶替**（会造成日期与数据不符的假备份）。
