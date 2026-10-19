@@ -354,8 +354,6 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   const [dupHint, setDupHint] = useState<string | null>(null)
   // 覆盖确认：识别结果自动保存前，发现该餐次当天已有记录时弹确认
   const [overrideConfirm, setOverrideConfirm] = useState<{ open: boolean; count: number }>({ open: false, count: 0 })
-  // 自动保存成功的轻提示：记录刚插入的记录 id，用于「撤销」恢复草稿
-  const [savedHint, setSavedHint] = useState<{ ids: number[] } | null>(null)
 
   const [text, setText] = useState('')
   const [preview, setPreview] = useState<string | null>(null)
@@ -674,7 +672,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
 
   /** 手动保存：草稿未保存时走 settleDraft（统一覆盖/追加判断） */
   function handleSave() {
-    if (items.length === 0 || savedHint) return
+    if (items.length === 0) return
     void settleDraft(items)
   }
 
@@ -682,15 +680,13 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   const settlingRef = useRef(false)
 
   /**
-   * 把草稿落库到当前餐次：
-   *  - 该餐当天无记录 → 自动保存 + 轻提示（可撤销）；若 closeAfterSave 则直接关闭刷新
+   * 把草稿落库到当前餐次（核心：识别成功即自动保存，消除「漏点保存导致额度白扣」）：
+   *  - 该餐当天无记录 → 直接自动保存并关闭刷新
    *  - 该餐已有记录 → 弹「覆盖 / 追加 / 取消」
    */
-  async function settleDraft(list: DraftItem[], opts?: { closeAfterSave?: boolean }) {
+  async function settleDraft(list: DraftItem[]) {
     if (settlingRef.current) return
-    const closeAfterSave = opts?.closeAfterSave ?? false
     settlingRef.current = true
-    setSavedHint(null)
     setOverrideConfirm({ open: false, count: 0 })
     try {
       let sameMealCount = 0
@@ -704,12 +700,8 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
         setSaving(true)
         setError('')
         try {
-          const inserted = await insertMeals(buildRows(list, meal))
-          if (closeAfterSave) {
-            onSaved()
-          } else {
-            setSavedHint({ ids: inserted.map((m) => m.id).filter((id): id is number => id != null) })
-          }
+          await insertMeals(buildRows(list, meal))
+          onSaved()
         } catch (e) {
           setError(errText(e, '保存失败，请重试'))
         } finally {
@@ -727,22 +719,6 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   function autoSaveRecognized(drafts: DraftItem[]) {
     setItems(drafts)
     void settleDraft(drafts)
-  }
-
-  /** 撤销自动保存：删除刚插入的记录，恢复草稿供重新编辑 */
-  async function undoAutoSave() {
-    if (!savedHint) return
-    const ids = savedHint.ids
-    setSavedHint(null)
-    setSaving(true)
-    setError('')
-    try {
-      await Promise.all(ids.map((id) => deleteMeal(id)))
-    } catch (e) {
-      setError(errText(e, '撤销失败，请重试'))
-    } finally {
-      setSaving(false)
-    }
   }
 
   /** 覆盖：删除当天该餐次旧记录，再保存新草稿 */
@@ -783,13 +759,13 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
     setOverrideConfirm({ open: false, count: 0 })
   }
 
-  /** 关闭兜底：有未保存草稿时，无记录自动保存并关闭、有记录弹确认；否则直接关闭 */
+  /** 关闭兜底：有未保存草稿时，无记录自动保存、有记录弹确认；否则直接关闭 */
   function handleClose() {
-    if (items.length === 0 || savedHint || overrideConfirm.open || settlingRef.current) {
+    if (items.length === 0 || overrideConfirm.open || settlingRef.current) {
       onClose()
       return
     }
-    void settleDraft(items, { closeAfterSave: true })
+    void settleDraft(items)
   }
 
   /** 把当前待记录项存成自定义食谱模板 */
@@ -886,20 +862,6 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
                 </button>
                 <button className="btn-text" style={{ fontSize: 13 }} disabled={saving} onClick={cancelOverride}>
                   取消
-                </button>
-              </span>
-            </div>
-          )}
-
-          {savedHint && (
-            <div className="notice ok" style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
-              <span style={{ flex: 1 }}>已保存到{MEAL_LABELS[meal]}，可继续调整或撤销。</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                <button className="btn-text" style={{ fontSize: 13 }} disabled={saving} onClick={() => void undoAutoSave()}>
-                  撤销
-                </button>
-                <button className="btn-text" style={{ fontSize: 13 }} onClick={onSaved}>
-                  完成
                 </button>
               </span>
             </div>
@@ -1226,8 +1188,8 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
                   )}
                 </span>
               </div>
-              <button className="btn" style={{ marginBottom: 12 }} disabled={saving || !!savedHint} onClick={handleSave}>
-                {saving ? <span className="spinner" /> : savedHint ? `已保存到${MEAL_LABELS[meal]}` : `保存到${MEAL_LABELS[meal]}`}
+              <button className="btn" style={{ marginBottom: 12 }} disabled={saving} onClick={handleSave}>
+                {saving ? <span className="spinner" /> : `保存到${MEAL_LABELS[meal]}`}
               </button>
               <MealCheckup items={items} />
               <div className="card card-tight">
