@@ -108,21 +108,13 @@ export interface ExerciseLog {
 
 /**
  * 会员三档：
- *  - free      免费（每日限次 AI）
+ *  - free      免费（每日 3 次拍照识别 + 积分兑换每日最多 2 次）
  *  - pro       订阅制（pro_until 为过期时间，到期自动回落到 free）
  *  - lifetime  终身买断（pro_until 恒为 null，永久有效）
  */
-export type UserPlan = 'free' | 'pro' | 'lifetime'
-
-export interface Entitlement {
-  id?: number
-  plan: UserPlan
-  pro_until: string | null
-  redeemed_code: string | null
-  /** 支付来源：redeem(兑换码) / wechat / alipay / apple / google；未接真实支付前为空或 redeem */
-  source?: string | null
-  updated_at?: string
-}
+// 会员权益类型（UserPlan / Entitlement）统一由 @dbee/shared 提供单一真相源，
+// 这里 re-export 以兼容既有 `import { ... } from '../types'` 调用点。
+export type { UserPlan, Entitlement } from '@dbee/shared'
 
 /** 自定义食谱里的单条食物（营养按「实际摄入量」存，非每 100g） */
 export interface RecipeItem {

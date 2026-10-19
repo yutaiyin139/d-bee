@@ -1,137 +1,16 @@
-import type { Entitlement, UserPlan } from '../types'
-
 /**
- * 会员与配额的核心规则（纯函数，便于测试与复用）。
+ * 会员与配额的核心规则（薄壳转发层）。
  *
- * 三档：
- *  - free      免费：每日 3 次 AI 拍照识别，报告看近 7 天，AI 周解读每周 1 次，不能导出。
- *  - pro       订阅：pro_until 过期时间，到期自动回落 free。
- *  - lifetime  终身买断：plan='lifetime' 且 pro_until 恒 null，永久解锁。
+ * 所有常量、纯函数、类型已迁至 `@dbee/shared`（多端单一真相源）：
+ *  - 常量：FREE_DAILY_AI / AI_REDEEM_DAILY_LIMIT / FREE_REPORT_DAYS / PRO_REPORT_DAYS
+ *          / STREAK_BONUS_* / NEWBIE_BONUS_AMOUNT / BONUS_TTL_DAYS / SCAN_FEATURE
+ *          / PRICE_* / PRODUCT_IDS / HONEY_PRICE
+ *  - 函数：isPro / isLifetime / effectivePlan / mondayOf / normalizeCode
+ *          / proUntilFromMonths / quotaExhaustedReason / photoLadderHint
+ *          / isDuplicatePhoto / summarizePhoto
+ *  - 类型：UserPlan / Entitlement / Product / ProductId / HoneyRewardKind / LadderHint ...
  *
- * 计数口径（重要）：
- *  - **只有「AI 拍照识别」消耗次数**（成功才扣、失败不扣）；手动录入、体重/饮水打卡、
- *    文字解析、包装识别均不计次。
- *  - **条码扫码识别不限次数永久免费**（走 Open Food Facts，不消耗 AI 额度）。
- *  - **AI 文字问答（问问小蜜）不限次数**，但免费用户带限流保护（1 分钟最多 3 次防刷）。
- *  - **长文本 AI 复盘（报告「本期解读」）与个性化完整膳食计划为会员专属**。
- *  - 基础额度自然日 0 点重置，不累计、不结转到次日。
- *  - 识别失败（模糊/非食物/解析报错）不消耗额度（由调用方 refund 实现）。
- *  - 奖励额度（连续打卡 7 天 +2、完善资料 +3）带 7 天有效期，见 quota_bonus 表。
- *
- * 权益状态存在云端 entitlements 表（一人一行），换设备也生效。
- * 真实支付（微信 / 支付宝 / App 内购）待企业资质就绪后接入；在此之前用兑换码解锁。
+ * 本文件只做 re-export，保证现有 `import { ... } from '../lib/entitlement'`
+ * 的调用点零改动。若需修改规则，请改 `packages/shared/src/`，不要在这里改。
  */
-
-export const FREE_DAILY_AI = 3
-export const FREE_REPORT_DAYS = 7
-export const PRO_REPORT_DAYS = 30
-
-/** 奖励额度规则 */
-export const STREAK_BONUS_DAYS = 7 // 连续打卡 N 天触发奖励
-export const STREAK_BONUS_AMOUNT = 2 // 连续打卡奖励次数
-export const NEWBIE_BONUS_AMOUNT = 3 // 完善资料新手奖励次数
-export const BONUS_TTL_DAYS = 7 // 奖励有效期（防囤积）
-
-export const SCAN_FEATURE = 'scan'
-
-/* ── 定价（单位：元；最终以支付平台商品为准）────────────────────────── */
-export const PRICE_PRO_MONTHLY = 18
-export const PRICE_PRO_YEARLY = 128
-export const PRICE_LIFETIME = 328
-
-/** 订阅档位（App 内购 / 微信 / 支付宝商品 ID 约定） */
-export const PRODUCT_IDS = {
-  proMonthly: 'dbee_pro_monthly',
-  proYearly: 'dbee_pro_yearly',
-  lifetime: 'dbee_lifetime',
-} as const
-
-export type ProductId = keyof typeof PRODUCT_IDS
-
-export interface Product {
-  id: ProductId
-  /** 归属档位：订阅商品解锁 pro，买断商品解锁 lifetime */
-  plan: 'pro' | 'lifetime'
-  name: string
-  price: number
-  /** pro 商品的订阅时长（月），lifetime 忽略 */
-  months?: number
-  /** 是否最推荐（UI 高亮） */
-  highlight?: boolean
-}
-
-/** 付费墙展示的商品列表（顺序即展示顺序） */
-export const PRODUCTS: Product[] = [
-  { id: 'proMonthly', plan: 'pro', name: '月订阅', price: PRICE_PRO_MONTHLY, months: 1 },
-  { id: 'proYearly', plan: 'pro', name: '年订阅', price: PRICE_PRO_YEARLY, months: 12, highlight: true },
-  { id: 'lifetime', plan: 'lifetime', name: '终身买断', price: PRICE_LIFETIME },
-]
-
-/* ── 兑换码（已服务端化：见 migrations/0012 与 api.ts 的 redeemByCode）────
- * 兑换码明文不再存在于前端，核销走 redeem_by_code RPC（SECURITY DEFINER）。
- * 服务端库存表 redeem_codes 一码一次，翻包无法拿到终身会员。
- * 接入真实支付（微信/支付宝/App 内购）后此过渡通道随之下线。 */
-
-/** 是否为「已解锁会员」（pro 未过期 或 lifetime） */
-export function isPro(ent: Entitlement | null | undefined): boolean {
-  if (!ent) return false
-  if (ent.plan === 'lifetime') return true
-  if (ent.plan === 'pro') {
-    // 订阅档必须带有效 pro_until 才判为会员；缺失按「已过期」处理。
-    // 永久解锁只走 plan='lifetime'（其 pro_until 恒为 null，见 redeem_by_code 与 0015）。
-    // 若这里对 null pro_until 放行，一条字段缺失的 pro 记录就会变成永久会员（收入漏洞）。
-    if (!ent.pro_until) return false
-    return new Date(ent.pro_until).getTime() > Date.now()
-  }
-  return false
-}
-
-/** 判定当前是否终身会员（用于 UI 区分「永久」标识） */
-export function isLifetime(ent: Entitlement | null | undefined): boolean {
-  return !!ent && ent.plan === 'lifetime'
-}
-
-/** 当前会员档位（含过期回落后的归一化结果） */
-export function effectivePlan(ent: Entitlement | null | undefined): UserPlan {
-  if (!ent) return 'free'
-  if (ent.plan === 'lifetime') return 'lifetime'
-  if (ent.plan === 'pro') return isPro(ent) ? 'pro' : 'free'
-  return 'free'
-}
-
-/** 本周一（用于周配额：usage_date 存周一日期） */
-export function mondayOf(dateKey: string): string {
-  const [y, m, d] = dateKey.split('-').map(Number)
-  const dt = new Date(y, m - 1, d)
-  const shift = (dt.getDay() + 6) % 7
-  dt.setDate(dt.getDate() - shift)
-  const mm = String(dt.getMonth() + 1).padStart(2, '0')
-  const dd = String(dt.getDate()).padStart(2, '0')
-  return `${dt.getFullYear()}-${mm}-${dd}`
-}
-
-export function normalizeCode(raw: string): string {
-  return raw.trim().toUpperCase().replace(/\s+/g, '')
-}
-
-/** 由「订阅月数」算出 pro_until 过期时间（ISO 字符串） */
-export function proUntilFromMonths(months: number): string {
-  const d = new Date()
-  d.setMonth(d.getMonth() + months)
-  return d.toISOString()
-}
-
-/**
- * 免费拍照额度用尽时的统一提示。
- * 必须同时讲清：
- * 1）什么时候恢复（按本地自然日计，次日 0 点自动重置）
- * 2）额度是怎么算的（只有拍照识别消耗，其他都不扣）
- * 3）哪些功能不受影响（手动记录、文字解析、条码、体重饮水运动都不扣）
- */
-export function quotaExhaustedReason(): string {
-  return (
-    `今日 ${FREE_DAILY_AI} 次免费拍照识别已用完，明天 0 点自动重置。` +
-    `升级 Pro 可无限次拍照识别。` +
-    `扫条码、文字描述、手动录入、记录饮水体重运动、AI 问答都免费不限次数。`
-  )
-}
+export * from '@dbee/shared'

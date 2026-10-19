@@ -23,6 +23,7 @@
     "@dbee/health": "file:native-plugins/dbee-health",
     "@dbee/iap": "file:native-plugins/dbee-iap",
     "@dbee/origin-proxy": "file:native-plugins/dbee-origin-proxy",
+    "@dbee/shared": "file:packages/shared",
     "@tencent-ai/workbuddy-cloud-sdk": "dev",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
