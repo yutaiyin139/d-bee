@@ -20,7 +20,7 @@
   }
 
   .btn {
-    margin-top: 64px;
+    margin-top: 48px;
     width: 100%;
     height: 88px;
     line-height: 88px;
@@ -29,6 +29,60 @@
     background: #ffb300;
     border-radius: 44px;
     border: none;
+  }
+
+  .divider {
+    width: 100%;
+    margin-top: 48px;
+    display: flex;
+    align-items: center;
+
+    .divider-text {
+      font-size: 26px;
+      color: #b0b3bd;
+      margin: 0 auto;
+    }
+  }
+
+  .form {
+    width: 100%;
+    margin-top: 40px;
+    display: flex;
+    flex-direction: column;
+
+    .input {
+      width: 100%;
+      height: 88px;
+      line-height: 88px;
+      padding: 0 28px;
+      box-sizing: border-box;
+      font-size: 30px;
+      color: #1f2430;
+      background: #f7f8fa;
+      border-radius: 16px;
+    }
+
+    .code-row {
+      margin-top: 24px;
+      display: flex;
+      align-items: center;
+
+      .code-input {
+        flex: 1;
+      }
+
+      .send-btn {
+        margin-left: 20px;
+        width: 220px;
+        height: 88px;
+        line-height: 88px;
+        font-size: 26px;
+        color: #ffb300;
+        background: #fff7e6;
+        border-radius: 16px;
+        border: 1px solid #ffd98a;
+      }
+    }
   }
 
   .btn-ghost {

@@ -1,14 +1,10 @@
 /**
- * 小程序三端登录封装（code 换 openid，逻辑一致，仅拿 code 的 API 不同）。
+ * 小程序三端登录封装。
  *
- * 三端拿 code：
- *  - 微信：wx.login() → code
- *  - 支付宝：my.getAuthCode() → authCode
- *  - 抖音：tt.login() → code
- *
- * 换取会话统一走云端的 signInWithWechat（SDK 内部 code→openid→Genie session）。
- * 注：支付宝/抖音的 code 换取在云端侧可能需对应 provider，当前先复用 wechat 通道
- * 做「拿 code → 换会话」的最小闭环，支付宝/抖音的专属 provider 待云端侧确认后替换。
+ * 登录方式分两路（云端 SDK 0.1.3 的 auth 端点决定）：
+ *  - 微信：wx.login() → code → signInWithWechat → /v1/login-wechat（唯一小程序登录端点）
+ *  - 支付宝 / 抖音：云端**没有** login-alipay / login-douyin 端点，改用
+ *    手机号验证码登录（sendOtp + verifyOtp → /v1/verification + /v1/signin），三端通用。
  */
 import Taro from '@tarojs/taro'
 import { cloud } from './cloud'
@@ -20,6 +16,19 @@ export interface MiniSession {
 }
 
 let cachedSession: MiniSession | null = null
+
+/** 当前端是否有「code 换 openid」的原生登录通道（仅微信有） */
+export function canNativeSignIn(): boolean {
+  return process.env.TARO_ENV === 'weapp'
+}
+
+/** 当前平台名（用于 UI 提示） */
+export function currentPlatformName(): string {
+  if (process.env.TARO_ENV === 'weapp') return '微信'
+  if (process.env.TARO_ENV === 'alipay') return '支付宝'
+  if (process.env.TARO_ENV === 'tt') return '抖音'
+  return '当前平台'
+}
 
 /** 拿微信小程序 appid（试用/正式两套独立，必须取当前账号的 appid） */
 function getWechatAppId(): string {
@@ -61,8 +70,16 @@ async function getLoginCode(): Promise<{ code: string; appid: string }> {
   throw new Error('当前环境不是小程序，无法登录')
 }
 
+/** 从 CloudSession 提取 uid 并缓存 */
+function cacheSession(data: { user?: { id?: string } } | null): MiniSession {
+  const uid = data?.user?.id
+  if (!uid) throw new Error('登录失败：未返回用户标识')
+  cachedSession = { uid, openid: uid.replace(/^wx:/, '') }
+  return cachedSession
+}
+
 /**
- * 建立云端登录会话。
+ * 微信原生登录（code 换 openid）。仅微信端可用。
  * @returns 会话 uid（openid 拼在 uid 里，形如 wx:xxxx）
  */
 export async function signIn(): Promise<MiniSession> {
@@ -73,13 +90,35 @@ export async function signIn(): Promise<MiniSession> {
 
   const { data, error } = await cloud.auth.signInWithWechat(code, appid)
   if (error) throw new Error(`登录失败：${error.message ?? '未知错误'}`)
+  return cacheSession(data)
+}
 
-  // CloudResult：成功时 data 为 CloudSession，失败时 error 非空
-  const uid = data?.user?.id
-  if (!uid) throw new Error('登录失败：未返回用户标识')
+/**
+ * 发送手机号验证码。
+ * @returns verificationId（验码时需回传）与 isExistingUser（决定登录/注册）
+ */
+export async function sendPhoneOtp(phone: string): Promise<{ verificationId: string; isExistingUser: boolean }> {
+  const { data, error } = await cloud.auth.sendOtp({ phone })
+  if (error) throw new Error(`发送验证码失败：${error.message ?? '未知错误'}`)
+  if (!data?.verificationId) throw new Error('发送验证码失败：未返回凭证')
+  return { verificationId: data.verificationId, isExistingUser: data.isExistingUser }
+}
 
-  cachedSession = { uid, openid: uid.replace(/^wx:/, '') }
-  return cachedSession
+/**
+ * 手机号验证码登录（支付宝/抖音端的主登录方式，微信端亦可作兜底）。
+ * 新用户自动注册（isExistingUser=false 时走注册后登录）。
+ */
+export async function signInWithPhone(phone: string, token: string, verificationId: string, isExistingUser: boolean): Promise<MiniSession> {
+  if (cachedSession) return cachedSession
+
+  const { data, error } = await cloud.auth.verifyOtp({
+    verificationId,
+    token,
+    phone,
+    isExistingUser,
+  })
+  if (error) throw new Error(`登录失败：${error.message ?? '未知错误'}`)
+  return cacheSession(data)
 }
 
 /** 是否已登录（不发起请求，仅看本地会话） */
