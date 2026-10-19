@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { deleteRecipe, getHoneyBalance, insertMeals, listRecentMeals, listRecipes, saveRecipe } from '../lib/api'
+import { deleteMeal, deleteRecipe, getHoneyBalance, insertMeals, listMealsByDate, listRecentMeals, listRecipes, saveRecipe } from '../lib/api'
 import { compressImage, identifyPackagedFood, parseFoodFromText, recognizeFoodFromImage } from '../lib/ai'
 import { lookupBarcode } from '../lib/off'
 import {
@@ -352,6 +352,10 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   const lastPhotoSummaryRef = useRef<PhotoSummary | null>(null)
   // 反复拍照提示
   const [dupHint, setDupHint] = useState<string | null>(null)
+  // 覆盖确认：识别结果自动保存前，发现该餐次当天已有记录时弹确认
+  const [overrideConfirm, setOverrideConfirm] = useState<{ open: boolean; count: number }>({ open: false, count: 0 })
+  // 自动保存成功的轻提示：记录刚插入的记录 id，用于「撤销」恢复草稿
+  const [savedHint, setSavedHint] = useState<{ ids: number[] } | null>(null)
 
   const [text, setText] = useState('')
   const [preview, setPreview] = useState<string | null>(null)
@@ -525,9 +529,9 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
       }
 
       lastPhotoSummaryRef.current = summary
-      setItems((prev) => [...prev, ...drafts])
-      // 当日成功拍照次数由云端 claim 承载；重读一次同步 state（识别成功不 release，claim 计数已 +1）
+      // 识别成功 → 自动保存到当前餐次（若该餐次已有记录则弹覆盖确认），解决「保存按钮靠下漏点」问题
       void getTodayPhotoCount().then((n) => setTodayPhotoCount(n))
+      void autoSaveRecognized(drafts)
 
       // 转化钩子：免费用户本次拍照后用尽额度 → 轻提示升级（克制：每周 1 次 + 可永久关闭）
       void (async () => {
@@ -643,39 +647,149 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
     setItems((prev) => prev.filter((it) => it.key !== key))
   }
 
-  async function handleSave() {
-    if (items.length === 0) return
+  /** 把待记录项转成落库行（meal 用 targetMeal，便于覆盖/自动保存复用） */
+  function buildRows(list: DraftItem[], targetMeal: MealType): Omit<MealEntry, 'id'>[] {
+    return list.map((it) => {
+      const v = calc(it)
+      return {
+        log_date: logDate,
+        meal_type: targetMeal,
+        food_name: it.food_name,
+        quantity_text: portionText(it),
+        grams: it.grams,
+        calories: v.kcal,
+        protein_g: v.p,
+        carb_g: v.c,
+        fat_g: v.f,
+        sodium_mg: v.na || null,
+        fiber_g: v.fb || null,
+        added_sugar_g: v.as || null,
+        source: it.source,
+        image_url: null,
+        ai_note: it.note ?? null,
+        health_score: it.health_score ?? null,
+      }
+    })
+  }
+
+  /** 手动保存：草稿未保存时走 settleDraft（统一覆盖/追加判断） */
+  function handleSave() {
+    if (items.length === 0 || savedHint) return
+    void settleDraft(items)
+  }
+
+  // 防重入：settleDraft 异步查库 + 落库，避免识别自动保存与关闭兜底并发触发两次
+  const settlingRef = useRef(false)
+
+  /**
+   * 把草稿落库到当前餐次：
+   *  - 该餐当天无记录 → 自动保存 + 轻提示（可撤销）；若 closeAfterSave 则直接关闭刷新
+   *  - 该餐已有记录 → 弹「覆盖 / 追加 / 取消」
+   */
+  async function settleDraft(list: DraftItem[], opts?: { closeAfterSave?: boolean }) {
+    if (settlingRef.current) return
+    const closeAfterSave = opts?.closeAfterSave ?? false
+    settlingRef.current = true
+    setSavedHint(null)
+    setOverrideConfirm({ open: false, count: 0 })
+    try {
+      let sameMealCount = 0
+      try {
+        const existing = await listMealsByDate(logDate)
+        sameMealCount = existing.filter((m) => m.meal_type === meal).length
+      } catch {
+        // 查不到按无记录处理，直接自动保存
+      }
+      if (sameMealCount === 0) {
+        setSaving(true)
+        setError('')
+        try {
+          const inserted = await insertMeals(buildRows(list, meal))
+          if (closeAfterSave) {
+            onSaved()
+          } else {
+            setSavedHint({ ids: inserted.map((m) => m.id).filter((id): id is number => id != null) })
+          }
+        } catch (e) {
+          setError(errText(e, '保存失败，请重试'))
+        } finally {
+          setSaving(false)
+        }
+        return
+      }
+      setOverrideConfirm({ open: true, count: sameMealCount })
+    } finally {
+      settlingRef.current = false
+    }
+  }
+
+  /** 识别成功后：结果进草稿区，自动走 settleDraft */
+  function autoSaveRecognized(drafts: DraftItem[]) {
+    setItems(drafts)
+    void settleDraft(drafts)
+  }
+
+  /** 撤销自动保存：删除刚插入的记录，恢复草稿供重新编辑 */
+  async function undoAutoSave() {
+    if (!savedHint) return
+    const ids = savedHint.ids
+    setSavedHint(null)
     setSaving(true)
     setError('')
     try {
-      const rows: Omit<MealEntry, 'id'>[] = items.map((it) => {
-        const v = calc(it)
-        return {
-          log_date: logDate,
-          meal_type: meal,
-          food_name: it.food_name,
-          quantity_text: portionText(it),
-          grams: it.grams,
-          calories: v.kcal,
-          protein_g: v.p,
-          carb_g: v.c,
-          fat_g: v.f,
-          sodium_mg: v.na || null,
-          fiber_g: v.fb || null,
-          added_sugar_g: v.as || null,
-          source: it.source,
-          image_url: null,
-          ai_note: it.note ?? null,
-          health_score: it.health_score ?? null,
-        }
-      })
-      await insertMeals(rows)
+      await Promise.all(ids.map((id) => deleteMeal(id)))
+    } catch (e) {
+      setError(errText(e, '撤销失败，请重试'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  /** 覆盖：删除当天该餐次旧记录，再保存新草稿 */
+  async function confirmOverride() {
+    setOverrideConfirm({ open: false, count: 0 })
+    setSaving(true)
+    setError('')
+    try {
+      const existing = await listMealsByDate(logDate)
+      const sameMeal = existing.filter((m) => m.meal_type === meal)
+      if (sameMeal.length > 0) await Promise.all(sameMeal.filter((m) => m.id != null).map((m) => deleteMeal(m.id!)))
+      await insertMeals(buildRows(items, meal))
+      onSaved()
+    } catch (e) {
+      setError(errText(e, '覆盖保存失败，请重试'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  /** 追加：直接保存新草稿，保留该餐次已有记录 */
+  async function confirmAppend() {
+    setOverrideConfirm({ open: false, count: 0 })
+    setSaving(true)
+    setError('')
+    try {
+      await insertMeals(buildRows(items, meal))
       onSaved()
     } catch (e) {
       setError(errText(e, '保存失败，请重试'))
     } finally {
       setSaving(false)
     }
+  }
+
+  /** 取消覆盖/追加：保留草稿，用户可手动编辑后点保存 */
+  function cancelOverride() {
+    setOverrideConfirm({ open: false, count: 0 })
+  }
+
+  /** 关闭兜底：有未保存草稿时，无记录自动保存并关闭、有记录弹确认；否则直接关闭 */
+  function handleClose() {
+    if (items.length === 0 || savedHint || overrideConfirm.open || settlingRef.current) {
+      onClose()
+      return
+    }
+    void settleDraft(items, { closeAfterSave: true })
   }
 
   /** 把当前待记录项存成自定义食谱模板 */
@@ -723,7 +837,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   }
 
   return (
-    <div className="sheet-mask" onClick={onClose} role="presentation">
+    <div className="sheet-mask" onClick={handleClose} role="presentation">
       <div className="sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="记录饮食">
         <div className="sheet-head">
           <h2>记录饮食</h2>
@@ -731,7 +845,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
             {mode !== 'manual' && aiRemaining !== null && (
               <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>今日免费识别还剩 {aiRemaining} 次</span>
             )}
-            <button className="sheet-close" onClick={onClose} aria-label="关闭">×</button>
+            <button className="sheet-close" onClick={handleClose} aria-label="关闭">×</button>
           </div>
         </div>
 
@@ -755,6 +869,39 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
               <button className="btn-text" style={{ fontSize: 13, flexShrink: 0 }} onClick={() => setDupHint(null)}>
                 知道了
               </button>
+            </div>
+          )}
+
+          {overrideConfirm.open && (
+            <div className="notice warn" style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+              <span style={{ flex: 1 }}>
+                {MEAL_LABELS[meal]}今天已记录 {overrideConfirm.count} 项。本次识别结果要「覆盖」还是「追加」到这一餐？
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <button className="btn-text" style={{ fontSize: 13 }} disabled={saving} onClick={() => void confirmOverride()}>
+                  {saving ? '覆盖中…' : '覆盖'}
+                </button>
+                <button className="btn-text" style={{ fontSize: 13 }} disabled={saving} onClick={() => void confirmAppend()}>
+                  追加
+                </button>
+                <button className="btn-text" style={{ fontSize: 13 }} disabled={saving} onClick={cancelOverride}>
+                  取消
+                </button>
+              </span>
+            </div>
+          )}
+
+          {savedHint && (
+            <div className="notice ok" style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+              <span style={{ flex: 1 }}>已保存到{MEAL_LABELS[meal]}，可继续调整或撤销。</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <button className="btn-text" style={{ fontSize: 13 }} disabled={saving} onClick={() => void undoAutoSave()}>
+                  撤销
+                </button>
+                <button className="btn-text" style={{ fontSize: 13 }} onClick={onSaved}>
+                  完成
+                </button>
+              </span>
             </div>
           )}
 
@@ -1079,6 +1226,9 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
                   )}
                 </span>
               </div>
+              <button className="btn" style={{ marginBottom: 12 }} disabled={saving || !!savedHint} onClick={handleSave}>
+                {saving ? <span className="spinner" /> : savedHint ? `已保存到${MEAL_LABELS[meal]}` : `保存到${MEAL_LABELS[meal]}`}
+              </button>
               <MealCheckup items={items} />
               <div className="card card-tight">
                 {items.map((it) => {
@@ -1159,10 +1309,6 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
                   </div>
                 </div>
               </div>
-
-              <button className="btn" disabled={saving} onClick={handleSave}>
-                {saving ? <span className="spinner" /> : `保存到${MEAL_LABELS[meal]}`}
-              </button>
             </>
           )}
 

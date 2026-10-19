@@ -996,6 +996,11 @@ select {
   color: #6b4a08;
 }
 
+.notice.warn {
+  background: #fdf0e0;
+  color: #8a5a16;
+}
+
 .empty-state {
   text-align: center;
   padding: 40px 20px;
