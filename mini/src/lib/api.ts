@@ -41,6 +41,7 @@ export interface Profile {
   step_goal?: number | null
   invited_by?: string | null
   invite_code?: string | null
+  ai_consented?: boolean | null
 }
 
 export interface MealEntry {
@@ -202,7 +203,7 @@ const PROFILE_WRITABLE = [
   'nickname', 'gender', 'age', 'height_cm', 'start_weight_kg', 'current_weight_kg',
   'target_weight_kg', 'activity_level', 'goal', 'weekly_rate_kg',
   'daily_calorie_target', 'protein_target_g', 'carb_target_g', 'fat_target_g',
-  'barriers', 'plan_summary', 'onboarded', 'health_connected', 'health_connected_at', 'step_goal',
+  'barriers', 'plan_summary', 'onboarded', 'health_connected', 'health_connected_at', 'step_goal', 'ai_consented',
 ] as const
 
 export async function getProfile(): Promise<Profile | null> {

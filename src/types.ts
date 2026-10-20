@@ -39,6 +39,8 @@ export interface Profile {
   health_connected_at?: string | null
   /** 每日步数目标（运动卡片进度条；默认 6000，可在「我的」里设置） */
   step_goal?: number | null
+  /** 是否已同意 AI 处理个人数据（拍照识别 / AI 问答） */
+  ai_consented?: boolean | null
 }
 
 export interface MealEntry {

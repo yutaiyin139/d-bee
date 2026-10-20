@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { View, Text, Button, Input } from '@tarojs/components'
-import Taro, { useLoad } from '@tarojs/taro'
+import Taro, { useLoad, useShareAppMessage, useShareTimeline } from '@tarojs/taro'
 import {
   IconDrop, IconFire, IconFork, IconPea, IconPlus, IconRun, IconWater,
   IconChart, IconMe, IconToday,
@@ -12,7 +12,7 @@ import {
   listMealsByDate, listMealsBetween, listWaterByDate, listExerciseByDate,
   addWater, addExercise, deleteExercise, deleteMeal, updateMealGrams, undoLastWater,
   getProfile, grantHoney, refundCheckinHoney, refundCheckinWater, refundCheckinExercise,
-  settleInviteCheckin, unlockBadge, grantPhotoBonus,
+  settleInviteCheckin, unlockBadge, grantPhotoBonus, getMyInviteCode,
   type MealEntry, type WaterLog, type ExerciseLog, type Profile,
 } from '../../lib/api'
 import {
@@ -56,6 +56,7 @@ export default function Index() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [inviteCode, setInviteCode] = useState('')
 
   // 原位编辑与删除确认
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -127,6 +128,14 @@ export default function Index() {
     if (loggedIn) void load()
   }, [loggedIn, logDate])
 
+  // 登录后拉取邀请码，供分享卡片带参
+  useEffect(() => {
+    if (!loggedIn) return
+    void getMyInviteCode().then((code) => {
+      if (code) setInviteCode(code)
+    }).catch(() => {})
+  }, [loggedIn])
+
   const loggedDates = useMemo(
     () => Array.from(new Set(recentMeals.map((r) => r.log_date))),
     [recentMeals],
@@ -156,6 +165,23 @@ export default function Index() {
   const isToday = logDate === today
 
   const streak = useMemo(() => computeStreak(loggedDates, today), [loggedDates, today])
+
+  // 小程序右上角「转发」与「分享到朋友圈」基础适配（P0-4）
+  useShareAppMessage(() => {
+    const title = streak.current > 0
+      ? `我用 D-Bee 记录了今天的饮食，已连续打卡 ${streak.current} 天`
+      : '我在用「自律蜜蜂」记录饮食、自律打卡，一起变自律吧！'
+    const path = inviteCode ? `/pages/index/index?inviter=${encodeURIComponent(inviteCode)}` : '/pages/index/index'
+    return { title, path }
+  })
+
+  useShareTimeline(() => {
+    const title = streak.current > 0
+      ? `我用 D-Bee 记录了今天的饮食，已连续打卡 ${streak.current} 天`
+      : '我在用「自律蜜蜂」记录饮食、自律打卡，一起变自律吧！'
+    const query = inviteCode ? `inviter=${encodeURIComponent(inviteCode)}` : ''
+    return { title, query }
+  })
 
   /* ── 积分与奖励结算引擎（严格对齐主工程 Dashboard，四端逻辑一致）── */
 

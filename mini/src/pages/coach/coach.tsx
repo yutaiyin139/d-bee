@@ -9,6 +9,8 @@ import {
   type MealEntry, type WaterLog, type ExerciseLog, type Profile,
 } from '../../lib/api'
 import { todayKey, waterTargetMl } from '../../lib/nutrition'
+import { AiConsent } from '../../components/AiConsent'
+import { grantAiConsent, hasAiConsent } from '../../lib/aiConsent'
 import './coach.scss'
 
 interface Msg {
@@ -29,6 +31,9 @@ export default function Coach() {
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [aiConsentOpen, setAiConsentOpen] = useState(false)
+  const [pendingQuestion, setPendingQuestion] = useState('')
   const ctxRef = useRef<CoachContext>({
     goal: 'keep',
     targetKcal: 1800,
@@ -56,6 +61,7 @@ export default function Coach() {
         listWaterByDate(todayKey()).catch(() => [] as WaterLog[]),
         listExerciseByDate(todayKey()).catch(() => [] as ExerciseLog[]),
       ])
+      setProfile(p)
       const eatenKcal = meals.reduce((s, m) => s + (m.calories ?? 0), 0)
       const proteinEaten = meals.reduce((s, m) => s + (m.protein_g ?? 0), 0)
       const waterMl = water.reduce((s, w) => s + (w.amount_ml ?? 0), 0)
@@ -89,8 +95,7 @@ export default function Coach() {
     return 0
   }
 
-  async function send() {
-    const q = input.trim()
+  async function ask(q: string) {
     if (!q || busy) return
     const waitSec = rateLimitBlocked()
     if (waitSec > 0) {
@@ -110,6 +115,17 @@ export default function Coach() {
     } finally {
       setBusy(false)
     }
+  }
+
+  function send() {
+    const q = input.trim()
+    if (!q || busy) return
+    if (!hasAiConsent(profile)) {
+      setPendingQuestion(q)
+      setAiConsentOpen(true)
+      return
+    }
+    void ask(q)
   }
 
   return (
@@ -147,6 +163,26 @@ export default function Coach() {
           发送
         </Button>
       </View>
+
+      {aiConsentOpen && (
+        <AiConsent
+          kind='coach'
+          onAgree={async () => {
+            await grantAiConsent(profile)
+            setProfile((p) => (p ? { ...p, ai_consented: true } : p))
+            setAiConsentOpen(false)
+            if (pendingQuestion) {
+              const q = pendingQuestion
+              setPendingQuestion('')
+              void ask(q)
+            }
+          }}
+          onDecline={() => {
+            setPendingQuestion('')
+            setAiConsentOpen(false)
+          }}
+        />
+      )}
     </View>
   )
 }

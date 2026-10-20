@@ -52,6 +52,7 @@ CREATE TABLE public.profiles (
   barriers            text,
   plan_summary        text,
   onboarded           boolean     NOT NULL DEFAULT false,
+  ai_consented        boolean,                       -- 0020 显式同意 AI 处理个人数据
   created_at          timestamptz NOT NULL DEFAULT now(),
   updated_at          timestamptz NOT NULL DEFAULT now()
 );

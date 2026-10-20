@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { View, Text, Button } from '@tarojs/components'
-import Taro from '@tarojs/taro'
+import Taro, { useShareAppMessage, useShareTimeline } from '@tarojs/taro'
 import { BADGES } from '../../lib/badge'
 import { checkStatBadges } from '../../lib/badgeCheck'
 import {
@@ -104,6 +104,23 @@ export default function InvitePage() {
     for (const b of badges) s.add(b.badge_key)
     return s
   }, [badges])
+
+  // 小程序右上角「转发」与「分享到朋友圈」基础适配（P0-4）
+  useShareAppMessage(() => {
+    const title = code
+      ? `我在用「自律蜜蜂」自律打卡，邀请码 ${code}，注册双方得积分`
+      : '我在用「自律蜜蜂」记录饮食、自律打卡，一起变自律吧！'
+    const path = code ? `/pages/index/index?inviter=${encodeURIComponent(code)}` : '/pages/index/index'
+    return { title, path }
+  })
+
+  useShareTimeline(() => {
+    const title = code
+      ? `我在用「自律蜜蜂」自律打卡，邀请码 ${code}，注册双方得积分`
+      : '我在用「自律蜜蜂」记录饮食、自律打卡，一起变自律吧！'
+    const query = code ? `inviter=${encodeURIComponent(code)}` : ''
+    return { title, query }
+  })
 
   const copyCode = useCallback(async () => {
     if (!code) {

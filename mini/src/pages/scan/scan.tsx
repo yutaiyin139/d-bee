@@ -12,8 +12,12 @@ import {
   redeemHoney,
   getEntitlement,
   getTodayPhotoCount,
+  getProfile,
+  type Profile,
 } from '../../lib/api'
 import { photoLadderHint, quotaExhaustedReason, isPro, FREE_DAILY_AI, HONEY_PRICE, AI_REDEEM_DAILY_LIMIT } from '@dbee/shared'
+import { AiConsent } from '../../components/AiConsent'
+import { grantAiConsent, hasAiConsent } from '../../lib/aiConsent'
 import './scan.scss'
 
 export default function Scan() {
@@ -25,8 +29,11 @@ export default function Scan() {
   const [quota, setQuota] = useState(0)
   const [pro, setPro] = useState(false)
   const [todayPhotoCount, setTodayPhotoCount] = useState(0)
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [aiConsentOpen, setAiConsentOpen] = useState(false)
 
   useLoad(async () => {
+    try { setProfile(await getProfile()) } catch { /* ignore */ }
     await refreshStats()
   })
 
@@ -76,6 +83,10 @@ export default function Scan() {
   }
 
   async function onTakePhoto() {
+    if (!hasAiConsent(profile)) {
+      setAiConsentOpen(true)
+      return
+    }
     setMsg('')
     try {
       // 0. 额度预检：Pro 无限次；免费额度用完直接提示（对齐主工程 checkPhotoQuota）
@@ -191,6 +202,18 @@ export default function Scan() {
         <Text className='redeem-desc'>50 积分兑换 1 次 AI 拍照识别（每日最多 2 次）</Text>
         <Button className='btn-redeem' onClick={onRedeem}>兑换 1 次（50 积分）</Button>
       </View>
+
+      {aiConsentOpen && (
+        <AiConsent
+          kind='photo'
+          onAgree={async () => {
+            await grantAiConsent(profile)
+            setProfile((p) => (p ? { ...p, ai_consented: true } : p))
+            setAiConsentOpen(false)
+          }}
+          onDecline={() => setAiConsentOpen(false)}
+        />
+      )}
     </View>
   )
 }

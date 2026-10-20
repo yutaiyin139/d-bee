@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { askCoach, type CoachContext } from '../lib/ai'
 import { COACH_QUESTION_RULE } from '../lib/validate'
 import { errText } from '../lib/errmsg'
+import { getProfile } from '../lib/api'
+import { AiConsent } from '../components/AiConsent'
+import { grantAiConsent, hasAiConsent } from '../lib/aiConsent'
+import type { Profile } from '../types'
 
 interface CoachSheetProps {
   ctx: CoachContext
@@ -27,9 +31,20 @@ export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [aiConsentOpen, setAiConsentOpen] = useState(false)
+  const [pendingQuestion, setPendingQuestion] = useState('')
   const bodyRef = useRef<HTMLDivElement>(null)
   // 记录最近一次提问的时间戳，用于限流（前端本地计数，防刷而非严格计费）
   const askTimesRef = useRef<number[]>([])
+
+  useEffect(() => {
+    let alive = true
+    void getProfile().then((p) => {
+      if (alive) setProfile(p)
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [])
 
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' })
@@ -48,8 +63,7 @@ export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
     return 0
   }
 
-  async function send() {
-    const q = input.trim()
+  async function ask(q: string) {
     if (!q || busy) return
     const waitSec = rateLimitBlocked()
     if (waitSec > 0) {
@@ -70,6 +84,17 @@ export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
     } finally {
       setBusy(false)
     }
+  }
+
+  function send() {
+    const q = input.trim()
+    if (!q || busy) return
+    if (!hasAiConsent(profile)) {
+      setPendingQuestion(q)
+      setAiConsentOpen(true)
+      return
+    }
+    void ask(q)
   }
 
   return (
@@ -112,6 +137,26 @@ export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
           </button>
         </div>
       </div>
+
+      {aiConsentOpen && (
+        <AiConsent
+          kind="coach"
+          onAgree={async () => {
+            await grantAiConsent(profile)
+            setProfile((p) => (p ? { ...p, ai_consented: true } : p))
+            setAiConsentOpen(false)
+            if (pendingQuestion) {
+              const q = pendingQuestion
+              setPendingQuestion('')
+              void ask(q)
+            }
+          }}
+          onDecline={() => {
+            setPendingQuestion('')
+            setAiConsentOpen(false)
+          }}
+        />
+      )}
     </div>
   )
 }

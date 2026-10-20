@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { deleteMeal, deleteRecipe, getHoneyBalance, insertMeals, listMealsByDate, listRecentMeals, listRecipes, saveRecipe } from '../lib/api'
+import { deleteMeal, deleteRecipe, getHoneyBalance, getProfile, insertMeals, listMealsByDate, listRecentMeals, listRecipes, saveRecipe } from '../lib/api'
 import { compressImage, identifyPackagedFood, parseFoodFromText, recognizeFoodFromImage } from '../lib/ai'
 import { lookupBarcode } from '../lib/off'
 import {
@@ -37,6 +37,9 @@ import {
 } from '../lib/validate'
 import { FoodTagList } from '../components/FoodTags'
 import { Scanner } from '../components/Scanner'
+import { AiConsent } from '../components/AiConsent'
+import { grantAiConsent, hasAiConsent } from '../lib/aiConsent'
+import type { Profile } from '../types'
 import { usePlan } from '../state/plan'
 import { MEAL_LABELS, MEAL_ORDER } from '../types'
 import type { DetectedFood, MealEntry, MealType, Recipe, RecordSource } from '../types'
@@ -338,6 +341,8 @@ function MealCheckup({ items }: { items: DraftItem[] }) {
 
 export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budgetText, onOpenInviteCenter }: LogSheetProps) {
   const { claimAiQuota, refundAiQuota, aiRemaining, openPaywall, pro } = usePlan()
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [aiConsentOpen, setAiConsentOpen] = useState(false)
   const [mode, setMode] = useState<Mode>('photo')
   const [meal, setMeal] = useState<MealType>(initialMeal)
   const [items, setItems] = useState<DraftItem[]>([])
@@ -381,10 +386,16 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   const [recipeName, setRecipeName] = useState('')
   const [savingRecipe, setSavingRecipe] = useState(false)
 
-  // 挂载时读「当日已成功拍照次数」（云端唯一真相源），驱动阶梯提示
+  // 挂载时读 profile 与当日已成功拍照次数
   useEffect(() => {
     let alive = true
     void (async () => {
+      try {
+        const p = await getProfile()
+        if (alive) setProfile(p)
+      } catch {
+        // ignore
+      }
       const n = await getTodayPhotoCount()
       if (alive) setTodayPhotoCount(n)
     })()
@@ -547,9 +558,13 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
     }
   }
 
-  // 拍餐盘照片：先预检识别额度（用完直接提示兑换/Pro，不调相机），有额度才调相机/选图。
+  // 拍餐盘照片：先预检 AI 同意 + 识别额度（用完直接提示兑换/Pro，不调相机），有额度才调相机/选图。
   // 原生走 @capacitor/camera（绕开华为 WebView 对 <input capture> 的兼容问题），web 走 pickWithInput。
   async function handlePickMealPhoto() {
+    if (!hasAiConsent(profile)) {
+      setAiConsentOpen(true)
+      return
+    }
     if (!(await checkPhotoQuota())) return
     const f = await takePhoto({ preferCamera: true })
     if (f) void handleFile(f)
@@ -615,6 +630,10 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
 
   /** 兜底：拍包装正面照片，交给视觉模型读营养表 */
   async function handlePackagePhoto(file: File) {
+    if (!hasAiConsent(profile)) {
+      setAiConsentOpen(true)
+      return
+    }
     setError('')
     setBusy(true)
     try {
@@ -1302,6 +1321,18 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
           )}
         </div>
       </div>
+
+      {aiConsentOpen && (
+        <AiConsent
+          kind="photo"
+          onAgree={async () => {
+            await grantAiConsent(profile)
+            setProfile((p) => (p ? { ...p, ai_consented: true } : p))
+            setAiConsentOpen(false)
+          }}
+          onDecline={() => setAiConsentOpen(false)}
+        />
+      )}
     </div>
   )
 }
