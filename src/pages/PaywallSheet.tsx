@@ -11,6 +11,8 @@ import {
 import { REDEEM_CODE_RULE } from '../lib/validate'
 import { usePlan } from '../state/plan'
 import { errText } from '../lib/errmsg'
+import { checkout, restorePurchases } from '../lib/payment/checkout'
+import { isIOS } from '../lib/platform'
 
 /**
  * 付费墙。
@@ -45,13 +47,64 @@ const PRICE_TAG: Record<string, string> = {
 }
 
 export function PaywallSheet() {
-  const { paywall, closePaywall, redeem, pro, lifetime, entitlement } = usePlan()
+  const { paywall, closePaywall, redeem, pro, lifetime, entitlement, refresh } = usePlan()
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [ok, setOk] = useState(false)
+  // 正在支付的商品 id（null 表示无进行中支付）
+  const [payingId, setPayingId] = useState<string | null>(null)
 
   if (!paywall.open) return null
+
+  /** 点击商品：iOS 走内购，其余平台提示接入中 */
+  async function buyProduct(id: string) {
+    setErr('')
+    setPayingId(id)
+    try {
+      const res = await checkout(id as 'proMonthly' | 'proYearly' | 'lifetime', refresh)
+      if (res.status === 'cancelled') {
+        // 用户取消，静默返回，不报错
+        return
+      }
+      if (res.status === 'error') {
+        setErr(res.message)
+        return
+      }
+      // 购买成功：刷新后关闭付费墙
+      setOk(true)
+      setTimeout(() => {
+        closePaywall()
+        setOk(false)
+      }, 1400)
+    } catch (e) {
+      setErr(errText(e, '支付失败，请重试'))
+    } finally {
+      setPayingId(null)
+    }
+  }
+
+  /** 恢复购买（仅 iOS 订阅） */
+  async function restore() {
+    setErr('')
+    setBusy(true)
+    try {
+      const res = await restorePurchases(refresh)
+      if (res.status === 'error') {
+        setErr(res.message)
+        return
+      }
+      setOk(true)
+      setTimeout(() => {
+        closePaywall()
+        setOk(false)
+      }, 1400)
+    } catch (e) {
+      setErr(errText(e, '恢复购买失败，请重试'))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   async function submitCode() {
     if (!code.trim()) return
@@ -121,16 +174,43 @@ export function PaywallSheet() {
 
       {!pro && (
         <>
-          {/* 商品选择（真实支付接入前为展示，点击提示「接入中」） */}
+          {/* 商品选择（iOS 内购可点击；其余平台暂提示接入中） */}
           <div className="pay-grid" style={{ marginTop: 18 }}>
             {PRODUCTS.map((p) => (
-              <div key={p.id} className={`pay-option ${p.highlight ? 'is-hl' : ''}`}>
+              <button
+                key={p.id}
+                type="button"
+                className={`pay-option ${p.highlight ? 'is-hl' : ''}`}
+                disabled={payingId !== null || busy}
+                onClick={() => {
+                  if (isIOS()) {
+                    void buyProduct(p.id)
+                  } else {
+                    setErr('在线支付正在接入中，当前可先用兑换码体验完整功能。')
+                  }
+                }}
+              >
                 <div className="pay-option-name">{p.name}</div>
-                <div className="pay-option-price">{PRICE_TAG[p.id]}</div>
+                <div className="pay-option-price">
+                  {payingId === p.id ? <span className="spinner" /> : PRICE_TAG[p.id]}
+                </div>
                 {p.highlight && <div className="pay-option-tag">最划算</div>}
-              </div>
+              </button>
             ))}
           </div>
+
+          {/* iOS 恢复购买（订阅制必需，否则 3.1.2 被拒） */}
+          {isIOS() && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ width: '100%', marginTop: 12, fontSize: 13 }}
+              disabled={busy || payingId !== null}
+              onClick={() => void restore()}
+            >
+              {busy ? <span className="spinner" /> : '恢复购买'}
+            </button>
+          )}
 
           <div className="field" style={{ marginTop: 16 }}>
             <label htmlFor="redeem">兑换码</label>
@@ -156,7 +236,7 @@ export function PaywallSheet() {
               </button>
             </div>
             {err && <div className="err">{err}</div>}
-            {ok && <div className="ok-msg">兑换成功，终身会员已生效 🐝</div>}
+            {ok && <div className="ok-msg">购买成功，会员已生效 🐝</div>}
           </div>
 
           <div className="helper" style={{ lineHeight: 1.7 }}>

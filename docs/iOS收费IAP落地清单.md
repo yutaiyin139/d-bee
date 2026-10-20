@@ -1,7 +1,7 @@
 # iOS 收费（IAP）落地清单与当前状态
 
-> 更新：2026-10-17（V1.6.1 前核查）
-> 状态：Apple 开发者账号申请中，收费链路「代码骨架就绪，真实支付未启用」
+> 更新：2026-10-20（V1.7.0，Apple 个人开发者账号已通过）
+> 状态：收费链路「前端已接线 + 验签 SQL 已就绪，待云环境恢复后执行验签迁移」
 
 ---
 
@@ -9,15 +9,17 @@
 
 | 层 | 状态 | 说明 |
 |---|---|---|
-| 前端 payment 模块 | ✅ 骨架就绪 | `src/lib/payment/`（types / checkout / iosIap）已写好 |
-| 原生 StoreKit 2 插件 | ✅ 骨架就绪 | `native-plugins/dbee-iap/DbeeIapPlugin.swift` |
-| 服务端订单表/RPC | ✅ 已上云 | `payment_products` + `payment_orders` + 两个 RPC |
-| 付费墙 UI 接入 | ❌ 未接入 | PaywallSheet 商品卡片仍是「纯展示」，走兑换码 |
-| 凭证验签 | ❌ 未实现 | `verify_payment_order` 骨架默认拒绝 |
-| **整体结论** | ⚠️ **不可用** | 真实支付全链路尚未打通，当前唯一解锁方式是兑换码 |
+| 前端 payment 模块 | ✅ 就绪 | `src/lib/payment/`（types / checkout / iosIap）已写好，含 `restorePurchases` |
+| 原生 StoreKit 2 插件 | ✅ 骨架就绪 | `native-plugins/dbee-iap/DbeeIapPlugin.swift`（未在 Mac 编译验证） |
+| 服务端订单表/RPC | ✅ 已上云 | `payment_products` + `payment_orders` + 下单 RPC |
+| 付费墙 UI 接入 | ✅ 已接线（2026-10-20） | PaywallSheet 商品卡片可点击接 `checkout`，iOS 加「恢复购买」 |
+| 凭证验签 | ⚠️ SQL 就绪，未执行 | `0029-iap-verify-receipt.sql` 已写，待云环境恢复 + pg_net 确认 |
+| **整体结论** | ⚠️ **部分可用** | iOS 端 UI 已接线，但验签迁移未执行前，购买会卡在「校验失败」 |
 
-**为什么没接入 UI**：`verify_payment_order` 的服务端验签（verifyReceipt）需要 Apple 开发者账号才能联调，
-在此之前硬接 UI 会让用户「点购买一直失败」，体验比现状更差。故保持「兑换码可用 + 商品展示 + 接入中提示」。
+**2026-10-20 进展**：前端 `PaywallSheet` 已把商品卡片从「纯展示」改为可点击（iOS 走
+`checkout()` → StoreKit 购买 → 回传凭证 → 刷新权益），并新增「恢复购买」入口（订阅 3.1.2
+合规必需）。服务端验签 SQL（`0029-iap-verify-receipt.sql`）已写好，采用 `pg_net` 外呼
+`verifyReceipt` + sharedSecret 存 `app_config` 表的方案，**待云数据库从资源隔离状态恢复后执行**。
 
 ---
 

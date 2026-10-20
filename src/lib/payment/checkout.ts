@@ -79,6 +79,48 @@ export async function checkout(
 }
 
 /**
+ * 恢复购买（iOS / Google 订阅必需；微信支付宝一次性支付无此概念）。
+ * 调用平台 adapter.restore() 拿回当前有效交易，逐个回传服务端幂等核销，
+ * 全部核销完成后刷新权益。
+ * @param onEntitlementGranted 权益刷新回调（调用方传入 PlanProvider.refresh）
+ */
+export async function restorePurchases(
+  onEntitlementGranted?: () => Promise<void>,
+): Promise<CheckoutResult> {
+  const adapter = await getAdapter()
+  if (!adapter) {
+    return { status: 'error', message: '当前平台不支持恢复购买' }
+  }
+  try {
+    const purchases = await adapter.restore()
+    if (purchases.length === 0) {
+      return { status: 'error', message: '未找到可恢复的购买记录' }
+    }
+    // 逐个回传凭证核销（服务端幂等，重复核销直接返回成功）
+    let anyOk = false
+    for (const p of purchases) {
+      try {
+        // 恢复场景没有「下单」步骤：直接用 provider_txn_id 走核销，
+        // 订单号缺失时以「restore-<txnId>」作为幂等键兜底。
+        const ok = await verifyPaymentOrder(
+          `restore-${p.providerTxnId}`,
+          p.providerTxnId,
+          p.receipt,
+        )
+        if (ok) anyOk = true
+      } catch {
+        // 单条核销失败不中断，继续处理其余交易
+      }
+    }
+    if (onEntitlementGranted) await onEntitlementGranted()
+    return anyOk ? { status: 'ok' } : { status: 'error', message: '恢复购买失败，请稍后重试' }
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e)
+    return { status: 'error', message: message || '恢复购买失败，请重试' }
+  }
+}
+
+/**
  * 由平台推导支付渠道标识（与服务端 provider 字段对齐）。
  * 微信小程序：微信支付（规划中，getAdapter 尚未实现小程序适配器，故 checkout 仍会
  * 走「暂不支持在线支付」的兜底，不影响现有三端）。

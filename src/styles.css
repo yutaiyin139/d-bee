@@ -1899,6 +1899,20 @@ select {
   background: var(--surface);
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
+  /* button 元素默认样式重置，保持与原先 div 外观一致 */
+  font: inherit;
+  text-align: left;
+  width: 100%;
+  display: block;
+}
+
+.pay-option:hover {
+  border-color: var(--honey);
+}
+
+.pay-option:disabled {
+  cursor: default;
+  opacity: 0.65;
 }
 
 .pay-option.is-hl {
