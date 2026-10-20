@@ -49,6 +49,37 @@
     color: $red;
   }
 
+  .upsell-notice {
+    margin-top: 24px;
+    padding: 24px 28px;
+    background: $honey-soft;
+    border: 1px solid $honey-soft-2;
+    border-radius: $radius-lg;
+
+    .upsell-text {
+      font-size: 26px;
+      color: $ink;
+      line-height: 1.6;
+    }
+
+    .upsell-actions {
+      display: flex;
+      gap: 32px;
+      margin-top: 16px;
+
+      .upsell-link {
+        font-size: 26px;
+        color: $honey-dark;
+        font-weight: 600;
+      }
+
+      .upsell-dismiss {
+        color: $ink-3;
+        font-weight: 400;
+      }
+    }
+  }
+
   .result-card {
     margin-top: 24px;
     padding: 28px;

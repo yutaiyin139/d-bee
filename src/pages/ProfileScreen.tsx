@@ -24,6 +24,7 @@ import {
 import { usePlan } from '../state/plan'
 import { exportJSON, exportText } from '../lib/share'
 import { connectHealth, disconnectHealth, getHealthVendor, isHealthConnectable } from '../lib/health'
+import { getNotifyPrefs, setNotifyPrefs, syncLocalNotifications, cancelAllNotifications } from '../lib/notifications'
 import {
   AGE_LIMIT,
   HEIGHT_LIMIT,
@@ -72,6 +73,27 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
 
   // 健康数据源（可重连 / 可解除连接；连接意图存云端 profiles.health_connected）
   const healthVendor = useMemo(() => getHealthVendor(), [])
+
+  // 通知提醒偏好（打卡提醒 / 饮水提醒，存本地 kv）
+  const [notifCheckin, setNotifCheckin] = useState(true)
+  const [notifWater, setNotifWater] = useState(true)
+  useEffect(() => {
+    void getNotifyPrefs().then((p) => {
+      setNotifCheckin(p.checkin)
+      setNotifWater(p.water)
+    })
+  }, [])
+
+  async function toggleNotif(kind: 'checkin' | 'water', enabled: boolean) {
+    if (kind === 'checkin') setNotifCheckin(enabled)
+    else setNotifWater(enabled)
+    await setNotifyPrefs(kind, enabled)
+    // 任一开关关闭 → 重新调度（本模块在非原生/未装插件环境静默降级）
+    const prefs = await getNotifyPrefs()
+    if (!prefs.checkin && !prefs.water) await cancelAllNotifications()
+    else await syncLocalNotifications()
+  }
+
   // 步数为 0 时的排查引导，按机型给对应路径（苹果走系统设置，华为/小米走各自健康 App）
   const healthHint = useMemo(() => {
     switch (healthVendor.vendor) {
@@ -576,6 +598,32 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
           </div>
         </>
       )}
+
+      <div className="section-title">通知提醒</div>
+      <div className="card">
+        <label className="list-line" style={{ cursor: 'pointer' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            每日打卡提醒
+            <span className="sub" style={{ fontSize: 12, color: 'var(--ink-3)' }}>每天 20:00 提醒记录饮食</span>
+          </span>
+          <input
+            type="checkbox"
+            checked={notifCheckin}
+            onChange={(e) => void toggleNotif('checkin', e.target.checked)}
+          />
+        </label>
+        <label className="list-line" style={{ cursor: 'pointer' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            饮水提醒
+            <span className="sub" style={{ fontSize: 12, color: 'var(--ink-3)' }}>9:00~21:00 每 2 小时，未达标时提醒</span>
+          </span>
+          <input
+            type="checkbox"
+            checked={notifWater}
+            onChange={(e) => void toggleNotif('water', e.target.checked)}
+          />
+        </label>
+      </div>
 
       <div className="section-title">数据与隐私</div>
       <div className="card">

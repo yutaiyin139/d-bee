@@ -18,6 +18,7 @@ import {
 import { photoLadderHint, quotaExhaustedReason, isPro, FREE_DAILY_AI, HONEY_PRICE, AI_REDEEM_DAILY_LIMIT } from '@dbee/shared'
 import { AiConsent } from '../../components/AiConsent'
 import { grantAiConsent, hasAiConsent } from '../../lib/aiConsent'
+import { shouldShowUpsell, markUpsellShown, dismissUpsell } from '../../lib/upsell'
 import './scan.scss'
 
 export default function Scan() {
@@ -31,6 +32,7 @@ export default function Scan() {
   const [todayPhotoCount, setTodayPhotoCount] = useState(0)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [aiConsentOpen, setAiConsentOpen] = useState(false)
+  const [upsellVisible, setUpsellVisible] = useState(false)
 
   useLoad(async () => {
     try { setProfile(await getProfile()) } catch { /* ignore */ }
@@ -97,7 +99,7 @@ export default function Scan() {
       }
 
       // 1. 预占额度（Pro 会员跳过占用；识别成功才扣，失败退还）
-      let claim: { allowed: boolean; token?: string | null } | null = null
+      let claim: { allowed: boolean; token?: string | null; remaining?: number } | null = null
       if (!pro) {
         const c = await consumePhotoQuota()
         if (!c.allowed) {
@@ -145,6 +147,17 @@ export default function Scan() {
 
       setItems(detected)
       setMsg(`识别成功，已记录 ${detected.length} 项`)
+
+      // 转化钩子：免费用户本次拍照后用尽额度 → 轻提示升级（克制：每周 1 次 + 可永久关闭）
+      if (!pro && claim) {
+        void (async () => {
+          const show = await shouldShowUpsell(pro, claim.remaining ?? null)
+          if (show) {
+            await markUpsellShown()
+            setUpsellVisible(true)
+          }
+        })()
+      }
     } catch (e) {
       setMsg(e instanceof Error ? e.message : '识别失败，请重试')
     } finally {
@@ -182,6 +195,27 @@ export default function Scan() {
       {imageUrl ? <Image className='photo' src={imageUrl} mode='aspectFit' /> : null}
 
       {msg ? <Text className='msg'>{msg}</Text> : null}
+
+      {upsellVisible && (
+        <View className='upsell-notice'>
+          <Text className='upsell-text'>今天拍得顺手吗？升级 Pro 可无限次拍照识别、解锁完整报告。</Text>
+          <View className='upsell-actions'>
+            <Text
+              className='upsell-link'
+              onClick={() => { setUpsellVisible(false); Taro.navigateTo({ url: '/pages/paywall/paywall' }) }}
+            >
+              去看看
+            </Text>
+            <Text
+              className='upsell-link upsell-dismiss'
+              onClick={() => { setUpsellVisible(false); void dismissUpsell() }}
+            >
+              不再提醒
+            </Text>
+          </View>
+        </View>
+      )}
+
 
       {items.length > 0 ? (
         <View className='result-card'>

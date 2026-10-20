@@ -52,3 +52,21 @@ export const HONEY_PRICE = {
 } as const
 
 export type HoneyRewardKind = keyof typeof HONEY_PRICE
+
+/* ── 推送通知（P1-4）────────────────────────────────────────── */
+// 通知类型枚举（多端共用真相源）
+export const NOTIFY_KIND = {
+  checkin: 'checkin', // 打卡提醒：每日 20:00
+  water: 'water', // 饮水提醒：每 2 小时（9:00~21:00），仅当日未达标
+} as const
+
+export type NotifyKind = (typeof NOTIFY_KIND)[keyof typeof NOTIFY_KIND]
+
+/** 打卡提醒默认触发时刻（24h，本地通知用） */
+export const CHECKIN_REMINDER_HOUR = 20
+export const CHECKIN_REMINDER_MINUTE = 0
+
+/** 饮水提醒：起始/结束时刻（本地通知用） */
+export const WATER_REMINDER_START_HOUR = 9
+export const WATER_REMINDER_END_HOUR = 21
+export const WATER_REMINDER_INTERVAL_HOURS = 2

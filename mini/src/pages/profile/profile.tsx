@@ -8,7 +8,7 @@
  *  - 会员升级：小程序端暂无支付，点「升级」给出诚实提示
  */
 import { useEffect, useMemo, useState } from 'react'
-import { View, Text, Button, Input } from '@tarojs/components'
+import { View, Text, Button, Input, Switch } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { IconCrown, IconDownload, IconTrash } from '../../components/Icons'
 import {
@@ -27,6 +27,7 @@ import { isHealthConnectable } from '../../lib/health'
 import { HONEY_PRICE } from '../../lib/invite'
 import { FREE_REPORT_DAYS } from '@dbee/shared'
 import { signOut } from '../../lib/auth'
+import { getNotifyPrefs, setNotifyPrefs, enableCheckinNotify, disableCheckinNotify, enableWaterNotify, disableWaterNotify } from '../../lib/notifications'
 import './profile.scss'
 
 export default function ProfilePage() {
@@ -58,6 +59,28 @@ export default function ProfilePage() {
   const [weights, setWeights] = useState<WeightLog[]>([])
   const [weightInput, setWeightInput] = useState('')
   const [weightMsg, setWeightMsg] = useState('')
+
+  // 通知提醒偏好（打卡提醒 / 饮水提醒，存本地 kv）
+  const [notifCheckin, setNotifCheckin] = useState(true)
+  const [notifWater, setNotifWater] = useState(true)
+  useEffect(() => {
+    void getNotifyPrefs().then((p) => {
+      setNotifCheckin(p.checkin)
+      setNotifWater(p.water)
+    })
+  }, [])
+
+  async function toggleNotif(kind: 'checkin' | 'water', enabled: boolean) {
+    if (kind === 'checkin') {
+      setNotifCheckin(enabled)
+      if (enabled) await enableCheckinNotify()
+      else await disableCheckinNotify()
+    } else {
+      setNotifWater(enabled)
+      if (enabled) await enableWaterNotify()
+      else await disableWaterNotify()
+    }
+  }
   const [weightErr, setWeightErr] = useState('')
   const [savingWeight, setSavingWeight] = useState(false)
 
@@ -424,6 +447,31 @@ export default function ProfilePage() {
           </View>
         </>
       ) : null}
+
+      {/* 通知提醒 */}
+      <View className='section-title'><Text>通知提醒</Text></View>
+      <View className='card'>
+        <View className='list-line'>
+          <View className='line-label-wrap'>
+            <Text className='line-label'>每日打卡提醒</Text>
+          </View>
+          <Switch
+            checked={notifCheckin}
+            color='#F2A93B'
+            onChange={(e) => void toggleNotif('checkin', e.detail.value)}
+          />
+        </View>
+        <View className='list-line'>
+          <View className='line-label-wrap'>
+            <Text className='line-label'>饮水提醒</Text>
+          </View>
+          <Switch
+            checked={notifWater}
+            color='#F2A93B'
+            onChange={(e) => void toggleNotif('water', e.detail.value)}
+          />
+        </View>
+      </View>
 
       {/* 数据与隐私 */}
       <View className='section-title'><Text>数据与隐私</Text></View>

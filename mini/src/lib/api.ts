@@ -672,7 +672,7 @@ export async function listInvitees(): Promise<{ code: string; invitees: number; 
 }
 
 /** 新用户注册后绑定邀请码（原子：绑定关系 + 双向发积分，见 bind_invite RPC） */
-export async function bindInvite(code: string): Promise<'ok' | 'invalid' | 'self' | 'already' | 'throttled'> {
+export async function bindInvite(code: string): Promise<'ok' | 'invalid' | 'self' | 'already' | 'throttled' | 'daily_limit'> {
   const normalized = code.trim().toUpperCase()
   if (!normalized) return 'invalid'
 
@@ -680,7 +680,7 @@ export async function bindInvite(code: string): Promise<'ok' | 'invalid' | 'self
     const { data, error } = await callRpc('bind_invite', { p_code: normalized })
     if (error) return 'invalid'
     const status = (Array.isArray(data) ? data[0] : data) as string | null
-    if (status === 'ok' || status === 'already' || status === 'self' || status === 'invalid' || status === 'throttled') {
+    if (status === 'ok' || status === 'already' || status === 'self' || status === 'invalid' || status === 'throttled' || status === 'daily_limit') {
       return status
     }
     return 'invalid'
