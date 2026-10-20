@@ -1,0 +1,173 @@
+// =============================================================
+// 站内轻榜单 LeaderboardPage 样式（对齐主工程 LeaderboardSheet 风格）
+// =============================================================
+
+.page.leaderboard {
+  min-height: 100vh;
+  padding: 16px 36px calc(60px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: $bg;
+}
+
+.hero {
+  padding: 28px 0 8px;
+
+  .hero-title {
+    font-size: 48px;
+    font-weight: 700;
+    letter-spacing: -0.6px;
+    color: $ink;
+  }
+}
+
+.lb-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 20px 0 24px;
+  background: $honey-soft;
+  border-radius: 99px;
+  padding: 8px;
+
+  .lb-tab {
+    flex: 1;
+    height: 64px;
+    line-height: 64px;
+    padding: 0;
+    border-radius: 99px;
+    background: transparent;
+    color: $ink-2;
+    font-size: 28px;
+    font-weight: 600;
+
+    &::after {
+      border: none;
+    }
+
+    &.active {
+      background: $surface;
+      color: $ink;
+      box-shadow: 0 1px 4px rgba(42, 39, 35, 0.12);
+    }
+  }
+}
+
+.lb-my {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 28px 32px;
+  margin-bottom: 24px;
+  background: $honey-soft;
+  border-radius: $radius;
+
+  .lb-my-label {
+    font-size: 26px;
+    color: $ink-2;
+  }
+
+  .lb-my-value {
+    font-size: 28px;
+    color: $ink;
+  }
+
+  .lb-my-num {
+    font-size: 44px;
+    font-weight: 700;
+    color: $honey-dark;
+    margin-right: 4px;
+  }
+
+  .lb-my-rank {
+    margin-left: 12px;
+    font-size: 24px;
+    color: $honey-dark;
+    background: rgba(255, 255, 255, 0.7);
+    padding: 4px 16px;
+    border-radius: 99px;
+  }
+
+  .lb-my-hint {
+    width: 100%;
+    font-size: 24px;
+    color: $ink-3;
+  }
+}
+
+.lb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.lb-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 26px 28px;
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: $radius;
+
+  &.top3 {
+    border-color: rgba(242, 169, 59, 0.4);
+    background: #fffcf4;
+  }
+
+  .lb-rank {
+    width: 52px;
+    height: 52px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 26px;
+    font-weight: 700;
+    color: $ink-3;
+    background: $honey-soft-2;
+
+    &.rank-1 {
+      color: #fff;
+      background: #f2a93b;
+    }
+
+    &.rank-2 {
+      color: #fff;
+      background: #b9b3a8;
+    }
+
+    &.rank-3 {
+      color: #fff;
+      background: #d09a6a;
+    }
+  }
+
+  .lb-name {
+    flex: 1;
+    font-size: 29px;
+    font-weight: 600;
+    color: $ink;
+  }
+
+  .lb-score {
+    font-size: 32px;
+    font-weight: 700;
+    color: $honey-dark;
+  }
+
+  .lb-unit {
+    font-size: 24px;
+    font-weight: 400;
+    color: $ink-3;
+    margin-left: 4px;
+  }
+}
+
+.lb-skeleton,
+.lb-empty {
+  text-align: center;
+  padding: 64px 0;
+  color: $ink-3;
+  font-size: 28px;
+}

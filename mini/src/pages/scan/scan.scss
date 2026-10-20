@@ -115,6 +115,64 @@
         color: $ink-3;
       }
     }
+
+    // 存为食谱（P2-2）
+    .btn-recipe-save {
+      margin-top: 20px;
+      width: 100%;
+      height: 76px;
+      line-height: 76px;
+      font-size: 27px;
+      font-weight: 600;
+      color: $green;
+      background: $green-soft;
+      border-radius: $radius;
+      border: 1px solid rgba(63, 148, 99, 0.25);
+
+      &::after {
+        border: none;
+      }
+    }
+
+    .recipe-save {
+      margin-top: 20px;
+
+      .recipe-input {
+        width: 100%;
+        box-sizing: border-box;
+        height: 76px;
+        padding: 0 24px;
+        font-size: 27px;
+        color: $ink;
+        background: $surface;
+        border: 1px solid $line-2;
+        border-radius: $radius;
+      }
+
+      .recipe-save-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 32px;
+        margin-top: 16px;
+
+        .btn-text {
+          padding: 0;
+          font-size: 27px;
+          color: $green;
+          background: transparent;
+          border: none;
+          line-height: 1.6;
+
+          &::after {
+            border: none;
+          }
+
+          &.cancel {
+            color: $ink-3;
+          }
+        }
+      }
+    }
   }
 
   .redeem-card {

@@ -42,6 +42,7 @@ import { MEAL_LABELS, MEAL_ORDER } from '../types'
 import type { ExerciseLog, MealEntry, MealType, Profile, WaterLog } from '../types'
 import { CoachSheet } from './CoachSheet'
 import { InviteCenter } from './InviteCenter'
+import { LeaderboardSheet } from './LeaderboardSheet'
 import { LogSheet } from './LogSheet'
 
 interface DashboardProps {
@@ -74,6 +75,8 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   const [pickerOpen, setPickerOpen] = useState(false)
   // 邀请中心直接在本页可达：增长主入口不再只藏在「我的」二级页
   const [inviteOpen, setInviteOpen] = useState(false)
+  // 站内轻榜单（P2-1）：首页直达入口
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false)
 
   // 原位编辑与删除确认：避免竞品「提交后不能改」「误触删除」两个差评点
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -1019,6 +1022,17 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
       <button className="btn btn-ghost coach-entry" onClick={() => setCoachOpen(true)}>
         饮食上有拿不准的？问问小蜜 →
       </button>
+
+      {/* 站内轻榜单入口（P2-1）：自律榜 + 邀请榜，首页直达 */}
+      <button className="invite-strip leaderboard-strip" onClick={() => setLeaderboardOpen(true)}>
+        <span className="is-ico">🏆</span>
+        <span className="is-text">
+          自律榜单
+          <small>看看大家坚持了多久，连续打卡满 3 天即可上榜</small>
+        </span>
+        <span className="arrow">›</span>
+      </button>
+
       {!pro && (
         <>
           <div className="helper" style={{ textAlign: 'center', marginTop: 6 }}>
@@ -1087,6 +1101,8 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
       </button>
 
       {inviteOpen && <InviteCenter onClose={() => setInviteOpen(false)} />}
+
+      {leaderboardOpen && <LeaderboardSheet onClose={() => setLeaderboardOpen(false)} />}
     </div>
   )
 }

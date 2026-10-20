@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { View, Text, Button, Image } from '@tarojs/components'
+import { View, Text, Button, Image, Input } from '@tarojs/components'
 import Taro, { useLoad } from '@tarojs/taro'
 import { recognizeFoodFromImage, type DetectedFood } from '../../lib/ai'
 import {
@@ -13,8 +13,10 @@ import {
   getEntitlement,
   getTodayPhotoCount,
   getProfile,
+  saveRecipe,
   type Profile,
 } from '../../lib/api'
+import { checkStatBadges } from '../../lib/badgeCheck'
 import { photoLadderHint, quotaExhaustedReason, isPro, FREE_DAILY_AI, HONEY_PRICE, AI_REDEEM_DAILY_LIMIT } from '@dbee/shared'
 import { AiConsent } from '../../components/AiConsent'
 import { grantAiConsent, hasAiConsent } from '../../lib/aiConsent'
@@ -33,6 +35,10 @@ export default function Scan() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [aiConsentOpen, setAiConsentOpen] = useState(false)
   const [upsellVisible, setUpsellVisible] = useState(false)
+  // 保存食谱（P2-2）：识别结果一键存为自定义食谱
+  const [recipeName, setRecipeName] = useState('')
+  const [recipeInputOpen, setRecipeInputOpen] = useState(false)
+  const [savingRecipe, setSavingRecipe] = useState(false)
 
   useLoad(async () => {
     try { setProfile(await getProfile()) } catch { /* ignore */ }
@@ -181,6 +187,37 @@ export default function Scan() {
     }
   }
 
+  /** 把当前识别结果存为自定义食谱（P2-2） */
+  async function onSaveRecipe() {
+    const name = recipeName.trim()
+    if (!name) return
+    setSavingRecipe(true)
+    setMsg('')
+    try {
+      await saveRecipe(name, items.map((it) => ({
+        food_name: it.food_name,
+        quantity_text: it.quantity_text,
+        grams: it.grams,
+        calories: it.calories,
+        protein_g: it.protein_g,
+        carb_g: it.carb_g,
+        fat_g: it.fat_g,
+        sodium_mg: it.sodium_mg ?? null,
+        fiber_g: it.fiber_g ?? null,
+        added_sugar_g: it.added_sugar_g ?? null,
+      })))
+      setMsg(`已存为食谱「${name}」，下次可在「我的食谱」一键复记`)
+      setRecipeName('')
+      setRecipeInputOpen(false)
+      // 创建食谱后重算统计类徽章（recipe_3 等，幂等）
+      void checkStatBadges()
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : '保存食谱失败，请重试')
+    } finally {
+      setSavingRecipe(false)
+    }
+  }
+
   return (
     <View className='scan'>
       <View className='stat-bar'>
@@ -228,6 +265,31 @@ export default function Scan() {
               </Text>
             </View>
           ))}
+
+          {/* 存为食谱（P2-2）：识别结果一键收藏为常吃食谱 */}
+          {recipeInputOpen ? (
+            <View className='recipe-save'>
+              <Input
+                className='recipe-input'
+                value={recipeName}
+                placeholder='给食谱起个名字，如「家常午饭」'
+                placeholderStyle='color: #a39c90'
+                onInput={(e) => setRecipeName(e.detail.value)}
+              />
+              <View className='recipe-save-actions'>
+                <Button className='btn-text' disabled={savingRecipe || !recipeName.trim()} onClick={() => void onSaveRecipe()}>
+                  {savingRecipe ? '保存中…' : '确认保存'}
+                </Button>
+                <Button className='btn-text cancel' onClick={() => { setRecipeInputOpen(false); setRecipeName('') }}>
+                  取消
+                </Button>
+              </View>
+            </View>
+          ) : (
+            <Button className='btn-recipe-save' onClick={() => setRecipeInputOpen(true)}>
+              存为食谱
+            </Button>
+          )}
         </View>
       ) : null}
 

@@ -1110,6 +1110,11 @@
   }
 }
 
+// 榜单入口：改绿色调以区别于蜂蜜色的邀请入口
+.invite-strip.leaderboard-strip {
+  background: $green-soft;
+}
+
 // ── 记一餐吸底悬浮按钮 ──
 .fab-meal {
   position: fixed;

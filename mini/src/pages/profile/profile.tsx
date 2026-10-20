@@ -315,6 +315,14 @@ export default function ProfilePage() {
     Taro.navigateTo({ url: '/pages/invite/invite' })
   }
 
+  function goRecipes() {
+    Taro.navigateTo({ url: '/pages/recipes/recipes' })
+  }
+
+  function goLeaderboard() {
+    Taro.navigateTo({ url: '/pages/leaderboard/leaderboard' })
+  }
+
   if (loading) {
     return <View className='page'><View className='skeleton' style={{ height: 200 }} /></View>
   }
@@ -349,6 +357,22 @@ export default function ProfilePage() {
           <Text className='line-label'>🍯 蜜糖积分 · 邀请好友</Text>
           <Text className='line-val'>
             查看积分与兑换 <Text className='arrow'>›</Text>
+          </Text>
+        </View>
+      </View>
+
+      {/* 我的食谱 + 榜单入口（P2） */}
+      <View className='card'>
+        <View className='list-line' onClick={goRecipes}>
+          <Text className='line-label'>🍱 我的食谱</Text>
+          <Text className='line-val'>
+            一键复记常吃的一餐 <Text className='arrow'>›</Text>
+          </Text>
+        </View>
+        <View className='list-line' onClick={goLeaderboard} style={{ borderTop: '1px solid rgba(42,39,35,0.09)', marginTop: 8, paddingTop: 16 }}>
+          <Text className='line-label'>🏆 自律榜单</Text>
+          <Text className='line-val'>
+            看看大家坚持了多久 <Text className='arrow'>›</Text>
           </Text>
         </View>
       </View>

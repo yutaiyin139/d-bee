@@ -10,7 +10,9 @@ export default defineAppConfig({
     'pages/report/report',
     'pages/coach/coach',
     'pages/paywall/paywall',
-    'pages/legal/legal'
+    'pages/legal/legal',
+    'pages/leaderboard/leaderboard',
+    'pages/recipes/recipes'
   ],
   window: {
     backgroundTextStyle: 'light',

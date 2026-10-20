@@ -345,6 +345,7 @@ export default function Index() {
   function goProfile() { Taro.navigateTo({ url: '/pages/profile/profile' }) }
   function goInvite() { Taro.navigateTo({ url: '/pages/invite/invite' }) }
   function goCoach() { Taro.navigateTo({ url: '/pages/coach/coach' }) }
+  function goLeaderboard() { Taro.navigateTo({ url: '/pages/leaderboard/leaderboard' }) }
 
   // 未登录：引导去登录
   if (!loggedIn) {
@@ -712,6 +713,16 @@ export default function Index() {
 
       {/* 问问小蜜（AI 教练入口，对齐主工程 Dashboard coach-entry） */}
       <Button className='coach-entry' onClick={goCoach}>饮食上有拿不准的？问问小蜜 →</Button>
+
+      {/* 站内轻榜单入口（P2-1，对齐主工程首页直达） */}
+      <View className='invite-strip leaderboard-strip' onClick={goLeaderboard}>
+        <Text className='is-ico'>🏆</Text>
+        <View className='is-text'>
+          <Text>自律榜单</Text>
+          <Text className='is-small'>看看大家坚持了多久，连续打卡满 3 天即可上榜</Text>
+        </View>
+        <Text className='arrow'>›</Text>
+      </View>
 
       {/* 邀请好友入口（拉新主入口，对齐主工程首页直达） */}
       <View className='invite-strip' onClick={goInvite}>

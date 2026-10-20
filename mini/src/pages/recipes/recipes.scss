@@ -1,0 +1,162 @@
+// =============================================================
+// 我的食谱 RecipesPage 样式
+// =============================================================
+
+.page.recipes {
+  min-height: 100vh;
+  padding: 16px 36px calc(60px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: $bg;
+}
+
+.hero {
+  padding: 28px 0 8px;
+
+  .hero-title {
+    font-size: 48px;
+    font-weight: 700;
+    letter-spacing: -0.6px;
+    color: $ink;
+  }
+}
+
+.helper {
+  margin: 8px 0 24px;
+  font-size: 24px;
+  color: $ink-3;
+  line-height: 1.6;
+}
+
+.recipe-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.recipe-card {
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: $radius-lg;
+  padding: 28px 32px;
+}
+
+.rc-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.rc-title {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rc-name {
+  font-size: 32px;
+  font-weight: 600;
+  color: $ink;
+}
+
+.rc-meta {
+  font-size: 24px;
+  color: $ink-3;
+}
+
+.rc-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.rc-actions .btn-text {
+  padding: 6px 0;
+  font-size: 26px;
+  color: $honey-dark;
+  background: transparent;
+  border: none;
+  line-height: 1.4;
+
+  &::after {
+    border: none;
+  }
+
+  &.confirming {
+    color: $red;
+    font-weight: 600;
+  }
+}
+
+.rc-items {
+  margin-top: 20px;
+  border-top: 1px solid $line;
+  padding-top: 12px;
+}
+
+.rc-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+
+  .ri-name {
+    font-size: 27px;
+    color: $ink-2;
+  }
+
+  .ri-meta {
+    font-size: 24px;
+    color: $ink-3;
+    flex-shrink: 0;
+  }
+}
+
+.empty {
+  text-align: center;
+  padding: 80px 0;
+
+  .empty-emoji {
+    display: block;
+    font-size: 72px;
+    margin-bottom: 16px;
+  }
+
+  .empty-text {
+    display: block;
+    font-size: 30px;
+    color: $ink-2;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .empty-sub {
+    display: block;
+    font-size: 24px;
+    color: $ink-3;
+    line-height: 1.6;
+  }
+}
+
+.notice {
+  margin-bottom: 20px;
+  padding: 20px 24px;
+  border-radius: $radius;
+  background: $red-soft;
+  font-size: 26px;
+  color: #8f382d;
+
+  &.is-good {
+    background: $green-soft;
+    color: #2f6b47;
+  }
+}
+
+.skeleton {
+  background: $bg-2;
+  border-radius: $radius-lg;
+}
