@@ -28,6 +28,8 @@ export interface TextRule {
 }
 
 export const NICKNAME_RULE: TextRule = { label: '昵称', min: 1, max: 20 }
+export const COACH_QUESTION_RULE: TextRule = { label: '提问', min: 1, max: 300 }
+export const REDEEM_CODE_RULE: TextRule = { label: '兑换码', min: 1, max: 32 }
 
 export interface TextCheck {
   ok: boolean

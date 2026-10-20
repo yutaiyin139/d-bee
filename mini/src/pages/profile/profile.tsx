@@ -314,7 +314,7 @@ export default function ProfilePage() {
           </View>
         </View>
         {!pro && (
-          <Button className='member-btn' onClick={() => Taro.showToast({ title: '会员购买功能正在接入小程序', icon: 'none' })}>
+          <Button className='member-btn' onClick={() => Taro.navigateTo({ url: '/pages/paywall/paywall' })}>
             升级
           </Button>
         )}
@@ -476,6 +476,23 @@ export default function ProfilePage() {
       ) : (
         <Button className='btn btn-ghost signout-btn' onClick={() => setConfirmSignOut(true)}>退出登录</Button>
       )}
+
+      {/* 关于与协议 */}
+      <View className='section-title' style={{ marginTop: 24 }}><Text>关于</Text></View>
+      <View className='card'>
+        <View className='list-line' onClick={() => Taro.navigateTo({ url: '/pages/legal/legal?id=terms' })}>
+          <Text className='line-label'>用户协议</Text>
+          <Text className='line-val'><Text className='arrow'>›</Text></Text>
+        </View>
+        <View className='list-line' onClick={() => Taro.navigateTo({ url: '/pages/legal/legal?id=privacy' })}>
+          <Text className='line-label'>隐私政策</Text>
+          <Text className='line-val'><Text className='arrow'>›</Text></Text>
+        </View>
+        <View className='list-line' onClick={() => Taro.navigateTo({ url: '/pages/legal/legal?id=disclaimer' })}>
+          <Text className='line-label'>免责声明</Text>
+          <Text className='line-val'><Text className='arrow'>›</Text></Text>
+        </View>
+      </View>
 
       {/* 账号管理 */}
       <View className='section-title' style={{ marginTop: 24 }}><Text>账号管理</Text></View>

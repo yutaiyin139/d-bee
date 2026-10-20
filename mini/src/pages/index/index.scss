@@ -89,10 +89,15 @@
   }
 }
 
-// ── 周历条 ──
+// ── 周历条（左右滑动翻周）──
 .week-strip {
-  display: flex;
   margin: 16px 0 32px;
+  overflow: hidden;
+
+  .ws-track {
+    display: flex;
+    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  }
 
   .ws-day {
     flex: 1;
@@ -141,69 +146,6 @@
     &.is-future .dn {
       color: $ink-3;
       font-weight: 500;
-    }
-  }
-}
-
-// ── 简易月历弹层 ──
-.picker-mask {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(42, 39, 35, 0.4);
-  z-index: 60;
-  display: flex;
-  align-items: flex-end;
-
-  .picker-panel {
-    width: 100%;
-    background: $surface;
-    border-radius: 40px 40px 0 0;
-    padding: 36px 32px calc(40px + env(safe-area-inset-bottom));
-
-    .picker-title {
-      font-size: 32px;
-      font-weight: 600;
-      color: $ink;
-    }
-
-    .picker-grid {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 16px;
-      margin: 24px 0;
-
-      .picker-day {
-        width: calc((100% - 96px) / 7);
-        height: 72px;
-        line-height: 72px;
-        text-align: center;
-        font-size: 24px;
-        color: $ink-2;
-        background: $bg-2;
-        border-radius: 16px;
-        border: none;
-        padding: 0;
-
-        &.is-selected {
-          background: $honey;
-          color: $honey-btn-ink;
-          font-weight: 700;
-        }
-      }
-    }
-
-    .btn-text {
-      width: 100%;
-      height: 80px;
-      line-height: 80px;
-      color: $honey-dark;
-      font-size: 28px;
-      background: transparent;
-      border: 1px solid $line-2;
-      border-radius: $radius;
     }
   }
 }
@@ -357,42 +299,181 @@
 }
 
 .checkup-verdict {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 24px;
+  padding-bottom: 26px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid $line;
 
   .cu-score {
-    font-size: 60px;
-    font-weight: 700;
-    color: $ink;
+    flex: 0 0 auto;
+    width: 92px;
+    height: 92px;
+    border-radius: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 38px;
+    font-weight: 600;
 
-    &.is-good { color: $green; }
-    &.is-ok { color: $honey-dark; }
-    &.is-warn { color: $red; }
+    &.is-good { background: $green-soft; color: #2c6b48; }
+    &.is-ok { background: $honey-soft; color: $honey-dark; }
+    &.is-warn { background: $red-soft; color: #8f382d; }
   }
 
   .cu-main {
     flex: 1;
     min-width: 0;
+    padding-right: 120px;
 
     .cu-level {
-      font-size: 30px;
+      display: block;
+      font-size: 28px;
       font-weight: 600;
-      color: $ink;
+      margin-bottom: 4px;
 
-      &.is-good { color: $green; }
+      &.is-good { color: #2c6b48; }
       &.is-ok { color: $honey-dark; }
-      &.is-warn { color: $red; }
+      &.is-warn { color: #8f382d; }
     }
 
     .cu-text {
       display: block;
-      margin-top: 6px;
-      font-size: 26px;
+      font-size: 25px;
+      line-height: 1.6;
       color: $ink-2;
-      line-height: 1.5;
     }
   }
+}
+
+// 右上角伸缩切换按钮
+.checkup-toggle {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border: 1px solid $line-2;
+  border-radius: 99px;
+  background: $surface;
+  color: $ink-2;
+  font-size: 24px;
+
+  .toggle-chevron {
+    font-size: 22px;
+    line-height: 1;
+    transition: transform 0.25s ease;
+
+    &.is-folded {
+      transform: rotate(-90deg);
+    }
+  }
+
+  .toggle-label {
+    font-size: 24px;
+    line-height: 1;
+  }
+}
+
+// 详情区折叠
+.checkup-detail {
+  overflow: hidden;
+  transition: opacity 0.24s ease;
+  opacity: 1;
+
+  &.is-folded {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+.checkup-group {
+  & + .checkup-group {
+    margin-top: 28px;
+  }
+
+  .cg-title {
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 14px;
+
+    &.risk { color: #8f382d; }
+    &.good { color: #2c6b48; }
+  }
+
+  .cg-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px 16px;
+    padding: 14px 0;
+    border-bottom: 1px solid $line;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    .cg-label {
+      font-size: 26px;
+      font-weight: 500;
+      color: $ink;
+    }
+
+    .cg-badge {
+      font-size: 22px;
+      color: #8f382d;
+      background: $red-soft;
+      border-radius: 99px;
+      padding: 2px 14px;
+
+      &.good {
+        color: #2c6b48;
+        background: $green-soft;
+      }
+    }
+
+    .cg-reason {
+      flex: 1 1 100%;
+      font-size: 24px;
+      color: $ink-2;
+      line-height: 1.55;
+    }
+
+    .cg-items {
+      flex: 1 1 100%;
+      font-size: 23px;
+      color: $ink-3;
+      line-height: 1.55;
+    }
+  }
+}
+
+// 微营养素汇总胶囊
+.microline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 20px;
+
+  .micro-pill {
+    font-size: 23px;
+    color: $ink-2;
+    background: $surface;
+    border: 1px solid $line-2;
+    border-radius: 99px;
+    padding: 6px 20px;
+  }
+}
+
+.helper {
+  margin-top: 16px;
+  font-size: 23px;
+  color: $ink-3;
+  line-height: 1.7;
 }
 
 // ── 卡路里追踪 ──
@@ -858,5 +939,353 @@
         font-weight: 600;
       }
     }
+  }
+}
+
+// ── 近 7 天热量迷你趋势 ──
+.mini-trend {
+  padding: 28px 32px 24px;
+
+  .mt-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 20px;
+
+    .mt-title {
+      font-size: 27px;
+      font-weight: 600;
+      color: $ink;
+    }
+
+    .mt-sub {
+      font-size: 23px;
+      color: $ink-3;
+    }
+  }
+
+  .mt-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    height: 184px;
+  }
+
+  .mt-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    height: 100%;
+
+    .mt-val {
+      font-size: 20px;
+      color: $ink-3;
+      height: 26px;
+      line-height: 26px;
+    }
+
+    .mt-track {
+      flex: 1;
+      width: 100%;
+      max-width: 52px;
+      display: flex;
+      align-items: flex-end;
+      border-radius: 12px;
+      background: $bg-2;
+      overflow: hidden;
+
+      .mt-fill {
+        width: 100%;
+        border-radius: 12px;
+        background: $honey;
+
+        &.is-over {
+          background: $red;
+        }
+      }
+    }
+
+    &.is-today {
+      .mt-fill {
+        background: $honey-dark;
+      }
+
+      .mt-day {
+        color: $honey-dark;
+        font-weight: 600;
+      }
+    }
+
+    .mt-day {
+      font-size: 22px;
+      color: $ink-3;
+    }
+  }
+}
+
+// ── 给你的建议 ──
+.plan-row {
+  display: flex;
+  gap: 18px;
+  font-size: 27px;
+  color: $ink-2;
+  margin-bottom: 18px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+
+  .plan-idx {
+    color: $honey-dark;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .plan-text {
+    line-height: 1.55;
+  }
+}
+
+// ── 邀请好友入口条 ──
+// ── 问问小蜜（AI 教练入口）──
+.coach-entry {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 88px;
+  margin-top: 24px;
+  padding: 0 28px;
+  font-size: 28px;
+  font-weight: 600;
+  color: $honey-dark;
+  background: $surface;
+  border: 1px solid $honey-soft-2;
+  border-radius: $radius;
+  box-sizing: border-box;
+
+  &::after {
+    border: none;
+  }
+}
+
+.invite-strip {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  min-height: 112px;
+  margin-top: 24px;
+  padding: 24px 28px;
+  border-radius: $radius;
+  background: $honey-soft;
+  color: $ink;
+  box-sizing: border-box;
+
+  .is-ico {
+    font-size: 38px;
+    line-height: 1;
+  }
+
+  .is-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 28px;
+    font-weight: 600;
+
+    .is-small {
+      font-size: 24px;
+      font-weight: 400;
+      color: $ink-3;
+    }
+  }
+
+  .arrow {
+    color: $ink-3;
+    font-size: 36px;
+  }
+}
+
+// ── 记一餐吸底悬浮按钮 ──
+.fab-meal {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  width: calc(100vw - 72px);
+  max-width: 640px;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 96px;
+  font-size: 30px;
+  font-weight: 600;
+  color: $honey-btn-ink;
+  background: $honey;
+  border-radius: $radius;
+  box-shadow: 0 16px 44px rgba(233, 168, 21, 0.38);
+  border: none;
+}
+
+// ── 底部弹层（Sheet 组件，MonthPicker 用）──
+.sheet-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(30, 26, 20, 0.42);
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.sheet {
+  width: 100%;
+  max-width: 960px;
+  background: $bg;
+  border-radius: 44px 44px 0 0;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+
+  .sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 36px 36px 24px;
+    flex-shrink: 0;
+
+    .sheet-title {
+      font-size: 34px;
+      font-weight: 600;
+      color: $ink;
+    }
+
+    .sheet-close {
+      font-size: 44px;
+      color: $ink-3;
+      line-height: 1;
+      padding: 22px;
+      margin: -22px;
+    }
+  }
+
+  .sheet-body {
+    padding: 0 36px 48px;
+  }
+}
+
+// ── 月历选择器（MonthPicker 组件）──
+.cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+
+  .cal-title {
+    font-size: 29px;
+    font-weight: 600;
+    color: $ink;
+
+    .hint {
+      font-size: 24px;
+      font-weight: 400;
+      color: $ink-3;
+    }
+  }
+
+  .cal-nav {
+    width: 64px;
+    height: 64px;
+    border-radius: 20px;
+    background: $bg-2;
+    font-size: 34px;
+    color: $ink-2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+.cal-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+
+  .cal-week {
+    width: calc((100% - 60px) / 7);
+    text-align: center;
+    font-size: 22px;
+    color: $ink-3;
+    padding-bottom: 6px;
+  }
+
+  .cal-day {
+    width: calc((100% - 60px) / 7);
+    height: 76px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 20px;
+    font-size: 24px;
+    position: relative;
+
+    &.cal-empty { background: $bg-2; color: $ink-3; }
+    &.cal-under { background: $honey-soft; color: #6b4a08; font-weight: 500; }
+    &.cal-on { background: $green-soft; color: #2c6b48; font-weight: 600; }
+    &.cal-over { background: $red-soft; color: #8f382d; font-weight: 600; }
+    &.cal-today { box-shadow: inset 0 0 0 3px $honey-dark; }
+
+    &.mp-day {
+      &.is-selected {
+        background: $honey;
+        color: $honey-btn-ink;
+        font-weight: 700;
+      }
+
+      &.is-future {
+        color: $ink-3;
+      }
+    }
+
+    .mp-dot {
+      position: absolute;
+      bottom: 8px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: $honey;
+    }
+  }
+}
+
+.mp-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 24px;
+
+  .btn-text {
+    height: 80px;
+    line-height: 80px;
+    padding: 0 32px;
+    color: $honey-dark;
+    font-size: 28px;
+    background: transparent;
+    border: 1px solid $line-2;
+    border-radius: $radius;
+  }
+
+  .mp-hint {
+    font-size: 23px;
+    color: $ink-3;
   }
 }

@@ -1,0 +1,216 @@
+.paywall {
+  min-height: 100vh;
+  padding: 32px 28px calc(40px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+
+  .paywall-head {
+    margin-bottom: 24px;
+
+    .paywall-title {
+      font-size: 40px;
+      font-weight: 700;
+      color: $ink;
+    }
+  }
+
+  .notice.ok {
+    margin-bottom: 20px;
+    padding: 20px 24px;
+    font-size: 26px;
+    color: $green;
+    background: $green-soft;
+    border-radius: $radius;
+  }
+
+  .pay-card {
+    margin-bottom: 20px;
+    padding: 28px;
+    background: $surface;
+    border: 1px solid $line;
+    border-radius: $radius-lg;
+
+    &.pay-card-pro {
+      background: $honey-soft;
+      border: 1px solid $honey-soft-2;
+    }
+
+    .pay-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      font-size: 28px;
+      font-weight: 600;
+      color: $honey-dark;
+
+      &.pay-badge-free {
+        color: $ink-2;
+      }
+    }
+
+    .pay-line {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 10px 0;
+      font-size: 26px;
+      line-height: 1.5;
+
+      .tick {
+        flex-shrink: 0;
+        color: $honey-dark;
+        font-weight: 600;
+      }
+
+      .pay-line-text {
+        color: $ink;
+        flex: 1;
+      }
+
+      &.muted {
+        .tick {
+          color: $ink-3;
+        }
+
+        .pay-line-text {
+          color: $ink-2;
+        }
+      }
+    }
+  }
+
+  .pay-grid {
+    display: flex;
+    gap: 16px;
+    margin-top: 8px;
+
+    .pay-option {
+      position: relative;
+      flex: 1;
+      padding: 24px 16px;
+      text-align: center;
+      background: $surface;
+      border: 2px solid $line;
+      border-radius: $radius-lg;
+
+      &.is-hl {
+        border-color: $honey;
+        background: $honey-soft;
+      }
+
+      .pay-option-name {
+        display: block;
+        font-size: 28px;
+        font-weight: 600;
+        color: $ink;
+      }
+
+      .pay-option-price {
+        display: block;
+        margin-top: 10px;
+        font-size: 24px;
+        color: $ink-2;
+      }
+
+      .pay-option-tag {
+        position: absolute;
+        top: -16px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 4px 16px;
+        font-size: 20px;
+        color: $honey-btn-ink;
+        background: $honey;
+        border-radius: 999px;
+      }
+    }
+  }
+
+  .field {
+    margin-top: 24px;
+
+    .field-label {
+      display: block;
+      margin-bottom: 12px;
+      font-size: 26px;
+      color: $ink-2;
+    }
+
+    .field-row {
+      display: flex;
+      gap: 16px;
+
+      .field-input {
+        flex: 1;
+        height: 80px;
+        padding: 0 24px;
+        font-size: 28px;
+        color: $ink;
+        background: $surface;
+        border: 1px solid $line-2;
+        border-radius: $radius;
+      }
+
+      .field-btn {
+        width: 140px;
+        height: 80px;
+        line-height: 80px;
+        padding: 0;
+        font-size: 28px;
+        color: $honey-dark;
+        background: $surface;
+        border: 1px solid $honey-soft-2;
+        border-radius: $radius;
+      }
+    }
+
+    .err {
+      display: block;
+      margin-top: 12px;
+      font-size: 24px;
+      color: $red;
+    }
+
+    .ok-msg {
+      display: block;
+      margin-top: 12px;
+      font-size: 24px;
+      color: $green;
+    }
+  }
+
+  .helper {
+    margin-top: 20px;
+    font-size: 24px;
+    line-height: 1.7;
+    color: $ink-3;
+  }
+
+  .promise-card {
+    margin-top: 20px;
+    padding: 24px 28px;
+    background: $honey-soft;
+    border: none;
+    border-radius: $radius-lg;
+
+    .promise-title {
+      display: block;
+      margin-bottom: 10px;
+      font-size: 26px;
+      font-weight: 600;
+      color: $honey-dark;
+    }
+
+    .promise-body {
+      display: block;
+      font-size: 24px;
+      line-height: 1.8;
+      color: $ink-2;
+      white-space: pre-line;
+    }
+  }
+
+  .bottom-space {
+    height: 20px;
+  }
+}

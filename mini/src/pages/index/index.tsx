@@ -6,6 +6,8 @@ import {
   IconChart, IconMe, IconToday,
 } from '../../components/Icons'
 import { Ring } from '../../components/Ring'
+import { WeekStrip } from '../../components/WeekStrip'
+import { MonthPicker } from '../../components/MonthPicker'
 import {
   listMealsByDate, listMealsBetween, listWaterByDate, listExerciseByDate,
   addWater, addExercise, deleteExercise, deleteMeal, updateMealGrams, undoLastWater,
@@ -14,8 +16,8 @@ import {
   type MealEntry, type WaterLog, type ExerciseLog, type Profile,
 } from '../../lib/api'
 import {
-  EXERCISES, exerciseKcal, formatDateShort, guessMealType, shiftDate,
-  todayKey, waterTargetMl, weekOf,
+  EXERCISES, exerciseKcal, formatDateShort, shiftDate,
+  todayKey, waterTargetMl,
 } from '../../lib/nutrition'
 import { computeStreak, MILESTONES } from '../../lib/streak'
 import {
@@ -222,10 +224,21 @@ export default function Index() {
   const checkupLevel = dayInsight.avgScore === null ? null : levelOfScore(dayInsight.avgScore)
   const checkupTone = checkupLevel === 'great' || checkupLevel === 'good' ? 'is-good' : checkupLevel === 'ok' ? 'is-ok' : 'is-warn'
 
-  const waterPct = Math.min(100, Math.round((waterMl / waterTarget) * 100))
+  // 饮食体检折叠状态（对齐主工程：默认展开，可折叠详情区）
+  const [checkupCollapsed, setCheckupCollapsed] = useState(false)
 
-  // 周历条
-  const weekDays = useMemo(() => weekOf(logDate), [logDate])
+  // 给你的建议（来自引导时 AI 生成的 plan_summary）
+  const planAdvice = useMemo(() => {
+    if (!profile?.plan_summary) return []
+    try {
+      const parsed = JSON.parse(profile.plan_summary) as { summary?: string; advice?: string[] }
+      return parsed.advice ?? []
+    } catch {
+      return []
+    }
+  }, [profile?.plan_summary])
+
+  const waterPct = Math.min(100, Math.round((waterMl / waterTarget) * 100))
 
   /* ── 交互 ── */
 
@@ -304,6 +317,8 @@ export default function Index() {
   function goScan() { Taro.navigateTo({ url: '/pages/scan/scan' }) }
   function goReport() { Taro.navigateTo({ url: '/pages/report/report' }) }
   function goProfile() { Taro.navigateTo({ url: '/pages/profile/profile' }) }
+  function goInvite() { Taro.navigateTo({ url: '/pages/invite/invite' }) }
+  function goCoach() { Taro.navigateTo({ url: '/pages/coach/coach' }) }
 
   // 未登录：引导去登录
   if (!loggedIn) {
@@ -334,43 +349,24 @@ export default function Index() {
         </View>
       </View>
 
-      {/* 周历条 */}
-      <View className='week-strip'>
-        {weekDays.map((d) => {
-          const selected = d === logDate
-          const future = d > today
-          return (
-            <View
-              key={d}
-              className={`ws-day ${selected ? 'is-selected' : ''} ${d === today ? 'is-today' : ''} ${future ? 'is-future' : ''}`}
-              onClick={() => setLogDate(d)}
-            >
-              <Text className='wd'>{['日', '一', '二', '三', '四', '五', '六'][new Date(d).getDay()]}</Text>
-              <Text className='dn'>{Number(d.slice(-2))}</Text>
-              <View className={`ws-dot ${loggedDates.includes(d) ? 'on' : ''}`} />
-            </View>
-          )
-        })}
-      </View>
+      {/* 周历条：左右滑动翻周，点选任意一天 */}
+      <WeekStrip
+        date={logDate}
+        today={today}
+        loggedDates={loggedDates}
+        onPick={setLogDate}
+        onShiftDays={(days) => setLogDate((d) => shiftDate(d, days))}
+      />
 
-      {/* 月历（简易，点击日期标签切换） */}
+      {/* 月历选择器 */}
       {pickerOpen && (
-        <View className='picker-mask' onClick={() => setPickerOpen(false)}>
-          <View className='picker-panel' onClick={(e) => e.stopPropagation()}>
-            <Text className='picker-title'>选择日期</Text>
-            <View className='picker-grid'>
-              {Array.from({ length: 14 }, (_, i) => {
-                const d = shiftDate(today, i - 13)
-                return (
-                  <Button key={d} className={`picker-day ${d === logDate ? 'is-selected' : ''}`} onClick={() => { setLogDate(d); setPickerOpen(false) }}>
-                    {formatDateShort(d)}
-                  </Button>
-                )
-              })}
-            </View>
-            <Button className='btn-text' onClick={() => { setLogDate(today); setPickerOpen(false) }}>回到今天</Button>
-          </View>
-        </View>
+        <MonthPicker
+          value={logDate}
+          today={today}
+          loggedDates={loggedDates}
+          onSelect={(d) => { setLogDate(d); setPickerOpen(false) }}
+          onClose={() => setPickerOpen(false)}
+        />
       )}
 
       {error ? <View className='notice err'><Text>{error}</Text></View> : null}
@@ -431,11 +427,68 @@ export default function Index() {
           </View>
           <View className='card checkup'>
             <View className='checkup-verdict'>
-              <Text className={`cu-score ${checkupTone}`}>{dayInsight.avgScore}</Text>
+              <View className={`cu-score ${checkupTone}`}>
+                <Text>{dayInsight.avgScore}</Text>
+              </View>
               <View className='cu-main'>
                 <Text className={`cu-level ${checkupTone}`}>{LEVEL_LABELS[checkupLevel]}</Text>
                 <Text className='cu-text'>{dayInsight.verdict}</Text>
               </View>
+              <View
+                className='checkup-toggle'
+                onClick={() => setCheckupCollapsed((v) => !v)}
+              >
+                <Text className={`toggle-chevron ${checkupCollapsed ? 'is-folded' : ''}`}>▾</Text>
+                <Text className='toggle-label'>{checkupCollapsed ? '展开' : '收起'}</Text>
+              </View>
+            </View>
+
+            <View className={`checkup-detail ${checkupCollapsed ? 'is-folded' : ''}`}>
+              {dayInsight.risks.length > 0 && (
+                <View className='checkup-group'>
+                  <Text className='cg-title risk'>建议留意</Text>
+                  {dayInsight.risks.map((t) => (
+                    <View className='cg-row' key={t.key}>
+                      <Text className='cg-label'>{t.label}</Text>
+                      <Text className='cg-badge'>{t.count} 项</Text>
+                      <Text className='cg-reason'>{t.reason}</Text>
+                      <Text className='cg-items'>
+                        {t.items.join('、')}
+                        {t.count > t.items.length ? ` 等 ${t.count} 项` : ''}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {dayInsight.benefits.length > 0 && (
+                <View className='checkup-group'>
+                  <Text className='cg-title good'>值得肯定</Text>
+                  {dayInsight.benefits.map((t) => (
+                    <View className='cg-row' key={t.key}>
+                      <Text className='cg-label'>{t.label}</Text>
+                      <Text className='cg-badge good'>{t.count} 项</Text>
+                      <Text className='cg-reason'>{t.reason}</Text>
+                      <Text className='cg-items'>
+                        {t.items.join('、')}
+                        {t.count > t.items.length ? ` 等 ${t.count} 项` : ''}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {(totals.na > 0 || totals.fb > 0) && (
+                <View className='microline'>
+                  {totals.na > 0 && <Text className='micro-pill'>今日钠 {Math.round(totals.na)} mg</Text>}
+                  {totals.fb > 0 && <Text className='micro-pill'>膳食纤维 {Math.round(totals.fb * 10) / 10} g</Text>}
+                  {totals.as > 0 && <Text className='micro-pill'>添加糖 {Math.round(totals.as * 10) / 10} g</Text>}
+                </View>
+              )}
+
+              <Text className='helper'>
+                按营养成分与烹调方式本地推算{dayInsight.aiAssisted > 0 ? `，其中 ${dayInsight.aiAssisted} 项参考了 AI 评分` : ''}，不消耗 AI 次数。仅供参考，不构成医疗建议。
+              </Text>
             </View>
           </View>
         </View>
@@ -445,6 +498,33 @@ export default function Index() {
       <View className={`advice-strip ${advice.over ? 'is-over' : ''}`}>
         <Text className='as-tag'>卡路里追踪</Text>
         <Text className='as-text'>{advice.text}</Text>
+      </View>
+
+      {/* 近 7 天热量迷你趋势 */}
+      <View className='card card-tight mini-trend'>
+        <View className='mt-head'>
+          <Text className='mt-title'>近 7 天热量</Text>
+          <Text className='mt-sub'>虚线为预算 {target.calories} kcal</Text>
+        </View>
+        <View className='mt-bars'>
+          {weekBars.map((b) => {
+            const h = Math.max(b.kcal > 0 ? 6 : 0, Math.round((b.kcal / weekPeak) * 100))
+            const overDay = b.logged && b.kcal > target.calories * 1.1
+            return (
+              <View
+                key={b.date}
+                className={`mt-col ${b.isToday ? 'is-today' : ''}`}
+                onClick={() => setLogDate(b.date)}
+              >
+                <Text className='mt-val'>{b.logged ? b.kcal : ''}</Text>
+                <View className='mt-track'>
+                  <View className={`mt-fill ${overDay ? 'is-over' : ''}`} style={{ height: `${h}%` }} />
+                </View>
+                <Text className='mt-day'>{Number(b.date.slice(-2))}</Text>
+              </View>
+            )
+          })}
+        </View>
       </View>
 
       {/* 连续打卡 */}
@@ -587,7 +667,43 @@ export default function Index() {
         })
       )}
 
+      {/* 给你的建议（引导时 AI 生成） */}
+      {planAdvice.length > 0 && (
+        <View>
+          <View className='section-title'>
+            <Text>给你的建议</Text>
+          </View>
+          <View className='card'>
+            {planAdvice.map((a, i) => (
+              <View key={i} className='plan-row'>
+                <Text className='plan-idx'>{i + 1}</Text>
+                <Text className='plan-text'>{a}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* 问问小蜜（AI 教练入口，对齐主工程 Dashboard coach-entry） */}
+      <Button className='coach-entry' onClick={goCoach}>饮食上有拿不准的？问问小蜜 →</Button>
+
+      {/* 邀请好友入口（拉新主入口，对齐主工程首页直达） */}
+      <View className='invite-strip' onClick={goInvite}>
+        <Text className='is-ico'>🍯</Text>
+        <View className='is-text'>
+          <Text>邀请好友一起自律</Text>
+          <Text className='is-small'>你得蜜糖，好友得 7 天 Pro</Text>
+        </View>
+        <Text className='arrow'>›</Text>
+      </View>
+
       <View className='bottom-space' />
+
+      {/* 主操作「记一餐」吸底悬浮 */}
+      <Button className='btn fab-meal' onClick={goScan}>
+        <IconPlus color='#4a3208' />
+        <Text>记一餐</Text>
+      </Button>
 
       {/* 底部导航（对齐主工程三 tab：今日 / 报告 / 我的） */}
       <View className='tabbar'>

@@ -75,6 +75,31 @@ export const IconPlus = iconPath(
   (c) => `<path d="M12 5v14M5 12h14" stroke="${c}" stroke-width="2.2" stroke-linecap="round"/>`,
 )
 
+/** 相机：用于「拍一张这一餐的照片」 */
+export const IconCamera = iconPath(
+  (c) => `<path d="M4 8.5h2.4l1.3-2h8.6l1.3 2H20a1 1 0 011 1v8a1 1 0 01-1 1H4a1 1 0 01-1-1v-8a1 1 0 011-1z" stroke="${c}" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.3" stroke="${c}" stroke-width="1.6"/>`,
+)
+
+/** 扫码框：用于「扫一扫」 */
+export const IconScan = iconPath(
+  (c) => `<path d="M3.5 8V5.5a2 2 0 012-2H8M16 3.5h2.5a2 2 0 012 2V8M20.5 16v2.5a2 2 0 01-2 2H16M8 20.5H5.5a2 2 0 01-2-2V16" stroke="${c}" stroke-width="1.7" stroke-linecap="round"/><path d="M6 12h1.6M9.2 9.5v5M11.6 12h1.2M11.6 9.5v5M14.8 9.5v5M16.4 12H18" stroke="${c}" stroke-width="1.6" stroke-linecap="round"/>`,
+)
+
+/** 对话气泡：用于「问问小蜜」教练入口 */
+export const IconChat = iconPath(
+  (c) => `<path d="M20.5 11.6c0 4-3.8 7.2-8.5 7.2-.9 0-1.9-.1-2.7-.4L4.5 20l1.2-3.4c-1.4-1.3-2.2-3-2.2-5C3.5 7.6 7.3 4.4 12 4.4s8.5 3.2 8.5 7.2z" stroke="${c}" stroke-width="1.7" stroke-linejoin="round"/><path d="M8.6 11.7h.01M12 11.7h.01M15.4 11.7h.01" stroke="${c}" stroke-width="2.4" stroke-linecap="round"/>`,
+)
+
+/** 礼物：用于「邀请好友」等 */
+export const IconGift = iconPath(
+  (c) => `<rect x="4" y="8.5" width="16" height="4" rx="1.2" stroke="${c}" stroke-width="1.7"/><path d="M5.5 12.5v6.5a1.5 1.5 0 001.5 1.5h10a1.5 1.5 0 001.5-1.5v-6.5M12 8.5V20.5" stroke="${c}" stroke-width="1.7" stroke-linecap="round"/><path d="M12 8.3C10 8.3 7.6 7.7 7.6 5.9 7.6 4.5 8.7 3.6 9.9 3.6c1.5 0 2.1 1.7 2.1 4.7zm0 0c2 0 4.4-.6 4.4-2.4 0-1.4-1.1-2.3-2.3-2.3-1.5 0-2.1 1.7-2.1 4.7z" stroke="${c}" stroke-width="1.6"/>`,
+)
+
+/** 火焰（实心变体）：用于成就/徽章 */
+export const IconFlame = iconPath(
+  (c) => `<path d="M12 3.5c.6 2.6 2.3 3.9 3.9 5.6 1.5 1.6 2.4 3.2 2.4 5.1A6.3 6.3 0 0112 20.5a6.3 6.3 0 01-6.3-6.3c0-2.4 1.3-4.3 2.8-5.6.4 1.2 1 2 1.9 2.6C10.3 9 10.9 6 12 3.5z" stroke="${c}" stroke-width="1.7" stroke-linejoin="round"/>`,
+)
+
 /** 皇冠：用于「会员」 */
 export const IconCrown = iconPath(
   (c) => `<path d="M4 17.5l-1.2-9 5 3.6L12 5.5l4.2 6.6 5-3.6-1.2 9H4z" stroke="${c}" stroke-width="1.7" stroke-linejoin="round"/><path d="M5 20h14" stroke="${c}" stroke-width="1.7" stroke-linecap="round"/>`,

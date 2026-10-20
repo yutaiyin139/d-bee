@@ -1,0 +1,98 @@
+.legal-page {
+  min-height: 100vh;
+  padding: 32px 32px calc(40px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+
+  .legal-head {
+    margin-bottom: 24px;
+
+    .legal-back {
+      display: inline-block;
+      padding: 0;
+      margin-bottom: 12px;
+      font-size: 26px;
+      color: $honey-dark;
+      line-height: 1;
+    }
+
+    .legal-title {
+      display: block;
+      font-size: 44px;
+      font-weight: 700;
+      color: $ink;
+    }
+
+    .legal-updated {
+      display: block;
+      margin-top: 8px;
+      font-size: 24px;
+      color: $ink-3;
+    }
+  }
+
+  .legal-body {
+    .legal-intro {
+      display: block;
+      margin-bottom: 24px;
+      font-size: 28px;
+      line-height: 1.7;
+      color: $ink-2;
+    }
+
+    .legal-section {
+      margin-bottom: 28px;
+
+      .legal-h2 {
+        display: block;
+        margin-bottom: 12px;
+        font-size: 30px;
+        font-weight: 600;
+        color: $ink;
+      }
+
+      .legal-p {
+        display: block;
+        margin-bottom: 10px;
+        font-size: 27px;
+        line-height: 1.7;
+        color: $ink-2;
+      }
+
+      .legal-list {
+        .legal-li {
+          display: block;
+          padding-left: 24px;
+          margin-bottom: 8px;
+          font-size: 27px;
+          line-height: 1.7;
+          color: $ink-2;
+          position: relative;
+
+          &::before {
+            content: '·';
+            position: absolute;
+            left: 4px;
+            color: $honey-dark;
+            font-weight: 600;
+          }
+        }
+      }
+    }
+  }
+
+  .legal-done {
+    width: 100%;
+    height: 84px;
+    line-height: 84px;
+    padding: 0;
+    font-size: 28px;
+    color: $honey-dark;
+    background: $surface;
+    border: 1px solid $honey-soft-2;
+    border-radius: $radius;
+  }
+
+  .bottom-space {
+    height: 20px;
+  }
+}

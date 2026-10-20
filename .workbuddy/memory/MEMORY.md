@@ -1,23 +1,29 @@
 # D-Bee（自律蜜蜂）· 项目长期记忆（精简版，细节看当日日志与 docs/）
 
-## 进度快照（2026-10-19 晚，V1.6.8 已发布 + 多端小程序阶段3完成）
+## 进度快照（2026-10-20 上午，V1.6.9 已发布 + 小程序一比一复刻完成；较 10-19 晚无新增代码变更）
 
-- **Web V1.6.8 已发布**（http://150.158.51.106/ ，主包 `index-B5oKeajs.js`，commit `e1833a3`）；
-  Android debug APK V1.6.8 已打包（versionCode 9，归档 dist-release/D-Bee-debug-v1.6.8-20261018.apk）。
-- **当日已提交并推送**（`5252f31..e51e58f`，4 批 commit）：
-  ①免费拍照识别额度规则统一「3 免费 + 2 兑换」（迁移 0025 单日兑换上限 5→2 + 前端 4 处文案去歧义
-  + `AI_REDEEM_DAILY_LIMIT=2`）；②抽 @dbee/shared 单一真相源 + 主工程 entitlement/photoGuard 薄壳化；
-  ③mini Taro 4 多端工程（微信/支付宝/抖音）；④规划文档+日志。之后再 commit `8ad97cd`（Taro 工程）
-  →`c9cb274`（shared 薄壳）→`e51e58f`（规划+日志）→`a90d907`（支付宝/抖音手机号验证码登录）。
-- **当日新进展（10-19，部分尚未 commit）**：
-  - **多端小程序独立工程**（Taro 4.3.0 React+TS，微信/支付宝/抖音三端已编译通过）：阶段0工程初始化
-    ✅→阶段1 shared 单一真相源 + 主工程薄壳化 ✅→阶段2 mini 引 shared 三端冒烟 ✅→阶段3 MVP 业务页
-    （云 SDK 0.1.3 原生支持小程序、三端登录、打卡、拍照识别、积分兑换、AI 识别）✅。三端编译全过，
-    dist 427KB 远低于主包 2MB 限制。
-  - **支付宝/抖音登录补全**：SDK 0.1.3 仅微信有 `loginWechat` 端点，无 login-alipay/douyin →
-    补手机号验证码登录 `sendPhoneOtp`/`signInWithPhone`（三端均显示验证码表单）。
-  - **小程序 UI 对齐暖米色蜂蜜设计系统**：新增 `mini/src/styles/tokens.scss`（对齐主工程 :root token），
-    四个页面 scss 全部 token 化重写 + 首页/登录页 tsx 重做，三端编译通过。
+- **Web V1.6.9 已发布**（http://150.158.51.106/ ，主包 `index-MzkM5Xnv.js`，commit `9121e3f`）；
+  Android debug APK V1.6.9 已打包（versionCode 10，归档 dist-release/D-Bee-debug-v1.6.9-20261019.apk）。
+- **10-19 晚间已提交并推送**（`5252f31..9121e3f`）：额度规则统一（`aaff551`）→ @dbee/shared 薄壳
+  （`c9cb274`）→ Taro 工程（`8ad97cd`）→ 规划文档（`e51e58f`）→ 支付宝/抖音手机号登录（`a90d907`）
+  → 小程序补齐我的页/积分中心/报告页（`3d50196`）→ V1.6.9 release（`6239592`）→ 打卡每7天循环送识别
+  （`a581387`）→ 识别成功自动保存+覆盖/追加确认（`361c8cc`）→ 保存逻辑简化（`9121e3f`）。
+- **免费识别额度最终规则（3 免费 + 2 兑换，已定）**：每日 3 次免费识别 + 2 次积分兑换（50 分/次），
+  用尽只能 Pro。新手奖励=150 积分（grantHoney 'newbie'）；连续打卡每满 7 天=送 2 次识别（grantPhotoBonus
+  'streak7'，7/14/21 天循环）。迁移 0025（兑换上限 5→2）+ 0026（newbie 发积分 + 作废存量 newbie 识别 bonus）。
+- **识别自动保存（已收敛）**：识别成功即自动保存（settleDraft）；该餐有记录弹「覆盖/追加/取消」三选；
+  无记录直接落库关闭；切换页面兜底；去掉撤销等过度设计。解决「识别成功但没点保存→额度白扣」核心问题。
+- **多端小程序（Taro 4.3.0 React+TS，微信/支付宝/抖音）四轮对齐完成**：阶段0工程→阶段1 shared 真相源
+  →阶段2 三端冒烟→阶段3 MVP 业务页→四轮补齐（数据共享同一 Cloud 后端 + api.ts 补 ~20 函数 + 积分/权益引擎
+  + 邀请绑定 + 扫码会员逻辑）。首页 Dashboard/登录/Onboarding/我的/积分中心/报告 六页已对齐主工程，
+  dist ~483KB。图标/环形进度用 SVG data URI（Image 组件渲染），token 已对齐暖米色设计系统。
+  受限能力（健康步数/支付/分享卡 canvas）诚实引导占位，后置。
+- **10-20 小程序端一比一复刻完成（补齐至 11 页，与主工程页面对齐）**：原 8 页 → 补 coach（AI 教练）、
+  paywall（付费墙三档 + 兑换码）、legal（法务三文档）三页；补 lib errmsg.ts（错误中文化）+ ai.askCoach
+  + validate COACH/REDEEM 常量 + content/legal.ts（三份法务文档）。小程序端无全局 usePlan，
+  付费墙/教练页用「页内自拉 entitlement + 今日数据」模式（与 scan 页一致）。入口：index「问问小蜜」、
+  profile「升级」跳 paywall +「关于」区三协议入口。三端编译全过（微信/支付宝/抖音），tsc 0 错。
+  受限能力（支付/健康步数/分享卡）仍诚实引导占位。
 - **主线：PWA → 原生 App**（Capacitor 8.5.3）。阶段 0 解耦 ✅；Android 全过 ✅；
   iOS 待 Mac mini 首次构建（origin-proxy/health/iap 三个自研 Swift 插件 + @capacitor/camera 均未编译，
   Mac 侧第一件事：`npm install && npx cap sync ios` 重生成 CapApp-SPM 依赖再 Xcode 编译）。
@@ -35,24 +41,22 @@
 - **会员三档** free/pro/lifetime（¥18/¥128/¥328）；IAP 骨架就绪但真实支付未启用
   （verifyReceipt 未接，等 Apple 开发者账号），当前仅兑换码解锁。
 - 微信相关整体暂缓（营业执照办理中）。
-- **git 状态**：最新 commit `a90d907`（feat: 支付宝/抖音端手机号验证码登录），工作区**有未提交改动**（main）：
-  小程序 UI 对齐暖米色设计系统（mini/config、app.config、app.scss、checkin/index/login/scan 各页面 scss+tsx）
-  + 新增 `mini/i18n/`、`mini/src/styles/`、`mini/project.config.json`、`docs/小程序介绍.md`、`design/icon/archive-*`
-  等未跟踪文件。**主工程 src/ 已无未提交改动**（额度统一/健康门控/小程序预留/shared 薄壳均已随上面 commit 入库）。
-  历史关键 commit：`3717932`（华为/小米健康+相机+兑换计次修复）、`e1833a3`（V1.6.8 release）、
-  `aaff551`（额度规则统一+健康门控+小程序预留）、`c9cb274`（shared 薄壳）、`8ad97cd`（Taro 工程）。
+- **git 状态**：最新 commit `9121e3f`（refactor: 简化保存逻辑），工作区**有未提交改动**（main）——均为
+  `.workbuddy/memory/` 记忆文件（2026-10-19.md / 2026-10-20.md / automations/...），**无源码未提交改动**。
+  主工程 src/ 与 mini/ 已全部随 commit 入库。历史关键 commit：`9121e3f`（保存逻辑简化）、`361c8cc`
+  （识别自动保存+覆盖确认）、`6239592`（V1.6.9 release）、`3d50196`（小程序补齐我的页/积分中心/报告页）、
+  `3717932`（华为/小米健康+相机+兑换计次修复）、`e1833a3`（V1.6.8 release）。
 - **多端架构（已拍板，阶段0~3完成）**：Taro 4（React）+ **双工程 + shared 共享包**，不重构 monorepo。
   现有工程（src/）+ `mini/`（Taro 4.3.0，微信/支付宝/抖音三端已编译通过）+ `packages/shared/`（@dbee/shared
   纯逻辑真相源，tsc 产 dist/）。阶段1~3已完成：entitlement/photoGuard 薄壳 re-export 指向 shared、
   types/upsell 收敛到单一真相源、mini 引 shared 三端冒烟 + MVP 业务页（登录/打卡/扫描识别/兑换）。
   `file:` 依赖路径 = 主工程 `file:packages/shared`、mini 工程 `file:../packages/shared`（勿写错层级）。
   mini tsconfig `moduleResolution:"bundler"`（否则 @dbee/shared/cloud-sdk 子路径导不出）。
-- **下一步**：①提交小程序 UI 对齐 + 手机号登录这批未提交改动；②Mac mini 首次构建 iOS
-  （编译 origin-proxy/health/iap 三 Swift 插件 + @capacitor/camera）+ 真机回归「IAP 拉商品→购买→核销」
-  与「HealthKit 授权→读步数→计活动消耗」两链路；③华为/小米资质就绪后替换 dbee-health 插件方法体
-  并真机验收（当前返回 reason=not_ready，前端已诚实引导）；④用户 Android 真机复测本轮 APK；
-  ⑤小程序真机联调（微信开发者工具/支付宝/抖音验证手机号验证码登录 + 拍照识别链路），
-  后续再补健康步数（微信 getWeRunData 需资质）与支付（三套）；⑥评估主工程 api.ts 与 mini api.ts
+- **下一步**：①Mac mini 首次构建 iOS（编译 origin-proxy/health/iap 三 Swift 插件 + @capacitor/camera）
+  + 真机回归「IAP 拉商品→购买→核销」与「HealthKit 授权→读步数→计活动消耗」两链路；②华为/小米资质
+  就绪后替换 dbee-health 插件方法体并真机验收（当前返回 reason=not_ready，前端已诚实引导）；③用户 Android
+  真机复测本轮 V1.6.9 APK；④小程序真机联调（微信开发者工具/支付宝/抖音验证手机号验证码登录 + 拍照识别
+  链路），后续再补健康步数（微信 getWeRunData 需资质）与支付（三套）；⑤评估主工程 api.ts 与 mini api.ts
   两份重复，后续可抽 shared 统一。
 - **待拍板决策**：无新阻塞项；长期待办 = Apple 开发者账号（启用真实 IAP）、营业执照（重启微信）、
   华为应用市场上架（Health Kit 前置硬门槛，可并入软著/备案推进）。

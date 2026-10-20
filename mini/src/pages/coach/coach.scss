@@ -1,0 +1,86 @@
+.coach-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  box-sizing: border-box;
+  background: $bg;
+
+  .coach-body {
+    flex: 1;
+    padding: 24px 28px;
+    box-sizing: border-box;
+
+    .coach-msg {
+      max-width: 82%;
+      margin-bottom: 20px;
+      padding: 20px 24px;
+      font-size: 28px;
+      line-height: 1.6;
+      color: $ink;
+      background: $surface;
+      border: 1px solid $line;
+      border-radius: 18px;
+      border-top-left-radius: 6px;
+      word-break: break-word;
+
+      &.mine {
+        margin-left: auto;
+        color: $honey-btn-ink;
+        background: $honey;
+        border: none;
+        border-radius: 18px;
+        border-top-right-radius: 6px;
+      }
+
+      &.coach-thinking {
+        color: $ink-2;
+      }
+    }
+
+    .notice.err {
+      margin: 8px 0 16px;
+      padding: 16px 20px;
+      font-size: 26px;
+      color: $red;
+      background: $red-soft;
+      border-radius: $radius;
+    }
+  }
+
+  .coach-input {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 20px calc(16px + env(safe-area-inset-bottom));
+    background: $surface;
+    border-top: 1px solid $line;
+    box-sizing: border-box;
+
+    .coach-input-field {
+      flex: 1;
+      height: 72px;
+      padding: 0 24px;
+      font-size: 28px;
+      color: $ink;
+      background: $bg-2;
+      border-radius: $radius;
+    }
+
+    .coach-send {
+      width: 128px;
+      height: 72px;
+      line-height: 72px;
+      padding: 0;
+      font-size: 28px;
+      font-weight: 600;
+      color: $honey-btn-ink;
+      background: $honey;
+      border-radius: $radius;
+      border: none;
+
+      &[disabled] {
+        opacity: 0.5;
+      }
+    }
+  }
+}

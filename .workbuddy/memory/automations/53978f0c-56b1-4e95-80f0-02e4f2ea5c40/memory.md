@@ -56,6 +56,21 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
 - 清理：无过期备份（cutoff 2026-09-19）。
 - 结论：备份链最后一个有效快照为 2026-10-18；需恢复 genie-baas 通道后手动重跑补齐。
 
+### 2026-10-20 09:07（第 8 次）
+- 结果：**失败**，未产出 `db/backups/2026-10-20.json`（未写空备份、未覆盖历史）。
+- 原因：与 2026-10-19 完全相同的故障面——`mcp__genie-baas__workbuddy_cloudservice_db_exec_sql`
+  本会话未注册（ToolSearch 精确名/3 组关键词均命中不到，只回无关工具；DeferExecuteTool 报
+  not found in deferred tools index）；`workbuddy_cloud_service(inspect)` → `applications: []`。
+  项目根仅有 `.env.example`，无凭据。
+- 已落 `db/backups/FAILED-2026-10-20.md`。
+- 清理：30 天 cutoff=2026-09-20，现存最早 2026-10-13，无过期文件。
+- 结论：备份链连续 2 日断档，最后有效快照仍为 2026-10-18。需在已绑定应用的会话手动补跑。
+- 流程记录：本任务每次都在**全新会话**跑，genie-baas 是否注册取决于会话是否绑定该应用；
+  这是外部前置条件，非脚本问题。10-19 起连续失败，说明绑定已失效（而非偶发）。
+- 同日 09:09 触发第二次（重复调度/手动续跑）：复测 ToolSearch 与直接 DeferExecuteTool 仍失败，
+  结论不变；已在同一份 FAILED-2026-10-20.md 追加「尝试记录」表格，未新建重复文件。
+  **后续再遇同日重复触发：直接复用当日 FAILED 文件追加一行，不要再重复全流程排查。**
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。

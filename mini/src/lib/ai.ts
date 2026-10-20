@@ -245,6 +245,48 @@ export async function generateReportInsight(stats: ReportStats): Promise<{ summa
   }
 }
 
+const COACH_SYSTEM = `你是一位务实、亲切的中式饮食教练「D-Bee 小蜜」，在聊天里回答用户关于饮食、热量、营养的问题。
+要求：
+1. 用简体中文口语化回答，每次不超过 120 字，给可执行的建议，不说教、不打鸡血。
+2. 会引用用户的实时数据（今日已摄入、剩余额度、目标），让建议贴合当下。
+3. 涉及疾病、药物、孕期等医疗问题时，明确建议咨询医生，不做诊断。
+4. 不建议吃补剂、代餐或极端节食。`
+
+export interface CoachContext {
+  goal: string
+  targetKcal: number
+  eatenKcal: number
+  burnedKcal: number
+  proteinTarget: number
+  proteinEaten: number
+  waterMl: number
+  waterTarget: number
+  topFoods: string[]
+  barriers: string[]
+}
+
+/** AI 饮食助手：把实时状态作为上下文，回答单条提问（对齐主工程 askCoach） */
+export async function askCoach(question: string, ctx: CoachContext): Promise<string> {
+  const goalText = ctx.goal === 'lose' ? '减脂' : ctx.goal === 'gain' ? '增重增肌' : '保持体重'
+  const net = Math.round(ctx.eatenKcal - ctx.burnedKcal)
+  const remain = Math.round(ctx.targetKcal - net)
+  const user = `我的实时状态：
+- 目标：${goalText}，每日热量预算 ${ctx.targetKcal} kcal
+- 今日已摄入 ${Math.round(ctx.eatenKcal)} kcal，运动消耗 ${Math.round(ctx.burnedKcal)} kcal，净摄入 ${net} kcal（还能吃约 ${remain} kcal）
+- 蛋白质 ${Math.round(ctx.proteinEaten)}/${ctx.proteinTarget} g，饮水 ${ctx.waterMl}/${ctx.waterTarget} ml
+- 最近常吃：${ctx.topFoods.slice(0, 4).join('、') || '暂无'}
+- 我的困难：${ctx.barriers.join('、') || '暂无'}
+
+我的问题：${question}`
+  return collectText(
+    [
+      { role: 'system', content: COACH_SYSTEM },
+      { role: 'user', content: user },
+    ],
+    0.55,
+  )
+}
+
 /**
  * 拍照识别食物。
  * @param imageUrl 图片地址：可为 dataUrl（base64）或小程序临时文件路径。
