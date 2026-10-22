@@ -7,7 +7,8 @@
   python dbee.py render <模板> <输出>          # 【本地操作，不连服务器】替换占位符生成文件
   python dbee.py run    <本地脚本>             # 上传到 /tmp 执行（占位符会被替换）
   python dbee.py putdir <本地目录> <远端目录>   # 递归上传目录内容
-  python dbee.py putfile <本地文件> <远端文件>  # 上传单个文件
+  python dbee.py putfile <本地文件> <远端文件>  # 上传单个【文本】文件（\r\n→\n 换行归一）
+  python dbee.py putbin  <本地文件> <远端文件>  # 上传单个【二进制】文件（不做任何换行替换）
 
 占位符替换表（值来自环境变量）：
   __SUDO_PWD__    -> DBEE_PWD
@@ -16,6 +17,7 @@
   __DOMAIN__      -> DBEE_DOMAIN
   __EMAIL__       -> DBEE_CERT_EMAIL
   __WEBAPP_KEY__  -> DBEE_WEBAPP_KEY   （自测用 publishableKey，由 deploy.sh 从 src/cloudConfig.ts 自动提取）
+  __JWT_SECRET__  -> DBEE_JWT_SECRET   （网关与 PostgREST 必须共用的 HS256 密钥，见 deploy-postgrest.sh）
 """
 import os
 import posixpath
@@ -39,6 +41,9 @@ SUBS = {
     "__DOMAIN__": os.environ.get("DBEE_DOMAIN", ""),
     "__EMAIL__": os.environ.get("DBEE_CERT_EMAIL", ""),
     "__WEBAPP_KEY__": os.environ.get("DBEE_WEBAPP_KEY", ""),
+    # 网关与 PostgREST 必须共用同一个 HS256 密钥，否则网关签发的 JWT
+    # 在 PostgREST 侧验签失败（症状：数据面全部 401）。由 deploy-postgrest.sh 传入。
+    "__JWT_SECRET__": os.environ.get("DBEE_JWT_SECRET", ""),
 }
 
 
@@ -143,7 +148,7 @@ def put_dir(client, local_dir, remote_dir):
 
 
 def put_file(client, local_path, remote_path):
-    """上传单个文件（LF 换行，供 nginx 等直接消费）。"""
+    """上传单个【文本】文件（\\r\\n→\\n 换行归一，供 nginx 等直接消费）。"""
     sftp = client.open_sftp()
     with open(local_path, "rb") as fh:
         data = fh.read().replace(b"\r\n", b"\n")
@@ -155,6 +160,27 @@ def put_file(client, local_path, remote_path):
     sftp.chmod(remote_path, 0o600)
     sftp.close()
     print(f"[上传] {local_path} -> {remote_path} ({len(data)} B)")
+    return 0
+
+
+def put_bin(client, local_path, remote_path):
+    """上传单个【二进制】文件 —— 原样字节，绝不做换行替换。
+
+    与 put_file 的唯一区别就是那一步 replace：文本配置要归一成 LF，
+    但二进制（如 postgrest 的 tar.xz）一旦被 \\r\\n→\\n 处理就会损坏，
+    sha256 校验必然失败。故为二进制单独开这个入口。
+    """
+    sftp = client.open_sftp()
+    with open(local_path, "rb") as fh:
+        data = fh.read()  # 原样读入，不动一个字节
+    parent = posixpath.dirname(remote_path)
+    if parent:
+        mkdirs(sftp, parent)
+    with sftp.file(remote_path, "wb") as fh:
+        fh.write(data)
+    sftp.chmod(remote_path, 0o600)
+    sftp.close()
+    print(f"[上传·二进制] {local_path} -> {remote_path} ({len(data)} B)")
     return 0
 
 
@@ -171,6 +197,8 @@ def main():
             return put_dir(client, sys.argv[2], sys.argv[3])
         if action == "putfile":
             return put_file(client, sys.argv[2], sys.argv[3])
+        if action == "putbin":
+            return put_bin(client, sys.argv[2], sys.argv[3])
         print("unknown action", file=sys.stderr)
         return 2
     finally:

@@ -1,0 +1,89 @@
+# ═══════════════════════════════════════════════════════════════════════
+# PostgREST 配置 —— D-Bee 自托管数据面（A2）
+# ═══════════════════════════════════════════════════════════════════════
+# 这是**模板**。安装脚本 install-postgrest.sh 会把 __PLACEHOLDER__ 换成真值，
+# 生成服务器上的 /etc/postgrest/config（0640 root:postgrest）。
+# ⚠️ 本模板入库、不含秘密；真 config 文件含 db-uri 密码与 jwt-secret，**不入库**。
+#
+# 配置方式说明：PostgREST 支持三种来源 —— config 文件、PGRST_* 环境变量、
+# in-database 配置（优先级递增）。这里选 **config 文件**：
+#   · 官方 v14/v16 文档明确仍支持（网上"v14 起移除 config 文件"的说法有误）；
+#   · 比环境变量更适合放秘密：文件可 chmod 0640 root:postgrest，
+#     而 systemd EnvironmentFile 的变量会出现在 /proc/<pid>/environ（同 uid 可读）；
+#   · 支持 SIGUSR1 热重载（改完 `systemctl reload postgrest`，不用重启断连）。
+# ═══════════════════════════════════════════════════════════════════════
+
+# ── 数据库连接 ─────────────────────────────────────────────────────────
+# authenticator 角色 = dbee_web（由 0032-postgrest-roles.sql 创建，LOGIN + NOINHERIT）。
+# 密码由安装脚本随机生成并 ALTER ROLE 设置，同时写入本文件 —— 不出现在任何入库文件里。
+# 密码里的特殊字符须 percent-encode（libpq URI 规则）；脚本用 hex 生成，天然无需转义。
+db-uri = "postgres://dbee_web:__DB_PASSWORD__@127.0.0.1:5432/dbee"
+
+# 只暴露 public。钉死单一 schema 可杜绝客户端用 Accept-Profile/Content-Profile
+# 切到 auth/information_schema 读系统表（网关侧 dbproxy.mjs 也剥了这两个头，双重保险）。
+db-schemas = "public"
+
+# 🔒 刻意**不设** db-anon-role。
+# 不设时 PostgREST 会**直接拒绝任何不带有效 JWT 的请求**，这正是我们要的：
+# 网关（dbproxy.mjs）对数据面强制要求登录，正常流量永远带着 role=authenticated 的 JWT，
+# 匿名请求根本到不了这里。不设 anon 比"设了但把 anon 权限撤干净"更彻底 ——
+# 少一个可切换的角色，就少一条被绕过的路径。
+# （0030 已 REVOKE anon 的全部表权限，即便将来有人加上 db-anon-role 也读不到数据。）
+
+# ── JWT ────────────────────────────────────────────────────────────────
+# 须与网关的 POSTGREST_JWT_SECRET 一致（网关默认复用 JWT_SECRET）。
+# PostgREST 要求 HS256 密钥 ≥32 字符，与网关 config.validate 的下限一致。
+jwt-secret = "__JWT_SECRET__"
+jwt-secret-is-base64 = false
+
+# role 声明的位置。默认 .role —— 网关 sessionPayload() 签的正是顶层 role:'authenticated'，
+# 无需改。（若将来接第三方 IdP 如 Auth0，才需要改成 .postgrest.roles 之类的 JSPath。）
+# jwt-role-claim-key = ".role"
+
+# 刻意不设 jwt-aud：网关签发的 token 不含 aud 声明，设了反而会导致校验失败。
+
+# ── HTTP 监听 ──────────────────────────────────────────────────────────
+# 🔒 只绑回环：PostgREST 绝不能直接暴露公网。对外只由 nginx → 网关 → 这里。
+# 端口与网关 config.mjs 的 POSTGREST_URL 默认值（127.0.0.1:3001）保持一致。
+server-host = "127.0.0.1"
+server-port = 3001
+
+# Admin Server：独立端口提供 /live 与 /ready 探活（不需要 JWT）。
+# 供 systemd / 安装脚本 / 将来的 nginx 健康检查使用；同样只绑回环。
+admin-server-host = "127.0.0.1"
+admin-server-port = 3002
+
+# ── 连接池 ─────────────────────────────────────────────────────────────
+# PostgREST 自带连接池，与网关的 pg 池是两个独立池，注意总量别超过 PG 的
+# max_connections（PG 17 默认 100）。当前：网关 dbee_app 10 + dbee_gateway 2
+# + PostgREST 10 = 22，余量充足。
+db-pool = 10
+db-pool-acquisition-timeout = 10
+
+# ── 行为与安全收敛 ─────────────────────────────────────────────────────
+# 🔒 关掉 OpenAPI 根端点。默认 follow-privileges 下 GET / 会返回**整个库的结构描述**
+# （表名/列名/外键/函数签名）。网关把 /.cloud/database/rest 前缀后的 rest 原样拼给
+# 上游，rest 为空串时就会打到 PostgREST 的根路径 —— 等于把 schema 白送给任何登录用户。
+openapi-mode = "disabled"
+
+# 关掉 EXPLAIN 泄露：db-plan-enabled 默认 false，这里显式写出以防将来被误开
+# （开了之后客户端能用 Prefer: plan= 看到查询计划，含索引与统计信息）。
+db-plan-enabled = false
+
+# 事务默认提交。SDK 的 supabase-js 不会发 Prefer: tx=rollback，保持官方默认。
+db-tx-end = "commit"
+
+# 日志：warn 级别 —— 记慢查询与错误，不记每条正常请求（否则 journald 会被刷爆）。
+log-level = "warn"
+
+# 预编译语句：保持开启（性能），PostgREST 会自动处理 PG 侧的 prepared statement 失效。
+db-prepared-statements = true
+
+# 刻意不设 db-max-rows：SDK 侧已用 limit/offset 分页，榜单等查询可能返回较多行，
+# 设了上限会静默截断且前端不报错 —— 那比"不设"更难排查。真要防滥用应在网关限流。
+
+# 刻意不设 db-pre-request：
+# 0030 的 auth.uid() 有三级回退，第三级 current_setting('request.jwt.claims')
+# 正是 PostgREST 的**原生注入格式**，无需任何额外钩子即可取到 sub。
+# （已核查：0030 全文只有 auth.uid() 内部读 app.user_id，无业务代码直接依赖它，
+#   所以不必用 pre-request 函数把 claims.sub 再抄一份到 app.user_id。）

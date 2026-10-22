@@ -6,6 +6,10 @@ dist/
 !.env.example
 .DS_Store
 
+# Python 编译缓存（py_compile / import 产物）
+__pycache__/
+*.py[cod]
+
 # 凭据与备份数据不入库
 db/CREDENTIALS.txt
 db/backups/

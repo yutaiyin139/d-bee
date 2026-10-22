@@ -1,0 +1,80 @@
+# ═══════════════════════════════════════════════════════════════════════
+# PostgREST systemd 单元 —— D-Bee 自托管数据面（A2）
+# ═══════════════════════════════════════════════════════════════════════
+# 安装位置：/etc/systemd/system/postgrest.service（由 install-postgrest.sh 放置）
+# 基线：PostgREST 官方 systemd 集成页（docs.postgrest.org → Integrations → systemd），
+#       在此基础上按本项目最小暴露原则收紧了沙箱与重启策略。
+#
+# ⚠️ 本文件**不含任何秘密**：db-uri（含 dbee_web 密码）与 jwt-secret 都在
+#    /etc/postgrest/config（0640 root:postgrest）里，由安装脚本生成，不入库。
+#
+# 与网关的关系（一次数据请求的完整链路）：
+#   浏览器 → nginx(/.cloud/) → Node 网关(:8080, 校验前端 JWT + 重签) →
+#   PostgREST(:3001, SET ROLE authenticated) → PostgreSQL 17(:5432, RLS)
+#   三个端口全部只绑 127.0.0.1，公网仅 nginx 的 80/443 暴露。
+# ═══════════════════════════════════════════════════════════════════════
+
+[Unit]
+Description=PostgREST — REST API for PostgreSQL (D-Bee 自托管数据面)
+Documentation=https://docs.postgrest.org/
+# postgresql.service 是 systemd 的通用别名；实际单元名 postgresql@17-main.service。
+# 用 After 而非 Requires：PostgREST 有内建连接重试，DB 稍晚就绪不影响启动，
+# 避免把「DB 重启」级联成「PostgREST 也被拉走重启」。
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+# 刻意用 simple（= 官方 systemd 集成页的写法），**不用 Type=notify**：
+# PostgREST 未声明实现 sd_notify，若配 notify 而进程不发 READY=1，
+# systemd 会一直等到 TimeoutStartSec（默认 90s）然后把服务判为启动失败 ——
+# 明明跑起来了却被标记 failed，是很坑的假故障。
+# 就绪判定改用 PostgREST 自带的 admin server（见下方 config 的 admin-server-port）：
+#   curl -sf http://127.0.0.1:3002/ready
+# 它返回 200 即表示「已连上库且 schema cache 加载完成」，比 notify 语义更准确。
+Type=simple
+User=postgrest
+Group=postgrest
+
+# 二进制装在 /usr/local/bin（FHS：本机安装的独立软件）；config 装在 /etc/postgrest。
+ExecStart=/usr/local/bin/postgrest /etc/postgrest/config
+# 官方约定的热重载信号：SIGUSR1 重载 config + 刷新 schema cache，不断连接。
+# 改完 /etc/postgrest/config 后 `systemctl reload postgrest` 即可生效（db-uri 等
+# 少数不可热载项除外，见官方 Configuration Reloading）。
+ExecReload=/bin/kill -SIGUSR1 $MAINPID
+
+Restart=always
+RestartSec=3
+# 连续崩溃时别把 CPU 打满：5 分钟内重启超过 5 次则暂停拉起，留时间人工介入。
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# ── 资源与沙箱（最小权限）────────────────────────────────────────────
+# 高并发下 PostgREST 会触及内核默认 1024 的 fd 上限并报
+# "No file descriptors available"，官方建议提高（见 systemd 集成页）。
+LimitNOFILE=10000
+
+NoNewPrivileges=true
+# ProtectSystem=strict：整个 / 只读挂载，PostgREST 无需写任何文件（日志走 journald）。
+ProtectSystem=strict
+# ProtectHome=true：屏蔽 /home（里面有 .ssh/.gnupg），PostgREST 用不到。
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+# PostgREST 只需 INET socket（连 PG + 听 HTTP）；不需要建原始 socket / 改网络命名空间。
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# 锁死人格：禁止提权到 root、禁止获取新 capability。
+CapabilityBoundingSet=
+RestrictNamespaces=true
+LockPersonality=true
+# 刻意**不设** RuntimeDirectory：PostgREST 不写任何文件（日志走 stdout→journald），
+# ProtectSystem=strict 已把整个层级设为只读，PrivateTmp=true 提供了唯一可写空间。
+# 官方 systemd 集成页的示例里有 RuntimeDirectory，那是给 Type=notify 放 sd_notify
+# socket 用的 —— 我们上面已论证不用 notify，留着只会凭空多出一个
+# /run/postgrest 可写目录（无主使用方 = 无谓攻击面）。
+
+[Install]
+WantedBy=multi-user.target
