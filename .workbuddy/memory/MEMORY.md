@@ -1,41 +1,86 @@
 # D-Bee（自律蜜蜂）· 项目长期记忆（精简版；细节见当日日志与 docs/）
 
-## 进度快照（2026-10-22，企业主体注册已办结；V1.7.0 已发布；自托管镜像 0030 待切前端）
+## 进度快照（2026-10-22 晚，主体已注册 + 6 项决策已拍板；自托管产物已入库，待建网关）
 
+- **✅ 6 项决策已拍板（10-22 晚）**：①主体=**有限责任公司** ②未提交产物**入库**（已提交 `b6b1725`+`43a5729`
+  并推 origin/main）③LLM=**DeepSeek** ④短信=**先日志+万能码**（`SMS_PROVIDER=log`/`SMS_MASTER_CODE=888888`）
+  ⑤网关语言=**Node**（`server/index.mjs`）⑥Apple 验签=**放 Node 网关**（**弃 `0029` 的 pg_net 方案，不再执行**）。
+  决策原则：**便捷、技术可控、价格低廉、完全对比竞品**。全部凭据只存本地 `.env`（gitignore 覆盖），**未进 git**。
+  完整后续计划见 **`docs/主体注册后-实施计划.md`**（§一 社保查证 / §七 竞品对比 / §A3 DeepSeek 坑 / §八 排期）。
+- **⚠️ 两个安全待办（用户处理）**：①**重置 DeepSeek API key**（本次对话中明文出现过）；
+  ②**轮换 SSH 密码与 dbee_app 数据库密码**——二者此前已提交进 GitHub 历史（`f99a2c5` 起），
+  本次已全部脱敏 + 停止扩散，但**历史提交仍可检出**；`0002` 早期含 3 份用户档案同理。
+  **轮换密码优先于重写历史**（`git filter-repo`+force push 属破坏性操作，未擅自执行）。
 - **🔓 主体注册已办结（10-22）**：解锁微信生态（开放平台企业认证/商户号/公众号/小程序主体变更）、
-  华为/小米企业入驻（Health Kit 硬门槛）、ICP 经营许可证可申请。完整后续计划见
-  **`docs/主体注册后-实施计划.md`**（三泳道并行 + 资质事实核对表 + 6 项待拍板）。
-  ⚠️ 主体注册 ≠ 可收费：**网页端收费的法律前提仍是 ICP 经营许可证**（硬条件 = 有限公司 +
-  100万认缴 + 「第二类增值电信业务」经营范围 + **3 人社保（约 ¥4000/月，主要成本）** + 域名过户到公司，
-  周期 20–60 工作日）。当前唯一干净收费路径 = **iOS IAP**（Apple 个人账号已通过，平台代收）。
+  华为/小米企业入驻（Health Kit 硬门槛）、ICP 经营许可证可申请。
+- **🔴 「3 人社保」查证结论：ICP 经营许可证的硬性条件，无法合规绕过**（2026 多省口径一致且核查趋严）：
+  ≥3 名全职、**必须三个不同人**（许可/客服/安全负责人）、法人可算一人、**必须由本公司缴**（代缴/挂靠直接驳回，
+  虚假材料处罚且一年内不得再申）、近 1 个月（部分省连续 3 个月）、管局做跨部门数据比对 + 可能上门核验场地。
+  成本 ≈ ¥4000/月起（法人算 1 人则实际再招 2 人）+ 记账报税 ¥2000–5000/年 + 代办 ¥5000–15000（可压到约 47 工作日）。
+  **已定策略 = 方案 A：暂不办 ICP 证，先靠 iOS IAP 验证付费意愿**（零固定成本，Apple 个人账号已通过、平台代收），
+  有真实付费数据再决定是否背这个固定成本。仍需确认（不阻塞开发）：经营范围是否含「第二类增值电信业务」/
+  注册资本 ≥100 万认缴 / 是否已开对公账户 / 小程序 `wxb7c7122de9c3ab1f` 当前主体（**趁未上线尽早变更**）。
+- **📊 竞品对比结论（§七，已完全对比）**：⚠️ **D-Bee 的 ¥18/月、¥128/年与 1 亿用户的薄荷健康完全同价**
+  （薄荷包月续订仅 ¥15 更便宜），食物库 1,175 vs **100 万+**（差 850 倍）→ **绝不能拼「食物库广度」或
+  「AI 识别准」**。✅ 但按年付 **D-Bee ¥128 是国际 12 款竞品中最便宜**（Cal AI ¥144 起 / MyFitnessPal ¥576 /
+  Noom ¥1505），价格低廉已达标、**不需改价**（¥18/¥128/¥328 已锁定）。
+  🔴 **关键风险**：悉尼大学 2024 研究——AI 食物识别对**混合亚洲菜肴高估达 49%、低估达 76%**，
+  而中式炒菜/盖饭/汤全是混合菜肴 = D-Bee 核心场景；Cal AI 的 ±14.6% 还是西式食物测的。
+  → **定位必须是「不卖 AI 神奇，卖能坚持下来」**：厚免费 + 蜜糖积分/邀请/打卡/徽章/榜单游戏化 +
+  终身买断 ¥328（薄荷无此项）+ **本地规则引擎 `foodInsight.ts`（1,175 条零兜底、零幻觉、零边际成本）优先、
+  AI 仅兜底** + 无广告 + 数据自托管 + 多端一致（三端小程序）。对标「自律茄子」的买断心智，不对标薄荷的库规模。
+  **待办：实测 D-Bee 自己的 MAPE**（现完全空白，是竞品分析最后缺口，也是文案能否说「准」的依据）。
+- **⚙️ AI 成本测算（§A3，按 DeepSeek V4 Flash 峰值价）**：输入 $0.30/输出 $1.20 每 1M token；
+  **峰值 = 北京时间工作日 9–12、14–18 点，价格 2 倍**，恰是三餐记录高峰，**必须按峰值估**。
+  拍照识别单次 ≈ ¥0.0047、教练问答 ≈ ¥0.0069（每图 token **恒上限 384**，2000² 与 5000² 同价；
+  前端 `compressImage(maxSide=1024,quality=0.82)` 已压过一道，**无需 Files API**）。
+  按额度上限 5 次/日：**100 DAU ≈ ¥42/月、1,000 ≈ ¥423、10,000 ≈ ¥4,230** → **万级 DAU 前 AI 成本
+  远低于 3 人社保 ¥4000/月**，反证方案 A 正确。降本手段：系统提示走缓存命中（输入价降 ~98%）、
+  本地引擎先命中再调 LLM。
+- **🔴 DeepSeek 接线三个坑（查官方文档实测，会直接导致功能不可用）**：
+  ① **`deepseek-chat` / `deepseek-reasoner` 已于 2026-07-24 退役**，官方只剩 `deepseek-flash` 与
+  `deepseek-v4-pro` 两个 ID，**配置写旧 ID 会调用失败**；② **只有 flash 系列接受图片**，传图给其他模型返
+  `400 "This model does not support image"`（旧名 `deepseek-v4-flash-vision-exp` 已退役并入 flash）
+  → **文本与视觉统一用 `deepseek-flash`**；③ 网关 `/llm/models` **必须给 flash 标 `supportsImages: true`**，
+  否则前端 `pickModel(needVision)` 的 `filter(m=>m.supportsImages===true)` 选空 → 拍照识别报错
+  （另需过滤 `disabled!==true && enabled!==false`，见 `ai.ts:31`）。
+  **模型 ID 必须放服务端配置**（`.env` 的 `LLM_MODEL_VISION`）而非散落代码，DeepSeek 改名时只改一行。
 - **版本/git**：Web V1.7.0 已发布（http://150.158.51.106/ ，commit `846c355`）；Android debug APK 最新 V1.6.9
-  （versionCode 10）。最新 commit `95e3e16`（iOS 内购接线 + verifyReceipt 验签 SQL），main 无新增提交。
-  **未提交**：`db/migrations/0030-full-selfhost-mirror.sql`、`db/functions.sql`、`db/gen-full-mirror-sql.py`、
-  `docs/自托管生产化四件套.md`、`docs/自托管数据库远程连接指南.md`、`docs/前端切换自托管-前置条件与步骤.md`、
-  `docs/主体注册后-实施计划.md`；改过 `0002` 与记忆文件。src/ 与 mini/ 已全部入库。
-  ⚠️ 0030 是自托管全部成果却只在工作区，**建议立刻入库**。
+  （versionCode 10）。最新 commit **`43a5729`**（docs: 实施计划落定 6 项决策 + 竞品对比），
+  前一个 `b6b1725`（chore: 自托管产物入库 + 凭据脱敏 + 数据/结构分离）。
+- **📦 数据/结构分离（PIPL 最小必要，10-22 已落地）**：
+  `0030-full-selfhost-mirror.sql` 含 17 表**全量真实用户健康档案**（年龄/性别/身高体重/饮食记录/减重障碍，
+  **含 10 岁、17 岁未成年人记录**）→ **不入库**。改为：
+  `db/migrations/0030-schema.sql`（**新增已入库**，`--schema-only` 产物，60KB，17 表 + 27 函数 + 24 策略 +
+  GRANT，**0 行数据**）；`db/gen-full-mirror-sql.py` **新增 `--schema-only` 开关**（结构入库、数据本地重生成）；
+  `0030-full-*` 与 `0002-mirror-to-local-pg.sql` 均已 **gitignore**（`0002` 原已跟踪，本次 `git rm --cached`
+  移出，本地文件保留）。`db/functions.sql`（27 个 SECURITY DEFINER 函数 DDL，0 处真实 owner_id）已入库。
 - **【主线·10-20 20:18 拍板】云库 → 自托管 PostgreSQL**：云库已恢复，从云库实时抓取生成完整镜像 `0030`
   （123KB，17 表 + 27 函数 + 24 策略 + GRANT + 全量数据，补齐旧 0002 缺的 10 表与 21 个业务函数），
   经 `deploy/sync-mirror.sh` 在服务器 dbee（PG 17.11）执行成功、自检全过（17 表行数与云库一致）。
   远程已打通（dbee_app BYPASSRLS，先 SSH 隧道后改直连：`listen_addresses='*'` + pg_hba 白名单 + 放行 5432），
   SQL 级 CRUD + 26 函数自测全过。**尚未切前端**——还差：①自建 auth/JWT 网关（**必须同时注入
   `app.user_id`（RLS）与 `request.jwt.claim.sub`（badge_stats/leaderboard 等函数依赖 JWT 声明）**）
-  ②LLM 代理（SSE，模型列表须含 `supportsImages`/`isDefault`）③`/v1/*` PostgREST 语义 REST 端点
-  ④改 nginx 上游切发布（前端零改动）。**不需要存储代理**——拍照识别走 base64 dataUrl 直塞
-  LLM `image_url`（`ai.ts:152/226`），全仓无 `cloud.storage` 调用。
-  ⚠️ `0030` 已含 0025~0028 业务变更（grep 命中 20 处），**勿盲跑 0025~0029 迁移**（会重复/冲突）。
+  ②LLM 代理（SSE，`/llm/models` 须含 `supportsImages`/`isDefault`）③`/v1/*` PostgREST 语义 REST 端点
+  ④改 nginx 上游切发布（前端零改动，**保留 `proxy_buffering off`** 供 SSE）。
+  **不需要存储代理**——拍照识别走 base64 dataUrl 直塞 LLM `image_url`（`ai.ts:152/226`），全仓无 `cloud.storage` 调用。
+  ⚠️ `0030` **已含 0025~0028 业务变更**（grep `AI_REDEEM_DAILY_LIMIT`/`streak7`/`newbie`/`invite_attempts`/
+  `leaderboard` 命中 20 处），**勿盲跑 0025~0029 迁移**（会重复/冲突）；`0029` 已决定弃用。
 - **🔴 支付链路唯一实质缺口**：`0030` 里 `verify_payment_order`（第 1171 行）是**空壳**——只查订单
-  `status='paid'` 就返 true，**无任何 Apple 验签**；真验签在未执行的 `0029`。接真实支付前必须补，
-  否则可伪造凭证白拿权益。**建议弃 0029 的 pg_net 方案，改在 Node 网关验签**（免 pg_net 扩展依赖 +
-  sharedSecret 存环境变量更安全 + Server Notifications V2 webhook 本来就必须建在网关，密钥单点）。
+  `status='paid'` 就返 true，**无任何 Apple 验签**。接真实支付前必须在**网关**补 `provider='apple'` 分支
+  （Apple verifyReceipt / App Store Server API → 订单标 paid + 写 `entitlements`，`source='apple'`；
+  **幂等硬约束**：`order_no` UNIQUE + `provider_txn_id` 判重，同一交易只发一次权益），
+  否则任何人可伪造凭证白拿权益。
 - **合规现状（已核查，优于旧文档记载）**：用户协议/隐私政策/免责声明**三篇已存在且已挂路由**
-  （`src/content/legal.ts` + `pages/LegalPage.tsx` + `components/SiteFooter.tsx`，备案号走
-  `VITE_ICP_BEIAN` 环境变量渲染，未设置时该行不渲染）；`REDEEM_CODES` 硬编码兑换码**已从 src/ 删除**
-  （Apple 3.1.1 硬伤已消）；`restorePurchases()` 已接（3.1.2 合规）。服务端 `redeem_by_code` RPC 仍在，
-  不影响 Apple 审核，Web/Android 端可继续用兑换码运营。
-- **额度规则（已定）**：每日 3 次免费识别 + 2 次积分兑换（50 分/次），用尽只能 Pro。新手 150 积分
+  （`src/content/legal.ts` 230 行 + `pages/LegalPage.tsx` + `components/SiteFooter.tsx`，备案号走
+  `VITE_ICP_BEIAN` 环境变量渲染，未设置时该行不渲染）→ **合规页面工作量 ≈ 0**，只等备案号下来填变量；
+  `REDEEM_CODES` 硬编码兑换码**已从 src/ 删除**（Apple 3.1.1 硬伤已消）；`restorePurchases()` 已接（3.1.2 合规）。
+  服务端 `redeem_by_code` RPC 仍在，不影响 Apple 审核，Web/Android 端可继续用兑换码运营。
+- **额度规则（已定，权威值在 `packages/shared/src/constants/index.ts`）**：`FREE_DAILY_AI=3` +
+  `AI_REDEEM_DAILY_LIMIT=2`（每日 3 次免费识别 + 2 次积分兑换 50 分/次，用尽只能 Pro）。新手 150 积分
   （grantHoney 'newbie'）；连续打卡每满 7 天送 2 次识别（grantPhotoBonus 'streak7'，7/14/21 循环）。
   迁移 0025（兑换上限 5→2）+ 0026（newbie 发积分、作废存量 newbie 识别 bonus）。
+  ⚠️ `docs/AI成本与配额.md:101`「每天 10 次」**已过时**，按 3+2 重算。
 - **识别自动保存（已收敛）**：识别成功即 settleDraft 自动落库；该餐已有记录弹「覆盖/追加/取消」，
   无记录直接落库关闭，另有切页兜底；不做撤销等过度设计。
 - **多端小程序**：Taro 4.3.0（React+TS）双工程 + `packages/shared`，微信/支付宝/抖音三端编译通过；
@@ -67,18 +112,24 @@
   ⚠️ iOS 的 `WechatOpenSDK` 来自第三方 SPM 镜像 `github.com/yanyin1986/WechatOpenSDK`（腾讯官方不经
   SPM 分发），上线前须核对 tag 或改官方 XCFramework。小程序 appid `wxb7c7122de9c3ab1f` 需做主体变更
   （趁未上线赶紧变，变更会使老用户 openid 失效需重新关联）。
-- **下一步**：①**资质事实核对**（主体类型是否有限公司 / 经营范围含「第二类增值电信业务」/ 注册资本 ≥100万
-  认缴 / 对公账户 / 能否 3 人社保 / 小程序当前主体）——决定网页端能否收费；②0030 等自托管产物入库；
-  ③切前端自托管（auth/JWT 网关 + LLM 代理 + REST 端点 + 改 nginx 上游）并全链路回归；
-  ④域名过户个人→企业 + ICP 备案主体变更（周期最长，抢早）；⑤软著登记（30–60 工作日，越早越好）；
-  ⑥Mac mini 首次构建 iOS + 真机回归 IAP/HealthKit；⑦网关补 Apple 验签 + ASC 配 3 商品 + webhook V2；
-  ⑧华为/小米企业入驻后替换 dbee-health 插件方法体并真机验收；⑨Android 真机复测 V1.7.0 APK；
-  ⑩小程序三端真机联调；⑪分享卡片 O-3 落地（零资质依赖的传播抓手）。
-- **待拍板**：①是否申请 ICP 经营许可证（= 是否现在背 3 人社保约 ¥4000/月，商业决策非技术决策）；
-  ②Apple 账号用个人先上架还是等企业账号（建议先申请 D-U-N-S 占位、个人账号推进构建）；
-  ③LLM 供应商（建议 DeepSeek，须多模态）；④短信通道（建议先日志+万能码跑通）；⑤网关语言（建议 Node）；
-  ⑥Apple 验签放网关还是 pg_net（建议网关）；⑦云库长期去留（自托管彻底替代/回迁/双写）；
-  ⑧未提交产物入库（建议立刻）。长期待办：华为应用市场上架（需企业认证+软著+App备案）。
+- **下一步（泳道 A 已无阻塞，可立即开工）**：①服务器配 `.env`（systemd `EnvironmentFile`，权限 600；
+  **生产 `JWT_SECRET` 必须换独立随机值**）+ **pg_dump 全量备份** dbee 库；②**A1 auth/JWT 网关**
+  （打通 登录→JWT→RLS，端点见 `docs/前端切换自托管-前置条件与步骤.md`）；③A2 REST 端点（先 diff 核对
+  0030 已含哪些迁移，**勿盲跑**）；④A3 LLM 代理（**注意 DeepSeek 三坑**）；⑤A4 切 nginx + 8 项全链路回归；
+  ⑥A5 Mac mini 首次构建 iOS（三插件从未编译，首次必修编译错；`cap sync` 撞 safe-delete 守卫先 `mv` 出目录）；
+  ⑦**网关补 Apple 验签 + 幂等** → ASC 配 3 商品（`dbee_pro_monthly`/`yearly`/`dbee_lifetime`）+ 开 IAP
+  capability + 填收款 → App Store Server Notifications V2 webhook → iOS 提审；
+  ⑧域名过户个人→企业 + ICP 备案主体变更（周期最长，抢早；**备案期不可加解析**，工信部短信核验 **24h 内必做**）；
+  ⑨**软著登记**（30–60 工作日，周期最长，越早越好）+ App 备案 + 算法备案；⑩小程序主体变更（趁未上线）；
+  ⑪华为/小米企业入驻后替换 dbee-health 插件方法体并真机验收；⑫分享卡片 O-3 落地（零资质依赖传播抓手）；
+  ⑬**实测 D-Bee 自己的 MAPE**（竞品分析最后缺口，文案能否说「准」的依据）；⑭彩页按新定位重写（现基于 V1.4 已落后）；
+  ⑮Android 真机复测 V1.7.0 APK；⑯小程序三端真机联调。
+- **待拍板（原 6 项已全部落定，剩余不阻塞开发）**：①**是否申请 ICP 经营许可证 = 是否现在背 3 人社保**
+  （已建议**方案 A：暂不办，先 iOS IAP 验证付费**，等有付费数据再决定）；②Apple 账号先用**个人**上架抢时间
+  还是等企业账号（建议**先申请 D-U-N-S 占位**、个人账号推进构建，证下来再决定切不切主体）；
+  ③**云库长期去留**（自托管彻底替代 / 回迁 / 双写）；④经营范围是否含「第二类增值电信业务」
+  （**建议现在就补上**，将来办证不用等）；⑤注册资本是否 ≥100 万认缴；⑥是否已开对公账户；
+  ⑦小程序当前主体。长期待办：华为应用市场上架（需企业认证+软著+App备案）、营业执照已办结✅。
 
 ## 三条主线
 
