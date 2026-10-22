@@ -9,6 +9,13 @@ dist/
 # 凭据与备份数据不入库
 db/CREDENTIALS.txt
 db/backups/
+
+# 含真实用户数据的镜像 SQL 不入库（PIPL 最小必要）：
+# 0030-full-selfhost-mirror.sql 内含全量用户健康档案（年龄/身高体重/饮食记录，含未成年人）。
+# 入库的是 --schema-only 产物 db/migrations/0030-schema.sql（纯结构，0 行数据）。
+# 需要带数据的镜像时本地重新生成：python db/gen-full-mirror-sql.py
+db/migrations/0030-full-selfhost-mirror.sql
+db/migrations/0002-mirror-to-local-pg.sql
 design/icon/_check/
 design/icon/backup-public/
 design/icon/preview/

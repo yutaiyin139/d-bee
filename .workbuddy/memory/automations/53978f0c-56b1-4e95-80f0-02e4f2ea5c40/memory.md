@@ -71,6 +71,17 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
   结论不变；已在同一份 FAILED-2026-10-20.md 追加「尝试记录」表格，未新建重复文件。
   **后续再遇同日重复触发：直接复用当日 FAILED 文件追加一行，不要再重复全流程排查。**
 
+### 2026-10-21 09:02（第 9 次）
+- 结果：**成功（通道恢复）**。产出 `db/backups/2026-10-21.json`（83067 字节，历史最大）。
+- 行数：profiles=17 / meal_entries=85 / water_logs=22 / exercise_logs=15 / weight_logs=3 / entitlements=0 / ai_usage=14
+  （合计 156 行；profiles 仍缺 id=16，邀请码 4ZCNJB 链下已有 3 人）。
+- 校验：`.build-backup.cjs` + `.verify-backup.cjs` PASS——JSON.parse OK、7 表 row_counts 与
+  tables.<表>.length 及另发 count(*) 的线上实时行数三方一致。
+- 清理：cutoff=2026-09-21，现存最早 2026-10-13，无过期文件（目录 7 份每日备份）。
+- 说明：genie-baas 工具本会话已注册（10-19/10-20 的未注册故障消失）；备份链断档 2 日，今日全量快照已覆盖
+  该 2 日增量（10-19 新增运动/ai_usage/饮水，10-20 有饮水与体重记录），无需补差量。
+- 流程照旧：raw dump 先落 `.YYYY-MM-DD.raw.json` → build 重排 + 算 row_counts → verify → 删临时文件。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。
