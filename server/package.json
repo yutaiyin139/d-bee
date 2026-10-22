@@ -1,0 +1,20 @@
+{
+  "name": "@dbee/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "D-Bee 自托管网关：auth/JWT + PostgREST 反代 + LLM 代理 + Apple 验签（泳道 A1–A3）",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node index.mjs",
+    "dev": "node --watch index.mjs",
+    "selftest": "node ../tools/gateway-selftest.mjs",
+    "selftest:db": "node ../tools/gateway-db-selftest.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  },
+  "comment_deps": "只依赖 pg 一个包。HTTP 用 node:http，JWT 用 node:crypto 手写 HS256（见 lib/jwt.mjs），不引 express/jsonwebtoken —— 依赖越少，服务器部署与审计面越小，符合『技术可控』。"
+}
