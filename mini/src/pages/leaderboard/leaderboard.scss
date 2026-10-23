@@ -111,7 +111,7 @@
 
   &.top3 {
     border-color: rgba(242, 169, 59, 0.4);
-    background: #fffcf4;
+    background: $lb-top3-bg;
   }
 
   .lb-rank {
@@ -129,17 +129,17 @@
 
     &.rank-1 {
       color: #fff;
-      background: #f2a93b;
+      background: $honey;
     }
 
     &.rank-2 {
       color: #fff;
-      background: #b9b3a8;
+      background: $rank-2;
     }
 
     &.rank-3 {
       color: #fff;
-      background: #d09a6a;
+      background: $rank-3;
     }
   }
 

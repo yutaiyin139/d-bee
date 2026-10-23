@@ -148,11 +148,11 @@
   border-radius: $radius;
   background: $red-soft;
   font-size: 26px;
-  color: #8f382d;
+  color: $risk-ink;
 
   &.is-good {
     background: $green-soft;
-    color: #2f6b47;
+    color: $ok-ink;
   }
 }
 

@@ -318,9 +318,9 @@
     font-size: 38px;
     font-weight: 600;
 
-    &.is-good { background: $green-soft; color: #2c6b48; }
+    &.is-good { background: $green-soft; color: $ok-ink; }
     &.is-ok { background: $honey-soft; color: $honey-dark; }
-    &.is-warn { background: $red-soft; color: #8f382d; }
+    &.is-warn { background: $red-soft; color: $risk-ink; }
   }
 
   .cu-main {
@@ -334,9 +334,9 @@
       font-weight: 600;
       margin-bottom: 4px;
 
-      &.is-good { color: #2c6b48; }
+      &.is-good { color: $ok-ink; }
       &.is-ok { color: $honey-dark; }
-      &.is-warn { color: #8f382d; }
+      &.is-warn { color: $risk-ink; }
     }
 
     .cu-text {
@@ -401,8 +401,8 @@
     font-weight: 600;
     margin-bottom: 14px;
 
-    &.risk { color: #8f382d; }
-    &.good { color: #2c6b48; }
+    &.risk { color: $risk-ink; }
+    &.good { color: $ok-ink; }
   }
 
   .cg-row {
@@ -425,13 +425,13 @@
 
     .cg-badge {
       font-size: 22px;
-      color: #8f382d;
+      color: $risk-ink;
       background: $red-soft;
       border-radius: 99px;
       padding: 2px 14px;
 
       &.good {
-        color: #2c6b48;
+        color: $ok-ink;
         background: $green-soft;
       }
     }
@@ -488,12 +488,12 @@
   border: 1px solid rgba(242, 169, 59, 0.28);
   font-size: 25px;
   line-height: 1.6;
-  color: #7a5a12;
+  color: $tip-ink;
 
   &.is-over {
     background: $red-soft;
     border-color: rgba(208, 92, 78, 0.26);
-    color: #8f382d;
+    color: $risk-ink;
   }
 
   .as-tag {
@@ -1244,9 +1244,9 @@
     position: relative;
 
     &.cal-empty { background: $bg-2; color: $ink-3; }
-    &.cal-under { background: $honey-soft; color: #6b4a08; font-weight: 500; }
-    &.cal-on { background: $green-soft; color: #2c6b48; font-weight: 600; }
-    &.cal-over { background: $red-soft; color: #8f382d; font-weight: 600; }
+    &.cal-under { background: $honey-soft; color: $info-ink; font-weight: 500; }
+    &.cal-on { background: $green-soft; color: $ok-ink; font-weight: 600; }
+    &.cal-over { background: $red-soft; color: $risk-ink; font-weight: 600; }
     &.cal-today { box-shadow: inset 0 0 0 3px $honey-dark; }
 
     &.mp-day {

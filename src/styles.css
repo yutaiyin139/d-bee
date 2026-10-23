@@ -17,6 +17,17 @@
   --red: #d05c4e;
   --red-soft: #fbeae7;
   --blue: #3d7bb8;
+  /* ── 语义衍生色（与 mini/src/styles/tokens.scss 同名同值，单一真相源）──
+     这些是「浅底上的深字」配对色，原先两端各自硬编码，靠手工抄同值维持一致，
+     已实际发生过抄错（mini recipes 把 #2c6b48 写成 #2f6b47）。收口成 token。 */
+  --ok-ink: #2c6b48;        /* green-soft 底上的成功/值得肯定文字 */
+  --risk-ink: #8f382d;      /* red-soft 底上的风险/需要留意文字 */
+  --honey-btn-ink: #4a3208; /* honey 实底按钮上的深色文字 */
+  --info-ink: #6b4a08;      /* honey-soft 底上的信息文字 */
+  --tip-ink: #7a5a12;       /* 蜂蜜描边提示框正文 */
+  --lb-top3-bg: #fffcf4;    /* 排行榜前三名行底色 */
+  --rank-2: #b9b3a8;        /* 排行榜第 2 名徽章（银） */
+  --rank-3: #d09a6a;        /* 排行榜第 3 名徽章（铜） */
   --radius: 14px;
   --radius-lg: 20px;
   --shadow: 0 1px 2px rgba(42, 39, 35, 0.04), 0 8px 24px rgba(42, 39, 35, 0.05);
@@ -128,7 +139,7 @@ select {
   height: 50px;
   border-radius: var(--radius);
   background: var(--honey);
-  color: #4a3208;
+  color: var(--honey-btn-ink);
   font-size: 16px;
   font-weight: 600;
   transition: transform 0.12s ease, opacity 0.12s ease;
@@ -372,7 +383,7 @@ select {
 
 .mp-day.is-selected {
   background: var(--honey);
-  color: #4a3208;
+  color: var(--honey-btn-ink);
   font-weight: 700;
 }
 
@@ -386,7 +397,7 @@ select {
 }
 
 .mp-day.is-selected .mp-dot {
-  background: #4a3208;
+  background: var(--honey-btn-ink);
 }
 
 .mp-foot {
@@ -983,17 +994,17 @@ select {
 
 .notice.err {
   background: var(--red-soft);
-  color: #8f382d;
+  color: var(--risk-ink);
 }
 
 .notice.ok {
   background: var(--green-soft);
-  color: #2c6b48;
+  color: var(--ok-ink);
 }
 
 .notice.info {
   background: var(--honey-soft);
-  color: #6b4a08;
+  color: var(--info-ink);
 }
 
 .notice.warn {
@@ -1013,7 +1024,7 @@ select {
   height: 18px;
   border-radius: 50%;
   border: 2px solid rgba(255, 255, 255, 0.45);
-  border-top-color: #4a3208;
+  border-top-color: var(--honey-btn-ink);
   animation: spin 0.7s linear infinite;
 }
 
@@ -1818,7 +1829,7 @@ select {
   padding: 0 16px;
   border-radius: 99px;
   background: var(--honey);
-  color: #4a3208;
+  color: var(--honey-btn-ink);
   font-size: 13.5px;
   font-weight: 600;
 }
@@ -1844,7 +1855,7 @@ select {
   gap: 5px;
   font-size: 12px;
   font-weight: 700;
-  color: #6b4a08;
+  color: var(--info-ink);
   background: rgba(255, 255, 255, 0.65);
   border-radius: 99px;
   padding: 4px 10px;
@@ -1879,7 +1890,7 @@ select {
 }
 
 .ok-msg {
-  color: #2c6b48;
+  color: var(--ok-ink);
   font-size: 13px;
   margin-top: 8px;
 }
@@ -1938,7 +1949,7 @@ select {
   right: 12px;
   font-size: 11px;
   font-weight: 700;
-  color: #4a3208;
+  color: var(--honey-btn-ink);
   background: var(--honey);
   border-radius: 99px;
   padding: 2px 9px;
@@ -2065,19 +2076,19 @@ select {
 
 .cal-under {
   background: var(--honey-soft);
-  color: #6b4a08;
+  color: var(--info-ink);
   font-weight: 500;
 }
 
 .cal-on {
   background: var(--green-soft);
-  color: #2c6b48;
+  color: var(--ok-ink);
   font-weight: 600;
 }
 
 .cal-over {
   background: var(--red-soft);
-  color: #8f382d;
+  color: var(--risk-ink);
   font-weight: 600;
 }
 
@@ -2111,7 +2122,7 @@ select {
 
 .month-cmp {
   background: var(--honey-soft);
-  color: #6b4a08;
+  color: var(--info-ink);
   border-radius: var(--radius);
   padding: 11px 14px;
   font-size: 13px;
@@ -2128,11 +2139,11 @@ select {
 }
 
 .forecast-line.warn {
-  color: #8f382d;
+  color: var(--risk-ink);
 }
 
 .forecast-line.good {
-  color: #2c6b48;
+  color: var(--ok-ink);
 }
 
 /* ── 站点页脚（法律文档入口 + 备案号）─────────────────────────────
@@ -2253,13 +2264,13 @@ select {
 .ftag-risk {
   background: var(--red-soft);
   border-color: rgba(208, 92, 78, 0.24);
-  color: #8f382d;
+  color: var(--risk-ink);
 }
 
 .ftag-good {
   background: var(--green-soft);
   border-color: rgba(63, 148, 99, 0.24);
-  color: #2c6b48;
+  color: var(--ok-ink);
 }
 
 .ftag-mark {
@@ -2371,7 +2382,7 @@ select {
 }
 
 .milestone-banner:not(.is-good) {
-  color: #8f382d;
+  color: var(--risk-ink);
   background: var(--red-soft);
 }
 
@@ -2387,13 +2398,13 @@ select {
   border: 1px solid rgba(242, 169, 59, 0.28);
   font-size: 12.5px;
   line-height: 1.6;
-  color: #7a5a12;
+  color: var(--tip-ink);
 }
 
 .advice-strip.is-over {
   background: var(--red-soft);
   border-color: rgba(208, 92, 78, 0.26);
-  color: #8f382d;
+  color: var(--risk-ink);
 }
 
 .advice-strip .as-tag {
@@ -2578,7 +2589,7 @@ select {
 
 .cu-score.is-good {
   background: var(--green-soft);
-  color: #2c6b48;
+  color: var(--ok-ink);
 }
 
 .cu-score.is-ok {
@@ -2588,7 +2599,7 @@ select {
 
 .cu-score.is-warn {
   background: var(--red-soft);
-  color: #8f382d;
+  color: var(--risk-ink);
 }
 
 .cu-main {
@@ -2604,7 +2615,7 @@ select {
 }
 
 .cu-level.is-good {
-  color: #2c6b48;
+  color: var(--ok-ink);
 }
 
 .cu-level.is-ok {
@@ -2612,7 +2623,7 @@ select {
 }
 
 .cu-level.is-warn {
-  color: #8f382d;
+  color: var(--risk-ink);
 }
 
 .cu-text {
@@ -2633,11 +2644,11 @@ select {
 }
 
 .cg-title.risk {
-  color: #8f382d;
+  color: var(--risk-ink);
 }
 
 .cg-title.good {
-  color: #2c6b48;
+  color: var(--ok-ink);
 }
 
 .cg-row {
@@ -2660,7 +2671,7 @@ select {
 
 .cg-badge {
   font-size: 11px;
-  color: #8f382d;
+  color: var(--risk-ink);
   background: var(--red-soft);
   border-radius: 99px;
   padding: 1px 7px;
@@ -2668,7 +2679,7 @@ select {
 }
 
 .cg-badge.good {
-  color: #2c6b48;
+  color: var(--ok-ink);
   background: var(--green-soft);
 }
 
@@ -2714,13 +2725,13 @@ select {
   border: 1px solid rgba(242, 169, 59, 0.28);
   font-size: 12.5px;
   line-height: 1.6;
-  color: #7a5a12;
+  color: var(--tip-ink);
 }
 
 .budget-hint.is-over {
   background: var(--red-soft);
   border-color: rgba(208, 92, 78, 0.26);
-  color: #8f382d;
+  color: var(--risk-ink);
 }
 
 .budget-hint .bh-label {
@@ -2828,7 +2839,7 @@ select {
 
 .lb-row.top3 {
   border-color: rgba(242, 169, 59, 0.4);
-  background: #fffcf4;
+  background: var(--lb-top3-bg);
 }
 
 .lb-rank {
@@ -2847,17 +2858,17 @@ select {
 
 .lb-rank.rank-1 {
   color: #fff;
-  background: #f2a93b;
+  background: var(--honey);
 }
 
 .lb-rank.rank-2 {
   color: #fff;
-  background: #b9b3a8;
+  background: var(--rank-2);
 }
 
 .lb-rank.rank-3 {
   color: #fff;
-  background: #d09a6a;
+  background: var(--rank-3);
 }
 
 .lb-name {

@@ -24,6 +24,16 @@ $honey-soft: #fdf1da;    // 蜂蜜浅底
 $honey-soft-2: #fbe6c2;  // 蜂蜜更浅底
 $honey-btn-ink: #4a3208; // 蜂蜜按钮上的深色文字
 
+// ── 语义衍生色（与主工程 src/styles.css :root 同名同值）─────
+// ⚠️ 改动必须两端同步：这里是单一真相源的镜像，不是可自由发挥的副本。
+$ok-ink: #2c6b48;        // green-soft 底上的成功/值得肯定文字
+$risk-ink: #8f382d;      // red-soft 底上的风险/需要留意文字
+$info-ink: #6b4a08;      // honey-soft 底上的信息文字
+$tip-ink: #7a5a12;       // 蜂蜜描边提示框正文
+$lb-top3-bg: #fffcf4;    // 排行榜前三名行底色
+$rank-2: #b9b3a8;        // 排行榜第 2 名徽章（银）
+$rank-3: #d09a6a;        // 排行榜第 3 名徽章（铜）
+
 // ── 语义色 ────────────────────────────────
 $yellow: #e8c93e;
 $green: #3f9463;         // 成功/值得肯定
