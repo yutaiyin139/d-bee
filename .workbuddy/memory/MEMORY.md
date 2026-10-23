@@ -126,10 +126,16 @@
   小米官方数据服务 SDK 已纳入，`src/lib/health/android.ts` 白名单 `{huawei, xiaomi}`（新增 vivo/OPPO 只改白名单）。
   UI 三机型一套（仅 label 与排查路径切换），品牌识别覆盖 HUAWEI/HONOR/HarmonyOS、Xiaomi/Redmi/MI/MIUI/HyperOS。
   资质未就绪时插件返回 `reason=not_ready`，前端提示「接入正在申请资质」。**主体已注册（10-22），
-  华为/小米企业入驻可启动**——华为 Health Kit 硬门槛 = 华为应用市场上架，另需软著 + App 备案。
+  Android 端企业开发者注册已完成（用户 10-23 告知）**——华为/小米企业入驻可启动。
+  ⚠️ 注意区分：**「企业开发者账号已注册」≠「应用已上架华为应用市场」**，而华为 Health Kit 的硬门槛是
+  **后者（上架）**，另需软著 + App 备案。所以 Health Kit 数据通道尚未解锁，仍需走上架流程。
 - **会员/IAP**：三档 free/pro/lifetime（¥18/¥128/¥328）；Apple 个人开发者账号已通过（10-20）；
+  **Android 企业开发者账号已注册（10-23）→ Google Play 支付线解锁**（`payment_orders.provider` 是 text
+  且**无 CHECK 约束**，加 `'google'` 无需改表结构，只需补网关验签分支）。
   前端 `checkout()` + `restorePurchases()`（3.1.2 合规）已接；服务端 `0029-iap-verify-receipt.sql`
-  （pg_net 外呼 verifyReceipt，sharedSecret 存 app_config）**未执行且建议弃用**（改网关验签，见上）。
+  **已实测永久作废**（服务器 `pg_available_extensions` 里 `pg_net` 不可用=0，库内外呼方案走不通）→
+  Apple 验签改网关实现。**🔴 但 Apple/Google 验签必须排在 0034 收权之后**，否则「网关能写 entitlements」
+  与「用户也能写」混在一起，无法区分合法发放与越权（见 `docs/数据库迁移审计与实施计划.md`）。
   剩余步骤见 `docs/iOS收费IAP落地清单.md`：Mac 编译插件 → ASC 配商品（dbee_pro_monthly/yearly/lifetime）→
   Xcode 开 IAP capability → **网关补 Apple 验签 + 幂等** → App Store Server Notifications V2 webhook。
 - **微信相关**：主体已注册，**暂缓状态可解除**（`src/lib/wechat.ts` 的 `WECHAT_LOGIN_ENABLED=false`
@@ -169,7 +175,7 @@
   还是等企业账号（建议**先申请 D-U-N-S 占位**、个人账号推进构建，证下来再决定切不切主体）；
   ③**云库长期去留**（自托管彻底替代 / 回迁 / 双写）；④**老用户迁移三路径**（推荐 A：判定为开发数据不迁移）。
   ~~④经营范围 ⑤注册资本 ⑥对公账户 ⑦小程序主体~~ → **已全部答复**（④⑤✅ 满足、⑥在办下周完成、⑦需变更且流程已查证）。
-  长期待办：华为应用市场上架（需企业认证+软著+App备案）、营业执照已办结✅。
+  长期待办：华为应用市场上架（~~企业认证~~已完成✅ + 软著 + App备案）、营业执照已办结✅。
 
 ## 三条主线
 
