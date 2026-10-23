@@ -7,7 +7,11 @@
 #     bash deploy/switch-nginx-selfhost.sh
 #
 #   可选：
-#     SERVER_NAME='_ 150.158.51.106'   nginx server_name（默认 '_ <HOST>'）
+#     SERVER_NAME='_ 150.158.51.106 d-bee.com.cn www.d-bee.com.cn'
+#       nginx server_name（默认 '_ <HOST> d-bee.com.cn www.d-bee.com.cn'）。
+#       默认已含正式域名：重跑本脚本不会把已绑定的域名覆盖掉。
+#       域名仅写入 server_name（预认领），不触发任何 DNS；备案+解析生效前，
+#       站点仍只经 IP 访问，加域名零副作用。HTTPS 见 deploy/setup-https.sh。
 #
 # 前置：deploy-gateway.sh 与 deploy-postgrest.sh 都已跑完（网关 + 数据面在线）。
 # 本脚本做：渲染自托管 nginx 配置 → 上传 → 远端备份+安装+reload+全链路E2E验证。
@@ -28,7 +32,7 @@ SSH_PY="$DIR/deploy/dbee-ssh.py"
 GW_DIR="$DIR/deploy/gateway"
 SECRETS="$GW_DIR/.secrets.local"
 
-SERVER_NAME="${SERVER_NAME:-_ $DBEE_HOST}"
+SERVER_NAME="${SERVER_NAME:-_ $DBEE_HOST d-bee.com.cn www.d-bee.com.cn}"
 export DBEE_HOST DBEE_USER DBEE_PWD
 export DBEE_SERVER_NAME="$SERVER_NAME"
 # publishableKey：与 deploy.sh 同款，从前端源码提取（避免手抄漂移）
