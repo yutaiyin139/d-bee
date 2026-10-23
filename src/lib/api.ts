@@ -340,29 +340,6 @@ export async function getUsage(usageDate: string, feature: string): Promise<numb
   return row?.count ?? 0
 }
 
-/**
- * 兜底路径：先读再写。
- * 并发下会互相覆盖，仅作为数据库函数不可用（未迁移 / 异常）时的降级实现。
- */
-export async function bumpUsage(usageDate: string, feature: string, current: number): Promise<void> {
-  if (current > 0) {
-    const { data, error } = await db('ai_usage')
-      .select('id')
-      .eq('usage_date', usageDate)
-      .eq('feature', feature)
-      .maybeSingle()
-    if (error) throw new Error(zh(error.message, '读取用量失败'))
-    const found = data as { id?: number } | null
-    if (found?.id !== undefined) {
-      const { error: upErr } = await db('ai_usage').update({ count: current + 1 }).eq('id', found.id).select()
-      if (upErr) throw new Error(zh(upErr.message, '记录用量失败'))
-      return
-    }
-  }
-  const { error } = await db('ai_usage').insert({ usage_date: usageDate, feature, count: 1 }).select()
-  if (error) throw new Error(zh(error.message, '记录用量失败'))
-}
-
 export interface QuotaResult {
   /** 是否成功占用到一次额度 */
   allowed: boolean
@@ -372,6 +349,12 @@ export interface QuotaResult {
   remaining: number
   /** 预占 token（识别失败退还时凭它精确释放；仅拍照额度返回，可空） */
   token?: string | null
+  /**
+   * true = 配额服务不可用（RPC 失败）导致的 fail-closed 拒绝，
+   * 而非「今日额度已用尽」。UI 据此区分：额度用尽 → 引导升级；
+   * 服务降级 → 提示「暂时不可用，请稍后重试」，不把基础设施故障说成用户该付费。
+   */
+  degraded?: boolean
 }
 
 interface QuotaRpcRow {
@@ -397,7 +380,19 @@ function callRpc(fn: string, args: Record<string, unknown>): PromiseLike<QueryRe
  * 采用「先占后用」而不是「先用后记」：AI 请求一旦发出就已产生成本，即使用户中途
  * 关掉页面，这次占用也应保留；调用失败时由带 token 的 releasePhotoQuota 退还（拍照额度）。
  *
- * 函数不可用时回退到旧的读改写路径，保证任何情况下功能不中断。
+ * 🔴 fail-closed（2026-10-23 P0-2，配合 0035 收回 ai_usage 写权限）：
+ *   旧实现是 RPC 失败后回退「先读 count 再写 count+1」（原 bumpUsage），
+ *   有两个致命问题：
+ *     ① 它绕过 consume_ai_quota 的服务端原子限制，并发下互相覆盖，
+ *        免费额度形同虚设 —— 正是 0015 要封堵的东西，等于自己留了个后门；
+ *     ② 0035 之后 authenticated 对 ai_usage 只有 SELECT，这条直写路径必然抛错，
+ *        而外层 catch 已把它吞掉，症状是「识别功能静默失效，日志无痕」。
+ *   现在改为：RPC 不可用 → 返回 allowed:false + degraded:true（拒绝服务），
+ *   而不是 fail-open 放行。理由：AI 调用有真实成本，fail-open 等于
+ *   「数据库函数一出问题就免费无限用」；而 consume_ai_quota 走网关 → PostgREST RPC，
+ *   与主链路同生共死，它挂了业务本来就不可用。
+ *   degraded 标志让 UI 能把「服务降级」与「额度用尽」区分开
+ *   （见 LogSheet.guardAiQuota），不把基础设施故障说成用户该付费。
  */
 export async function consumeAiQuota(usageDate: string, feature: string, limit: number): Promise<QuotaResult> {
   try {
@@ -416,11 +411,12 @@ export async function consumeAiQuota(usageDate: string, feature: string, limit: 
       used,
       remaining: Number.isFinite(Number(row.remaining)) ? Number(row.remaining) : Math.max(0, limit - used),
     }
-  } catch {
-    const used = await getUsage(usageDate, feature)
-    if (used >= limit) return { allowed: false, used, remaining: 0 }
-    await bumpUsage(usageDate, feature, used)
-    return { allowed: true, used: used + 1, remaining: Math.max(0, limit - used - 1) }
+  } catch (err) {
+    // 尽力读一次用量，仅用于展示（读权限保留，不受 0035 REVOKE 影响）。
+    // 读失败也不能放行 —— 一律拒绝，只是 remaining 退化为 0。
+    const used = await getUsage(usageDate, feature).catch(() => 0)
+    console.warn('[consumeAiQuota] 配额 RPC 不可用，已 fail-closed 拒绝本次调用', err)
+    return { allowed: false, used, remaining: 0, degraded: true }
   }
 }
 

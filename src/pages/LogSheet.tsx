@@ -350,7 +350,10 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   // 拍照分流提示：redeem=积分兑换 / inviteOrPro=拉人+Pro / pro=直接Pro
-  const [quotaHint, setQuotaHint] = useState<{ kind: 'redeem' | 'inviteOrPro' | 'pro'; text: string } | null>(null)
+  // degraded=配额服务不可用（fail-closed 拒绝，不是用户额度用尽，故不引导付费）
+  const [quotaHint, setQuotaHint] = useState<
+    { kind: 'redeem' | 'inviteOrPro' | 'pro' | 'degraded'; text: string } | null
+  >(null)
   // 当日已成功拍照次数（本地计数，驱动阶梯提示）
   const [todayPhotoCount, setTodayPhotoCount] = useState(0)
   // 上一次成功识别的结果摘要（用于反复拍照判定）
@@ -505,10 +508,23 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   /**
    * 原子占用一次识别额度（consume_photo_quota 优先扣积分兑换额度，再扣基础免费额度）。
    * 额度已由 checkPhotoQuota 预检，这里只做占用；仍兜底处理并发下额度被抢空的情况。
+   *
+   * 🔴 区分两种拒绝（P0-2 fail-closed 配套）：
+   *   · degraded=true：配额 RPC 不可用，属基础设施故障。此时**不弹付费墙**——
+   *     把服务不可用说成「你该付费了」既误导用户，也会在故障期造成投诉。
+   *     改为如实提示稍后重试，且不消耗额度（服务端 fail-closed，本来就没扣）。
+   *   · degraded=false：今日额度确实用尽，按原逻辑引导升级 Pro。
    */
   async function guardAiQuota(): Promise<{ ok: boolean; remaining: number | null }> {
     const q = await claimAiQuota()
     if (!q.allowed) {
+      if (q.degraded) {
+        setQuotaHint({
+          kind: 'degraded',
+          text: '识别服务暂时不可用（额度校验失败）。本次未消耗额度，请稍后重试；若持续如此请联系客服。',
+        })
+        return { ok: false, remaining: null }
+      }
       setQuotaHint({ kind: 'pro', text: quotaExhaustedReason() })
       openPaywall(quotaExhaustedReason())
       return { ok: false, remaining: null }
@@ -888,7 +904,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
 
           {quotaHint && (
             <div
-              className="notice info"
+              className={quotaHint.kind === 'degraded' ? 'notice warn' : 'notice info'}
               style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}
             >
               <span style={{ flex: 1 }}>{quotaHint.text}</span>
@@ -917,9 +933,15 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
                     去邀请
                   </button>
                 )}
-                <button className="btn-text" style={{ fontSize: 13 }} onClick={() => { setQuotaHint(null); openPaywall() }}>
-                  升级 Pro
-                </button>
+                {quotaHint.kind === 'degraded' ? (
+                  <button className="btn-text" style={{ fontSize: 13 }} onClick={() => setQuotaHint(null)}>
+                    知道了
+                  </button>
+                ) : (
+                  <button className="btn-text" style={{ fontSize: 13 }} onClick={() => { setQuotaHint(null); openPaywall() }}>
+                    升级 Pro
+                  </button>
+                )}
               </span>
             </div>
           )}

@@ -35,8 +35,12 @@ interface PlanContextValue {
   aiRemaining: number | null
   /** 奖励额度剩余（连续打卡/新手奖励，带 7 天有效期） */
   bonusRemaining: number
-  /** 原子占用一次「拍照识别」额度：allowed=false 表示已用完，调用方应弹付费墙并中止 */
-  claimAiQuota: () => Promise<{ allowed: boolean; remaining: number | null }>
+  /**
+   * 原子占用一次「拍照识别」额度。allowed=false 表示本次不放行，调用方应中止。
+   * degraded=true 时是「配额服务不可用」的 fail-closed 拒绝（基础设施故障），
+   * 此时不该弹付费墙 —— 详见 pages/LogSheet.tsx 的 guardAiQuota。
+   */
+  claimAiQuota: () => Promise<{ allowed: boolean; remaining: number | null; degraded?: boolean }>
   /** 识别失败（模糊/非食物/报错）时退还刚占用的额度 */
   refundAiQuota: () => Promise<void>
   redeem: (code: string) => Promise<'ok' | 'used' | 'bad'>
@@ -115,16 +119,29 @@ export function PlanProvider({ children }: { children: ReactNode }) {
   // 最近一次成功占用的预占 token，供识别失败退还时精确释放（ref 避免额外渲染）
   const lastTokenRef = useRef<string | null>(null)
 
-  const claimAiQuota = useCallback(async (): Promise<{ allowed: boolean; remaining: number | null }> => {
-    if (pro) return { allowed: true, remaining: null }
-    const res = await consumePhotoQuota()
-    if (res.allowed && res.token) lastTokenRef.current = res.token
-    // 消耗后重读额度，拿到准确的剩余（基础+奖励）
-    const q = await getPhotoQuota().catch(() => null)
-    if (q) setPhotoQuota({ base: q.baseRemaining, bonus: q.bonusRemaining, total: q.totalRemaining })
-    else setPhotoQuota((prev) => ({ ...prev, total: Math.max(0, prev.total - 1) }))
-    return { allowed: res.allowed, remaining: q ? q.totalRemaining : Math.max(0, photoQuota.total - 1) }
-  }, [pro, photoQuota.total])
+  const claimAiQuota = useCallback(
+    async (): Promise<{ allowed: boolean; remaining: number | null; degraded?: boolean }> => {
+      if (pro) return { allowed: true, remaining: null }
+      const res = await consumePhotoQuota()
+      if (res.allowed && res.token) lastTokenRef.current = res.token
+      // 消耗后重读额度，拿到准确的剩余（基础+奖励）
+      const q = await getPhotoQuota().catch(() => null)
+      if (q) {
+        setPhotoQuota({ base: q.baseRemaining, bonus: q.bonusRemaining, total: q.totalRemaining })
+      } else if (res.allowed) {
+        // 只有真的占用成功才本地递减。
+        // 🔴 修复：旧代码无论 allowed 与否都递减，导致 fail-closed 拒绝时
+        //    界面剩余次数凭空 -1（用户没识别却看到额度少了）。
+        setPhotoQuota((prev) => ({ ...prev, total: Math.max(0, prev.total - 1) }))
+      }
+      return {
+        allowed: res.allowed,
+        remaining: q ? q.totalRemaining : Math.max(0, photoQuota.total - (res.allowed ? 1 : 0)),
+        degraded: res.degraded,
+      }
+    },
+    [pro, photoQuota.total],
+  )
 
   const refundAiQuota = useCallback(async () => {
     if (pro) return
