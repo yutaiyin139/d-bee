@@ -1,0 +1,97 @@
+# D-Bee（自律蜜蜂）— Nginx 配置【自托管变体·模板·唯一来源】
+#
+# ⚠️ 这是 nginx.conf.example（云端反代版）的**自托管变体**：
+#    唯一实质区别 = /.cloud/ 的上游从「WorkBuddy 云端」换成「本机网关 127.0.0.1:8080」。
+#    静态资源、SPA 兜底、gzip、缓存策略与云端版**逐字一致**（前端零改动的关键）。
+#
+# 由 deploy/switch-nginx-selfhost.sh 渲染并安装（覆盖 sites-available/d-bee，
+# 覆盖前自动备份云端版为 d-bee.cloud.bak，便于一键回滚）。
+#
+# 🔑 为什么自托管版不再改写 Origin/Referer：
+#    云端网关有「来源白名单」，非白名单来源会被 403 access_denied，所以云端版必须
+#    把 Origin/Referer 改写成已登记的 https://zilv-mifeng.app.workbuddy.host。
+#    本机网关（server/lib/auth.mjs）只校验 x-wb-webapp-access-key，**不校验来源**，
+#    因此这两个头保持浏览器原样即可 —— 少一层改写，少一个出错点。
+#
+# ⚠️ 中国大陆服务器绑域名对外提供 Web 服务必须先完成 ICP 备案（仅用公网 IP 不受影响）。
+
+upstream dbee_gateway {
+    # 本机网关（泳道 A）。127.0.0.1 而非公网：网关只绑回环，绝不直接暴露。
+    server 127.0.0.1:8080;
+    keepalive 16;
+}
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name __SERVER_NAME__;
+
+    root /var/www/d-bee;
+    index index.html;
+
+    client_max_body_size 20m;
+
+    gzip on;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css application/javascript application/json
+               image/svg+xml application/manifest+json;
+
+    # ---- 1. 静态资源（与云端版一致）----
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+    location = /sw.js {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        try_files $uri =404;
+    }
+    location = /manifest.webmanifest {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+
+    # ---- 2. 反代本机自托管网关 ----
+    # 前端所有 /.cloud/** 请求（认证 / 数据 / AI）落到这里。
+    # proxy_pass 不带 URI 部分 → nginx 原样转发完整请求 URI（/.cloud/... 前缀保留），
+    # 与网关 app.mjs 里注册的路由（/.cloud/auth/v1/* 等）精确对齐。
+    location /.cloud/ {
+        proxy_pass http://dbee_gateway;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # AI 走 SSE 流式返回，必须关缓冲，否则前端一直等不到内容（与云端版同理）
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+
+    # 兼容保留：SDK 当前不请求裸 /auth/（认证走 /.cloud/auth/）。
+    # 仍代理到网关而非落 SPA：网关对未知端点返回干净的 JSON 404，
+    # 比返回一份 index.html（前端 JSON 解析静默失败）好排查。
+    location /auth/ {
+        proxy_pass http://dbee_gateway;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+
+    # ---- 3. SPA 兜底（必须放最后）----
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+
+# ── HTTPS ──────────────────────────────────────────────────────────
+# 等 ICP 备案通过、域名解析生效后：见 deploy/setup-https.sh（certbot 会往本 server
+# 块补 443 监听与证书路径）。自托管后 443 同样反代到 dbee_gateway，逻辑不变。
