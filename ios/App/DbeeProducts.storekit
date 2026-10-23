@@ -7,7 +7,7 @@
     {
       "displayPrice" : "328",
       "familyShareable" : false,
-      "internalID" : "DBEE0003",
+      "internalID" : "91000001",
       "localizations" : [
         {
           "description" : "一次购买，全部功能永久解锁",
@@ -23,11 +23,12 @@
   "settings" : {
     "_failTransactionsEnabled" : false,
     "_locale" : "zh_CN",
-    "_storefront" : "CHN"
+    "_storefront" : "CHN",
+    "_timeRate" : 1
   },
   "subscriptionGroups" : [
     {
-      "id" : "dbee_pro_group",
+      "id" : "90000001",
       "localizations" : [
 
       ],
@@ -43,7 +44,7 @@
           "displayPrice" : "18",
           "familyShareable" : false,
           "groupNumber" : 1,
-          "internalID" : "DBEE0001",
+          "internalID" : "91000002",
           "introductoryOffer" : null,
           "localizations" : [
             {
@@ -55,7 +56,7 @@
           "productID" : "dbee_pro_monthly",
           "recurringSubscriptionPeriod" : "P1M",
           "referenceName" : "Pro 月订阅",
-          "subscriptionGroupID" : "dbee_pro_group",
+          "subscriptionGroupID" : "90000001",
           "type" : "RecurringSubscription"
         },
         {
@@ -68,7 +69,7 @@
           "displayPrice" : "128",
           "familyShareable" : false,
           "groupNumber" : 1,
-          "internalID" : "DBEE0002",
+          "internalID" : "91000003",
           "introductoryOffer" : null,
           "localizations" : [
             {
@@ -80,7 +81,7 @@
           "productID" : "dbee_pro_yearly",
           "recurringSubscriptionPeriod" : "P1Y",
           "referenceName" : "Pro 年订阅",
-          "subscriptionGroupID" : "dbee_pro_group",
+          "subscriptionGroupID" : "90000001",
           "type" : "RecurringSubscription"
         }
       ]
