@@ -6,7 +6,19 @@
 # ⚠️ 全程只读：只 SELECT / 查系统目录 / systemctl status，绝不 INSERT/UPDATE/
 #    DDL/改配置。可安全在任意时刻重复执行。
 # 用途：回答「本地（服务器本机镜像）数据库可用了吗」——逐项核对服务、连通、
-#       结构完整度、RLS、角色、数据量，给出可/不可用的明确结论。
+#       结构完整度、RLS、角色、数据量、迁移追踪表，给出可/不可用的明确结论。
+# 8 个检查段：1 PG 服务 · 2 连通性 · 3 表与行数 · 4 RLS · 5 角色 ·
+#            6 关键对象存在性 · 7 磁盘 · 8 迁移追踪表 schema_migrations（0034）
+#
+# 第 6 段与第 8 段的分工（别把它们合并）：
+#   第 6 段是「凭直觉抽几个代表对象看在不在」—— 快，但会漏，
+#     而且对 CREATE OR REPLACE 覆盖式的函数天生无效（「在」≠「是最新版」）。
+#   第 8 段读 0034 建的追踪表，给出全量迁移的登记状态。
+#   两者都仍是**摘要**。真正的三类探针（存在性 / 版本性 / 事务内真实越权写）
+#   在 tools/migration-audit.sh，由 deploy/run-migration-audit.sh 调用。
+#   ⚠️ 本脚本刻意不 exec migration-audit.sh：那个文件含 __SUDO_PWD__ 占位符，
+#     要复用它就得把渲染后的版本落盘到服务器 = 把 SSH 密码写进磁盘。
+#     代价远大于「少跑一次深度审计」，故这里只做轻量摘要并给出调用命令。
 # ═══════════════════════════════════════════════════════════════════════
 set -uo pipefail   # 刻意不加 -e：体检要「尽量多报」，单项失败不该中断整体
 
@@ -101,6 +113,33 @@ echo
 echo "── 7) 磁盘 ──"
 PGDATA_DIR="$(PSQL_SU -c 'SHOW data_directory;' 2>/dev/null | head -1)"
 df -h "${PGDATA_DIR:-/var/lib/postgresql}" 2>/dev/null | tail -1 | awk '{print "  "$6": 已用 "$3" / 共 "$2" ("$5" 使用率)"}'
+
+# ── 8) 迁移追踪表摘要（0034）────────────────────────────────────────
+# 只做「读追踪表」这一件轻量的事。完整的三类探针
+# （存在性 / 版本性 / 事务内真实越权写）在 tools/migration-audit.sh，
+# 由 deploy/run-migration-audit.sh 调用 —— **不在这里 exec 它**：
+# 那个脚本含 __SUDO_PWD__ 占位符，若为了复用它而把渲染后的版本落盘到
+# 服务器，等于把 SSH 密码写进磁盘文件（比少跑一次审计糟得多）。
+echo
+echo "── 8) 迁移追踪表 schema_migrations ──"
+HAS_SM="$(PSQL_SU -c "SELECT count(*)::int FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname='schema_migrations';" 2>/dev/null | head -1)"
+if [ "${HAS_SM:-0}" != "1" ]; then
+  echo "  ✗ 表不存在 —— 0034 未应用，迁移状态仍只记录在文件注释/README 里。"
+  echo "    （这正是 0016/0026/0027 静默失效无人发现的根因）"
+  echo "    修法：sudo -u postgres psql -d dbee -v ON_ERROR_STOP=1 -f /opt/dbee-db/0034-schema-migrations.sql"
+else
+  echo "  ✓ 表存在。状态分布："
+  PSQL_SU -F' = ' -c "SELECT status, count(*) FROM public.schema_migrations GROUP BY status ORDER BY status;" 2>/dev/null | sed 's/^/      /'
+  echo "    非 applied 明细："
+  PSQL_SU -F' | ' -c "SELECT version, name, status FROM public.schema_migrations WHERE status <> 'applied' ORDER BY version;" 2>/dev/null | sed 's/^/      /'
+  # 快速红线：0016/0026/0027 是审计实测从未生效的三个，0035 应用后应转 applied
+  PENDING_CNT="$(PSQL_SU -c "SELECT count(*)::int FROM public.schema_migrations WHERE status='superseded';" 2>/dev/null | head -1)"
+  if [ "${PENDING_CNT:-0}" -gt 0 ]; then
+    echo "    ⚠ $PENDING_CNT 项标记为 superseded（内容待后续迁移接管）。"
+    echo "      若 0035-security-and-integrity 已应用，应把这些行改为 applied。"
+  fi
+fi
+echo "  完整三类探针：DBEE_HOST=… DBEE_USER=… DBEE_PWD=… bash deploy/run-migration-audit.sh"
 
 echo
 echo "═══════════════════════════════════════════"

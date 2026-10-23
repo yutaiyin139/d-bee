@@ -25,6 +25,18 @@
 
 幂等：建表 IF NOT EXISTS、函数 CREATE OR REPLACE、策略先 DROP 再建、
 数据 INSERT ON CONFLICT DO NOTHING、序列 setval 同步。
+
+2026-10-23 修复（迁移审计 P0-3，见 docs/数据库迁移审计与实施计划.md）：
+  ① GRANT 是追加语义——旧版只 GRANT 从不 REVOKE，目标库残留的历史宽权限
+     （entitlements/ai_usage 写权限）在镜像执行后依旧保留。现在表权限与函数
+     EXECUTE 均先无条件 REVOKE ALL 再按白名单精确 GRANT（照抄 0033 范式）。
+     函数侧全量 REVOKE 还顺带堵住 PG 默认授 PUBLIC 的坑（0014 已废弃的
+     release_ai_quota、_lb_* 内部辅助函数不再对 anon/authenticated 可执行）。
+  ② 旧版完全不抓 pg_constraint——镜像出的新库缺 0016 的 10 条边界 CHECK。
+     现在按 CHECK_CONSTRAINTS 字典（0016 权威定义）DROP IF EXISTS + ADD 输出。
+  ③ COLUMNS/UNIQUE_CONSTRAINTS/TABLE_GRANTS 仍是硬编码字典（离线生成器的
+     固有限制，本地无库可连）；字典头部已标注抓取日期与重抓方式，
+     迁移状态核对交给 tools/migration-audit.sh（P0-4）做在线探针。
 """
 
 import json
@@ -156,6 +168,8 @@ COLUMNS = {
 }
 
 # 唯一约束：table -> list of (constraint_name, [cols])
+# ⚠️ 硬编码来源：2026-10-20 云库 pg_constraint 抓取。若库结构演进，
+#    用 db/capture-live-schema.sql 在服务器上重新抓取后回填（见该文件说明）。
 UNIQUE_CONSTRAINTS = {
     'profiles': [('profiles_owner_id_key', ['owner_id'])],
     'ai_usage': [('ai_usage_owner_id_usage_date_feature_key', ['owner_id', 'usage_date', 'feature'])],
@@ -168,6 +182,31 @@ UNIQUE_CONSTRAINTS = {
     'redeem_codes': [('redeem_codes_code_key', ['code'])],
     'weight_logs': [('weight_logs_owner_id_log_date_key', ['owner_id', 'log_date'])],
     'ai_quota_claims': [('ai_quota_claims_token_key', ['token'])],
+}
+
+# CHECK 约束（边界校验，来源 0016-input-bounds.sql）：table -> list of (name, expr)
+# 🔴 修复点②：旧生成器完全不抓 pg_constraint，镜像出的新库缺这 10 条边界 CHECK，
+#    前端校验一旦被 devtools 绕过，脏数据（负热量/身高 999cm）可直接入库。
+#    现按 0016 权威定义补齐，用 DROP IF EXISTS + ADD 保证幂等（重复执行无害）。
+CHECK_CONSTRAINTS = {
+    'profiles': [
+        ('profiles_age_check',            'age IS NULL OR (age >= 1 AND age <= 120)'),
+        ('profiles_height_check',         'height_cm IS NULL OR (height_cm >= 100 AND height_cm <= 250)'),
+        ('profiles_current_weight_check', 'current_weight_kg IS NULL OR (current_weight_kg >= 20 AND current_weight_kg <= 300)'),
+        ('profiles_start_weight_check',   'start_weight_kg IS NULL OR (start_weight_kg >= 20 AND start_weight_kg <= 300)'),
+        ('profiles_target_weight_check',  'target_weight_kg IS NULL OR (target_weight_kg >= 20 AND target_weight_kg <= 300)'),
+    ],
+    'meal_entries': [
+        ('meal_entries_grams_check',    'grams IS NULL OR (grams >= 0 AND grams <= 5000)'),
+        ('meal_entries_calories_check', 'calories >= 0 AND calories <= 10000'),
+    ],
+    'water_logs': [
+        ('water_logs_amount_check', 'amount_ml >= 0 AND amount_ml <= 5000'),
+    ],
+    'exercise_logs': [
+        ('exercise_logs_minutes_check',  'minutes >= 0 AND minutes <= 600'),
+        ('exercise_logs_calories_check', 'calories >= 0 AND calories <= 5000'),
+    ],
 }
 
 # 额外索引（非 PK/UNIQUE，来自 pg_indexes）
@@ -219,8 +258,12 @@ POLICIES = {
 }
 
 # 表级 GRANT（authenticated 角色，来自 role_table_grants）
+# 🔴 修复点①：GRANT 是【追加】语义——旧生成器只 GRANT 从不 REVOKE，
+#    目标库若残留历史宽权限（如 entitlements/ai_usage 的写权限），镜像执行后
+#    依旧保留 = 越权白嫖终身会员的攻击链原样复活（见 0033/0034 审计）。
+#    build_all() 现在先 REVOKE ALL 再按本表精确 GRANT，把本字典作为唯一真相。
 TABLE_GRANTS = {
-    # table -> grant 列表（authenticated 实际持有的）
+    # table -> grant 列表（authenticated 应当持有的【全部】权限，多一不可）
     'profiles': 'SELECT, INSERT, UPDATE, DELETE',
     'meal_entries': 'SELECT, INSERT, UPDATE, DELETE',
     'weight_logs': 'SELECT, INSERT, UPDATE, DELETE',
@@ -290,6 +333,20 @@ def build_policy_sql():
                     out.append(f"CREATE POLICY {pname} ON public.{table} FOR {cmd} USING {using};")
                 else:
                     out.append(f"CREATE POLICY {pname} ON public.{table} FOR {cmd} WITH CHECK {wcheck};")
+    return '\n'.join(out)
+
+
+def build_check_constraint_sql():
+    """🔴 修复点②：输出 0016 的 10 条边界 CHECK。
+    用 DROP IF EXISTS + ADD，幂等且能纠正历史上被误改的约束表达式。
+    注意：ADD CONSTRAINT 会校验存量行，越界数据会导致失败——
+    这正是期望行为（脏数据必须先清洗，见 0034/审计）。"""
+    out = ["-- 边界 CHECK 约束（0016 权威定义，修复点②：旧生成器漏抓 pg_constraint）"]
+    for table, checks in CHECK_CONSTRAINTS.items():
+        out.append(f"-- {table}")
+        for (cname, expr) in checks:
+            out.append(f"ALTER TABLE public.{table} DROP CONSTRAINT IF EXISTS {cname};")
+            out.append(f"ALTER TABLE public.{table} ADD CONSTRAINT {cname} CHECK ({expr});")
     return '\n'.join(out)
 
 
@@ -411,11 +468,19 @@ def build_all():
     parts.append('')
     parts.append(build_policy_sql())
     parts.append('')
+    # 🔴 修复点②：边界 CHECK 约束（旧生成器完全漏抓）
+    parts.append(build_check_constraint_sql())
+    parts.append('')
     # GRANT 表
     parts.append('-- 表权限（authenticated）')
     parts.append('GRANT USAGE ON SCHEMA public TO authenticated;')
     parts.append('GRANT USAGE ON SCHEMA auth TO authenticated, anon;')
     parts.append('GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated, anon;')
+    # 🔴 修复点①：先无条件 REVOKE，再按 TABLE_GRANTS 精确 GRANT。
+    #    GRANT 是追加语义，不先 REVOKE 就无法纠正目标库残留的历史宽权限
+    #    （entitlements/ai_usage 的 UPDATE 越权即由此而来，见 0033/0034）。
+    parts.append('-- 先清空 authenticated 的表权限，再精确授予（修复点①：GRANT 追加语义）')
+    parts.append('REVOKE ALL ON ALL TABLES IN SCHEMA public FROM authenticated;')
     for t, g in TABLE_GRANTS.items():
         parts.append(f'GRANT {g} ON public.{t} TO authenticated;')
     parts.append('REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;')
@@ -427,6 +492,12 @@ def build_all():
     parts.append('BEGIN;')
     parts.append(build_functions())
     parts.append('')
+    # 🔴 修复点①（函数侧）：PG 默认把所有新函数的 EXECUTE 授给 PUBLIC。
+    #    functions.sql 本身不含任何 GRANT/REVOKE，若不先全量收回，
+    #    新镜像库里 release_ai_quota（0014 已废弃、明令 REVOKE）与 _lb_* 内部
+    #    辅助函数会对 anon/authenticated 默认可执行 = 废弃路径复活。
+    parts.append('-- 先收回全部函数 EXECUTE（PG 默认授 PUBLIC），再精确授予')
+    parts.append('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC, anon, authenticated;')
     for fn in FUNCTION_GRANTS:
         parts.append(f'GRANT EXECUTE ON FUNCTION public.{fn} TO authenticated;')
     parts.append('COMMIT;')

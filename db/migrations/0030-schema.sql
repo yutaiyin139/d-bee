@@ -486,10 +486,38 @@ CREATE POLICY recipes_update_own ON public.recipes FOR UPDATE USING (owner_id = 
 DROP POLICY IF EXISTS recipes_delete_own ON public.recipes;
 CREATE POLICY recipes_delete_own ON public.recipes FOR DELETE USING (owner_id = auth.uid());
 
+-- 边界 CHECK 约束（0016 权威定义，修复点②：旧生成器漏抓 pg_constraint）
+-- profiles
+ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_age_check;
+ALTER TABLE public.profiles ADD CONSTRAINT profiles_age_check CHECK (age IS NULL OR (age >= 1 AND age <= 120));
+ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_height_check;
+ALTER TABLE public.profiles ADD CONSTRAINT profiles_height_check CHECK (height_cm IS NULL OR (height_cm >= 100 AND height_cm <= 250));
+ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_current_weight_check;
+ALTER TABLE public.profiles ADD CONSTRAINT profiles_current_weight_check CHECK (current_weight_kg IS NULL OR (current_weight_kg >= 20 AND current_weight_kg <= 300));
+ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_start_weight_check;
+ALTER TABLE public.profiles ADD CONSTRAINT profiles_start_weight_check CHECK (start_weight_kg IS NULL OR (start_weight_kg >= 20 AND start_weight_kg <= 300));
+ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_target_weight_check;
+ALTER TABLE public.profiles ADD CONSTRAINT profiles_target_weight_check CHECK (target_weight_kg IS NULL OR (target_weight_kg >= 20 AND target_weight_kg <= 300));
+-- meal_entries
+ALTER TABLE public.meal_entries DROP CONSTRAINT IF EXISTS meal_entries_grams_check;
+ALTER TABLE public.meal_entries ADD CONSTRAINT meal_entries_grams_check CHECK (grams IS NULL OR (grams >= 0 AND grams <= 5000));
+ALTER TABLE public.meal_entries DROP CONSTRAINT IF EXISTS meal_entries_calories_check;
+ALTER TABLE public.meal_entries ADD CONSTRAINT meal_entries_calories_check CHECK (calories >= 0 AND calories <= 10000);
+-- water_logs
+ALTER TABLE public.water_logs DROP CONSTRAINT IF EXISTS water_logs_amount_check;
+ALTER TABLE public.water_logs ADD CONSTRAINT water_logs_amount_check CHECK (amount_ml >= 0 AND amount_ml <= 5000);
+-- exercise_logs
+ALTER TABLE public.exercise_logs DROP CONSTRAINT IF EXISTS exercise_logs_minutes_check;
+ALTER TABLE public.exercise_logs ADD CONSTRAINT exercise_logs_minutes_check CHECK (minutes >= 0 AND minutes <= 600);
+ALTER TABLE public.exercise_logs DROP CONSTRAINT IF EXISTS exercise_logs_calories_check;
+ALTER TABLE public.exercise_logs ADD CONSTRAINT exercise_logs_calories_check CHECK (calories >= 0 AND calories <= 5000);
+
 -- 表权限（authenticated）
 GRANT USAGE ON SCHEMA public TO authenticated;
 GRANT USAGE ON SCHEMA auth TO authenticated, anon;
 GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated, anon;
+-- 先清空 authenticated 的表权限，再精确授予（修复点①：GRANT 追加语义）
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.profiles TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.meal_entries TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.weight_logs TO authenticated;
@@ -1187,6 +1215,8 @@ END;
 $function$;
 
 
+-- 先收回全部函数 EXECUTE（PG 默认授 PUBLIC），再精确授予
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.badge_stats TO authenticated;
 GRANT EXECUTE ON FUNCTION public.bind_invite TO authenticated;
 GRANT EXECUTE ON FUNCTION public.consume_ai_quota TO authenticated;
