@@ -1,0 +1,93 @@
+{
+  "identifier" : "",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "328",
+      "familyShareable" : false,
+      "internalID" : "DBEE0003",
+      "localizations" : [
+        {
+          "description" : "一次购买，全部功能永久解锁",
+          "displayName" : "D-Bee 终身会员",
+          "locale" : "zh_CN"
+        }
+      ],
+      "productID" : "dbee_lifetime",
+      "referenceName" : "终身买断",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_locale" : "zh_CN",
+    "_storefront" : "CHN"
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "dbee_pro_group",
+      "localizations" : [
+
+      ],
+      "name" : "D-Bee Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "18",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "DBEE0001",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "AI 识别不限次、长报告与深度分析",
+              "displayName" : "Pro 月订阅",
+              "locale" : "zh_CN"
+            }
+          ],
+          "productID" : "dbee_pro_monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Pro 月订阅",
+          "subscriptionGroupID" : "dbee_pro_group",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "128",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "DBEE0002",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "AI 识别不限次、长报告与深度分析（约 ¥10.7/月）",
+              "displayName" : "Pro 年订阅",
+              "locale" : "zh_CN"
+            }
+          ],
+          "productID" : "dbee_pro_yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Pro 年订阅",
+          "subscriptionGroupID" : "dbee_pro_group",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 2,
+    "minor" : 0
+  }
+}

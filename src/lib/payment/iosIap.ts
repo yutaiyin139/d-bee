@@ -57,12 +57,20 @@ export function createIosIapAdapter(): PaymentAdapter | null {
   return {
     async fetchProducts(): Promise<ProductInfo[]> {
       const res = await plugin.getProducts({ productIds: Object.values(PRODUCT_IDS) })
-      return res.products.map((p) => ({
-        productId: p.productId as ProductId,
-        price: p.price,
-        title: p.title,
-        description: p.description,
-      }))
+      // 插件返回的是商店商品 ID（如 'dbee_pro_monthly'），需映射回 ProductId 键
+      // （'proMonthly'）。此前直接 `as ProductId` 是类型谎言：调用方按键索引会全部 miss。
+      const storeIdToKey: Record<string, ProductId> = {}
+      for (const [key, storeId] of Object.entries(PRODUCT_IDS)) {
+        storeIdToKey[storeId] = key as ProductId
+      }
+      return res.products
+        .filter((p) => storeIdToKey[p.productId])
+        .map((p) => ({
+          productId: storeIdToKey[p.productId],
+          price: p.price,
+          title: p.title,
+          description: p.description,
+        }))
     },
 
     async purchase(productId: ProductId): Promise<PurchaseResult> {

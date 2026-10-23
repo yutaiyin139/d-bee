@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { IconCrown, IconGift } from '../components/Icons'
 import { Sheet } from '../components/Sheet'
 import {
@@ -11,7 +11,7 @@ import {
 import { REDEEM_CODE_RULE } from '../lib/validate'
 import { usePlan } from '../state/plan'
 import { errText } from '../lib/errmsg'
-import { checkout, restorePurchases } from '../lib/payment/checkout'
+import { checkout, getAdapter, restorePurchases } from '../lib/payment/checkout'
 import { isIOS } from '../lib/platform'
 
 /**
@@ -54,6 +54,32 @@ export function PaywallSheet() {
   const [ok, setOk] = useState(false)
   // 正在支付的商品 id（null 表示无进行中支付）
   const [payingId, setPayingId] = useState<string | null>(null)
+  // 商店本地化价格（iOS 打开付费墙时经 DbeeIap.getProducts 拉取）；
+  // key = ProductId（'proMonthly' 等），value = 本地化价格文案（如 "¥18.00"）。
+  // 拉取失败/非 iOS 时为空对象 → 回退硬编码 PRICE_TAG。
+  const [storePrice, setStorePrice] = useState<Record<string, string>>({})
+
+  // iOS：付费墙每次打开时拉一次商店价格。失败静默回退，不打扰用户。
+  useEffect(() => {
+    if (!paywall.open || !isIOS()) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const adapter = await getAdapter()
+        if (!adapter) return
+        const products = await adapter.fetchProducts()
+        if (cancelled || products.length === 0) return
+        const map: Record<string, string> = {}
+        for (const p of products) map[p.productId] = p.price
+        setStorePrice(map)
+      } catch {
+        /* 商品未配置 / 插件不可用：保持硬编码价，不影响购买流程 */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [paywall.open])
 
   if (!paywall.open) return null
 
@@ -192,7 +218,7 @@ export function PaywallSheet() {
               >
                 <div className="pay-option-name">{p.name}</div>
                 <div className="pay-option-price">
-                  {payingId === p.id ? <span className="spinner" /> : PRICE_TAG[p.id]}
+                  {payingId === p.id ? <span className="spinner" /> : (storePrice[p.id] ?? PRICE_TAG[p.id])}
                 </div>
                 {p.highlight && <div className="pay-option-tag">最划算</div>}
               </button>
