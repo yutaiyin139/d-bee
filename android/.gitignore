@@ -57,6 +57,10 @@ captures/
 #*.jks
 #*.keystore
 
+# 签名密钥与凭据（本机生成，严禁入库；丢失将无法覆盖更新已发布 App）
+keys/
+keystore.properties
+
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild
 .cxx/
