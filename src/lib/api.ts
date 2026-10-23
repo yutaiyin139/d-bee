@@ -1,8 +1,11 @@
 import { cloud } from '../cloud'
+import { publicConfig } from '../cloudConfig'
 import type { Badge, Entitlement, ExerciseLog, HoneyBalance, HoneyLedger, InviteLink, MealEntry, Profile, Recipe, WaterLog, WeightLog } from '../types'
 import { BONUS_TTL_DAYS, FREE_DAILY_AI, SCAN_FEATURE } from './entitlement'
 import { zh } from './errmsg'
 import { todayKey } from './nutrition'
+import { createNativeFetch } from './originProxy'
+import { platformName } from './platform'
 
 /**
  * 云数据库访问封装。
@@ -909,6 +912,14 @@ export async function verifyPaymentOrder(
   providerTxnId: string,
   receipt: string,
 ): Promise<boolean> {
+  // iOS + 自托管网关：优先走网关的 Apple 验签端点（server/lib/iap.mjs）。
+  // 数据库 RPC 的 apple 分支是 TODO 空实现（0029 pg_net 方案已作废，
+  // 10-22 决策 #6：验签落在 Node 网关），对 iOS 恒返 false，因此仅作回退。
+  if (platformName() === 'ios') {
+    const gw = await verifyViaGateway(orderNo, providerTxnId, receipt)
+    if (gw !== null) return gw
+    // gw === null：网关端点不存在/未配置（云端旧网关、503）→ 回退 RPC
+  }
   try {
     const { data, error } = await callRpc('verify_payment_order', {
       p_order_no: orderNo,
@@ -919,5 +930,64 @@ export async function verifyPaymentOrder(
     return (Array.isArray(data) ? data[0] : data) === true
   } catch {
     return false
+  }
+}
+
+/**
+ * 走自托管网关的 Apple 验签核销。
+ *
+ * 返回值语义：
+ *   · true / false —— 网关明确给出了核销结果（成功 / 业务性失败如 bundle 不符、
+ *     交易被他人核销、Apple 状态码异常），调用方直接采信，**不再**回退 RPC
+ *     （RPC 对 iOS 恒 false，回退只会把「409 重放」这类明确拒绝变成含糊失败）。
+ *   · null —— 网关通道本身不可用（端点 404/405 = 旧版网关；503 = 未配
+ *     APPLE_BUNDLE_ID；网络/鉴权异常），调用方应回退 RPC 保持旧行为。
+ *
+ * 端点契约（server/lib/iap.mjs）：
+ *   POST {endpoint}/.cloud/payment/apple/verify
+ *   Bearer = 会话 access_token（网关用 JWT_SECRET 验签，sub 即权益归属人）
+ *   body { receipt, order_no?, provider_txn_id? }
+ *   200 { settled:true, duplicate, plan, pro_until, transaction_id }
+ *   4xx CloudError 形状 { message, error }
+ */
+async function verifyViaGateway(
+  orderNo: string,
+  providerTxnId: string,
+  receipt: string,
+): Promise<boolean | null> {
+  try {
+    const { data: session } = await cloud.auth.getSession()
+    const accessToken = session?.accessToken
+    if (!accessToken) return null // 未登录：RPC 也会因 auth.uid() 为空而 false
+
+    // 原生端 WebView 的 fetch 会被 CORS/Origin 校验拦住，须走 originProxy
+    // 插件在原生层转发（与 cloud.ts 注入 SDK 的同一实现）；Web 端返回
+    // undefined → 用全局 fetch（同源经 nginx，无跨域）。
+    const doFetch = createNativeFetch() ?? fetch
+    const resp = await doFetch(`${publicConfig.endpoint}/.cloud/payment/apple/verify`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        receipt,
+        order_no: orderNo,
+        provider_txn_id: providerTxnId,
+      }),
+    })
+
+    // 网关通道不可用的情形 → 回退 RPC
+    if (resp.status === 404 || resp.status === 405 || resp.status === 503) return null
+
+    if (resp.ok) {
+      const body = (await resp.json().catch(() => null)) as { settled?: boolean } | null
+      return body?.settled === true
+    }
+    // 其余 4xx/5xx：网关明确拒绝（402 验签失败 / 409 重放 / 502 Apple 不可达）
+    return false
+  } catch {
+    // 网络层异常（插件缺失、DNS、超时）→ 回退 RPC，不让支付因通道问题硬失败
+    return null
   }
 }

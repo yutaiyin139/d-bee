@@ -207,6 +207,9 @@ export function warnings(cfg) {
   if (!cfg.llmApiKey) w.push('LLM_API_KEY 未配置 —— A3 的 LLM 代理将返回 503')
   if (!cfg.publishableKey) w.push('WB_PUBLISHABLE_KEY 未配置 —— 跳过 access-key 校验（内网部署可接受）')
   if (!cfg.appleBundleId) w.push('APPLE_BUNDLE_ID 未配置 —— C1 的 IAP 验签不可用')
+  if (cfg.appleBundleId && !cfg.appleSharedSecret) {
+    w.push('APPLE_SHARED_SECRET 未配置 —— 自动续期订阅商品验签会返回 21004（买断商品不受影响）')
+  }
   if (cfg.prod && cfg.accessTtlSec > 30 * 86400) w.push('access token 有效期超过 30 天，偏长')
   return w
 }

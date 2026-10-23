@@ -1,7 +1,8 @@
 # iOS 收费（IAP）落地清单与当前状态
 
-> 更新：2026-10-20（V1.7.0，Apple 个人开发者账号已通过）
-> 状态：收费链路「前端已接线 + 验签 SQL 已就绪，待云环境恢复后执行验签迁移」
+> 更新：2026-10-23（V1.7.0，Apple 个人开发者账号已通过）
+> 状态：**服务端验签已在 Node 网关落地**（0029 pg_net 方案作废，10-22 决策 #6）；
+> 剩 Mac 侧硬步骤 + 0037 迁移执行 + 网关 env 配置。
 
 ---
 
@@ -10,16 +11,21 @@
 | 层 | 状态 | 说明 |
 |---|---|---|
 | 前端 payment 模块 | ✅ 就绪 | `src/lib/payment/`（types / checkout / iosIap）已写好，含 `restorePurchases` |
+| 前端核销通道 | ✅ 已切网关 | `api.ts verifyPaymentOrder`：iOS 优先 `POST /.cloud/payment/apple/verify`（Bearer），网关不可用回退 RPC |
 | 原生 StoreKit 2 插件 | ✅ 骨架就绪 | `native-plugins/dbee-iap/DbeeIapPlugin.swift`（未在 Mac 编译验证） |
 | 服务端订单表/RPC | ✅ 已上云 | `payment_products` + `payment_orders` + 下单 RPC |
 | 付费墙 UI 接入 | ✅ 已接线（2026-10-20） | PaywallSheet 商品卡片可点击接 `checkout`，iOS 加「恢复购买」 |
-| 凭证验签 | ⚠️ SQL 就绪，未执行 | `0029-iap-verify-receipt.sql` 已写，待云环境恢复 + pg_net 确认 |
-| **整体结论** | ⚠️ **部分可用** | iOS 端 UI 已接线，但验签迁移未执行前，购买会卡在「校验失败」 |
+| 凭证验签 | ✅ **网关已实现** | `server/lib/iap.mjs`（verifyReceipt 沙盒/生产自动切换 + bundle_id 钉扎 + transaction_id 全服幂等）；落库走 0037 definer 函数 |
+| 订阅 webhook | ✅ **V2 端点已实现** | `/.cloud/payment/apple/notifications`（x5c 证书链钉扎；SUBSCRIBED/DID_RENEW 续订、REFUND/REVOKE 撤销、全量留痕） |
+| 自测 | ✅ 41 项全过 | `tools/iap-selftest.mjs`（mock pool + mock Apple + 注入式 JWS 验签，真 HTTP 报文断言） |
+| **整体结论** | ⚠️ **代码链路完整，待部署** | 上线前置：服务器执行 0037 + 网关 env 配 `APPLE_BUNDLE_ID`/`APPLE_SHARED_SECRET` + Mac 侧硬步骤（见发布梳理文档 §九B） |
 
-**2026-10-20 进展**：前端 `PaywallSheet` 已把商品卡片从「纯展示」改为可点击（iOS 走
-`checkout()` → StoreKit 购买 → 回传凭证 → 刷新权益），并新增「恢复购买」入口（订阅 3.1.2
-合规必需）。服务端验签 SQL（`0029-iap-verify-receipt.sql`）已写好，采用 `pg_net` 外呼
-`verifyReceipt` + sharedSecret 存 `app_config` 表的方案，**待云数据库从资源隔离状态恢复后执行**。
+**2026-10-23 进展**：Apple 验签从数据库迁到 Node 网关。0029（pg_net 外呼）因服务器
+PG17.11 无 pg_net 扩展**永久作废**（schema_migrations 已标 void）。替代实现：
+网关 `server/lib/iap.mjs` 负责与 Apple 对话（验签/JWS 证书链），数据库迁移
+`0037-apple-iap-settlement.sql` 负责与钱有关的状态（`apple_transactions` 幂等表 +
+`apple_notifications` 留痕表 + `settle/revoke/log` 三个 definer 函数，EXECUTE 仅授
+dbee_app，前端角色三层全堵）。客户端 `verifyPaymentOrder` 在 iOS 上改走网关端点。
 
 ---
 

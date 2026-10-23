@@ -94,14 +94,21 @@ npx cap sync ios
 
 ## 七、IAP 收费链路（详见 `docs/iOS收费IAP落地清单.md`）
 
+> 2026-10-23 更新：**服务端验签已在 Node 网关落地**（10-22 决策 #6）。
+> 0029（pg_net 方案）已标 void 作废；替代实现 = `server/lib/iap.mjs` +
+> 迁移 `0037-apple-iap-settlement.sql`（幂等表 + definer 核销函数）。
+> 自测 `tools/iap-selftest.mjs` 41 项全过（含 21007 沙盒切换、bundle_id 钉扎、
+> 换账号重放 409、DID_RENEW 续订、REFUND 撤销、JWS x5c 验签失败拒收）。
+
 | 层 | 状态 |
 |---|---|
 | 前端 payment 模块 | ✅ `src/lib/payment/`（types/checkout/iosIap），含 `restorePurchases`，PaywallSheet 已接线 |
+| 前端核销通道 | ✅ `api.ts verifyPaymentOrder`：iOS 优先走网关 `POST /.cloud/payment/apple/verify`（Bearer 鉴权），网关不可用（404/503）回退 RPC |
 | 原生 StoreKit 2 插件 | ✅ 代码完整，⚠️ 未在 Mac 编译 |
 | 服务端订单表/RPC | ✅ `payment_products`/`payment_orders` + 下单 RPC 已上云 |
-| 凭证验签 | ⚠️ `0029-iap-verify-receipt.sql` 已写，**待执行**（pg_net 外呼 verifyReceipt + sharedSecret 存 app_config） |
-| 订阅 webhook | ❌ 未建（App Store Server Notifications V2：SUBSCRIBED/DID_RENEW/EXPIRED/REFUND） |
-| **整体** | ⚠️ 部分可用：验签迁移未执行前，购买会卡「校验失败」 |
+| 凭证验签 | ✅ **网关已实现**（`server/lib/iap.mjs`：verifyReceipt 沙盒/生产自动切换 + bundle_id 钉扎 + transaction_id 全服幂等）。⚠️ 迁移 0037 待在服务器执行 |
+| 订阅 webhook | ✅ **V2 通知端点已实现**（`/.cloud/payment/apple/notifications`：x5c 证书链钉扎验签，SUBSCRIBED/DID_RENEW 续订核销、REFUND/REVOKE 撤销权益、全量落库留痕）。⚠️ 需在 App Store Connect 配置通知 URL（依赖 HTTPS 域名） |
+| **整体** | ⚠️ 代码链路完整；上线前置 = 0037 执行 + 网关 env 配 APPLE_BUNDLE_ID/SHARED_SECRET + Mac 侧硬步骤 |
 
 **商品 ID**（App Store Connect 必须与代码一致）：`dbee_pro_monthly`(¥18 订阅) / `dbee_pro_yearly`(¥128 订阅) / `dbee_lifetime`(¥328 买断)。
 
@@ -129,12 +136,12 @@ npx cap sync ios
 2. 编译 3 个本地 Swift 插件（dbee-iap / dbee-health / origin-proxy），**修首次编译错误**
 3. Signing & Capabilities：登录 Apple ID → 选 **DEVELOPMENT_TEAM** → 加 **In-App Purchase** capability（HealthKit 已有）
 4. 替换微信真实 AppID（如启用微信登录）
-5. App Store Connect：创建 App（`com.dbee.app`）→ 配 3 个商品 → 填协议/税务/银行
-6. 服务端执行 `0029-iap-verify-receipt.sql` + 建订阅 webhook（收费前置）
-7. Archive → Upload → TestFlight 内测 → 提审
+5. App Store Connect：创建 App（`com.dbee.app`）→ 配 3 个商品 → 填协议/税务/银行（**对公账户下来后填银行账户**）→ 配 Server Notifications URL = `https://d-bee.com.cn/.cloud/payment/apple/notifications`（依赖 HTTPS）
+6. 服务器执行 `0037-apple-iap-settlement.sql` + 网关 env 配 `APPLE_BUNDLE_ID`/`APPLE_SHARED_SECRET`（App Store Connect → App 信息 → 共享密钥）+ 重启网关（收费前置；0029 已作废勿执行）
+7. Archive → Upload → TestFlight 内测（沙盒账号走 `APPLE_SANDBOX=1`，验签已支持 21007/21008 自动切换）→ 提审
 
 ### C. 依赖外部条件
-- 备案域名 + HTTPS 证书 → 数据面切服务器 + Associated Domains（微信 Universal Link）
+- 备案域名 + HTTPS 证书 → 数据面切服务器 + Associated Domains（微信 Universal Link）+ webhook URL 配置
 
 ---
 
@@ -145,5 +152,6 @@ npx cap sync ios
 | 无 DEVELOPMENT_TEAM | 无法签名/上架 | Mac 上 Xcode 登录开发者账号 |
 | Swift 插件未编译 | 可能编译失败 | Mac 首次构建 + 修错 |
 | 无 In-App Purchase capability | 收费不可用 | Xcode 添加 capability |
-| 备案域名 + HTTPS 未就绪 | 数据面无法切服务器；微信 Universal Link 不可用 | `d-bee.com.cn` 备案完成 + 签证书 + 加 A 记录 |
-| 0029 验签迁移未执行 | IAP 购买卡「校验失败」 | 云/服务器 PG 执行迁移 + pg_net 确认 |
+| 备案域名 + HTTPS 未就绪 | 数据面无法切服务器；微信 Universal Link 与 webhook URL 不可用 | `d-bee.com.cn` 备案完成 + 签证书 + 加 A 记录 |
+| 0037 迁移未执行 + 网关 APPLE_* env 未配 | IAP 核销落库无入口（端点 503） | 服务器执行 0037 + env 配置 + 重启网关（**代码已就绪**） |
+| 对公账户未下来 | App Store Connect 银行/税务信息无法填全 → 商品不能售卖 | 对公账户办结（申请中） |

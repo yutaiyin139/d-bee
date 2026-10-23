@@ -352,7 +352,8 @@ section('config · validate 拦住不安全配置')
   assert('body 上限 32 MiB（base64 图片）', c.bodyLimitBytes === 32 * 1024 * 1024)
   assert('appleSandbox 默认 true（提审期用沙盒）', c.appleSandbox === true)
   assert('缺 LLM_API_KEY 时给非致命提示', warnings({ ...c, llmApiKey: '' }).some((w) => w.includes('LLM_API_KEY')))
-  assert('配齐后无提示', warnings({ ...c, llmApiKey: 'sk-x', publishableKey: 'wbpk_x', appleBundleId: 'com.x' }).length === 0)
+  assert('配了 bundleId 但缺 sharedSecret → 提示 21004 风险', warnings({ ...c, llmApiKey: 'sk-x', publishableKey: 'wbpk_x', appleBundleId: 'com.x', appleSharedSecret: '' }).some((w) => w.includes('APPLE_SHARED_SECRET')))
+  assert('配齐后无提示', warnings({ ...c, llmApiKey: 'sk-x', publishableKey: 'wbpk_x', appleBundleId: 'com.x', appleSharedSecret: 'sec' }).length === 0)
 }
 
 // ══════════════════════════════════════════════════════════════════════

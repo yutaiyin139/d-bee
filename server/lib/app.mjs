@@ -11,6 +11,7 @@ import { OtpStore } from './otp.mjs'
 import { createAuthHandlers } from './auth.mjs'
 import { createDbProxy } from './dbproxy.mjs'
 import { createLlmHandlers } from './llm.mjs'
+import { createIapHandlers } from './iap.mjs'
 
 /**
  * @param {object} deps
@@ -21,7 +22,9 @@ import { createLlmHandlers } from './llm.mjs'
  * @param {object} [deps.otp]     可注入（自测用）
  * @param {boolean} [deps.enableDbProxy=true] 自测可关掉以免真连 PostgREST
  * @param {boolean} [deps.enableLlm=true]
- * @returns {{server: http.Server, router: Router, otp: OtpStore, auth: object, llm: object, limiters: object}}
+ * @param {boolean} [deps.enableIap=true]
+ * @param {typeof globalThis.fetch} [deps.fetchImpl] 自测注入（iap 外呼 Apple 用）
+ * @returns {{server: http.Server, router: Router, otp: OtpStore, auth: object, llm: object, iap: object, limiters: object}}
  */
 export function createApp(deps) {
   const { cfg, pool, gatewayPool, logger } = deps
@@ -43,6 +46,13 @@ export function createApp(deps) {
   const auth = createAuthHandlers({ cfg, pool: gatewayPool, otp, logger, limiterIdent, limiterIp })
   const dbProxy = deps.enableDbProxy === false ? null : createDbProxy({ cfg, logger })
   const llm = deps.enableLlm === false ? null : createLlmHandlers({ cfg, logger, usageLimiter })
+  // IAP 走业务池（dbee_app）：核销函数 0037 只授 dbee_app EXECUTE。
+  // 未配 APPLE_BUNDLE_ID 时端点自返 503（见 iap.mjs notConfigured），无需条件装配。
+  const iap = deps.enableIap === false ? null : createIapHandlers({
+    cfg, pool, logger,
+    ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
+    ...(deps.verifyJwsImpl ? { verifyJwsImpl: deps.verifyJwsImpl } : {}),
+  })
 
   const router = new Router()
   const A = '/.cloud/auth/v1'
@@ -71,6 +81,13 @@ export function createApp(deps) {
   if (llm) {
     router.on('GET', '/.cloud/llm/models', wrap(llm.listModels))
     router.on('POST', '/.cloud/llm/chat/completions', wrap(llm.chatCompletions))
+  }
+
+  if (iap) {
+    // 客户端购买/恢复后回传收据 → 验签 → 幂等核销（需 Bearer）
+    router.on('POST', '/.cloud/payment/apple/verify', wrap(iap.verify))
+    // App Store Server Notifications V2（Apple 直发，无 Bearer，靠 JWS x5c 验签）
+    router.on('POST', '/.cloud/payment/apple/notifications', wrap(iap.notifications))
   }
 
   // 探活：不鉴权。返回各依赖可达性，供 nginx/systemd/deploy 脚本判活
@@ -124,12 +141,18 @@ export function createApp(deps) {
       return res.end()
     }
 
-    // 全局限流（按 IP）。healthz 豁免，否则探活可能被自己的限流挡住
+    // 全局限流（按 IP）。healthz 豁免，否则探活可能被自己的限流挡住。
+    // Apple webhook 也豁免：来源是 Apple 的少数固定 IP，按 IP 限流会把
+    // 同一批订阅续订通知误伤成 429，而 Apple 对非 200 会重试 → 重试风暴。
+    // 该端点的安全不靠限流，靠 JWS x5c 证书链验签（见 iap.mjs）。
     const ipKey =
       String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim() ||
       req.socket?.remoteAddress ||
       'unknown'
-    if (pathname !== '/.cloud/healthz') {
+    const rateLimitExempt =
+      pathname === '/.cloud/healthz' ||
+      pathname === '/.cloud/payment/apple/notifications'
+    if (!rateLimitExempt) {
       const rl = limiterApi.hit(ipKey)
       if (!rl.ok) {
         res.setHeader('retry-after', String(rl.retryAfterSec))
@@ -168,7 +191,7 @@ export function createApp(deps) {
   })
 
   return {
-    server, router, otp, auth, llm, dbProxy,
+    server, router, otp, auth, llm, dbProxy, iap,
     limiters: { limiterIdent, limiterIp, limiterApi, usageLimiter },
   }
 }
