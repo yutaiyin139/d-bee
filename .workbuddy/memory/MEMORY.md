@@ -1,6 +1,6 @@
 # D-Bee（自律蜜蜂）· 项目长期记忆（精简版；细节见当日日志与 docs/）
 
-## 进度快照（2026-10-22 晚，主体已注册 + 6 项决策已拍板 + 4 项确认已答复；自托管产物已入库，待建网关）
+## 进度快照（2026-10-23 10:08，🎉 **泳道 A 部署闭环：自托管全栈已在 150.158.51.106 上线并 E2E 全绿**；主体已注册 + 6 项决策已拍板 + 4 项确认已答复）
 
 - **✅ 6 项决策已拍板（10-22 晚）**：①主体=**有限责任公司** ②未提交产物**入库**（已提交 `b6b1725`+`43a5729`
   并推 origin/main）③LLM=**DeepSeek** ④短信=**先日志+万能码**（`SMS_PROVIDER=log`/`SMS_MASTER_CODE=888888`）
@@ -65,8 +65,17 @@
   （另需过滤 `disabled!==true && enabled!==false`，见 `ai.ts:31`）。
   **模型 ID 必须放服务端配置**（`.env` 的 `LLM_MODEL_VISION`）而非散落代码，DeepSeek 改名时只改一行。
 - **版本/git**：Web V1.7.0 已发布（http://150.158.51.106/ ，commit `846c355`）；Android debug APK 最新 V1.6.9
-  （versionCode 10）。最新 commit **`43a5729`**（docs: 实施计划落定 6 项决策 + 竞品对比），
-  前一个 `b6b1725`（chore: 自托管产物入库 + 凭据脱敏 + 数据/结构分离）。
+  （versionCode 10）。最新 commit **`d551194`**（feat(deploy): nginx 切自托管网关 + 全链路 E2E 验证），
+  前序 `c7bf63e`（网关部署资产 + 三处部署期缺陷修复）、`411d266`（**0033** 收回 dbee_app BYPASSRLS，修复 RLS 全库失效）、
+  `7e2ef02`（只读体检脚本 + 镜像库体检结论）、`83cd682`（PostgREST 部署资产）、
+  `2dbf90e`（泳道 A 网关骨架 A1 auth/JWT + A2 PostgREST 反代 + A3 LLM 代理）、`43a5729`/`b6b1725`（决策 + 产物入库）。
+  **工作区干净**（0033 已提交为 `411d266`）。
+- **🎉 泳道 A 部署闭环（10-23 10:08）**：服务器 `150.158.51.106` 上 **nginx（自托管配置）+ dbee-gateway
+  （Node 22.22.2 / :8080）+ PostgREST（16.4 / :3001）+ PG 17.11（dbee 库，0033 已应用）** 四件套均 active；
+  `/.cloud/**` 全部走本机自托管栈，**不再依赖 WorkBuddy 云端**。8 项 E2E 全 ✓（含正常 OTP 路径：
+  从 journald 读到真实验证码，非万能码兜底；带 JWT 读 profiles=200/`[]`，匿名=401，RLS 按 sub 过滤生效）。
+  云端回滚点保留在 `/etc/nginx/sites-available/d-bee.cloud.bak`。切换脚本 `deploy/switch-nginx-selfhost.sh`
+  （本机编排）+ `deploy/gateway/switch-nginx-selfhost.remote.sh`（远端）+ `deploy/nginx.selfhost.conf.example`。
 - **📦 数据/结构分离（PIPL 最小必要，10-22 已落地）**：
   `0030-full-selfhost-mirror.sql` 含 17 表**全量真实用户健康档案**（年龄/性别/身高体重/饮食记录/减重障碍，
   **含 10 岁、17 岁未成年人记录**）→ **不入库**。改为：
@@ -77,11 +86,14 @@
 - **【主线·10-20 20:18 拍板】云库 → 自托管 PostgreSQL**：云库已恢复，从云库实时抓取生成完整镜像 `0030`
   （123KB，17 表 + 27 函数 + 24 策略 + GRANT + 全量数据，补齐旧 0002 缺的 10 表与 21 个业务函数），
   经 `deploy/sync-mirror.sh` 在服务器 dbee（PG 17.11）执行成功、自检全过（17 表行数与云库一致）。
-  远程已打通（dbee_app BYPASSRLS，先 SSH 隧道后改直连：`listen_addresses='*'` + pg_hba 白名单 + 放行 5432），
-  SQL 级 CRUD + 26 函数自测全过。**尚未切前端**——还差：①自建 auth/JWT 网关（**必须同时注入
-  `app.user_id`（RLS）与 `request.jwt.claim.sub`（badge_stats/leaderboard 等函数依赖 JWT 声明）**）
-  ②LLM 代理（SSE，`/llm/models` 须含 `supportsImages`/`isDefault`）③`/v1/*` PostgREST 语义 REST 端点
-  ④改 nginx 上游切发布（前端零改动，**保留 `proxy_buffering off`** 供 SSE）。
+  远程已打通（先 SSH 隧道后改直连：`listen_addresses='*'` + pg_hba 白名单 + 放行 5432），
+  SQL 级 CRUD + 26 函数自测全过。
+  🔴 **`dbee_app` 原为 BYPASSRLS（越权，未注入身份也能读到全部 17 份 profiles），已由 `0033` 收回**
+  → 现为 `NOBYPASSRLS` + `app_users` 上 `TO dbee_app` 的精确 policy（网关身份面需要读写它，
+  否则 0031 的 FORCE RLS + 无 policy 会把网关自己锁死，这正是当初只能靠 BYPASSRLS 硬闯的根因）。
+  ✅ **前端已切**（10-23）：①自建 auth/JWT 网关（同时注入 `app.user_id`(RLS) 与
+  `request.jwt.claim.sub`）②LLM 代理（SSE）③`/.cloud/database/rest/*` PostgREST 语义端点
+  ④nginx 上游已切自托管 —— **四项全部落地并 E2E 验证通过**，见上方「泳道 A 部署闭环」。
   **不需要存储代理**——拍照识别走 base64 dataUrl 直塞 LLM `image_url`（`ai.ts:152/226`），全仓无 `cloud.storage` 调用。
   ⚠️ `0030` **已含 0025~0028 业务变更**（grep `AI_REDEEM_DAILY_LIMIT`/`streak7`/`newbie`/`invite_attempts`/
   `leaderboard` 命中 20 处），**勿盲跑 0025~0029 迁移**（会重复/冲突）；`0029` 已决定弃用。
@@ -131,25 +143,31 @@
   ⚠️ iOS 的 `WechatOpenSDK` 来自第三方 SPM 镜像 `github.com/yanyin1986/WechatOpenSDK`（腾讯官方不经
   SPM 分发），上线前须核对 tag 或改官方 XCFramework。小程序 appid `wxb7c7122de9c3ab1f` 需做主体变更
   （趁未上线赶紧变，变更会使老用户 openid 失效需重新关联）。
-- **下一步（泳道 A 已无阻塞，可立即开工）**：①服务器配 `.env`（systemd `EnvironmentFile`，权限 600；
-  **生产 `JWT_SECRET` 必须换独立随机值**）+ **pg_dump 全量备份** dbee 库；②**A1 auth/JWT 网关**
-  （打通 登录→JWT→RLS，端点见 `docs/前端切换自托管-前置条件与步骤.md`）；③A2 REST 端点（先 diff 核对
-  0030 已含哪些迁移，**勿盲跑**）；④A3 LLM 代理（**注意 DeepSeek 三坑**）；⑤A4 切 nginx + 8 项全链路回归；
-  ⑥A5 Mac mini 首次构建 iOS（三插件从未编译，首次必修编译错；`cap sync` 撞 safe-delete 守卫先 `mv` 出目录）；
-  ⑦**网关补 Apple 验签 + 幂等** → ASC 配 3 商品（`dbee_pro_monthly`/`yearly`/`dbee_lifetime`）+ 开 IAP
-  capability + 填收款 → App Store Server Notifications V2 webhook → iOS 提审；
-  ⑧域名过户个人→企业 + ICP 备案主体变更（**用户已在走企业变更**；⚠️ 先查本省管局是否允许个人→企业直接变更，
-  不允许须注销重备且**期间域名停解析**→ 那就**先做完 A4 切换验证 IP 直连**再注销；**备案期不可加解析**，
-  工信部短信核验 **24h 内必做**）；
-  ⑨**软著登记**（30–60 工作日，周期最长，越早越好）+ App 备案 + 算法备案；
-  ⑩小程序主体变更（**流程已查证、可免公证**，详见上方专条；趁未上线尽早做）；
-  ⑪华为/小米企业入驻后替换 dbee-health 插件方法体并真机验收；⑫分享卡片 O-3 落地（零资质依赖传播抓手）；
-  ⑬**实测 D-Bee 自己的 MAPE**（竞品分析最后缺口，文案能否说「准」的依据）；⑭彩页按新定位重写（现基于 V1.4 已落后）；
-  ⑮Android 真机复测 V1.7.0 APK；⑯小程序三端真机联调。
+- **下一步（泳道 A 部署已闭环 ✅①②③④，首件是 A5 iOS 构建）**：
+  ~~①服务器前置修复（dbee_app 密码轮换、应用 0031+0033、`pg_dump` 备份）~~ ✅
+  （🔴 新密码**只存服务器 `/opt/dbee-db/CREDENTIALS.txt` 与本地 `db/CREDENTIALS.txt`，均已 gitignore，不入库**）
+  ~~②部署 Node 网关（systemd）~~ ✅ ~~③`deploy-postgrest.sh`（0032 + PostgREST 16.4）~~ ✅
+  ~~④A4 切 nginx + 8 项全链路回归~~ ✅（均 10-23 完成，E2E 全绿）；
+  ⑤**A5 Mac mini 首次构建 iOS**（三插件从未编译，首次必修编译错；`cap sync` 撞 safe-delete 守卫先 `mv` 出目录）；
+  ⑥**网关补 Apple 验签 + 幂等**（`verify_payment_order` 空壳）→ ASC 配 3 商品（`dbee_pro_monthly`/`yearly`/
+  `dbee_lifetime`）+ 开 IAP capability + 填收款 → App Store Server Notifications V2 webhook → iOS 提审；
+  ⑦域名过户个人→企业 + ICP 备案主体变更（**用户已在走企业变更**；⚠️ 先查本省管局是否允许个人→企业直接变更，
+  不允许须注销重备且**期间域名停解析**→ **A4 已做完且 IP 直连验证通过（http://150.158.51.106/ 首页 200）**，
+  故可随时注销不停业务；**备案期不可加解析**，工信部短信核验 **24h 内必做**）；
+  ⑧**软著登记**（30–60 工作日，周期最长，越早越好）+ App 备案 + 算法备案；
+  ⑨小程序主体变更（**流程已查证、可免公证**，详见上方专条；趁未上线尽早做）；
+  ⑩华为/小米企业入驻后替换 dbee-health 插件方法体并真机验收；⑪分享卡片 O-3 落地（零资质依赖传播抓手）；
+  ⑫**实测 D-Bee 自己的 MAPE**（竞品分析最后缺口，文案能否说「准」的依据）；⑬彩页按新定位重写（现基于 V1.4 已落后）；
+  ⑭Android 真机复测 V1.7.0 APK；⑮小程序三端真机联调；
+  ⑯**可选安全加固**：PG `listen_addresses` 收回回环 / 腾讯云安全组关 5432 入站
+  （现状 PG 监听 0.0.0.0，仅靠 pg_hba 白名单兜底，ufw inactive）。
+  ⚠️ **老用户迁移三路径待拍板**（推荐 A：判定为开发数据不迁移，小程序与 App 均未上线）。
+  ⚠️ **遗留技术债**：`server/lib/llm.mjs:44` 硬编码 `supportsImages:true`，但 DeepSeek 无 vision 能力
+  → 一旦配上 `LLM_API_KEY`，拍照识别会坏（当前 key 留空返回 503，不阻塞部署）。
 - **待拍板（原 6 项已全部落定，剩余不阻塞开发）**：①**是否申请 ICP 经营许可证 = 是否现在背 3 人社保**
   （已建议**方案 A：暂不办，先 iOS IAP 验证付费**，等有付费数据再决定）；②Apple 账号先用**个人**上架抢时间
   还是等企业账号（建议**先申请 D-U-N-S 占位**、个人账号推进构建，证下来再决定切不切主体）；
-  ③**云库长期去留**（自托管彻底替代 / 回迁 / 双写）。
+  ③**云库长期去留**（自托管彻底替代 / 回迁 / 双写）；④**老用户迁移三路径**（推荐 A：判定为开发数据不迁移）。
   ~~④经营范围 ⑤注册资本 ⑥对公账户 ⑦小程序主体~~ → **已全部答复**（④⑤✅ 满足、⑥在办下周完成、⑦需变更且流程已查证）。
   长期待办：华为应用市场上架（需企业认证+软著+App备案）、营业执照已办结✅。
 
@@ -208,6 +226,26 @@ web 资源用 `npx cap copy android`；微信回调 Activity 随 applicationId �
 - **honey_ledger 唯一索引 `(owner_id, reason, ref_id)` 会把「每日多次」卡成「每日一次」**：ref_id 必须带唯一
   后缀（如 `to_char(clock_timestamp(),'HH24MISSMS')`），单日计数用 `ref_id LIKE 前缀%`；排查「该记录已经存在」
   先查 `pg_indexes` 唯一索引。
+
+### 部署侧坑（10-23 实测，一行版；完整推演见 `2026-10-23.md`）
+
+`CREATE POLICY` 子句顺序硬规定 `AS→FOR→TO→USING→WITH CHECK`（写成 TO…FOR… 语法错）；`GRANT` 是**追加**语义
+（要清历史 DELETE 必须先 `REVOKE ALL` 再精确 GRANT）；`BYPASSRLS` = **全库** RLS 失效（`auth.uid()` 为 NULL
+时策略完全不参与过滤，未注入身份也能读全部数据；修法是给网关要用的表建 `TO <role>` 专用 policy 后 `NOBYPASSRLS`）；
+systemd `StartLimitIntervalSec/Burst` 属 **`[Unit]`** 段（放 `[Service]` 被忽略 + Unknown key 告警，刹车失效）；
+V8 服务**勿设** `MemoryDenyWriteExecute`（JIT 要可写可执行内存）；`pg_dump` 必须 `sudo -u postgres`
+（`sudo bash -c` 以 root 跑撞 peer 认证），且失败时 gzip **仍留 20 字节空壳** → 加体积守卫 + `gunzip -t`；
+**Git Bash ↔ Windows 原生 Python 路径**：设了 `MSYS_NO_PATHCONV=1`+`MSYS2_ARG_CONV_EXCL='*'` 后 `mktemp` 的
+`/tmp/…` 被 Python 当成 `C:\tmp` 而 FileNotFoundError，反斜杠 `C:\…` 又被 safe-delete 判 "embedded drive prefix"
+拒绝 → 统一 `cygpath -m "$(mktemp)"`；**模板「不得残留」守卫要排除注释行**（`grep -vE '^\s*#'`，否则注释里的
+解释性文字被误杀）；paramiko 长任务必设 `set_keepalive(30)`，且 `run_script` **先输出结果再清理远端临时文件**
+（顺序反了则清理时的 `open_sftp()` 撞上断连会把已拿到的输出全吞）；`JWT_SECRET`/`IDENT_PEPPER`/`SMS_MASTER_CODE`
+存 `deploy/gateway/.secrets.local` 跨部署复用（**改 JWT_SECRET=全员登出，改 IDENT_PEPPER=老用户身份失配**）；
+网关与 PostgREST **必须共用同一 HS256 jwt-secret**（否则数据面全 401）；`DBEE_PROD=1` + `SMS_PROVIDER=log`
+会被 `config.validate()` 拒启动（短信未采购前只能不设 DBEE_PROD）；配置项要两头对齐（`cfg.dbSsl` 曾在
+config.mjs 未定义 → `DBEE_SSL=1` 静默失效）；服务器 PG 17.11 监听 `0.0.0.0:5432`（**公网可达**，非旧记忆的
+「仅回环」，靠 pg_hba 白名单兜底、ufw inactive），Node 未预装（apt 仅 v18，项目要 ≥22）→ 官方 tarball +
+sha256 钉死 + npmmirror 镜像优先。
 
 ## 过审合规
 

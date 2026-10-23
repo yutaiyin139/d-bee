@@ -82,6 +82,15 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
   该 2 日增量（10-19 新增运动/ai_usage/饮水，10-20 有饮水与体重记录），无需补差量。
 - 流程照旧：raw dump 先落 `.YYYY-MM-DD.raw.json` → build 重排 + 算 row_counts → verify → 删临时文件。
 
+### 2026-10-23 08:48（第 10 次）
+- 结果：**成功**。产出 `db/backups/2026-10-23.json`。
+- 行数：profiles=17 / meal_entries=96 / water_logs=25 / exercise_logs=16 / weight_logs=3 / entitlements=0 / ai_usage=17（合计 174 行）
+- 校验：`.build-backup.cjs` + `.verify-backup.cjs` PASS——JSON.parse OK、7 表 row_counts 与
+  tables.<表>.length 及另发 count(*) 的线上实时行数三方一致。
+- 清理：cutoff=2026-09-23，现存最早 2026-10-13，无过期文件（目录 8 份每日备份）。
+- 观察：meal_entries 首次破 90 行（id 39–42 缺失）；10-22 新增早餐/午餐记录，10-23 早已有 ai_usage(id=59) 与
+  meal_entries(id=99/100)；entitlements 仍为 0。与上次备份间隔 2 日（10-22 未产出，链上 10-21 之后跳到 10-23）。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。
