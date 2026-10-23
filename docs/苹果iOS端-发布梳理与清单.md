@@ -1,7 +1,8 @@
 # 苹果 iOS 端 · 发布梳理与清单（V1.7.0）
 
-> 更新：2026-10-23 ｜ 版本：1.7.0 (build 9) ｜ 开发机：Windows（无法本地编译/签名 iOS）
-> 一句话结论：**工程配置与隐私合规已就绪，web 资源已同步到最新 dist；但「上架」有 3 个只能在 Mac 上完成的硬步骤，且「数据面切自建服务器」被 HTTPS+备案域名阻塞。当前 iOS 端数据面仍指向云库。**
+> 更新：2026-10-23 19:30 ｜ 版本：1.7.0 (build 9) ｜ 开发机：Windows（无法本地编译/签名 iOS）
+> 一句话结论：**工程配置、隐私合规、3 个 Swift 插件静态审查（对照官方 SDK 逐一核实 API 签名）全部就绪，web 资源已重建并同步到含网关验签的最新 dist；「上架」只剩 DEVELOPMENT_TEAM 等 Mac 硬步骤。今晚编译照《docs/今晚-Mac编译执行手册.md》执行。**
+> ⚠️ 10-23 晚修正一处误判：IAP **不需要** Xcode capability（StoreKit 对 App Store 应用是隐式能力），收费前置在 ASC 与服务端。
 
 ---
 
@@ -28,7 +29,7 @@
 | CODE_SIGN_STYLE | `Automatic` | 自动签名，需登录 Apple ID | Mac 上 Xcode 登录开发者账号 |
 | **DEVELOPMENT_TEAM** | **未设置** | 无 Team 无法签名/上架 | Xcode → Signing & Capabilities 选 Team（个人开发者账号已通过） |
 | HealthKit capability | ✅ 已配（`App.entitlements` 含 `com.apple.developer.healthkit`） | — | 需在 Apple Developer 后台 App ID 勾选 HealthKit |
-| **In-App Purchase capability** | **❌ 未配** | 收费必需 | Xcode → Signing & Capabilities → `+ In-App Purchase` |
+| In-App Purchase capability | ✅ **无需配置**（2026-10-23 修正误判） | StoreKit IAP 对 App Store 应用是**隐式能力**，entitlements 无对应 key；Xcode 里加不加都不影响编译与运行 | 收费前置在 **App Store Connect**（建 App + 3 商品 + 接受付费应用协议），不在 Xcode capability |
 | Associated Domains | ❌ 未配 | 微信 Universal Link 回跳需要 | 待备案域名就绪后加 `applinks:<域名>` + 服务器放 `apple-app-site-association` |
 
 ---
@@ -57,7 +58,12 @@ npx cap sync ios
 
 ---
 
-## 四、三个本地 Swift 插件（🔴 从未在 Mac 编译，首次构建大概率要修）
+## 四、三个本地 Swift 插件（✅ 10-23 静态审查通过，首次 Mac 编译置信度高）
+
+> 2026-10-23 晚完成全量静态审查：类声明与官方 SharePlugin/CameraPlugin 逐字节同构；
+> 所有 Capacitor API（getArray/getObject/resolve/reject）对照本机 @capacitor/ios@8.5.3
+> 源码核实签名；StoreKit 2 / HealthKit API 均 iOS 15+ 可用；SPM 清单链完整
+> （`cap sync ios` 重跑 0 diff，5 插件识别正确）。详见《docs/今晚-Mac编译执行手册.md》§〇。
 
 | 插件 | 源文件 | 实现状态 | 风险 |
 |---|---|---|---|
@@ -67,7 +73,7 @@ npx cap sync ios
 
 **SPM 依赖**（`ios/App/CapApp-SPM/Package.swift`，由 cap 管理）：capacitor-swift-pm 8.5.3 + 上述 3 本地包 + @capacitor/share + @capacitor/camera。
 
-> 首次 Mac 构建命令：`npm install && npx cap sync ios`，再用 Xcode 打开 `ios/App` 编译。预期需修 Swift 编译错误（Windows 上只写了骨架，从未过编译器）。
+> 首次 Mac 构建命令：`npm ci && npm run native:ios`（dist 与 ios public 不入库，clone 后必须重建）。静态审查未发现阻断性错误；若仍出现 Swift 编译错误，把报错发回 Windows 侧即时修复推 GitHub。
 
 ---
 
@@ -134,7 +140,7 @@ npx cap sync ios
 ### B. 必须在 Mac 上完成（上架硬步骤）
 1. `npm install && npx cap sync ios`，Xcode 打开 `ios/App`
 2. 编译 3 个本地 Swift 插件（dbee-iap / dbee-health / origin-proxy），**修首次编译错误**
-3. Signing & Capabilities：登录 Apple ID → 选 **DEVELOPMENT_TEAM** → 加 **In-App Purchase** capability（HealthKit 已有）
+3. Signing & Capabilities：登录 Apple ID → 选 **DEVELOPMENT_TEAM**（HealthKit capability 已在 entitlements 配好；**IAP 无需加 capability**——StoreKit 对 App Store 应用是隐式能力，2026-10-23 修正）
 4. 替换微信真实 AppID（如启用微信登录）
 5. App Store Connect：创建 App（`com.dbee.app`）→ 配 3 个商品 → 填协议/税务/银行（**对公账户下来后填银行账户**）→ 配 Server Notifications URL = `https://d-bee.com.cn/.cloud/payment/apple/notifications`（依赖 HTTPS）
 6. 服务器执行 `0037-apple-iap-settlement.sql` + 网关 env 配 `APPLE_BUNDLE_ID`/`APPLE_SHARED_SECRET`（App Store Connect → App 信息 → 共享密钥）+ 重启网关（收费前置；0029 已作废勿执行）
@@ -150,8 +156,8 @@ npx cap sync ios
 | 阻塞 | 影响 | 解除条件 |
 |---|---|---|
 | 无 DEVELOPMENT_TEAM | 无法签名/上架 | Mac 上 Xcode 登录开发者账号 |
-| Swift 插件未编译 | 可能编译失败 | Mac 首次构建 + 修错 |
-| 无 In-App Purchase capability | 收费不可用 | Xcode 添加 capability |
+| Swift 插件未编译 | 可能编译失败 | ✅ 10-23 静态审查通过（API 签名逐一对照官方 SDK 核实），风险已降级为「低」；仍需 Mac 首次构建确认 |
+| ~~无 In-App Purchase capability~~ | ~~收费不可用~~ | **2026-10-23 修正：StoreKit IAP 无需 capability**（隐式能力）。收费真正前置 = ASC 建 App+商品+付费协议 + 服务端 0037/env |
 | 备案域名 + HTTPS 未就绪 | 数据面无法切服务器；微信 Universal Link 与 webhook URL 不可用 | `d-bee.com.cn` 备案完成 + 签证书 + 加 A 记录 |
 | 0037 迁移未执行 + 网关 APPLE_* env 未配 | IAP 核销落库无入口（端点 503） | 服务器执行 0037 + env 配置 + 重启网关（**代码已就绪**） |
 | 对公账户未下来 | App Store Connect 银行/税务信息无法填全 → 商品不能售卖 | 对公账户办结（申请中） |
