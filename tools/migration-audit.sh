@@ -124,9 +124,12 @@ chk "consume_ai_quota" "$(FN consume_ai_quota)"
 chk "release_ai_quota" "$(FN release_ai_quota)"
 
 echo " [0004] 微量营养素 + recipes"
-chk "profiles.sodium_mg"     "$(COL profiles sodium_mg)"
-chk "profiles.fiber_g"       "$(COL profiles fiber_g)"
-chk "profiles.added_sugar_g" "$(COL profiles added_sugar_g)"
+# 🔴 表名更正（2026-10-23）：0004 迁移原文是 ALTER TABLE public.meal_entries
+#   ADD COLUMN sodium_mg/fiber_g/added_sugar_g —— 三列在 meal_entries 上，
+#   不在 profiles 上。早前探针写错表名导致恒 0 误报。
+chk "meal_entries.sodium_mg"     "$(COL meal_entries sodium_mg)"
+chk "meal_entries.fiber_g"       "$(COL meal_entries fiber_g)"
+chk "meal_entries.added_sugar_g" "$(COL meal_entries added_sugar_g)"
 chk "recipes 表"             "$(TBL recipes)"
 chk "recipes_select_own 策略" "$(POL recipes recipes_select_own)"
 
@@ -220,8 +223,11 @@ chk "RLS 策略 ≥24" "SELECT (count(*) >= 24)::int FROM pg_policies WHERE sche
 
 echo " [0031] 身份表"
 chk "app_users 表"            "$(TBL app_users)"
-chk "ident_kind_check"        "$(CON ident_kind_check)"
-chk "masked_is_masked"        "$(CON masked_is_masked)"
+# 约束实名带表名前缀（PG 对列级匿名 CHECK 的默认命名 = <表>_<列>_check；
+# masked_is_masked 是 0031 里显式命名的 CONSTRAINT app_users_masked_is_masked）。
+# 早前探针写短名导致恒 0 误报。
+chk "app_users_ident_kind_check"  "$(CON app_users_ident_kind_check)"
+chk "app_users_masked_is_masked"  "$(CON app_users_masked_is_masked)"
 chk "app_users FORCE RLS" "SELECT relforcerowsecurity::int FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname='app_users';"
 
 echo " [0032] PostgREST 角色"
@@ -390,7 +396,12 @@ echo "── E) 探针③ 可利用性 B：事务内真实越权写（BEGIN…RO
 #   ③ 结果只取 count，不回显任何真实行内容。
 # 只跑一次，输出先存进变量再既展示又判定 —— 早前写成「跑一次打印 + 再跑一次
 # grep」，等于对生产库做两遍越权探测，且两遍结果可能不一致（时序竞争）。
-PROBE_OUT="$(PSQL_SU <<'SQL' 2>/dev/null
+# ⚠️ SQL 必须走临时文件 + psql -f，不能用 heredoc 直灌：
+#   PSQL_SU 内部是 `echo "$PWD" | sudo -S ...`，管道会**接管 stdin**，
+#   heredoc 根本到不了 psql（实测症状：探针零输出，被误判为「连接异常」）。
+PROBE_SQL="$(mktemp /tmp/dbee-probe-XXXXXX.sql)"
+trap 'rm -f "$PROBE_SQL"' EXIT
+cat > "$PROBE_SQL" <<'SQL'
 BEGIN;
 CREATE TEMP TABLE _probe(seq int, name text, verdict text) ON COMMIT DROP;
 DO $$
@@ -421,7 +432,14 @@ BEGIN
   --   ⚠️ 0 行命中**仍是漏洞**：RLS 策略 owner_id = auth.uid() 只挡跨用户改行，
   --     不挡改自己那行；探针用合成 uid 天然没有行，真实用户改自己的一定命中。
   --     故这里 0 行也判 ALLOWED（权限存在即漏洞），不因「没改到东西」而放过。
+  --   🔴 SET ROLE 必须在本探针块内自带（2026-10-23 修复）：
+  --     PL/pgSQL 的 BEGIN...EXCEPTION 子块 = 隐式 savepoint，探针 1 的 INSERT
+  --     触发 42501 被捕获时，子事务回滚会把块内的 SET ROLE authenticated 一并
+  --     撤销 → current_user 退回 postgres。若探针 2 不自带 SET ROLE，就会以
+  --     超级用户身份 UPDATE（当然成功）→ 把「安全的库」误报成「越权漏洞」。
   BEGIN
+    EXECUTE 'SET ROLE authenticated';
+    PERFORM set_config('app.user_id', v_uid, false);
     EXECUTE 'UPDATE public.entitlements SET plan = ''lifetime'', updated_at = now() WHERE owner_id = $1'
       USING v_uid;
     GET DIAGNOSTICS v_rows = ROW_COUNT;
@@ -440,8 +458,10 @@ BEGIN
   END;
 
   -- 探针 3：authenticated 能否 UPDATE ai_usage（刷 AI 免费额度）
-  --   同上：0 行命中仍判 ALLOWED。
+  --   同上：0 行命中仍判 ALLOWED；SET ROLE 同样必须块内自带（原因见探针 2）。
   BEGIN
+    EXECUTE 'SET ROLE authenticated';
+    PERFORM set_config('app.user_id', v_uid, false);
     EXECUTE 'UPDATE public.ai_usage SET count = 0 WHERE owner_id = $1' USING v_uid;
     GET DIAGNOSTICS v_rows = ROW_COUNT;
     IF v_rows > 0 THEN
@@ -462,7 +482,10 @@ END $$;
 SELECT name || ' -> ' || verdict FROM _probe ORDER BY seq;
 ROLLBACK;
 SQL
-)"
+# postgres 读不了 ubuntu 的 0600 临时文件（SFTP 上传同坑），先放开读权限再 -f 执行
+chmod 644 "$PROBE_SQL"
+PROBE_OUT="$(PSQL_SU -f "$PROBE_SQL" 2>/dev/null)"
+rm -f "$PROBE_SQL"
 echo "$PROBE_OUT" | sed 's/^/  /'
 # 判定口径：ALLOWED = 越权（必修）；DENIED/BLOCKED = 安全。
 #   注意 BLOCKED（RLS 拦截）虽也算挡住，但 0015 的设计目标是「根本没有写权限」，

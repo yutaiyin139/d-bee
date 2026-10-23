@@ -42,7 +42,9 @@ set -euo pipefail
 : "${DBEE_USER:?缺少 DBEE_USER}"
 : "${DBEE_PWD:?缺少 DBEE_PWD}"
 
-DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# Git Bash 的 pwd 给 /c/xxx 形式；MSYS_NO_PATHCONV=1 下原生 Windows Python 会把它
+# 当相对路径拼成 C:\c\xxx → FileNotFoundError。统一转成 C:/xxx（与 sync-mirror.sh 同法）。
+DIR="$(cd "$(dirname "$0")/.." && pwd -W 2>/dev/null || cygpath -m "$(cd "$(dirname "$0")/.." && pwd)")"
 PY="${PY:-C:/Users/yuty/.workbuddy/binaries/python/envs/default/Scripts/python.exe}"
 [ -x "$PY" ] || PY="C:/Users/yuty/.workbuddy/binaries/python/versions/3.13.12/python.exe"
 
