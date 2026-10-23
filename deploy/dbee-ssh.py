@@ -70,6 +70,10 @@ def connect():
     c = paramiko.SSHClient()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     c.connect(HOST, username=USER, password=PWD, timeout=30, banner_timeout=30, auth_timeout=30)
+    # 长任务（npm install / 下载 tarball / pg_dump）期间连接上可能几分钟没有数据，
+    # 中途的 NAT/防火墙会把静默连接判死并 RST（本机侧表现为 10054）。
+    # 每 30 秒发一个 keepalive 包，实测能显著减少这类断连。
+    c.get_transport().set_keepalive(30)
     return c
 
 
@@ -88,17 +92,27 @@ def run_script(client, path):
     err = stderr.read().decode("utf-8", "replace")
     code = stdout.channel.recv_exit_status()
 
-    sftp = client.open_sftp()
-    try:
-        sftp.remove(remote)
-    except OSError:
-        pass
-    sftp.close()
-
+    # 🔴 先输出结果，再清理远端临时文件。
+    # 顺序反了的后果已实测踩过：清理用的 open_sftp() 一旦赶上连接被重置
+    # （Windows 侧报 10054），异常会直接冒泡，下面几行 write 永远执行不到 ——
+    # 远端脚本其实跑完了、输出也已在内存里，却一个字都看不见，
+    # 只能重新连上去猜它到底执行到哪一步。
     sys.stdout.write(out)
     if err.strip():
         sys.stdout.write("\n--- stderr ---\n" + err)
     print(f"\n[exit {code}]")
+
+    # 清理是尽力而为：失败只提示，不影响已经拿到的结果与退出码
+    try:
+        sftp = client.open_sftp()
+        try:
+            sftp.remove(remote)
+        except OSError:
+            pass
+        sftp.close()
+    except Exception as e:  # noqa: BLE001 — 连接已断等任何情况都不该掩盖结果
+        print(f"[warn] 远端临时脚本 {remote} 未能清理（{e}），可手工 rm", file=sys.stderr)
+
     return 0 if code == 0 else 1
 
 

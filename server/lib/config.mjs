@@ -117,6 +117,11 @@ export function loadConfig(env = process.env) {
     dbGatewayPassword: env.DBEE_GATEWAY_PWD ?? env.DBEE_PWD ?? '',
     dbPoolMax: int(env.DBEE_POOL_MAX, 10),
     dbStatementTimeoutMs: int(env.DBEE_STMT_TIMEOUT_MS, 15000),
+    // db.mjs 会读 cfg.dbSsl 决定是否开 TLS。此前**漏了在这里定义** →
+    // 恒为 undefined → 即使设了 DBEE_SSL=1 也静默不生效（ssl 恒 false）。
+    // 本机回环连库不需要 TLS，默认 false 是对的；补上定义是为了让开关真的可用
+    // （将来把库挪到别的机器 / 跨网段时必须能打开）。
+    dbSsl: bool(env.DBEE_SSL, false),
     // HMAC 身份哈希的 PEPPER。**必须**独立于 JWT_SECRET：
     // 泄露一个不至于连带泄露另一个，且轮换 JWT 密钥不会让用户身份全部失配。
     identPepper: env.IDENT_PEPPER?.trim() || '',

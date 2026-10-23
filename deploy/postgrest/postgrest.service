@@ -22,6 +22,10 @@ Documentation=https://docs.postgrest.org/
 # 避免把「DB 重启」级联成「PostgREST 也被拉走重启」。
 After=network.target postgresql.service
 Wants=postgresql.service
+# 🔴 StartLimit* 属于 [Unit] 段（放 [Service] 会被 systemd 忽略并告警，
+#    网关单元本轮已实测踩到）。连续崩溃别把 CPU 打满：5 分钟内 5 次则停手。
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 # 刻意用 simple（= 官方 systemd 集成页的写法），**不用 Type=notify**：
@@ -44,9 +48,6 @@ ExecReload=/bin/kill -SIGUSR1 $MAINPID
 
 Restart=always
 RestartSec=3
-# 连续崩溃时别把 CPU 打满：5 分钟内重启超过 5 次则暂停拉起，留时间人工介入。
-StartLimitIntervalSec=300
-StartLimitBurst=5
 
 # ── 资源与沙箱（最小权限）────────────────────────────────────────────
 # 高并发下 PostgREST 会触及内核默认 1024 的 fd 上限并报

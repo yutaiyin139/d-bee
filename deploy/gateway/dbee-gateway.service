@@ -1,0 +1,79 @@
+# ═══════════════════════════════════════════════════════════════════════
+# D-Bee 网关 systemd 单元（泳道 A1+A2+A3 合一进程）
+# ═══════════════════════════════════════════════════════════════════════
+# 安装位置：/etc/systemd/system/dbee-gateway.service（由 install-gateway.sh 放置）
+#
+# ⚠️ 本文件**不含任何秘密**：JWT_SECRET / IDENT_PEPPER / DBEE_PWD / LLM_API_KEY
+#    都在 /etc/dbee/gateway.env（0640 root:dbee），由 EnvironmentFile 注入。
+#    单元文件可以入库，env 文件不行。
+#
+# 链路位置：
+#   浏览器 → nginx(:80/443) → 本网关(127.0.0.1:8080) → ┬ PostgREST(:3001) → PG(:5432)
+#                                                        ├ DeepSeek API（LLM，出网）
+#                                                        └ PG(:5432) 直连（身份面 app_users）
+# ═══════════════════════════════════════════════════════════════════════
+
+[Unit]
+Description=D-Bee Gateway — auth/JWT + PostgREST 反代 + LLM 代理
+Documentation=https://github.com/yutaiyin139/d-bee
+# 依赖 PG 先起来：网关 boot 时会 pingPool 探活。
+# 注意 index.mjs 的设计是「连不上库也照样启动，让 /healthz 暴露问题」，
+# 所以这里用 After+Wants 而非 Requires —— 避免 PG 重启把网关一起拖走重启。
+After=network-online.target postgresql.service
+Wants=network-online.target
+# 🔴 StartLimit* 属于 [Unit] 段，不是 [Service]。放在 [Service] 会被 systemd
+#    静默忽略并告警「Unknown key name 'StartLimitIntervalSec' in section 'Service'」
+#    （本轮部署实测到该告警）—— 那样"崩溃风暴刹车"根本没生效。
+# 连续崩溃别把 CPU 打满：5 分钟内 5 次则停手，留现场给人排查。
+StartLimitIntervalSec=300
+StartLimitBurst=5
+# PostgREST 是独立服务，网关反代它但不依赖它的生命周期（它挂了只影响数据面，
+# 认证与 healthz 仍应可用）。故不写 After=postgrest.service 以外的强依赖。
+
+[Service]
+Type=simple
+User=dbee
+Group=dbee
+
+# 秘密全部走 EnvironmentFile，不进单元文件（单元文件 644 全系统可读）
+EnvironmentFile=/etc/dbee/gateway.env
+
+WorkingDirectory=/opt/dbee-gateway
+# node 用绝对路径：systemd 不加载 shell 的 PATH，写裸 `node` 会 203/EXEC
+ExecStart=/usr/local/bin/node /opt/dbee-gateway/index.mjs
+
+Restart=always
+RestartSec=3
+
+# 优雅退出：index.mjs 已实现 SIGTERM 处理（关 server → 清 OTP → end 连接池），
+# 且自带 10 秒强退兜底。这里给 20 秒余量，比它内部的兜底稍长，避免 systemd
+# 先于应用自己的超时动手（那会丢掉"优雅"的意义）。
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+# ── 资源与沙箱 ───────────────────────────────────────────────────────
+# Node 的 HTTP + pg 连接池在并发下会开不少 fd
+LimitNOFILE=10000
+
+NoNewPrivileges=true
+# strict：整个 / 只读。网关不写任何文件（OTP/refresh 都在内存，日志走 stdout→journald），
+# 所以不需要 ReadWritePaths。若将来加文件型缓存，再按需开路径。
+ProtectSystem=strict
+# 屏蔽 /home（有 .ssh/.gnupg）与 /root；网关代码在 /opt，不需要家目录
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+# 只需 INET（连 PG/PostgREST/DeepSeek + 听 HTTP）与 UNIX（DNS/基础库）
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+RestrictNamespaces=true
+LockPersonality=true
+# Node V8 会申请大块匿名内存做 JIT，不能禁 MemoryDenyWriteExecute
+# （禁了 V8 直接崩）。这是 Node 服务与静态二进制（如 PostgREST）的关键区别。
+
+[Install]
+WantedBy=multi-user.target
