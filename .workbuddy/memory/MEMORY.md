@@ -214,7 +214,8 @@
 
 ## 已定技术路线（勿再讨论）
 
-Capacitor 8.5.3 混合壳；React18 + Vite5 + TS；appId `com.dbee.app`；Windows 出 Android、Mac mini M4 出 iOS；
+Capacitor 8.5.3 混合壳；React18 + Vite5 + TS；appId `cn.dbeehealth.app`（**2026-10-24 定案，原 `com.dbee.app` 被 Apple 抢注、
+`com.d-bee.app` 因 Android 禁连字符弃用**；域名 `d-bee.com.cn` 与 Bundle ID 是两个独立体系互不影响）；Windows 出 Android、Mac mini M4 出 iOS；
 Node≥22 / JDK21 / Xcode≥26。健康数据源只读系统平台（iOS HealthKit / Android Health Connect / 华为 Health Kit
 需先上架华为市场 / 小米官方 SDK），详见 `docs/健康数据源方案.md`。
 
