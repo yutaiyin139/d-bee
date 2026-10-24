@@ -36,18 +36,27 @@ export async function takePhoto(opts: TakePhotoOptions = {}): Promise<File | nul
     if (camera) {
       try {
         const photo = await camera.getPhoto({
-          resultType: 'DataUrl',
+          resultType: 'dataUrl',
           source: 'CAMERA',
           quality: 82,
           correctOrientation: true,
         })
-        const dataUrl = photo.dataUrl
-        if (!dataUrl) return null
-        const resp = await fetch(dataUrl)
-        const blob = await resp.blob()
+        // 🔴 兼容两种返回形态：官方 resultType='dataUrl' 返回 dataUrl；但若原生层
+        //    因任何原因回退到 base64（例如旧插件/大小写不匹配），也兜底读取 base64String。
+        const dataUrl = photo.dataUrl ?? photo.base64String
+        if (!dataUrl) {
+          console.warn('[capture] getPhoto 未返回 dataUrl/base64String', photo)
+          return null
+        }
+        const blob = await dataUrlToBlob(dataUrl)
         return new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' })
-      } catch {
-        // 用户取消（Camera 抛 'User cancelled photos app'）或相机不可用 → 返回 null
+      } catch (e) {
+        // 区分「用户取消」与「异常」：取消是正常流程，异常要打日志便于排查
+        const msg = e instanceof Error ? e.message : String(e)
+        if (/cancel/i.test(msg)) {
+          return null
+        }
+        console.error('[capture] takePhoto 失败', e)
         return null
       }
     }
@@ -66,7 +75,7 @@ export async function takePhoto(opts: TakePhotoOptions = {}): Promise<File | nul
 /** @capacitor/camera 插件的最小接口（鸭子类型探测，不 import 包，Web 零新增依赖） */
 interface CameraPluginLike {
   getPhoto: (options: {
-    resultType?: 'Uri' | 'Base64' | 'DataUrl'
+    resultType?: 'uri' | 'base64' | 'dataUrl'
     source?: 'PROMPT' | 'CAMERA' | 'PHOTOS'
     quality?: number
     correctOrientation?: boolean
@@ -81,6 +90,19 @@ function getCameraPlugin(): CameraPluginLike | null {
   const c = p as Partial<CameraPluginLike>
   if (typeof c.getPhoto !== 'function') return null
   return c as CameraPluginLike
+}
+
+/** 把 data URL（data:image/jpeg;base64,...）或纯 base64 字符串转成 Blob */
+async function dataUrlToBlob(input: string): Promise<Blob> {
+  if (input.startsWith('data:')) {
+    const resp = await fetch(input)
+    return await resp.blob()
+  }
+  // 纯 base64（不带 data: 前缀），按 JPEG 解码
+  const bin = atob(input)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return new Blob([bytes], { type: 'image/jpeg' })
 }
 
 /** Web 端实现：临时创建一个隐藏 input，程序化点击 */
