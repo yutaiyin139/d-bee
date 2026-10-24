@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- D-Bee 品牌色，与前端 src/styles.css 的 CSS 变量逐一对齐（单一真相源）：
+         bg #fbf8f1 米白暖底
+         honey #f2a93b 蜂蜜橙黄主色
+         honey-dark #b9740d 深蜂蜜
+         ink #2a2723 正文深字
+        状态栏（colorPrimaryDark）用米白底加深字，与 App 首屏顶部背景一致，
+        避免出现「状态栏白色/黑色」与页面米白背景的割裂，保证三端观感一致。 -->
+    <color name="colorPrimary">#F2A93B</color>
+    <color name="colorPrimaryDark">#FBF8F1</color>
+    <color name="colorAccent">#F2A93B</color>
+
+    <!-- 状态栏图标用深色（米白背景上深字才看得清） -->
+    <color name="statusBarIcon">#2A2723</color>
+</resources>
