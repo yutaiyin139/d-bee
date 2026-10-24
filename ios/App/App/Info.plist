@@ -82,6 +82,8 @@
 	<string>D-Bee 需要使用相机，用于扫描食品包装上的条码、以及拍摄你这一餐的照片，以便自动识别食物并估算热量。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>D-Bee 需要访问相册，用于选择你已拍摄的餐食照片，以便识别食物并估算热量。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>D-Bee 需要将识别结果截图或餐食记录保存到你的相册，方便你随时回顾。</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>D-Bee 需要读取你的步数与活动能量，用于自动计入每日活动消耗，更准确地计算热量缺口。</string>
 	<key>NSHealthUpdateUsageDescription</key>
