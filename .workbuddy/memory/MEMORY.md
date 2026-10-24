@@ -1,6 +1,6 @@
 # D-Bee（自律蜜蜂）· 项目长期记忆（精简版；细节见当日日志与 docs/）
 
-## 进度快照（2026-10-23 10:08，🎉 **泳道 A 部署闭环：自托管全栈已在 150.158.51.106 上线并 E2E 全绿**；主体已注册 + 6 项决策已拍板 + 4 项确认已答复）
+## 进度快照（2026-10-24 上午，🎉 **V1.7.0 三端统一 + Apple IAP 验签落地 Node 网关 + P0 越权漏洞修复闭环**；泳道 A 自托管全栈已上线 E2E 全绿；iOS 编译卡点已定性=Mac 环境问题非代码缺陷）
 
 - **✅ 6 项决策已拍板（10-22 晚）**：①主体=**有限责任公司** ②未提交产物**入库**（已提交 `b6b1725`+`43a5729`
   并推 origin/main）③LLM=**DeepSeek** ④短信=**先日志+万能码**（`SMS_PROVIDER=log`/`SMS_MASTER_CODE=888888`）
@@ -64,12 +64,14 @@
   否则前端 `pickModel(needVision)` 的 `filter(m=>m.supportsImages===true)` 选空 → 拍照识别报错
   （另需过滤 `disabled!==true && enabled!==false`，见 `ai.ts:31`）。
   **模型 ID 必须放服务端配置**（`.env` 的 `LLM_MODEL_VISION`）而非散落代码，DeepSeek 改名时只改一行。
-- **版本/git**：Web V1.7.0 已发布（http://150.158.51.106/ ，commit `846c355`）；Android debug APK 最新 V1.6.9
-  （versionCode 10）。最新 commit **`d551194`**（feat(deploy): nginx 切自托管网关 + 全链路 E2E 验证），
-  前序 `c7bf63e`（网关部署资产 + 三处部署期缺陷修复）、`411d266`（**0033** 收回 dbee_app BYPASSRLS，修复 RLS 全库失效）、
-  `7e2ef02`（只读体检脚本 + 镜像库体检结论）、`83cd682`（PostgREST 部署资产）、
-  `2dbf90e`（泳道 A 网关骨架 A1 auth/JWT + A2 PostgREST 反代 + A3 LLM 代理）、`43a5729`/`b6b1725`（决策 + 产物入库）。
-  **工作区干净**（0033 已提交为 `411d266`）。
+- **版本/git**：Web V1.7.0 已发布（http://150.158.51.106/ ）；**V1.7.0 三端版本已统一**（`54ea9a0`，Android release
+  签名配置 + iOS 发布梳理）。最新 commit **`2985b51`**（docs(ios): App Store 发布完整准备清单——政策门槛核查 +
+  代码侧缺口 + 关键路径，22:00），前序 `3ea96da`（iOS 执行手册终版）、`47ff2ae`（storekit internalID 数字串格式）、
+  `dfa3191`（付费墙接商店价格 + 本地 StoreKit 测试环境）、`fa4342d`（今晚 Mac 编译手册）、
+  `9e1db43`（**Apple 验签落地 Node 网关 + 0037 核销迁移**）、`8da895f`（探针误报修复 + 每日备份体系）、
+  `e1795f4`（consumeAiQuota fail-closed P0-2）、`9cfa31c`（0034 迁移追踪表 + 0035 安全加固 + 0036 云库同步）、
+  `ef12b95`（迁移全面审计查出 P0 越权漏洞）。**工作区未提交**：`docs/今晚-Mac编译执行手册.md`（修改）、
+  `docs/各端逻辑梳理与iOS编译卡点排查-2026-10-24.md`（新增）+ 记忆文件（无源码变更）。
 - **🎉 泳道 A 部署闭环（10-23 10:08）**：服务器 `150.158.51.106` 上 **nginx（自托管配置）+ dbee-gateway
   （Node 22.22.2 / :8080）+ PostgREST（16.4 / :3001）+ PG 17.11（dbee 库，0033 已应用）** 四件套均 active；
   `/.cloud/**` 全部走本机自托管栈，**不再依赖 WorkBuddy 云端**。8 项 E2E 全 ✓（含正常 OTP 路径：
@@ -97,11 +99,24 @@
   **不需要存储代理**——拍照识别走 base64 dataUrl 直塞 LLM `image_url`（`ai.ts:152/226`），全仓无 `cloud.storage` 调用。
   ⚠️ `0030` **已含 0025~0028 业务变更**（grep `AI_REDEEM_DAILY_LIMIT`/`streak7`/`newbie`/`invite_attempts`/
   `leaderboard` 命中 20 处），**勿盲跑 0025~0029 迁移**（会重复/冲突）；`0029` 已决定弃用。
-- **🔴 支付链路唯一实质缺口**：`0030` 里 `verify_payment_order`（第 1171 行）是**空壳**——只查订单
-  `status='paid'` 就返 true，**无任何 Apple 验签**。接真实支付前必须在**网关**补 `provider='apple'` 分支
-  （Apple verifyReceipt / App Store Server API → 订单标 paid + 写 `entitlements`，`source='apple'`；
-  **幂等硬约束**：`order_no` UNIQUE + `provider_txn_id` 判重，同一交易只发一次权益），
-  否则任何人可伪造凭证白拿权益。
+- **🔴 支付链路（已落地，10-23 `9e1db43`）**：Apple 验签**已从 pg_net 空壳改为 Node 网关**（`server/lib/iap.mjs` 479 行）：
+  verifyReceipt 验签（21007/21008 沙盒自动切换、bundle_id 钉扎、transaction_id 全服幂等、恢复购买）+
+  App Store Server Notifications V2 webhook（x5c 证书链钉扎验签、SUBSCRIBED/DID_RENEW 续订、REFUND/REVOKE 撤销、
+  全量落库留痕）+ 根证书 `AppleRootCA-G3.cer` 入库钉扎（指纹与官方一致）。`0037-apple-iap-settlement.sql`：
+  apple_transactions 幂等表 + apple_notifications 留痕表 + settle/revoke/log 三个 SECURITY DEFINER 函数
+  （EXECUTE 仅 dbee_app，authenticated/anon/dbee_web 三层全堵）。`app.mjs` 注册 `/.cloud/payment/apple/{verify,notifications}`
+  （webhook 豁免 IP 限流防 Apple 429 重试风暴）；`api.ts` verifyPaymentOrder iOS 优先走网关、404/503 回退 RPC。
+  自测：`tools/iap-selftest.mjs` 41 项端到端断言全过、gateway-selftest 219 项无回归。**旧缺口（伪造凭证白拿权益）已封**。
+- **🔴 数据库迁移全面审计（10-23，`ef12b95`+`9cfa31c`）→ P0 越权漏洞已修复闭环**：33 个编号 = ✅28 生效 +
+  🔴3 失效（0015 部分失效可白嫖终身会员 / 0016 CHECK 全缺 / 0026 newbie 未生效 / 0027 邀请无日上限）+
+  🗑️1 弃用（0029 pg_net 不可用）。根因四：①生成器只输出 GRANT 从不 REVOKE（追加语义，0002 遗留写权限没撤）
+  ②不抓 pg_constraint（CHECK/外键必丢）③覆盖式迁移无法用存在性判版本 ④无迁移追踪表。
+  **修复**：`0034-schema-migrations.sql`（追踪表）+ `0035-security-and-integrity.sql`（收 2 表写权限 + 补 10 CHECK +
+  grant_honey newbie + 作废存量 bonus + bind_invite daily_limit）+ `0036-data-sync-from-cloud.sql`；
+  前端配套 `consumeAiQuota` fail-closed（`e1795f4`，弃静默 catch{} 直写 ai_usage 的 fail-open 漏洞）+
+  三端 UI token 化（`cbf0077`）。工具 `tools/migration-audit.sh` 固化三类探针（存在性/版本性/可利用性）。
+  **执行顺序铁律：先修工具再修数据（P0-3/P0-4 → P0-1 → P0-2），否则镜像重建会冲掉成果**。
+  ⚠️ 存量 7 行 `source='newbie'` bonus 处置待拍板（A 作废推荐 / B 补偿保留 / C 连数据清）。
 - **合规现状（已核查，优于旧文档记载）**：用户协议/隐私政策/免责声明**三篇已存在且已挂路由**
   （`src/content/legal.ts` 230 行 + `pages/LegalPage.tsx` + `components/SiteFooter.tsx`，备案号走
   `VITE_ICP_BEIAN` 环境变量渲染，未设置时该行不渲染）→ **合规页面工作量 ≈ 0**，只等备案号下来填变量；
@@ -120,6 +135,17 @@
   mini tsconfig 需 `moduleResolution:"bundler"`（否则 `@dbee/shared/cloud-sdk` 子路径导不出）。
 - **原生 App**：Capacitor 8.5.3；阶段 0 解耦 ✅、Android 全过 ✅；iOS 待 Mac mini 首次构建（origin-proxy /
   health / iap 三自研 Swift 插件 + @capacitor/camera 均未编译；Mac 第一件事 `npm install && npx cap sync ios`）。
+  iOS 侧 StoreKit 测试环境已备好（`DbeeProducts.storekit` + 共享 scheme），`cap sync ios` 已重跑 5 插件识别正常。
+- **iOS 首次编译卡点已定性（10-24，非代码缺陷）**：三端代码正确、Xcode 27.1 兼容已核实（UIScene 已采纳、
+  swift-tools 5.9、platforms .iOS(.v15) 均过）；**唯一阻塞 = Mac mini 环境状态**，5 卡点已定位：
+  ①shared 未构建（`dist/` gitignore，Mac clone 后需先 `cd packages/shared && npm run build`）②CapApp-SPM 未解析
+  （`File→Packages→Reset Package Caches` + `Resolve Package Versions`，首次联网拉 capacitor-swift-pm 8.5.3）
+  ③`xcrun invalid active developer path`（真因：Xcode 27.1 真实安装位置非 `/Applications/Xcode.app`，升级后改名/残留空壳
+  → `mdfind` 找真实路径 + `sudo xcode-select -s <真实路径>/Contents/Developer`，**非重装非装 pod**；「CocoaPods is not
+  installed」是连带误报，纯 SPM 仓库从无 Podfile）④Xcode 27.1 兼容✅ ⑤StoreKit `Product.products(for:)` 传数组字面量
+  （大概率可编译，报错改 `Set(...)`）。建议（未实施）：根 package.json 加 `postinstall` 自动构建 shared 一劳永逸。
+  正确顺序：修 xcrun → build shared → `npm ci` → `npm run native:ios` → Xcode 首次 Cmd+R（联网拉 SPM）→ 真机回归。
+  详见 `docs/各端逻辑梳理与iOS编译卡点排查-2026-10-24.md`。
 - **健康数据源**：只读系统健康平台，不直连手环；HealthKit 读授权不可探测→插件只报 completed，连接真源=
   云端 health_connected，重连入口常驻「我的>健康数据源」；`effectiveBurnKcal=max(burnKcal,activityKcal)` 不叠加。
   华为 Health Kit 阶段 3a 已落地（前端同构 + DbeeHealth 插件 Android 反射骨架，零 HMS 编译依赖）；
@@ -134,10 +160,12 @@
   且**无 CHECK 约束**，加 `'google'` 无需改表结构，只需补网关验签分支）。
   前端 `checkout()` + `restorePurchases()`（3.1.2 合规）已接；服务端 `0029-iap-verify-receipt.sql`
   **已实测永久作废**（服务器 `pg_available_extensions` 里 `pg_net` 不可用=0，库内外呼方案走不通）→
-  Apple 验签改网关实现。**🔴 但 Apple/Google 验签必须排在 0034 收权之后**，否则「网关能写 entitlements」
-  与「用户也能写」混在一起，无法区分合法发放与越权（见 `docs/数据库迁移审计与实施计划.md`）。
-  剩余步骤见 `docs/iOS收费IAP落地清单.md`：Mac 编译插件 → ASC 配商品（dbee_pro_monthly/yearly/lifetime）→
-  Xcode 开 IAP capability → **网关补 Apple 验签 + 幂等** → App Store Server Notifications V2 webhook。
+  Apple 验签**已在网关落地**（`server/lib/iap.mjs` + `0037` 核销迁移，见上方「支付链路」条，10-23 `9e1db43`）。
+  **iOS 本地 StoreKit 测试环境已就绪**（`DbeeProducts.storekit` 3 商品 zh_CN 本地化 + 共享 scheme，
+  免 ASC 建商品即可测 getProducts/purchase/restore 客户端链路；付费墙已接商店价格拉取 `dfa3191`）。
+  剩余步骤：Mac 编译插件 → ASC 配商品（dbee_pro_monthly/yearly/lifetime）→ Xcode 开 IAP capability →
+  App Store Server Notifications V2 webhook 指向网关 → iOS 提审。
+  ⚠️ **Apple/Google 验签须排在 0034/0035 收权之后**（已满足，0035 已落地收紧写 entitlements 唯一通道=服务端函数）。
 - **微信相关**：主体已注册，**暂缓状态可解除**（`src/lib/wechat.ts` 的 `WECHAT_LOGIN_ENABLED=false`
   改回 true 即恢复，10-15 已按「零代码改造」设计）。前置链：微信开放平台企业认证（需营业执照，
   数天–2 周）→ 移动应用 AppID + UnionID → 注入 `VITE_WECHAT_APPID`（iOS 另需
@@ -149,14 +177,14 @@
   ⚠️ iOS 的 `WechatOpenSDK` 来自第三方 SPM 镜像 `github.com/yanyin1986/WechatOpenSDK`（腾讯官方不经
   SPM 分发），上线前须核对 tag 或改官方 XCFramework。小程序 appid `wxb7c7122de9c3ab1f` 需做主体变更
   （趁未上线赶紧变，变更会使老用户 openid 失效需重新关联）。
-- **下一步（泳道 A 部署已闭环 ✅①②③④，首件是 A5 iOS 构建）**：
-  ~~①服务器前置修复（dbee_app 密码轮换、应用 0031+0033、`pg_dump` 备份）~~ ✅
-  （🔴 新密码**只存服务器 `/opt/dbee-db/CREDENTIALS.txt` 与本地 `db/CREDENTIALS.txt`，均已 gitignore，不入库**）
-  ~~②部署 Node 网关（systemd）~~ ✅ ~~③`deploy-postgrest.sh`（0032 + PostgREST 16.4）~~ ✅
-  ~~④A4 切 nginx + 8 项全链路回归~~ ✅（均 10-23 完成，E2E 全绿）；
-  ⑤**A5 Mac mini 首次构建 iOS**（三插件从未编译，首次必修编译错；`cap sync` 撞 safe-delete 守卫先 `mv` 出目录）；
-  ⑥**网关补 Apple 验签 + 幂等**（`verify_payment_order` 空壳）→ ASC 配 3 商品（`dbee_pro_monthly`/`yearly`/
-  `dbee_lifetime`）+ 开 IAP capability + 填收款 → App Store Server Notifications V2 webhook → iOS 提审；
+- **下一步（泳道 A 已闭环 ✅，Apple 验签已落地 ✅，首件是 Mac mini 编译 iOS + 提审）**：
+  ~~①服务器前置修复~~ ✅ ~~②部署 Node 网关~~ ✅ ~~③deploy-postgrest.sh~~ ✅ ~~④A4 切 nginx + 8 项回归~~ ✅
+  ~~⑥Apple 验签落地网关 + 0037 核销~~ ✅（10-23 `9e1db43`，iap-selftest 41 断言全绿）；
+  ⑤**A5 Mac mini 首次构建 iOS**（三插件从未编译，首次必修编译错；`cap sync` 撞 safe-delete 守卫先 `mv` 出目录；
+  **卡点已定性（10-24）= 环境问题非代码，首步 `xcode-select -s` 修 xcrun developer path，详见「原生 App」条**；
+  本地 StoreKit 测试环境已就绪：`DbeeProducts.storekit` 3 商品 + 共享 scheme，免 ASC 建商品即可测
+  getProducts/purchase/restore 客户端链路）→ **ASC 配 3 商品（`dbee_pro_monthly`/`yearly`/`dbee_lifetime`）+
+  开 IAP capability + 填收款 + App Store Server Notifications V2 webhook 配指向网关 → iOS 提审**；
   ⑦域名过户个人→企业 + ICP 备案主体变更（**用户已在走企业变更**；⚠️ 先查本省管局是否允许个人→企业直接变更，
   不允许须注销重备且**期间域名停解析**→ **A4 已做完且 IP 直连验证通过（http://150.158.51.106/ 首页 200）**，
   故可随时注销不停业务；**备案期不可加解析**，工信部短信核验 **24h 内必做**）；
@@ -173,7 +201,8 @@
 - **待拍板（原 6 项已全部落定，剩余不阻塞开发）**：①**是否申请 ICP 经营许可证 = 是否现在背 3 人社保**
   （已建议**方案 A：暂不办，先 iOS IAP 验证付费**，等有付费数据再决定）；②Apple 账号先用**个人**上架抢时间
   还是等企业账号（建议**先申请 D-U-N-S 占位**、个人账号推进构建，证下来再决定切不切主体）；
-  ③**云库长期去留**（自托管彻底替代 / 回迁 / 双写）；④**老用户迁移三路径**（推荐 A：判定为开发数据不迁移）。
+  ③**云库长期去留**（自托管彻底替代 / 回迁 / 双写）；④**老用户迁移三路径**（推荐 A：判定为开发数据不迁移）；
+  ⑤**存量 7 行 `source='newbie'` bonus 处置**（A 作废推荐 / B 补偿保留 / C 连数据清，涉及删数据等确认）。
   ~~④经营范围 ⑤注册资本 ⑥对公账户 ⑦小程序主体~~ → **已全部答复**（④⑤✅ 满足、⑥在办下周完成、⑦需变更且流程已查证）。
   长期待办：华为应用市场上架（~~企业认证~~已完成✅ + 软著 + App备案）、营业执照已办结✅。
 

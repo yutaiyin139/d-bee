@@ -91,6 +91,26 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
 - 观察：meal_entries 首次破 90 行（id 39–42 缺失）；10-22 新增早餐/午餐记录，10-23 早已有 ai_usage(id=59) 与
   meal_entries(id=99/100)；entitlements 仍为 0。与上次备份间隔 2 日（10-22 未产出，链上 10-21 之后跳到 10-23）。
 
+### 2026-10-24 08:56（第 11 次）
+- 结果：**成功**。产出 `db/backups/2026-10-24.json`（96103 字节，历史最大）。
+- 行数：profiles=17 / meal_entries=101 / water_logs=31 / exercise_logs=18 / weight_logs=3 / entitlements=0 / ai_usage=17（合计 187 行）
+- 校验：`.build-backup.cjs` + `.verify-backup.cjs` PASS——JSON.parse OK、7 表 row_counts 与
+  tables.<表>.length 及另发 count(*) 的线上实时行数三方一致。
+- 清理：cutoff=2026-09-24，现存最早 2026-10-13，无过期文件（目录 9 份每日备份）。
+- 观察：meal_entries 破百（101 行，id 39–42 缺失）；10-23 晚新增晚餐 4 条（卤猪肝/菠菜/黄豆芽/大葱）；
+  entitlements 仍为 0。与上次备份间隔 1 日（10-23 已产出），链上无断档。
+
+### 2026-10-24 08:56（第 11 次）
+- 结果：**成功**。产出 `db/backups/2026-10-24.json`（96103 字节，历史最大）。
+- 行数：profiles=17 / meal_entries=101 / water_logs=31 / exercise_logs=18 / weight_logs=3 / entitlements=0 / ai_usage=17（合计 187 行）
+- 校验：`.verify-backup.cjs` PASS——JSON.parse OK、顶层字段完整、7 表 row_counts 与 tables.<表>.length
+  及另发 count(*) 的线上实时行数三方一致。
+- 清理：cutoff=2026-09-24，现存最早 2026-10-13，无过期文件（目录 9 份每日备份）。
+- **并发会话记录**：本次同日重复触发（08:56 与 08:55 两次调度几乎同时跑）。本会话完成查询与实时行数
+  核对后，发现 raw 临时文件及最终 `2026-10-24.json` 已由另一并发会话写出（09:01，96103 字节），
+  遂**不重复构建**，改为对本会话独立查询的实时行数做第三方交叉校验（PASS）。
+  **后续同日重复触发的处置**：先 `ls` 目录——若当日 json 已存在且校验 PASS，直接复用并汇报，勿重建。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。
