@@ -18,8 +18,13 @@ import type { CheckoutResult, PaymentAdapter } from './types'
 
 /**
  * 按当前平台选择支付适配器。
- * 当前只实现 iOS；Android / Web / 微信小程序接支付时在此补分支。
- * 微信小程序端规划走 wx.requestPayment，届时新增 miniprogram adapter 并在此返回。
+ *   iOS     → StoreKit 2（iosIap）
+ *   Android → 微信支付（wechatPay；Google Play 为后续可切换备选）
+ *   Web     → 微信支付（wechatPay）
+ *   小程序  → wx.requestPayment（规划中，届时新增 miniprogram adapter 并在此返回）
+ *
+ * 各 create* 函数在「平台不符 / 资质未就绪 / 插件缺失」时返回 null，
+ * 统一由 checkout 兜底为「当前平台暂不支持在线支付」的诚实提示。
  */
 export async function getAdapter(): Promise<PaymentAdapter | null> {
   const platform = platformName()
@@ -27,8 +32,11 @@ export async function getAdapter(): Promise<PaymentAdapter | null> {
     const { createIosIapAdapter } = await import('./iosIap')
     return createIosIapAdapter()
   }
-  // TODO(资质就绪后补)：android → googlePlay / wechatPay / alipay；
-  //   web → wechatPay / alipay；wechat-miniprogram → wx.requestPayment
+  if (platform === 'android' || platform === 'web') {
+    const { createWechatPayAdapter } = await import('./wechatPay')
+    return createWechatPayAdapter()
+  }
+  // TODO(资质就绪后补)：wechat-miniprogram → wx.requestPayment
   return null
 }
 

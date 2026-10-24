@@ -83,7 +83,7 @@ export function PaywallSheet() {
 
   if (!paywall.open) return null
 
-  /** 点击商品：iOS 走内购，其余平台提示接入中 */
+  /** 点击商品：iOS 走内购，Android/Web 走微信支付，均由 checkout 统一分发 */
   async function buyProduct(id: string) {
     setErr('')
     setPayingId(id)
@@ -200,7 +200,7 @@ export function PaywallSheet() {
 
       {!pro && (
         <>
-          {/* 商品选择（iOS 内购可点击；其余平台暂提示接入中） */}
+          {/* 商品选择（iOS 内购 / Android·Web 微信支付，均可点击；资质未就绪时 checkout 给出诚实提示） */}
           <div className="pay-grid" style={{ marginTop: 18 }}>
             {PRODUCTS.map((p) => (
               <button
@@ -208,13 +208,7 @@ export function PaywallSheet() {
                 type="button"
                 className={`pay-option ${p.highlight ? 'is-hl' : ''}`}
                 disabled={payingId !== null || busy}
-                onClick={() => {
-                  if (isIOS()) {
-                    void buyProduct(p.id)
-                  } else {
-                    setErr('在线支付正在接入中，当前可先用兑换码体验完整功能。')
-                  }
-                }}
+                onClick={() => void buyProduct(p.id)}
               >
                 <div className="pay-option-name">{p.name}</div>
                 <div className="pay-option-price">
