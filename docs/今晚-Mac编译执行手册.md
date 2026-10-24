@@ -124,10 +124,12 @@ git log --oneline -1
 
 # 2. 装依赖 + 构建 web + 同步 iOS + 打开 Xcode
 node -v            # 必须 ≥22
-npm ci
+npm ci             # 2026-10-24 起自带 postinstall：装完依赖自动构建 packages/shared
+                   # （若跳过 npm ci，shared 会报 sh: tsc: command not found）
 
 # ⚠️ 关键：三步构建，顺序不能乱（dist/ 和 packages/shared/dist/ 都是 gitignore 的，
-#    clone 后不存在，必须先各自 build 出来）
+#    clone 后不存在，必须先各自 build 出来。① 在 npm ci 的 postinstall 已自动做过，
+#    重复执行无害；若跳过 npm ci 则必须手动做①，否则②会因 tsc 缺失而失败）
 cd packages/shared && npm run build && cd ../..   # ① 先构建 @dbee/shared（生成 shared/dist/）
 npm run build                                     # ② 再构建 vite web（生成 dist/）
 npx cap sync ios                                  # ③ 同步 web 资源 + 插件进 iOS 工程

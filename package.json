@@ -11,7 +11,8 @@
     "start": "npm run build && vite preview --host 0.0.0.0 --port ${PORT:-3000} --strictPort",
     "native:sync": "npm run build && cap sync",
     "native:android": "npm run native:sync && cap open android",
-    "native:ios": "npm run build && cap sync ios && cap open ios"
+    "native:ios": "npm run build && cap sync ios && cap open ios",
+    "postinstall": "cd packages/shared && npm run build"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.3",
