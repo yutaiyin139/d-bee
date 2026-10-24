@@ -38,8 +38,10 @@ export async function takePhoto(opts: TakePhotoOptions = {}): Promise<File | nul
         const photo = await camera.getPhoto({
           resultType: 'dataUrl',
           source: 'CAMERA',
-          quality: 82,
+          quality: 92,
           correctOrientation: true,
+          // 保留更高分辨率（不传 width/height，让相机按原分辨率出片），
+          // 下游 compressImage 会做唯一一次有损缩放，避免双重压缩糊掉细节
         })
         // 🔴 兼容两种返回形态：官方 resultType='dataUrl' 返回 dataUrl；但若原生层
         //    因任何原因回退到 base64（例如旧插件/大小写不匹配），也兜底读取 base64String。

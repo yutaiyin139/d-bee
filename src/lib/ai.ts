@@ -140,9 +140,16 @@ export async function parseFoodFromText(text: string): Promise<DetectedFood[]> {
 }
 
 export async function recognizeFoodFromImage(dataUrl: string, hint?: string): Promise<DetectedFood[]> {
-  const prompt = `这是用户拍的一餐照片，请识别画面中所有食物，估算每种食物的分量与营养数据。${
-    hint ? `\n用户补充说明：${hint}` : ''
-  }\n严格按约定的 JSON 格式输出。`
+  const prompt = `这是用户拍的一餐照片，请识别画面中**所有**食物并估算营养数据。${
+    hint ? `\n用户补充说明：${hint}（用户描述优先于你的猜测）` : ''
+  }
+识别要求：
+1. 不要漏掉任何一道菜/主食/配菜/饮品，盘子边缘被遮挡的也要尽量识别。
+2. 中餐易混淆项要仔细区分：红烧肉 vs 糖醋排骨、白米饭 vs 粥、清炒 vs 油炸、面条 vs 米粉。
+3. 分量按盘中实际可见量估算，结合餐具大小（碗/盘）判断，不要按整盘假设。
+4. 若画面不清晰导致某道菜拿不准，food_name 用最接近的常见菜名，confidence 相应调低，但不要省略。
+5. 每项都返回 confidence（0-100 整数，表示识别把握）。
+严格按约定的 JSON 格式输出。`
   const reply = await collectText([
     { role: 'system', content: NUTRITION_SYSTEM },
     {
@@ -329,8 +336,11 @@ export async function askCoach(question: string, ctx: CoachContext): Promise<str
   )
 }
 
-/** 把图片压缩到合理尺寸，避免上传过大的 base64 拖慢识别 */
-export async function compressImage(file: File, maxSide = 1024, quality = 0.82): Promise<string> {
+/** 把图片压缩到合理尺寸，避免上传过大的 base64 拖慢识别。
+ * 参数经真机调优：maxSide 1600 兼顾「细节清晰」与「体积可控」，
+ * quality 0.90 减少二次有损压缩的涂抹感（华为 P40 主摄本身有 AI 锐化，
+ * 压太狠会把菜名/颗粒细节糊掉，导致视觉识别漏菜或估错分量）。 */
+export async function compressImage(file: File, maxSide = 1600, quality = 0.9): Promise<string> {
   const bitmapUrl = URL.createObjectURL(file)
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
