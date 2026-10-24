@@ -1,4 +1,4 @@
-package com.dbee.app;
+package cn.dbeehealth.app;
 
 import com.getcapacitor.BridgeActivity;
 

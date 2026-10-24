@@ -54,7 +54,7 @@ def adb(*args: str, timeout: int = 60) -> str:
     return out.stdout.decode("utf-8", "replace").strip()
 
 
-def find_app_pid(pkg: str = "com.dbee.app") -> int:
+def find_app_pid(pkg: str = "cn.dbeehealth.app") -> int:
     pid = adb("shell", "pidof", pkg)
     if not pid:
         sys.exit(f"{pkg} 未在运行，请先启动 App")

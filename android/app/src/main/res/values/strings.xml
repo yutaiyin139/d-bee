@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">D-Bee</string>
     <string name="title_activity_main">D-Bee</string>
-    <string name="package_name">com.dbee.app</string>
-    <string name="custom_url_scheme">com.dbee.app</string>
+    <string name="package_name">cn.dbeehealth.app</string>
+    <string name="custom_url_scheme">cn.dbeehealth.app</string>
 </resources>

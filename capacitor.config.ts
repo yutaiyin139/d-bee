@@ -22,7 +22,7 @@ import type { CapacitorConfig } from '@capacitor/cli'
  *    注意 `dist/` 与原生工程内的 web 资源副本都不入库（见 .gitignore）。
  */
 const config: CapacitorConfig = {
-  appId: 'com.dbee.app',
+  appId: 'cn.dbeehealth.app',
   appName: 'D-Bee',
   webDir: 'dist',
   server: {
