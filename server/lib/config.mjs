@@ -136,6 +136,15 @@ export function loadConfig(env = process.env) {
     llmApiKey: env.LLM_API_KEY?.trim() || '',
     llmModelText: env.LLM_MODEL_TEXT?.trim() || 'deepseek-flash',
     llmModelVision: env.LLM_MODEL_VISION?.trim() || 'deepseek-flash',
+    // 视觉 provider 可独立于文本 provider：视觉识别对精度要求高、且 DeepSeek
+    // 官方 flash 的视觉能力偏弱，故支持把「拍照/包装识别」单独切到阿里云 Qwen-VL。
+    // 三个视觉键任一未配，则回落到 llmBaseUrl / llmApiKey / llmModelVision（同 provider）。
+    llmVisionBaseUrl: (env.LLM_VISION_BASE_URL?.trim() || env.LLM_BASE_URL?.trim() || 'https://api.deepseek.com/v1').replace(/\/+$/, ''),
+    llmVisionApiKey: (env.LLM_VISION_API_KEY?.trim() || env.LLM_API_KEY?.trim() || ''),
+    llmVisionModel: env.LLM_VISION_MODEL?.trim() || env.LLM_MODEL_VISION?.trim() || 'deepseek-flash',
+    // Qwen-VL 的 image detail：low 把图缩到 512 级（省 token），high/original 保留原图。
+    // 食物识别需要看清细节，默认 high；低配/高并发场景可改 low。
+    llmImageDetail: (env.LLM_IMAGE_DETAIL?.trim() || 'high').toLowerCase(),
     llmTimeoutMs: int(env.LLM_TIMEOUT_MS, 120000),
     // 每用户每日 AI 调用上限的兜底闸（数据库里另有 consume_ai_quota，这是防打穿的第二层）
     llmDailyCapPerUser: int(env.LLM_DAILY_CAP, 200),

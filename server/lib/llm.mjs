@@ -27,25 +27,37 @@ import { verifyJwt, bearerFrom } from './jwt.mjs'
 import { cloudError } from './http.mjs'
 
 /**
- * 模型目录。id 必须是 DeepSeek 真实可用的模型 ID。
+ * 模型目录。id 必须是上游真实可用的模型 ID。
  *
- * 只暴露一个模型：flash 同时支持文本与图片，配两个模型反而会让 pickModel
- * 在视觉/文本间选到不同模型，增加不确定性且无收益（见上方坑 2）。
+ * 文本与视觉模型**分开暴露**：前端 `pickModel(needVision=true)` 会取
+ * `supportsImages === true` 的模型，因此视觉模型单独列一条，指向视觉 provider
+ * 的模型（默认 deepseek-flash，可切 qwen-vl-max）。文本模型照旧。
  */
 function buildModelCatalog(cfg) {
-  const flash = cfg.llmModelVision || cfg.llmModelText || 'deepseek-flash'
+  const textModel = cfg.llmModelText || 'deepseek-flash'
+  const visionModel = cfg.llmVisionModel || cfg.llmModelVision || 'deepseek-flash'
   return [
     {
-      id: flash,
-      // 前端只读 id，name 供日志/诊断面板显示
-      name: 'DeepSeek Flash',
+      id: textModel,
+      name: 'Text',
       object: 'model',
-      owned_by: 'deepseek',
-      supportsImages: true, // ← 契约①：缺此字段拍照识别必坏
-      isDefault: true,      // ← pickModel 优先取 isDefault
-      disabled: false,      // ← 契约②
+      owned_by: 'text',
+      supportsImages: false,
+      isDefault: true,
+      disabled: false,
       enabled: true,
-      // SDK normalizeModel 会读这些（缺省视为 unknown，不影响功能）
+      contextWindow: 128000,
+      disabledMultimodal: false,
+    },
+    {
+      id: visionModel,
+      name: 'Vision',
+      object: 'model',
+      owned_by: 'vision',
+      supportsImages: true, // ← 契约①：缺此字段拍照识别必坏
+      isDefault: false,
+      disabled: false,
+      enabled: true,
       contextWindow: 128000,
       disabledMultimodal: false,
     },
@@ -131,18 +143,26 @@ export function createLlmHandlers(deps) {
         return llmError(res, 400, 'messages 不能为空', 'invalid_request', 'invalid_request_error')
       }
 
-      // ── 模型名白名单校验 ────────────────────────────────
+      // ── 模型名白名单校验 + 视觉/文本 provider 路由 ──────────
       // 客户端传来的 model 必须在目录里。放行任意 model 等于把 API key
-      // 变成「可调 DeepSeek 全部模型（含贵价 v4-pro）」的开放代理。
+      // 变成「可调上游全部模型（含贵价模型）」的开放代理。
       const wantVision = hasImageContent(body.messages)
       const allowed = new Set(catalog.map((m) => m.id))
       // 前端可能传缓存里的旧模型名（zm_model_cache）；不在白名单就回落到目录默认模型，
       // 而不是报错 —— 否则改一次模型配置会让所有老客户端的拍照功能挂掉。
       let model = typeof body.model === 'string' && allowed.has(body.model) ? body.model : catalog[0].id
+
+      // 视觉请求走独立的视觉 provider（base url + key + model），文本走默认 provider。
+      // 这样视觉识别可单独切到更强的 Qwen-VL，而文本仍走 DeepSeek flash。
+      let upstreamBaseUrl = cfg.llmBaseUrl
+      let upstreamApiKey = cfg.llmApiKey
       if (wantVision) {
         const visionModel = catalog.find((m) => m.supportsImages === true)?.id
         if (!visionModel) return llmError(res, 503, '服务端未配置支持图片的模型', 'no_vision_model')
         model = visionModel
+        upstreamBaseUrl = cfg.llmVisionBaseUrl || cfg.llmBaseUrl
+        upstreamApiKey = cfg.llmVisionApiKey || cfg.llmApiKey
+        if (!upstreamApiKey) return llmError(res, 503, '视觉模型未配置（缺 API Key）', 'vision_not_configured')
       }
 
       // ── 每日用量兜底闸 ──────────────────────────────────
@@ -160,11 +180,27 @@ export function createLlmHandlers(deps) {
       const upstreamBody = {
         model,
         messages: body.messages,
-        stream: true, // DeepSeek 侧也开流，逐块透传，避免网关侧缓冲整个响应
+        stream: true, // 上游也开流，逐块透传，避免网关侧缓冲整个响应
         temperature: typeof body.temperature === 'number' ? body.temperature : 0.2,
         ...(typeof body.max_tokens === 'number' ? { max_tokens: body.max_tokens } : {}),
-        // 让上游回 usage，便于成本观测（DeepSeek 支持 stream_options.include_usage）
+        // 让上游回 usage，便于成本观测
         stream_options: { include_usage: true },
+      }
+
+      // 视觉请求：给图片块加 detail 控制（Qwen-VL 支持 low/high/original）。
+      // 食物识别需看清细节，默认 high；高并发/省钱场景可经 LLM_IMAGE_DETAIL=low 降级。
+      if (wantVision && cfg.llmImageDetail && cfg.llmImageDetail !== 'auto') {
+        const detail = cfg.llmImageDetail
+        const withDetail = body.messages.map((m) => {
+          if (!Array.isArray(m?.content)) return m
+          const content = m.content.map((p) =>
+            p?.type === 'image_url' && p?.image_url && typeof p.image_url === 'object'
+              ? { ...p, image_url: { ...p.image_url, detail } }
+              : p,
+          )
+          return { ...m, content }
+        })
+        upstreamBody.messages = withDetail
       }
 
       const ac = new AbortController()
@@ -174,12 +210,12 @@ export function createLlmHandlers(deps) {
 
       let upstreamRes
       try {
-        upstreamRes = await fetch(`${cfg.llmBaseUrl}/chat/completions`, {
+        upstreamRes = await fetch(`${upstreamBaseUrl}/chat/completions`, {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
             accept: 'text/event-stream',
-            authorization: `Bearer ${cfg.llmApiKey}`,
+            authorization: `Bearer ${upstreamApiKey}`,
           },
           body: JSON.stringify(upstreamBody),
           signal: AbortSignal.timeout(cfg.llmTimeoutMs),
