@@ -10,7 +10,8 @@
  *  - 奖励额度（连续打卡 7 天 +2、完善资料 +3）带 7 天有效期，见 quota_bonus 表。
  *
  * 权益状态存在云端 entitlements 表（一人一行），换设备也生效。
- * 真实支付待企业资质就绪后接入；在此之前用兑换码解锁。
+ * 支付渠道（2026-10-25 拍板）：iOS 走 App 内购（StoreKit 2），Android/Web 走微信 + 支付宝。
+ * 验签分支待商户号就绪后接入；资质就绪前用兑换码解锁。
  */
 import type { Entitlement, UserPlan } from '../types'
 import {
