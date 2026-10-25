@@ -1931,6 +1931,13 @@ select {
   background: var(--honey-soft);
 }
 
+/* Android/Web：商品被选中（待选支付方式）时的高亮，比 is-hl 更醒目 */
+.pay-option.is-sel {
+  border-color: var(--honey-dark);
+  border-width: 2px;
+  box-shadow: 0 0 0 3px var(--honey-soft);
+}
+
 .pay-option-name {
   font-size: 14.5px;
   font-weight: 600;

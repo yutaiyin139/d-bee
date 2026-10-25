@@ -8,7 +8,7 @@
  *   ④ 刷新权益（由调用方持有 PlanProvider 的 refresh）
  *
  * 本模块不 import 具体平台插件，只依赖 PaymentAdapter 抽象；
- * 具体用哪个 adapter 由 getAdapter() 按 platformName() 选择。
+ * 具体用哪个 adapter 由 getAdapter(provider) 按「平台 + 显式渠道」选择。
  */
 
 import { createPaymentOrder, verifyPaymentOrder } from '../api'
@@ -17,22 +17,33 @@ import { platformName } from '../platform'
 import type { CheckoutResult, PaymentAdapter } from './types'
 
 /**
- * 按当前平台选择支付适配器。
- *   iOS     → StoreKit 2（iosIap）
- *   Android → 微信支付（wechatPay；Google Play 为后续可切换备选）
- *   Web     → 微信支付（wechatPay）
- *   小程序  → wx.requestPayment（规划中，届时新增 miniprogram adapter 并在此返回）
+ * 支付渠道标识（与服务端 payment_orders.provider 字段对齐）。
+ * 决策（2026-10-25 拍板）：Android 支持「微信 + 支付宝」双渠道，不走 Google Play。
+ */
+export type PayProvider = 'apple' | 'google' | 'wechat' | 'alipay'
+
+/**
+ * 按当前平台 + 渠道选择支付适配器。
+ *   iOS           → StoreKit 2（iosIap；provider 参数被忽略，恒走 apple）
+ *   Android / Web → 微信支付（wechatPay）或 支付宝（alipay），由 provider 显式指定
+ *   （不传 provider 时默认微信，保持旧调用 getAdapter() 的向后兼容）
+ *   小程序        → wx.requestPayment（规划中，届时新增 miniprogram adapter 并在此返回）
  *
  * 各 create* 函数在「平台不符 / 资质未就绪 / 插件缺失」时返回 null，
  * 统一由 checkout 兜底为「当前平台暂不支持在线支付」的诚实提示。
  */
-export async function getAdapter(): Promise<PaymentAdapter | null> {
+export async function getAdapter(provider?: PayProvider): Promise<PaymentAdapter | null> {
   const platform = platformName()
   if (platform === 'ios') {
     const { createIosIapAdapter } = await import('./iosIap')
     return createIosIapAdapter()
   }
   if (platform === 'android' || platform === 'web') {
+    if (provider === 'alipay') {
+      const { createAlipayAdapter } = await import('./alipay')
+      return createAlipayAdapter()
+    }
+    // 默认微信（web 也走微信 H5 / JSAPI）
     const { createWechatPayAdapter } = await import('./wechatPay')
     return createWechatPayAdapter()
   }
@@ -43,24 +54,21 @@ export async function getAdapter(): Promise<PaymentAdapter | null> {
 /**
  * 统一购买流程。
  * @param productId 商品 ID（PRODUCT_IDS 之一）
+ * @param provider 支付渠道（iOS 恒传 'apple'；Android/Web 传 'wechat' 或 'alipay'）
  * @param onEntitlementGranted 权益刷新回调（调用方传入 PlanProvider.refresh）
  */
 export async function checkout(
   productId: ProductId,
+  provider: PayProvider,
   onEntitlementGranted?: () => Promise<void>,
 ): Promise<CheckoutResult> {
-  const adapter = await getAdapter()
+  const adapter = await getAdapter(provider)
   if (!adapter) {
     return { status: 'error', message: '当前平台暂不支持在线支付' }
   }
 
-  const provider = currentProvider()
-  if (!provider) {
-    return { status: 'error', message: '无法识别支付渠道' }
-  }
-
   try {
-    // ① 服务端下单（金额由服务端查价）
+    // ① 服务端下单（金额由服务端查价，渠道随单落库）
     const order = await createPaymentOrder(PRODUCT_IDS[productId], provider)
 
     // ② 平台支付（拿凭证）
@@ -126,18 +134,4 @@ export async function restorePurchases(
     const message = e instanceof Error ? e.message : String(e)
     return { status: 'error', message: message || '恢复购买失败，请重试' }
   }
-}
-
-/**
- * 由平台推导支付渠道标识（与服务端 provider 字段对齐）。
- * 微信小程序：微信支付（规划中，getAdapter 尚未实现小程序适配器，故 checkout 仍会
- * 走「暂不支持在线支付」的兜底，不影响现有三端）。
- */
-function currentProvider(): 'apple' | 'google' | 'wechat' | 'alipay' | null {
-  const platform = platformName()
-  if (platform === 'ios') return 'apple'
-  if (platform === 'android') return 'wechat' // Android 默认微信；未来可按需切换 google/alipay
-  if (platform === 'web') return 'wechat'
-  if (platform === 'wechat-miniprogram') return 'wechat'
-  return null
 }

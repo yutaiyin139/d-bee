@@ -5,9 +5,10 @@
  * 行为逻辑与 iOS 一致（不再「在线支付正在接入中」一棍子打死，而是走真实链路，
  * 资质未就绪时返回 null，调用方据此降级）。
  *
- * ── 渠道走向（对齐 docs/收费模块-前置条件待办清单.md §二）────────────────
- *   Android / Web 默认走微信支付（checkout.ts 的 currentProvider 已定 android/web → wechat）。
- *   Google Play / 支付宝为后续可切换的备选，届时新增 googlePlay.ts / alipay.ts 即可。
+ * ── 渠道走向（2026-10-25 拍板）──────────────────────────────────────────
+ *   Android / Web 支持「微信 + 支付宝」双渠道；本文件是微信分支。
+ *   checkout.ts 的 getAdapter() 默认（不传 provider）路由到这里，
+ *   支付宝走 alipay.ts（getAdapter('alipay')）。
  *
  * ── 微信支付链路（与苹果 IAP 的「下单→支付→回传凭证→核销」同构）────────────
  *   ① 服务端统一下单（微信支付 V3 JSAPI，返回 prepay 参数）—— 服务端能力，待商户号后接

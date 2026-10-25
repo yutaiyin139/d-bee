@@ -8,18 +8,21 @@ import {
   FREE_REPORT_DAYS,
   PRO_REPORT_DAYS,
   PRODUCTS,
+  type ProductId,
 } from '../lib/entitlement'
 import { REDEEM_CODE_RULE } from '../lib/validate'
 import { usePlan } from '../state/plan'
 import { errText } from '../lib/errmsg'
-import { checkout, getAdapter, restorePurchases } from '../lib/payment/checkout'
+import { checkout, getAdapter, restorePurchases, type PayProvider } from '../lib/payment/checkout'
 import { isIOS } from '../lib/platform'
 
 /**
  * 付费墙。
  * 三档：免费 / Pro（月·年订阅）/ 终身买断。
- * 真实支付（微信 / 支付宝 / App 内购）待企业资质就绪后接入；当前用兑换码解锁，
- * 权益写入云端 entitlements，换设备同样生效。界面上对这一点明确告知。
+ * 支付渠道（2026-10-25 拍板）：
+ *   · iOS      → App 内购（StoreKit 2，点商品直接内购）
+ *   · Android/Web → 微信支付 + 支付宝（先选商品，再选支付方式）
+ * 权益写入云端 entitlements，换设备同样生效。资质未就绪时 checkout 诚实降级提示。
  */
 
 const FREE_ITEMS = [
@@ -55,10 +58,19 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
   const [ok, setOk] = useState(false)
   // 正在支付的商品 id（null 表示无进行中支付）
   const [payingId, setPayingId] = useState<string | null>(null)
+  // 正在支付的渠道（与 payingId 配套，用于区分微信/支付宝两个按钮的 spinner）
+  const [payingProvider, setPayingProvider] = useState<PayProvider | null>(null)
+  // Android/Web：用户选中的商品 id（先选商品，再选微信/支付宝支付方式）；iOS 无此概念
+  const [selectedId, setSelectedId] = useState<ProductId | null>(null)
   // 商店本地化价格（iOS 打开付费墙时经 DbeeIap.getProducts 拉取）；
   // key = ProductId（'proMonthly' 等），value = 本地化价格文案（如 "¥18.00"）。
   // 拉取失败/非 iOS 时为空对象 → 回退硬编码 PRICE_TAG。
   const [storePrice, setStorePrice] = useState<Record<string, string>>({})
+
+  // 付费墙每次打开时重置选中商品，避免上一次的选择残留高亮
+  useEffect(() => {
+    if (paywall.open) setSelectedId(null)
+  }, [paywall.open])
 
   // iOS：付费墙每次打开时拉一次商店价格。失败静默回退，不打扰用户。
   useEffect(() => {
@@ -84,12 +96,13 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
 
   if (!paywall.open) return null
 
-  /** 点击商品：iOS 走内购，Android/Web 走微信支付，均由 checkout 统一分发 */
-  async function buyProduct(id: string) {
+  /** 点击支付：iOS 走内购，Android/Web 走微信/支付宝，均由 checkout 统一分发 */
+  async function buyProduct(id: ProductId, provider: PayProvider) {
     setErr('')
     setPayingId(id)
+    setPayingProvider(provider)
     try {
-      const res = await checkout(id as 'proMonthly' | 'proYearly' | 'lifetime', refresh)
+      const res = await checkout(id, provider, refresh)
       if (res.status === 'cancelled') {
         // 用户取消，静默返回，不报错
         return
@@ -108,6 +121,7 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
       setErr(errText(e, '支付失败，请重试'))
     } finally {
       setPayingId(null)
+      setPayingProvider(null)
     }
   }
 
@@ -201,24 +215,55 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
 
       {!pro && (
         <>
-          {/* 商品选择（iOS 内购 / Android·Web 微信支付，均可点击；资质未就绪时 checkout 给出诚实提示） */}
+          {/* 商品选择：iOS 点商品直接内购；Android/Web 先选中商品，再在下方选微信/支付宝 */}
           <div className="pay-grid" style={{ marginTop: 18 }}>
             {PRODUCTS.map((p) => (
               <button
                 key={p.id}
                 type="button"
-                className={`pay-option ${p.highlight ? 'is-hl' : ''}`}
+                className={`pay-option ${p.highlight ? 'is-hl' : ''} ${!isIOS() && selectedId === p.id ? 'is-sel' : ''}`}
                 disabled={payingId !== null || busy}
-                onClick={() => void buyProduct(p.id)}
+                onClick={() => {
+                  if (isIOS()) {
+                    void buyProduct(p.id, 'apple')
+                  } else {
+                    setSelectedId(p.id)
+                    setErr('')
+                  }
+                }}
               >
                 <div className="pay-option-name">{p.name}</div>
                 <div className="pay-option-price">
-                  {payingId === p.id ? <span className="spinner" /> : (storePrice[p.id] ?? PRICE_TAG[p.id])}
+                  {isIOS() && payingId === p.id ? <span className="spinner" /> : (storePrice[p.id] ?? PRICE_TAG[p.id])}
                 </div>
                 {p.highlight && <div className="pay-option-tag">最划算</div>}
               </button>
             ))}
           </div>
+
+          {/* Android/Web：选中商品后出现支付方式（微信 + 支付宝，2026-10-25 拍板） */}
+          {!isIOS() && selectedId && (
+            <div className="pay-methods" style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+              <button
+                type="button"
+                className="btn"
+                style={{ flex: 1 }}
+                disabled={payingId !== null || busy}
+                onClick={() => void buyProduct(selectedId, 'wechat')}
+              >
+                {payingProvider === 'wechat' && payingId === selectedId ? <span className="spinner" /> : '微信支付'}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                style={{ flex: 1 }}
+                disabled={payingId !== null || busy}
+                onClick={() => void buyProduct(selectedId, 'alipay')}
+              >
+                {payingProvider === 'alipay' && payingId === selectedId ? <span className="spinner" /> : '支付宝'}
+              </button>
+            </div>
+          )}
 
           {/* iOS 恢复购买（订阅制必需，否则 3.1.2 被拒） */}
           {isIOS() && (
@@ -261,12 +306,6 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
               </div>
               {err && <div className="err">{err}</div>}
               {ok && <div className="ok-msg">购买成功，会员已生效 🐝</div>}
-            </div>
-          )}
-
-          {!isIOS() && (
-            <div className="helper" style={{ lineHeight: 1.7 }}>
-              在线支付（微信 / 支付宝 / 应用商店内购）正在接入中，上线前可先用兑换码体验完整功能。
             </div>
           )}
 
