@@ -252,6 +252,47 @@ section('otp · 验证码签发/校验/一次性消费')
   store.close(); m.close(); m2.close()
 }
 
+section('otp · 审核演示账户（仅锁一个号，非全局后门）')
+{
+  const DEMO_PHONE = '13800000000'
+  const DEMO_CODE = '123456'
+  const d = new OtpStore({ pepper: PEPPER, demo: { phone: DEMO_PHONE, code: DEMO_CODE } })
+
+  // 演示号发码 → 固定码（非随机）
+  const c1 = d.issue({ identKind: 'phone', identValue: DEMO_PHONE, isExistingUser: false })
+  assert('演示号返回固定码', c1.code === DEMO_CODE, c1.code)
+  // 固定码可验证通过
+  assert('演示号固定码验证通过', d.verify({ verificationId: c1.verificationId, code: DEMO_CODE }).ok === true)
+
+  // 普通号发码仍是随机 6 位，且演示码对它无效
+  const c2 = d.issue({ identKind: 'phone', identValue: '13900000000', isExistingUser: false })
+  assert('普通号仍是随机码', /^\d{6}$/.test(c2.code) && c2.code !== DEMO_CODE, c2.code)
+  assert('演示码对普通号无效', d.verify({ verificationId: c2.verificationId, code: DEMO_CODE }).ok === false)
+
+  // 演示号发码后，错误码也不应把它锁死（固定码场景无暴力破解风险，但防误锁）
+  const c3 = d.issue({ identKind: 'phone', identValue: DEMO_PHONE, isExistingUser: true })
+  const r3 = d.verify({ verificationId: c3.verificationId, code: '999999' })
+  assert('演示号错码不锁定（attempts 不递增）', r3.ok === false && r3.reason === 'wrong_code')
+  assert('错一次后固定码仍可验证', d.verify({ verificationId: c3.verificationId, code: DEMO_CODE }).ok === true)
+
+  // 邮箱不发演示码（演示只对 phone 生效）
+  const c4 = d.issue({ identKind: 'email', identValue: 'a@b.com', isExistingUser: false })
+  assert('邮箱仍是随机码（不享受演示）', c4.code !== DEMO_CODE)
+
+  // 未配 demo 时（null）无演示行为
+  const n = new OtpStore({ pepper: PEPPER, demo: null })
+  const c5 = n.issue({ identKind: 'phone', identValue: DEMO_PHONE, isExistingUser: false })
+  assert('未配 demo 时演示号也是随机码', c5.code !== DEMO_CODE)
+
+  // demo 缺 phone 或缺 code → 整体禁用
+  const n2 = new OtpStore({ pepper: PEPPER, demo: { phone: '', code: DEMO_CODE } })
+  const n3 = new OtpStore({ pepper: PEPPER, demo: { phone: DEMO_PHONE, code: '' } })
+  assert('缺 phone → 演示禁用', n2.demo === null)
+  assert('缺 code → 演示禁用', n3.demo === null)
+
+  d.close(); n.close(); n2.close(); n3.close()
+}
+
 section('otp · 验证码随机性（不可用 Math.random）')
 {
   const codes = new Set()
@@ -320,6 +361,17 @@ section('config · validate 拦住不安全配置')
   assert('log 模式缺万能码被拒', validate({ ...cfgBase, smsMasterCode: '' }).length > 0)
   assert('未实现的 provider 被拒', validate({ ...cfgBase, smsProvider: 'tencent' }).length > 0)
   assert('生产 + log 短信被拒', validate({ ...cfgBase, prod: true }).length > 0)
+  // 演示账户（⑦）校验：phone/code 必须成对；演示码不得等于万能码
+  assert('演示账户完整配置无问题', validate({ ...cfgBase, demoPhone: '13800000000', demoCode: '123456' }).length === 0, JSON.stringify(validate({ ...cfgBase, demoPhone: '13800000000', demoCode: '123456' })))
+  assert('只配 DEMO_PHONE 缺 DEMO_CODE 被拒', validate({ ...cfgBase, demoPhone: '13800000000', demoCode: '' }).length > 0)
+  assert('只配 DEMO_CODE 缺 DEMO_PHONE 被拒', validate({ ...cfgBase, demoPhone: '', demoCode: '123456' }).length > 0)
+  assert('演示码 = 万能码被拒（职责冲突）', validate({ ...cfgBase, demoPhone: '13800000000', demoCode: '888888' }).length > 0)
+  // 生产环境允许保留演示账户（只锁一个号，非全局后门）；且切真短信后
+  // 不再触发「生产 + log」那条最危险的规则（tencent 未实现会另报一条，属预期）。
+  assert('生产 + 真短信 + 演示账户：不触发「生产+log 万能码」规则', (() => {
+    const p = validate({ ...cfgBase, prod: true, smsProvider: 'tencent', demoPhone: '13800000000', demoCode: '123456' })
+    return !p.some((x) => /生产环境.*SMS_PROVIDER=log/.test(x))
+  })())
 
   // loadConfig 的抛错路径：配置不可用时**拒绝启动**，而不是带病运行
   const expectThrow = (label, env) => {
@@ -626,12 +678,17 @@ section('HTTP · LLM /models 契约（前端 pickModel 依赖）')
   const j = await r.json()
   const list = Array.isArray(j) ? j : j.data
   assert('返回数组形状（SDK 两种都接受）', Array.isArray(list) && list.length > 0)
-  const m = list[0]
-  assert('id = deepseek-flash（旧 ID 已退役）', m.id === 'deepseek-flash', m.id)
-  assert('🔴 supportsImages === true（缺此字段拍照识别必坏）', m.supportsImages === true)
-  assert('isDefault === true（pickModel 优先取）', m.isDefault === true)
-  assert('disabled !== true（否则被 usable 过滤掉）', m.disabled !== true)
-  assert('enabled !== false（否则被 usable 过滤掉）', m.enabled !== false)
+  // 目录里同时有文本模型（supportsImages=false）与视觉模型（supportsImages=true）。
+  // pickModel(needVision=true) 只取 supportsImages===true 的那条，故契约须断言「视觉模型」，
+  // 而非 list[0]（list[0] 是文本模型）。文本模型单独断言 isDefault。
+  const textModel = list.find((x) => x.supportsImages === false)
+  const visionModel = list.find((x) => x.supportsImages === true)
+  assert('存在文本模型', !!textModel)
+  assert('文本模型 id = deepseek-flash（旧 ID 已退役）', textModel?.id === 'deepseek-flash', textModel?.id)
+  assert('文本模型 isDefault === true（pickModel 优先取）', textModel?.isDefault === true)
+  assert('🔴 存在视觉模型且 supportsImages === true（缺此字段拍照识别必坏）', !!visionModel)
+  assert('视觉模型 id 合法（文本/视觉双列）', typeof visionModel?.id === 'string' && visionModel.id.length > 0, visionModel?.id)
+  assert('视觉模型 enabled 未被过滤', visionModel?.enabled !== false && visionModel?.disabled !== true)
   assert('不含退役模型 ID', !list.some((x) => /deepseek-chat|deepseek-reasoner/.test(x.id)))
   const r2 = await get(`${BASE}/.cloud/llm/models`)
   assert('未登录 → 401', r2.status === 401)
@@ -661,6 +718,49 @@ section('安全 · mock pool 只收到参数化查询（无字符串拼接）')
   assert('所有查询都带 params 数组', mockPool.queries.every((q) => Array.isArray(q.params)))
   const leaked = mockPool.queries.filter((q) => JSON.stringify(q.params).includes('888888'))
   assert('验证码从未进入 SQL 参数', leaked.length === 0)
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Part 3 · 审核演示账户端到端（真 server + 演示号 + 固定码）
+// ══════════════════════════════════════════════════════════════════════
+section('HTTP · 演示账户发码→验码→注册全链（固定码，不发真短信）')
+{
+  const demoPhone = '13800001111'
+  const demoCode = '654321'
+  const demoPool = createMockPool()
+  const demoCfg = { ...cfg, demoPhone, demoCode }
+  const demoApp = createApp({ cfg: demoCfg, pool: demoPool, gatewayPool: demoPool, logger, enableDbProxy: false, enableLlm: false })
+  await new Promise((r) => demoApp.server.listen(0, '127.0.0.1', r))
+  const DB = `http://127.0.0.1:${demoApp.server.address().port}/.cloud/auth/v1`
+  const dpost = (url, body) => fetch(url, { method: 'POST', headers: HDR, body: JSON.stringify(body) })
+
+  // 演示号发码 → 200（不发真短信，直接返回固定码挑战）
+  const r1 = await dpost(`${DB}/verification`, { phone_number: demoPhone, target: 'ANY' })
+  assert('演示号发码 200', r1.status === 200, `实际 ${r1.status}`)
+  const j1 = await r1.json()
+  assert('返回 verification_id', typeof j1.verification_id === 'string')
+
+  // 用固定码验码 → 拿到 verification_token
+  const r2 = await dpost(`${DB}/verification/verify`, { verification_id: j1.verification_id, verification_code: demoCode })
+  assert('固定码验码 200', r2.status === 200, `实际 ${r2.status}`)
+  const j2 = await r2.json()
+  assert('返回 verification_token', typeof j2.verification_token === 'string')
+
+  // 用该 token 注册 → 拿到会话（审核员可完成登录）
+  const r3 = await dpost(`${DB}/signup`, { verification_token: j2.verification_token, phone_number: demoPhone })
+  assert('演示号注册 200', r3.status === 200, `实际 ${r3.status}`)
+  const j3 = await r3.json()
+  assert('拿到 access_token', typeof j3.access_token === 'string' && j3.access_token.split('.').length === 3)
+
+  // 固定码不能用于其他号（非全局后门）
+  const r4 = await dpost(`${DB}/verification`, { phone_number: '13900002222', target: 'ANY' })
+  const j4 = await r4.json()
+  const r5 = await dpost(`${DB}/verification/verify`, { verification_id: j4.verification_id, verification_code: demoCode })
+  assert('固定码对非演示号无效（400）', r5.status === 400, `实际 ${r5.status}`)
+
+  demoApp.server.close()
+  demoApp.otp.close()
+  await demoPool.end?.()
 }
 
 // ── 收尾 ──────────────────────────────────────────────────────────────

@@ -47,14 +47,18 @@ export class OtpStore {
    * @param {number} opts.tokenTtlSec    verification_token 有效期（默认 120：验完码应立刻换会话）
    * @param {number} opts.maxAttempts    单个挑战最多试错次数（默认 5）
    * @param {string} [opts.masterCode]   万能码；仅开发/未采购短信时用，生产必须留空
+   * @param {{phone:string, code:string}} [opts.demo]   审核演示账户：仅该手机号可用的固定验证码。
+   *   与万能码的本质区别——它只解锁这一个号，不构成全局后门，故生产可保留。
    */
-  constructor({ pepper, codeTtlSec = 300, tokenTtlSec = 120, maxAttempts = 5, masterCode = '' }) {
+  constructor({ pepper, codeTtlSec = 300, tokenTtlSec = 120, maxAttempts = 5, masterCode = '', demo = null }) {
     if (!pepper) throw new Error('OtpStore 需要 pepper')
     this.pepper = pepper
     this.codeTtlSec = codeTtlSec
     this.tokenTtlSec = tokenTtlSec
     this.maxAttempts = maxAttempts
     this.masterCode = typeof masterCode === 'string' ? masterCode.trim() : ''
+    // 演示账户：demo.phone 归一化裸号 + demo.code 固定码。任一缺失即整体禁用。
+    this.demo = demo && demo.phone && demo.code ? { phone: demo.phone, code: demo.code.trim() } : null
     this.challenges = new Map()
     this.tokens = new Map()
     // 定期清理过期项，防止长期运行内存只增不减
@@ -72,7 +76,10 @@ export class OtpStore {
    * @returns {{verificationId:string, code:string}} code 仅供 log 模式打印，**不得**返回给客户端
    */
   issue({ identKind, identValue, isExistingUser, ip = '' }) {
-    const code = genCode()
+    // 演示账户：发码给演示号时直接返回固定码（不走随机码），
+    // 让审核员/测试人员无需真短信即可登录。仅 phone 类型生效。
+    const isDemo = this.demo && identKind === 'phone' && identValue === this.demo.phone
+    const code = isDemo ? this.demo.code : genCode()
     const verificationId = genId('ver')
     const now = Date.now()
     this.challenges.set(verificationId, {
@@ -80,7 +87,8 @@ export class OtpStore {
       value: identValue,
       codeHash: this._hmac(code),
       isExistingUser: isExistingUser === true,
-      attempts: 0,
+      // 演示号跳过错误次数限制（固定码不会错）；普通号走 maxAttempts 上限
+      attempts: isDemo ? Number.NEGATIVE_INFINITY : 0,
       ip,
       createdAt: now,
       expiresAt: now + this.codeTtlSec * 1000,

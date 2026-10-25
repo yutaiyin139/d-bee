@@ -160,18 +160,23 @@ export function createAuthHandlers(deps) {
         ip,
       })
 
-      const sent = await sendCode({
-        provider: cfg.smsProvider,
-        channel: ident.kind === 'phone' ? 'sms' : 'email',
-        to: ident.value,
-        masked: ident.masked,
-        code,
-        signName: cfg.smsSignName,
-        logger,
-      })
-      if (!sent.ok) return cloudError(res, 502, sent.error || '验证码发送失败', 'send_failed')
+      // 演示账户（⑦）：demo 手机号不发真短信（它拿不到），固定码由 otp.issue 直接生成。
+      // 识别依据：otp.demo 命中该号。这里跳过 sendCode，避免真短信模式下 502 挡住演示登录。
+      const isDemoPhone = otp.demo && ident.kind === 'phone' && ident.value === otp.demo.phone
+      if (!isDemoPhone) {
+        const sent = await sendCode({
+          provider: cfg.smsProvider,
+          channel: ident.kind === 'phone' ? 'sms' : 'email',
+          to: ident.value,
+          masked: ident.masked,
+          code,
+          signName: cfg.smsSignName,
+          logger,
+        })
+        if (!sent.ok) return cloudError(res, 502, sent.error || '验证码发送失败', 'send_failed')
+      }
 
-      logger.info(`[auth] 发码 ${ident.kind}=${ident.masked} existing=${isExistingUser} ip=${ip}`)
+      logger.info(`[auth] 发码${isDemoPhone ? '（演示账户，不真发）' : ''} ${ident.kind}=${ident.masked} existing=${isExistingUser} ip=${ip}`)
       // is_user 对应 SDK 的 isExistingUser（payload.is_user === true）
       return { status: 200, body: { verification_id: verificationId, is_user: isExistingUser } }
     },

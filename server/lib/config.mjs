@@ -57,6 +57,17 @@ const bool = (v, dflt = false) => {
   return /^(1|true|yes|on)$/i.test(String(v).trim())
 }
 
+// 与 identity.normalizePhone 语义一致（剥到 11 位裸号）。这里内联一份，
+// 因为 config.mjs 是叶子模块，不应反向依赖 identity.mjs（避免循环 import）。
+const PHONE_RE = /^1\d{10}$/
+const normalizePhone = (raw) => {
+  if (typeof raw !== 'string') return null
+  let digits = raw.replace(/\D/g, '')
+  if (digits.startsWith('0086')) digits = digits.slice(4)
+  else if (digits.startsWith('86') && digits.length === 13) digits = digits.slice(2)
+  return PHONE_RE.test(digits) ? digits : null
+}
+
 const int = (v, dflt) => {
   const n = Number.parseInt(String(v ?? ''), 10)
   return Number.isFinite(n) ? n : dflt
@@ -99,6 +110,12 @@ export function loadConfig(env = process.env) {
     smsProvider: (env.SMS_PROVIDER?.trim() || 'log').toLowerCase(),
     smsMasterCode: env.SMS_MASTER_CODE?.trim() || '',
     smsSignName: env.SMS_SIGN_NAME?.trim() || '自律蜜蜂',
+    // 审核演示账户（⑦）：仅对指定手机号生效的固定验证码，与全局万能码无关。
+    // 用途：App Store 审核员没有真实手机号，用演示号 + 固定码登录。
+    // 安全性：与万能码不同，它只解锁这一个号，不影响其他任何账号；
+    //   故在生产（DBEE_PROD=1）也允许保留，但 DEMO_CODE 与万能码必须不同。
+    demoPhone: normalizePhone(env.DEMO_PHONE) || '',
+    demoCode: env.DEMO_CODE?.trim() || '',
     otpTtlSec: parseTtlSafe(env.OTP_TTL_SEC, 300),
     otpMaxAttempts: int(env.OTP_MAX_ATTEMPTS, 5),
     // 发码频率限制：同号 60 秒一次（与前端倒计时一致），同 IP 每小时 20 次
@@ -206,6 +223,14 @@ export function validate(cfg) {
   if (cfg.prod && cfg.smsProvider === 'log') {
     // 这是最危险的一条：万能码 = 任何人可登录任何账号。放在末尾以便最醒目
     problems.push('生产环境（DBEE_PROD=1）仍用 SMS_PROVIDER=log —— 万能码意味着任何人可登录任何账号')
+  }
+  // 演示账户（⑦）只在「配了号却没配码」或「配了码却没配号」时提醒；
+  // 二者都配且不同号时合法。演示码绝不能与万能码相同（否则万能码后门覆盖演示号）。
+  if ((cfg.demoPhone && !cfg.demoCode) || (!cfg.demoPhone && cfg.demoCode)) {
+    problems.push('DEMO_PHONE 与 DEMO_CODE 必须成对配置（审核演示账户）')
+  }
+  if (cfg.demoPhone && cfg.demoCode && cfg.smsMasterCode && cfg.demoCode === cfg.smsMasterCode) {
+    problems.push('DEMO_CODE 不能与 SMS_MASTER_CODE 相同 —— 演示码应只锁定演示号，万能码是全局后门，二者职责不同')
   }
   return problems.filter(Boolean)
 }

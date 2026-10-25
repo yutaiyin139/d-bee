@@ -36,6 +36,9 @@ export function createApp(deps) {
     maxAttempts: cfg.otpMaxAttempts,
     // 万能码只在 log 模式下生效：真短信模式若还留着万能码，等于后门
     masterCode: cfg.smsProvider === 'log' ? cfg.smsMasterCode : '',
+    // 审核演示账户（⑦）：仅 DEMO_PHONE 可用 DEMO_CODE 固定码登录，
+    // 与 provider 无关（log/tencent 均生效），生产也允许保留（只锁一个号）。
+    demo: cfg.demoPhone && cfg.demoCode ? { phone: cfg.demoPhone, code: cfg.demoCode } : null,
   })
 
   const limiterIdent = new RateLimiter({ windowMs: cfg.otpResendSec * 1000, limit: 1 })

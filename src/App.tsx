@@ -51,7 +51,7 @@ export default function App() {
   return (
     <PlanProvider>
       <AppInner onOpenLegal={setLegal} />
-      <PaywallSheet />
+      <PaywallSheet onOpenLegal={setLegal} />
       {legal && <LegalPage id={legal} onBack={() => setLegal(null)} />}
     </PlanProvider>
   )

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { IconCrown, IconGift } from '../components/Icons'
 import { Sheet } from '../components/Sheet'
+import type { DocId } from '../content/legal'
 import {
   AI_REDEEM_DAILY_LIMIT,
   FREE_DAILY_AI,
@@ -46,7 +47,7 @@ const PRICE_TAG: Record<string, string> = {
   lifetime: '¥328 永久',
 }
 
-export function PaywallSheet() {
+export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void }) {
   const { paywall, closePaywall, redeem, pro, lifetime, entitlement, refresh } = usePlan()
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
@@ -232,35 +233,62 @@ export function PaywallSheet() {
             </button>
           )}
 
-          <div className="field" style={{ marginTop: 16 }}>
-            <label htmlFor="redeem">兑换码</label>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <input
-                id="redeem"
-                placeholder="输入兑换码"
-                maxLength={REDEEM_CODE_RULE.max}
-                value={code}
-                onChange={(e) => {
-                  setCode(e.target.value)
-                  setErr('')
-                }}
-                autoCapitalize="characters"
-              />
-              <button
-                className="btn btn-ghost"
-                style={{ width: 96, flexShrink: 0, fontSize: 14 }}
-                disabled={busy || !code.trim()}
-                onClick={submitCode}
-              >
-                {busy ? <span className="spinner" /> : <><IconGift size={16} /> 兑换</>}
-              </button>
+          {/* 兑换码输入（仅 web/Android）：iOS 下隐藏，避免 Apple 3.1.1 认定绕过 IAP。
+              蜂蜜兑换（邀请中心）不受影响，那是 earned 积分，属 3.1.1 允许的虚拟货币。 */}
+          {!isIOS() && (
+            <div className="field" style={{ marginTop: 16 }}>
+              <label htmlFor="redeem">兑换码</label>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <input
+                  id="redeem"
+                  placeholder="输入兑换码"
+                  maxLength={REDEEM_CODE_RULE.max}
+                  value={code}
+                  onChange={(e) => {
+                    setCode(e.target.value)
+                    setErr('')
+                  }}
+                  autoCapitalize="characters"
+                />
+                <button
+                  className="btn btn-ghost"
+                  style={{ width: 96, flexShrink: 0, fontSize: 14 }}
+                  disabled={busy || !code.trim()}
+                  onClick={submitCode}
+                >
+                  {busy ? <span className="spinner" /> : <><IconGift size={16} /> 兑换</>}
+                </button>
+              </div>
+              {err && <div className="err">{err}</div>}
+              {ok && <div className="ok-msg">购买成功，会员已生效 🐝</div>}
             </div>
-            {err && <div className="err">{err}</div>}
-            {ok && <div className="ok-msg">购买成功，会员已生效 🐝</div>}
-          </div>
+          )}
 
-          <div className="helper" style={{ lineHeight: 1.7 }}>
-            在线支付（微信 / 支付宝 / 应用商店内购）正在接入中，上线前可先用兑换码体验完整功能。
+          {!isIOS() && (
+            <div className="helper" style={{ lineHeight: 1.7 }}>
+              在线支付（微信 / 支付宝 / 应用商店内购）正在接入中，上线前可先用兑换码体验完整功能。
+            </div>
+          )}
+
+          {/* 法律链接（3.1.2 硬要求：付费墙内须含《使用条款》《隐私政策》） */}
+          <div className="helper" style={{ marginTop: 14, lineHeight: 1.7, fontSize: 12.5 }}>
+            购买即表示你同意
+            <button
+              type="button"
+              className="btn-text"
+              onClick={() => onOpenLegal('terms')}
+            >
+              《使用条款》
+            </button>
+            与
+            <button
+              type="button"
+              className="btn-text"
+              onClick={() => onOpenLegal('privacy')}
+            >
+              《隐私政策》
+            </button>
+            。订阅可随时在系统设置中取消。
           </div>
 
           {/* 透明定价承诺：对标 Cal AI 动态定价/试用陷阱的差异化武器 */}
