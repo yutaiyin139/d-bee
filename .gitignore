@@ -50,3 +50,6 @@ output/
 native-plugins/*/android/build/
 native-plugins/*/android/.gradle/
 native-plugins/*/ios/DerivedData/
+
+# 发布产物（APK/AAB 等）本地留存，不入库
+release/
