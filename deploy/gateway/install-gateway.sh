@@ -3,7 +3,8 @@
 # 服务器端：安装 Node 22 + 部署 D-Bee 网关 + 起 systemd 服务
 # ═══════════════════════════════════════════════════════════════════════
 # 由 deploy/deploy-gateway.sh 经 dbee-ssh.py run 调用，**不要手工跑**。
-# 占位符 __SUDO_PWD__ 由 dbee-ssh.py 在上传时替换。
+# 占位符（sudo 密码标记）由 dbee-ssh.py 在上传时替换；本注释刻意不写出该标记本身，
+# 否则渲染后密码会被写进注释落盘。
 #
 # 前置（调用方负责上传到位）：
 #   /tmp/gateway.env.in        ← gateway.env.template 渲染掉全部秘密后的产物

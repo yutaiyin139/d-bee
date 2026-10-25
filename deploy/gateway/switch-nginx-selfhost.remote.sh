@@ -3,7 +3,8 @@
 # 服务器端：把 nginx 的 /.cloud/ 上游从「WorkBuddy 云端」切到「本机自托管网关」
 # ═══════════════════════════════════════════════════════════════════════
 # 由 deploy/switch-nginx-selfhost.sh 经 dbee-ssh.py run 调用。
-# 占位符 __SUDO_PWD__ / __WEBAPP_KEY__ / __SMS_MASTER_CODE__ / __SERVER_NAME__ 由调用方替换。
+# 占位符（sudo 密码标记）/ __WEBAPP_KEY__ / __SMS_MASTER_CODE__ / __SERVER_NAME__ 由调用方替换。
+# 注意：注释里不要写出 sudo 密码标记本身，否则渲染后密码会落盘到远端脚本。
 #
 # 流程：备份云端配置 → 装自托管配置 → nginx -t → reload → 全链路 E2E 验证 → 失败给回滚命令。
 # ⚠️ 只在 nginx -t 通过后才 reload；E2E 失败会**保留**自托管配置并明确给出回滚命令

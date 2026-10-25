@@ -53,6 +53,37 @@ def render_text(text):
     return text
 
 
+def assert_no_leaked_secret(body, remote):
+    """🔴 渲染后自检：占位符若出现在**非 SUDO 定义行**，密码会被明文写进脚本正文
+    并在执行时回显（已实测踩过：探查脚本的 echo 描述文字里写了占位符，
+    导致 sudo 密码被打进输出）。
+
+    规则：密码字面量只允许出现在「把它喂给 sudo -S」的那一行；
+    出现在任何其他行 → 拒绝上传，让调用方改脚本。
+    """
+    pwd = PWD
+    if not pwd:
+        return
+    bad = []
+    for i, line in enumerate(body.splitlines(), 1):
+        if pwd not in line:
+            continue
+        stripped = line.strip()
+        # 白名单形态：SUDO() { echo "<pwd>" | sudo -S ... } / SUDO_PWD='<pwd>'
+        #             echo "<pwd>" | sudo -S ...
+        if "sudo -S" in stripped or stripped.startswith("SUDO_PWD="):
+            continue
+        bad.append((i, stripped[:80]))
+    if bad:
+        print(f"!! 拒绝上传 {remote}：密码字面量出现在 {len(bad)} 处非 sudo 行（会泄露到输出/日志）",
+              file=sys.stderr)
+        for ln, text in bad[:5]:
+            print(f"   L{ln}: {text}", file=sys.stderr)
+        print("   修法：描述文字里不要写占位符；确需引用时写作 SUDO_PLACEHOLDER 等无害串。",
+              file=sys.stderr)
+        raise SystemExit(3)
+
+
 def render_file(template, out):
     """本地渲染模板 -> 输出文件（LF 换行，避免 Windows CRLF 进 nginx 报错）。"""
     with open(template, "r", encoding="utf-8") as f:
@@ -81,6 +112,8 @@ def run_script(client, path):
     with open(path, "r", encoding="utf-8") as f:
         body = render_text(f.read())
     remote = f"/tmp/dbee-{uuid.uuid4().hex[:8]}.sh"
+    # 上传前先自检：密码只许出现在 sudo 调用行，否则拒绝（防明文回显/落盘泄露）
+    assert_no_leaked_secret(body, os.path.basename(path))
     sftp = client.open_sftp()
     with sftp.file(remote, "w") as fh:
         fh.write(body)

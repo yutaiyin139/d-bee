@@ -3,7 +3,8 @@
 # migration-audit.sh · 迁移状态三类探针（服务器端执行）
 # ═══════════════════════════════════════════════════════════════════════
 # 由 deploy/run-migration-audit.sh 经 deploy/dbee-ssh.py run 调用。
-# __SUDO_PWD__ 会被 dbee-ssh.py 替换成 SSH 密码（勿把密码写进本文件）。
+# sudo 密码占位符会被 dbee-ssh.py 替换成 SSH 密码（勿把密码写进本文件；
+# 注释里也不要写出该占位符，否则渲染后密码会落盘）。
 #
 # ⚠️ 全程只读：只 SELECT / 查系统目录。唯一的写动作是「可利用性探针」在
 #    BEGIN…ROLLBACK 事务内做一次越权 INSERT 尝试，且 owner_id 用的是
