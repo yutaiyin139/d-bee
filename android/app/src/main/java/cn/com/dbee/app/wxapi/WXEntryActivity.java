@@ -1,4 +1,4 @@
-package cn.dbeehealth.app.wxapi;
+package cn.com.dbee.app.wxapi;
 
 import ee.forgr.plugin.capacitor_wechat.WechatResponseActivity;
 

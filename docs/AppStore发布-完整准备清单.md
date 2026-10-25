@@ -117,7 +117,7 @@
 
 ## 四、App Store Connect 配置（账号就绪后，约半天）
 
-1. **建 App**：Bundle ID `cn.dbeehealth.app`（与工程 `capacitor.config.ts` 一致；⚠️ 原 `com.dbee.app` 已被抢注弃用，2026-10-25 更正），SKU 自定，主要语言 zh-Hans。
+1. **建 App**：Bundle ID `cn.com.dbee.app`（与工程 `capacitor.config.ts` 一致；⚠️ 弃用史：`com.dbee.app` 被抢注 → `cn.dbeehealth.app` 不可用 → 定案 `cn.com.dbee.app`，2026-10-25），SKU 自定，主要语言 zh-Hans。
 2. **App 信息页**：填 **ICP 备案号**（1.1，中国区必填）、分类（健康健美）、年龄分级问卷（1.3 新版）。
 3. **IAP 商品 3 个**（ID 必须与代码 `PRODUCT_IDS` 逐字一致）：
    - `dbee_pro_monthly`：自动续期订阅，¥18/月，订阅组 `dbee_pro`
@@ -149,7 +149,7 @@
 
 ## 六、构建与提审流程（一切就绪后）
 
-1. Mac：Xcode 26 → `Product → Archive`（Release，签名用企业证书 + `cn.dbeehealth.app` 的 Distribution provisioning profile）。
+1. Mac：Xcode 26 → `Product → Archive`（Release，签名用企业证书 + `cn.com.dbee.app` 的 Distribution provisioning profile）。
 2. Organizer → Distribute App → App Store Connect → Upload。
 3. ASC 选构建 → **TestFlight**：内部测试（自己人，即时）→ 外部测试（可选，需 Beta 审核）。
 4. TestFlight 里跑**沙盒购买全链路**（真实 Apple 沙盒账户）：购买→核销→权益到账→恢复购买→退款通知（webhook）。**这一步通过才有资格提审**——它验证的正是五的完整链条。

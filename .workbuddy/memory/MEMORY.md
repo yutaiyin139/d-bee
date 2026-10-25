@@ -1,6 +1,6 @@
 # D-Bee（自律蜜蜂）· 项目长期记忆（精简版；细节见当日日志与 docs/）
 
-## 进度快照（2026-10-25 上午，🎉 **V1.7.0 三端统一 + Apple IAP 验签落地 + P0 越权修复闭环 + iOS 首次真机编译打通**；泳道 A 自托管全栈 E2E 全绿；Bundle ID 定案 `cn.dbeehealth.app`；视觉识别切双 provider 路由（文本 DeepSeek + 视觉 Qwen））
+## 进度快照（2026-10-25 上午，🎉 **V1.7.0 三端统一 + Apple IAP 验签落地 + P0 越权修复闭环 + iOS 首次真机编译打通**；泳道 A 自托管全栈 E2E 全绿；Bundle ID 定案 `cn.com.dbee.app`（`cn.dbeehealth.app` 不可用后改定）；视觉识别切双 provider 路由（文本 DeepSeek + 视觉 Qwen））
 
 - **✅ 6 项决策已拍板（10-22 晚）**：①主体=**有限责任公司** ②未提交产物**入库**（已提交 `b6b1725`+`43a5729`
   并推 origin/main）③LLM=**DeepSeek** ④短信=**先日志+万能码**（`SMS_PROVIDER=log`/`SMS_MASTER_CODE=888888`）
@@ -76,7 +76,7 @@
   签名配置 + iOS 发布梳理）。最新 commit **`1bc27a7`**（feat(payment): Android/Web 微信支付 adapter，付费墙三端行为一致，
   10-24 20:41）。10-24 单日新增 11 commit（`89f6300..1bc27a7`）：**iOS 首次真机编译打通 + 三处 iOS 独有 bug 修复**
   （`89f6300` 补 NSPhotoLibraryAddUsageDescription / `dc1ea17` resultType 大小写 / `9165e75` 手册+排查报告）、
-  **Bundle ID 定案 `cn.dbeehealth.app`**（`23b295d` 三端统一 + `41a7351`/`ffd7203` 待办清单+定案记录）、
+  **Bundle ID 定案 `cn.com.dbee.app`**（`23b295d` 三端统一 + `41a7351`/`ffd7203` 待办清单+定案记录；10-25 `cn.dbeehealth.app` 不可用后改定）、
   **`d3fb8cc` postinstall 自动构建 shared**、**视觉双 provider**（`cc96b65` 质量优化 + `63c0a71` 切 Qwen）、
   `916d5fb`（壳层 UI 对齐品牌色）、`1bc27a7`（微信支付 adapter）。**工作区未提交**：仅记忆文件（无源码变更）。
 - **🎉 泳道 A 部署闭环（10-23 10:08）**：服务器 `150.158.51.106` 上 **nginx（自托管配置）+ dbee-gateway
@@ -149,7 +149,7 @@
   删坏壳重装完整 Xcode 后：`cap sync ios`（5 插件）→ SPM 解析 → 编译通过 → 真机功能测试。**三处 iOS 独有 bug 已修**：
   ①拍照无反应（缺 `NSPhotoLibraryAddUsageDescription`，前端 catch 静默吞 reject 掩盖了根因）②拍照后没进识别
   （`resultType:'DataUrl'` 大小写 bug，iOS 精确匹配失败回退 base64，Android 因 toUpperCase 幸免）③Bundle ID 冲突
-  （`com.dbee.app` 被抢注 → 定案 `cn.dbeehealth.app`）。**postinstall 自动构建 shared 已落地**（`d3fb8cc`），
+  （`com.dbee.app` 被抢注 → `cn.dbeehealth.app` 不可用 → 定案 `cn.com.dbee.app`）。**postinstall 自动构建 shared 已落地**（`d3fb8cc`），
   新 clone 一条 `npm ci` 直达，不再漏步。剩余：ASC 配 3 商品 + IAP capability + webhook → iOS 提审。
   正确顺序（已固化入手册）：`npm ci`（含 postinstall 构建 shared）→ `npm run build`（vite）→ `npx cap sync ios` → Cmd+R。
 - **健康数据源**：只读系统健康平台，不直连手环；HealthKit 读授权不可探测→插件只报 completed，连接真源=
@@ -216,7 +216,7 @@
 
 ## 已定技术路线（勿再讨论）
 
-Capacitor 8.5.3 混合壳；React18 + Vite5 + TS；appId `cn.dbeehealth.app`（**2026-10-24 定案，原 `com.dbee.app` 被 Apple 抢注、
+Capacitor 8.5.3 混合壳；React18 + Vite5 + TS；appId `cn.com.dbee.app`（**2026-10-24 定案，原 `com.dbee.app` 被 Apple 抢注、
 `com.d-bee.app` 因 Android 禁连字符弃用**；域名 `d-bee.com.cn` 与 Bundle ID 是两个独立体系互不影响）；Windows 出 Android、Mac mini M4 出 iOS；
 Node≥22 / JDK21 / Xcode≥26。健康数据源只读系统平台（iOS HealthKit / Android Health Connect / 华为 Health Kit
 需先上架华为市场 / 小米官方 SDK），详见 `docs/健康数据源方案.md`。
