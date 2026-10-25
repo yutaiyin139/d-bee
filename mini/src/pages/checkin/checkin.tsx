@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { View, Text, Button, Input } from '@tarojs/components'
-import { useLoad, useDidShow } from '@tarojs/taro'
+import { useDidShow } from '@tarojs/taro'
 import {
   todayKey,
   getProfile,
@@ -37,11 +37,11 @@ export default function Checkin() {
 
   const [msg, setMsg] = useState('')
 
-  useLoad(async () => {
-    await refresh()
-  })
-
-  // 页面返回（如从邀请中心兑换额度后）时重新拉取额度，避免剩余次数显示滞后
+  // 🔴 性能修复：Taro 生命周期是 onLoad → onShow → onReady，首次进入页面
+  //   useDidShow **同样会触发**。此前 useLoad + useDidShow 都调 refresh()，
+  //   导致每次进页面都把「餐/水/运动/积分/额度」5 个请求各拉两遍。
+  //   现在只在 useDidShow 拉一次：既覆盖首次进入，也覆盖页面返回
+  //   （如从邀请中心兑换额度后需要刷新剩余次数）。
   useDidShow(() => {
     void refresh()
   })

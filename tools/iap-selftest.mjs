@@ -213,7 +213,18 @@ const baseCfg = {
   appleBundleId: BUNDLE_ID,
   appleSharedSecret: 'shared-secret-test',
   appleSandbox: false,
+  // 🔴 0039：收据/通知环境白名单。本测试模拟「已上架」部署（appleSandbox=false），
+  //   与 loadConfig() 的推导口径一致：只收 Production。
+  //   缺此字段会让 verify/notifications 全部按 environment_mismatch 拒收。
+  appleAllowedEnvs: new Set(['Production']),
   appleWebhookSecret: '',
+}
+
+/** 提审期部署的 cfg：双环境都收（APPLE_SANDBOX=true 的推导结果） */
+const sandboxCfg = {
+  ...baseCfg,
+  appleSandbox: true,
+  appleAllowedEnvs: new Set(['Sandbox', 'Production']),
 }
 
 const logger = { info: () => {}, warn: () => {}, error: (...a) => console.error('    [iap]', ...a) }
@@ -333,14 +344,38 @@ section('边界 · 收据合法但无可核销交易')
 }
 
 // ── 沙盒/生产自动切换 ──
-section('沙盒 · 21007 自动切沙盒端点')
+section('沙盒 · 21007 自动切沙盒端点（提审期部署，双环境放行）')
 {
-  const s = await startServer({ routes })
+  // 21007 = Apple 提示「该收据来自沙盒，请改发沙盒端点」。自动切换后拿到 Sandbox 收据。
+  // 只有提审期部署（appleSandbox=true → 白名单含 Sandbox）才应放行；
+  // 上架后的生产部署会按 environment_mismatch 拒绝（见下一节）。
+  const s = await startServer({ cfg: sandboxCfg, routes })
   const orderNo = 'PO-SANDBOX-1'
   s.pool.orders.set(orderNo, { owner_id: OWNER_A, product_id: 'dbee_pro_monthly', status: 'pending', order_no: orderNo })
   const r = await post(s.url, '/.cloud/payment/apple/verify', { receipt: RECEIPT_SANDBOX, order_no: orderNo }, s.token(OWNER_A))
   assert('21007 → 切沙盒后核销成功', r.status === 200 && r.body?.settled === true, `status=${r.status} body=${JSON.stringify(r.body)}`)
   assert('订单转 paid', s.pool.orders.get(orderNo).status === 'paid')
+  await s.close()
+}
+
+// ── 🔴 0039：环境白名单 —— 上架后生产部署拒绝沙盒收据 ──
+section('安全 · 生产部署拒绝 Sandbox 收据（environment_mismatch）')
+{
+  // baseCfg = appleSandbox=false，白名单仅 Production。
+  // 沙盒收据是 Apple 签发的真收据（验签必过），但对应假钱购买 —— 必须拒收，
+  // 否则任何持沙盒账号者都能在生产白拿会员。
+  const s = await startServer({ routes }) // 用 baseCfg（仅 Production）
+  const r = await post(s.url, '/.cloud/payment/apple/verify', { receipt: RECEIPT_SANDBOX }, s.token(OWNER_A))
+  assert('Sandbox 收据 → 402 environment_mismatch', r.status === 402 && r.body?.error === 'environment_mismatch', `status=${r.status} body=${JSON.stringify(r.body)}`)
+  assert('未落权益', s.pool.entitlements.get(OWNER_A) == null)
+  await s.close()
+}
+
+section('安全 · 生产部署接受 Production 收据（白名单放行）')
+{
+  const s = await startServer({ routes })
+  const r = await post(s.url, '/.cloud/payment/apple/verify', { receipt: RECEIPT_OK, provider_txn_id: TXN_MONTHLY }, s.token(OWNER_A))
+  assert('Production 收据 → 200 settled', r.status === 200 && r.body?.settled === true, `status=${r.status} body=${JSON.stringify(r.body)}`)
   await s.close()
 }
 
@@ -439,7 +474,7 @@ section('Webhook · SUBSCRIBED 但 owner 未解析')
 {
   const s = await startServer({ routes, verifyJwsImpl: (jws) => {
     if (jws.includes('TXN')) return { productId: 'dbee_pro_monthly', transactionId: 'T-NEW', originalTransactionId: 'ORIG-NEW', expiresDate: futureMs }
-    return { notificationType: 'SUBSCRIBED', data: { bundleId: BUNDLE_ID, signedTransactionInfo: 'TXN' } }
+    return { notificationType: 'SUBSCRIBED', data: { bundleId: BUNDLE_ID, environment: 'Production', signedTransactionInfo: 'TXN' } }
   } })
   const r = await post(s.url, '/.cloud/payment/apple/notifications', { signedPayload: 'outer' })
   assert('→ 200 但 processed=false（owner_unresolved）', r.status === 200 && r.body?.processed === false, JSON.stringify(r.body))
@@ -462,7 +497,7 @@ section('Webhook · DID_RENEW 续订顺延（owner 由首笔反查）')
   // 重新起一个带注入验签的 server，并预置首笔交易（模拟已核销状态）
   const s3 = await startServer({ routes, verifyJwsImpl: (jws) => {
     if (jws.includes('TXN')) return { productId: 'dbee_pro_monthly', transactionId: TXN_RENEW, originalTransactionId: ORIG_TXN, expiresDate: renewExpires }
-    return { notificationType: 'DID_RENEW', data: { bundleId: BUNDLE_ID, signedTransactionInfo: 'TXN' } }
+    return { notificationType: 'DID_RENEW', data: { bundleId: BUNDLE_ID, environment: 'Production', signedTransactionInfo: 'TXN' } }
   } })
   // 手动预置首笔核销（等价于客户端已 verify 过）
   s3.pool.query(`SELECT public.settle_apple_purchase($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
@@ -474,6 +509,28 @@ section('Webhook · DID_RENEW 续订顺延（owner 由首笔反查）')
   assert('续订后 pro_until 顺延', new Date(untilAfter).getTime() > new Date(untilBefore).getTime(), `${untilBefore} → ${untilAfter}`)
   assert('续订交易记入幂等表', s3.pool.txns.has(TXN_RENEW))
   await s3.close()
+}
+
+// ── 🔴 0039：通知路径环境白名单 —— 生产部署拒绝沙盒续订通知 ──
+section('安全 · Webhook DID_RENEW 沙盒通知被生产部署拒绝')
+{
+  // baseCfg = 仅 Production。沙盒 DID_RENEW 由 Apple 签发（JWS 验签必过），
+  // 但对应假钱续订 —— 照单全收会让 TestFlight/审核员账号在生产白拿真权益。
+  // 拒绝方式：不抛错、仍落库留痕（processed=false + error=environment_mismatch），
+  // 且按 App Store Server Notifications 协议回 200（避免 Apple 无限重投）。
+  const s = await startServer({ routes, verifyJwsImpl: (jws) => {
+    if (jws.includes('TXN')) return { productId: 'dbee_pro_monthly', transactionId: TXN_RENEW, originalTransactionId: ORIG_TXN, expiresDate: futureMs }
+    return { notificationType: 'DID_RENEW', data: { bundleId: BUNDLE_ID, environment: 'Sandbox', signedTransactionInfo: 'TXN' } }
+  } })
+  // 预置首笔核销（模拟用户已在客户端 verify 过 Production 首购）
+  s.pool.query(`SELECT public.settle_apple_purchase($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [OWNER_A, null, 'dbee_pro_monthly', ORIG_TXN, ORIG_TXN, String(futureMs), String(Date.now()), 'Production', null])
+  const untilBefore = s.pool.entitlements.get(OWNER_A).pro_until
+  const r = await post(s.url, '/.cloud/payment/apple/notifications', { signedPayload: 'outer' })
+  assert('→ 200 但 processed=false（不给 Apple 回错误码）', r.status === 200 && r.body?.processed === false, JSON.stringify(r.body))
+  assert('留痕 error=environment_mismatch', s.pool.notifications.at(-1)?.error === 'environment_mismatch', s.pool.notifications.at(-1)?.error)
+  assert('pro_until 未被沙盒续订顺延', s.pool.entitlements.get(OWNER_A).pro_until === untilBefore)
+  await s.close()
 }
 
 // ── webhook：REFUND 撤销权益 ──

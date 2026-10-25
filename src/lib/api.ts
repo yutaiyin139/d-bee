@@ -1,6 +1,6 @@
 import { cloud } from '../cloud'
 import { publicConfig } from '../cloudConfig'
-import type { Badge, Entitlement, ExerciseLog, HoneyBalance, HoneyLedger, InviteLink, MealEntry, Profile, Recipe, WaterLog, WeightLog } from '../types'
+import type { Badge, Entitlement, ExerciseLog, HoneyBalance, HoneyLedger, InviteLink, MealEntry, MealSlim, Profile, Recipe, WaterLog, WeightLog } from '../types'
 import { BONUS_TTL_DAYS, FREE_DAILY_AI, SCAN_FEATURE } from './entitlement'
 import { zh } from './errmsg'
 import { todayKey } from './nutrition'
@@ -112,6 +112,28 @@ export async function listMealsBetween(startDate: string, endDate: string): Prom
     .order('log_date', { ascending: true })
   if (error) throw new Error(zh(error.message, '读取记录失败'))
   return rows<MealEntry>(data)
+}
+
+/**
+ * 首页专用的「窄窗口」读取（0040 性能修复）。
+ *
+ * 首页只需要两样东西：① 近半年「有记录的日期」集合（连续天数 + 热力图）；
+ * ② 近 7 天每日热量（迷你趋势条）。此前用 listMealsBetween 拉 185 天 × **全字段**
+ * （25 列，含 food_name / 营养素 / plan_summary 等），单用户半年记录可达上千行，
+ * 首屏传输量与 JSON 解析成本都被无关字段放大了十几倍。
+ *
+ * 这里只投影 log_date + calories 两列（PostgREST 列裁剪），载荷降到原来的 ~1/10，
+ * 且**仍然只有一次请求**（不额外增加往返）。
+ * 报告页需要营养素明细，仍走 listMealsBetween，不受影响。
+ */
+export async function listLoggedMeals(startDate: string, endDate: string): Promise<MealSlim[]> {
+  const { data, error } = await db('meal_entries')
+    .select('log_date,calories')
+    .gte('log_date', startDate)
+    .lte('log_date', endDate)
+    .order('log_date', { ascending: true })
+  if (error) throw new Error(zh(error.message, '读取记录失败'))
+  return rows<MealSlim>(data)
 }
 
 /** 最近 N 天的记录，按时间倒序，用于「最近吃过」快捷复记 */
@@ -693,8 +715,32 @@ export async function settleInviteCheckin(): Promise<boolean> {
   }
 }
 
-/** 读取我的积分余额（未过期入账 − 未过期消耗） */
+/**
+ * 读取我的积分余额（未过期入账 − 未过期消耗）。
+ *
+ * 🔴 0040 性能修复：优先走服务端聚合 RPC honey_balance()——旧实现把
+ * honey_ledger 自己名下**全部流水**拉到客户端逐行求和（流水只增不减，
+ * 重度用户一年 1500+ 行，每次进首页/积分页都全量下载）。RPC 版在库内
+ * 一条聚合 SQL 算完，载荷 1 行 json，口径与旧实现逐字一致（见迁移 0040）。
+ * 0040 尚未应用的库会 RPC 报错 → 回退旧全量路径（行为不变，功能不中断）。
+ */
 export async function getHoneyBalance(): Promise<HoneyBalance> {
+  try {
+    const { data, error } = await callRpc('honey_balance', {})
+    if (!error) {
+      const d = (Array.isArray(data) ? data[0] : data) as {
+        balance?: number; total_earned?: number; total_spent?: number
+      } | null
+      if (d && typeof d === 'object' && 'balance' in d) {
+        return {
+          balance: Math.max(0, Number(d.balance) || 0),
+          totalEarned: Number(d.total_earned) || 0,
+          totalSpent: Number(d.total_spent) || 0,
+        }
+      }
+    }
+  } catch { /* RPC 不存在（0040 未应用）→ 走下方回退 */ }
+  // 回退：旧全量路径（0040 应用前的库仍可用）
   const { data, error } = await db('honey_ledger')
     .select('amount, expires_at')
   if (error) throw new Error(zh(error.message, '读取积分失败'))

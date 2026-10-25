@@ -165,6 +165,23 @@ export function loadConfig(env = process.env) {
     llmTimeoutMs: int(env.LLM_TIMEOUT_MS, 120000),
     // 每用户每日 AI 调用上限的兜底闸（数据库里另有 consume_ai_quota，这是防打穿的第二层）
     llmDailyCapPerUser: int(env.LLM_DAILY_CAP, 200),
+    // ── LLM 服务端授权与输入限制（0039 P0-C 配套）────────────────────
+    // 视觉请求的服务端权益闸门开关。开启后：含图片的请求必须先经 llm_gate
+    //   核销一条当日额度占用（正常「先 consume 后调 LLM」流程必然命中），
+    //   无占用则落入下方「包装识别日配额」，两者皆尽 → 拒绝。
+    //   关闭（false）仅用于本地无库自测；生产必须为 true。
+    llmGateEnabled: bool(env.LLM_GATE_ENABLED, true),
+    // 包装识别（条码兜底，不占拍照额度）的每用户每日视觉调用上限。
+    //   这是「绕过前端额度直打网关」的硬封顶：即便伪造无 claim 的视觉请求，
+    //   每天也最多这么多张，成本可控。
+    llmPackageDailyCap: int(env.LLM_PACKAGE_DAILY_CAP, 8),
+    // 单请求输入规模上限（防超长 prompt 烧 token / DoS）。
+    llmMaxInputTokens: int(env.LLM_MAX_INPUT_TOKENS, 32000),
+    llmMaxImages: int(env.LLM_MAX_IMAGES, 4),
+    llmMaxMessages: int(env.LLM_MAX_MESSAGES, 60),
+    // 同时在途的 LLM 流式请求上限（全进程）。SSE 长连接占内存与上游并发，
+    // 超限直接 429 而不是排队 —— 排队会把慢请求堆成雪崩。
+    llmMaxConcurrentStreams: int(env.LLM_MAX_CONCURRENT_STREAMS, 32),
 
     // ── Apple IAP（C1）─────────────────────────────────────
     appleBundleId: env.APPLE_BUNDLE_ID?.trim() || '',
@@ -172,10 +189,32 @@ export function loadConfig(env = process.env) {
     // 沙盒环境开关：提审阶段用 true，正式上架后改 false
     appleSandbox: bool(env.APPLE_SANDBOX, true),
     appleWebhookSecret: env.APPLE_WEBHOOK_SECRET?.trim() || '',
+    // 🔴 0039：收据环境白名单。Apple 验签响应的 environment 字段标明收据来源
+    //   （Sandbox / Production）。此前不做校验 → 正式上架后，任何拥有沙盒账号的
+    //   人都能用「沙盒假钱购买」的合法收据换走真会员。
+    //   默认口径：APPLE_SANDBOX=true（提审期）→ 双环境都收（审核员用沙盒账号）；
+    //   APPLE_SANDBOX=false（已上架）→ 只收 Production。
+    //   可用 APPLE_ALLOWED_ENVS=Sandbox,Production 显式覆盖。
+    appleAllowedEnvs: new Set(
+      (env.APPLE_ALLOWED_ENVS || '').trim()
+        ? (env.APPLE_ALLOWED_ENVS || '').split(',').map((s) => s.trim()).filter(Boolean)
+        : bool(env.APPLE_SANDBOX, true)
+          ? ['Sandbox', 'Production']
+          : ['Production'],
+    ),
 
     // ── 限流 ───────────────────────────────────────────────
     rateLimitPerMin: int(env.RATE_LIMIT_PER_MIN, 300),
     bodyLimitBytes: int(env.BODY_LIMIT_BYTES, 32 * 1024 * 1024), // 32 MiB：base64 图片 + 富余
+    // 可信代理 IP 白名单（🔴 0039：XFF 只在直连对端可信时才被解析）。
+    // 回环地址天然可信（同机 nginx），无需配置；若网关与 nginx 分机部署，
+    // 把 nginx 的内网 IP 写进 TRUSTED_PROXY_IPS（逗号分隔）。
+    trustedProxyIps: new Set(
+      (env.TRUSTED_PROXY_IPS || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
   }
 
   // 启动期就暴露配置问题，而不是等第一个请求 500

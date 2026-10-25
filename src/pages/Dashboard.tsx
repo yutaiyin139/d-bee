@@ -13,7 +13,7 @@ import {
   deleteMeal,
   grantHoney,
   listExerciseByDate,
-  listMealsBetween,
+  listLoggedMeals,
   listMealsByDate,
   listWaterByDate,
   refundCheckinExercise,
@@ -39,7 +39,7 @@ import { computeStreak, MILESTONES } from '../lib/streak'
 import { GRAMS_LIMIT, MINUTES_LIMIT, checkNumber, clampNumeric, sanitizeNumeric } from '../lib/validate'
 import { usePlan } from '../state/plan'
 import { MEAL_LABELS, MEAL_ORDER } from '../types'
-import type { ExerciseLog, MealEntry, MealType, Profile, WaterLog } from '../types'
+import type { ExerciseLog, MealEntry, MealSlim, MealType, Profile, WaterLog } from '../types'
 import { CoachSheet } from './CoachSheet'
 import { InviteCenter } from './InviteCenter'
 import { LeaderboardSheet } from './LeaderboardSheet'
@@ -177,9 +177,10 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
     })
   }
 
-  // 打卡：需要近半年的「有记录日期」集合；同时留一份近窗记录用于卡路里追踪
+  // 打卡：需要近半年的「有记录日期」集合；同时留一份近窗记录用于卡路里趋势。
+  // 0040：这里只保存窄投影（日期 + 热量），首页用不到营养素明细。
   const [loggedDates, setLoggedDates] = useState<string[]>([])
-  const [recentMeals, setRecentMeals] = useState<MealEntry[]>([])
+  const [recentMeals, setRecentMeals] = useState<MealSlim[]>([])
   const today = todayKey()
 
   const target = useMemo(() => targetFromProfile(profile), [profile])
@@ -193,7 +194,9 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
         listMealsByDate(logDate),
         listWaterByDate(logDate),
         listExerciseByDate(logDate),
-        listMealsBetween(shiftDate(today, -STREAK_WINDOW_DAYS), today),
+        // 0040：首页只需要「日期 + 热量」，改窄投影（载荷降到全字段的 ~1/10，
+        // 仍是一次请求）。营养素明细只有报告页需要，仍走 listMealsBetween。
+        listLoggedMeals(shiftDate(today, -STREAK_WINDOW_DAYS), today),
       ])
       setEntries(m)
       setWater(w)

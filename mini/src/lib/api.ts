@@ -65,6 +65,15 @@ export interface MealEntry {
   created_at?: string
 }
 
+/**
+ * 首页专用的窄投影（0040 性能修复，与主工程 src/types.ts 的 MealSlim 对齐）。
+ * 首页的连续天数与 7 日趋势只需要「日期 + 热量」，不需要营养素明细。
+ */
+export interface MealSlim {
+  log_date: string
+  calories: number
+}
+
 export interface WeightLog {
   id?: number
   log_date: string
@@ -265,6 +274,24 @@ export async function listMealsBetween(startDate: string, endDate: string): Prom
   return rows<MealEntry>(data)
 }
 
+/**
+ * 首页专用的「窄窗口」读取（任务 #39 性能优化，与主工程 listLoggedMeals 对齐）。
+ * 首页只需要「有记录的日期」集合（连续天数）+ 近 7 天每日热量（趋势条）。
+ * 此前用 listMealsBetween 拉 185 天 × 全字段（25 列），小程序端流量与
+ * setData 序列化成本都被无关字段放大。这里只投影 log_date + calories 两列
+ * （PostgREST 列裁剪），载荷降到 ~1/10，且仍是一次请求（不增加往返）。
+ * 纯客户端改动，不依赖 0040 迁移。报告页需要营养素明细，仍走 listMealsBetween。
+ */
+export async function listLoggedMeals(startDate: string, endDate: string): Promise<MealSlim[]> {
+  const { data, error } = await db('meal_entries')
+    .select('log_date,calories')
+    .gte('log_date', startDate)
+    .lte('log_date', endDate)
+    .order('log_date', { ascending: true })
+  if (error) throw new Error(`读取记录失败：${error.message ?? ''}`)
+  return rows<MealSlim>(data)
+}
+
 /** 返回 days 天前的 YYYY-MM-DD（本地时区） */
 function shiftDateISO(days: number): string {
   const d = new Date()
@@ -446,7 +473,26 @@ function normalizeRecipeItems(items: unknown): Recipe['items'] {
 
 /* ── 积分 ─────────────────────────────────────────────────────── */
 
+/**
+ * 🔴 0040 性能修复：优先走服务端聚合 RPC honey_balance()（与主工程对齐），
+ * 避免全量下载 honey_ledger 流水；RPC 不可用时回退旧全量路径。
+ */
 export async function getHoneyBalance(): Promise<HoneyBalance> {
+  try {
+    const { data, error } = await callRpc('honey_balance', {})
+    if (!error) {
+      const d = (Array.isArray(data) ? data[0] : data) as {
+        balance?: number; total_earned?: number; total_spent?: number
+      } | null
+      if (d && typeof d === 'object' && 'balance' in d) {
+        return {
+          balance: Math.max(0, Number(d.balance) || 0),
+          totalEarned: Number(d.total_earned) || 0,
+          totalSpent: Number(d.total_spent) || 0,
+        }
+      }
+    }
+  } catch { /* RPC 不存在（0040 未应用）→ 走下方回退 */ }
   const { data, error } = await db('honey_ledger').select('amount, expires_at')
   if (error) throw new Error(`读取积分失败：${error.message ?? ''}`)
   const rs = rows<{ amount: number; expires_at: string | null }>(data)

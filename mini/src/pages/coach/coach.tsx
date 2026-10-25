@@ -52,11 +52,13 @@ export default function Coach() {
 
   useLoad(() => {
     void buildCtx()
-    // 拉取会员状态：Pro 不限流（与主工程 CoachSheet 对齐）
-    void getEntitlement().then((ent) => setPro(isPro(ent))).catch(() => {})
   })
 
-  // 页面返回（如从邀请中心兑换 Pro 后）时刷新会员状态，避免限流误判
+  // 拉取会员状态：Pro 不限流（与主工程 CoachSheet 对齐）。
+  // 页面返回（如从邀请中心兑换 Pro 后）时刷新会员状态，避免限流误判。
+  // 🔴 性能修复：此前 useLoad 与 useDidShow 各调一次 getEntitlement，而 Taro
+  //   首次进入页面同样会触发 useDidShow（onLoad → onShow → onReady），
+  //   导致会员状态被重复拉取。改为只在 useDidShow 拉。
   useDidShow(() => {
     void getEntitlement().then((ent) => setPro(isPro(ent))).catch(() => {})
   })

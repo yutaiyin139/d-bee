@@ -67,6 +67,16 @@ export interface MealEntry {
   created_at?: string
 }
 
+/**
+ * 首页专用的窄投影（0040 性能修复）。
+ * 首页的连续天数与 7 日趋势只需要「日期 + 热量」，不需要营养素明细。
+ * 用 listLoggedMeals() 取得，避免把 185 天 × 25 列全量拖到客户端。
+ */
+export interface MealSlim {
+  log_date: string
+  calories: number
+}
+
 /** AI 识别 / 解析出的单条食物结果（尚未落库） */
 export interface DetectedFood {
   food_name: string

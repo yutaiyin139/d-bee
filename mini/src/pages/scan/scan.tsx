@@ -40,13 +40,16 @@ export default function Scan() {
   const [recipeInputOpen, setRecipeInputOpen] = useState(false)
   const [savingRecipe, setSavingRecipe] = useState(false)
 
+  // profile 只需首屏拉一次（不随页面返回变化），留在 useLoad。
   useLoad(async () => {
     try { setProfile(await getProfile()) } catch { /* ignore */ }
-    await refreshStats()
   })
 
   // 从邀请中心兑换 Pro / 兑换拍照额度后返回本页时，onShow 会再次触发，
   // 重新拉取权益与额度（useLoad 只在首次加载触发，页面返回不重拉 → 兑换后不生效）。
+  // 🔴 性能修复：此前 useLoad 里也调了一次 refreshStats()，而 Taro 首次进入
+  //   同样会触发 useDidShow（onLoad → onShow → onReady），导致权益/额度/积分/
+  //   今日拍照数 4 个请求被拉两遍。改为只在 useDidShow 拉。
   useDidShow(() => {
     void refreshStats()
   })

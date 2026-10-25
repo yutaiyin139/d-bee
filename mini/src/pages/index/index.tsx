@@ -9,11 +9,11 @@ import { Ring } from '../../components/Ring'
 import { WeekStrip } from '../../components/WeekStrip'
 import { MonthPicker } from '../../components/MonthPicker'
 import {
-  listMealsByDate, listMealsBetween, listWaterByDate, listExerciseByDate,
+  listMealsByDate, listLoggedMeals, listWaterByDate, listExerciseByDate,
   addWater, addExercise, deleteExercise, deleteMeal, updateMealGrams, undoLastWater,
   getProfile, grantHoney, refundCheckinHoney, refundCheckinWater, refundCheckinExercise,
   settleInviteCheckin, unlockBadge, grantPhotoBonus, getMyInviteCode,
-  type MealEntry, type WaterLog, type ExerciseLog, type Profile,
+  type MealEntry, type MealSlim, type WaterLog, type ExerciseLog, type Profile,
 } from '../../lib/api'
 import {
   EXERCISES, exerciseKcal, formatDateShort, shiftDate,
@@ -52,7 +52,7 @@ export default function Index() {
   const [entries, setEntries] = useState<MealEntry[]>([])
   const [water, setWater] = useState<WaterLog[]>([])
   const [exercise, setExercise] = useState<ExerciseLog[]>([])
-  const [recentMeals, setRecentMeals] = useState<MealEntry[]>([])
+  const [recentMeals, setRecentMeals] = useState<MealSlim[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -104,7 +104,7 @@ export default function Index() {
         listMealsByDate(logDate),
         listWaterByDate(logDate),
         listExerciseByDate(logDate),
-        listMealsBetween(shiftDate(today, -STREAK_WINDOW_DAYS), today),
+        listLoggedMeals(shiftDate(today, -STREAK_WINDOW_DAYS), today),
         getProfile(),
       ])
       setEntries(m)

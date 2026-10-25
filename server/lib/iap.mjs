@@ -299,6 +299,16 @@ export function createIapHandlers(deps) {
         return cloudError(res, 402, '收据不属于本应用', 'bundle_mismatch')
       }
 
+      // ③b 🔴 环境白名单（0039）：上架后拒绝 Sandbox 收据。
+      //   沙盒收据是 Apple 签发的**真**收据（验签必过），但对应的是假钱购买；
+      //   不校验 environment = 任何沙盒账号都能白拿会员。
+      //   提审期（APPLE_SANDBOX=true）白名单含 Sandbox，审核员不受影响。
+      const env_ = String(apple.body?.environment ?? '')
+      if (!cfg.appleAllowedEnvs?.has(env_)) {
+        logger.warn(`[iap] environment 不在白名单: got=${env_ || '<缺失>'} want=${[...(cfg.appleAllowedEnvs ?? [])].join('/')} owner=${ownerId}`)
+        return cloudError(res, 402, '收据环境与当前服务不符', 'environment_mismatch')
+      }
+
       // ④ 有订单则读订单（product_id 用于交易定位；owner 不符只警告不阻断 ——
       //    收据是真的，权益发给当前登录用户即可，订单侧保持 pending 留痕）
       let orderProductId = null
@@ -415,33 +425,47 @@ export function createIapHandlers(deps) {
         if (type === 'SUBSCRIBED' || type === 'DID_RENEW') {
           // 新购/续订：与客户端 verify 同一个核销函数（按 transaction_id 幂等）。
           // 续订通知是权益顺延的**权威来源** —— 客户端不在线也能续上。
-          if (!txn?.productId) throw new Error('通知缺少交易信息')
-          const { rows } = await pool.query(
-            `SELECT public.settle_apple_purchase($1,$2,$3,$4,$5,$6,$7,$8,$9) AS r`,
-            [
-              // 通知里没有「我们的用户」概念：owner 以首次核销该
-              // original_transaction_id 的记录为准（settle 函数内按
-              // original_txn 反查；查不到说明用户从未在客户端核销过，
-              // 落库为待认领状态，等客户端下次 verify 时对齐）。
-              null,
-              null,
-              String(txn.productId),
-              txnId,
-              origTxnId,
-              txn.expiresDate != null ? String(txn.expiresDate) : null,
-              txn.purchaseDate != null ? String(txn.purchaseDate) : null,
-              String(payload?.data?.environment ?? ''),
-              null,
-            ],
-          )
-          const r = rows[0]?.r
-          if (r?.error === 'owner_unresolved') {
-            // 用户还没在客户端核销过这笔订阅 → 只记通知，不发权益（没人可发）
-            procError = 'owner_unresolved'
-          } else if (r?.error) {
-            throw new Error(String(r.error))
+          //
+          // 环境白名单（与 verify 路径同口径）：通知虽由 Apple JWS 验签背书，
+          // 但沙盒环境同样会发 DID_RENEW —— APPLE_SANDBOX=false 的生产部署
+          // 若照单全收，TestFlight/审核员的沙盒订阅就能在生产白拿真权益。
+          // 注意：REFUND/REVOKE 分支**刻意不校验** —— 撤销权益是防御性动作，
+          // 宁可多撤不可漏撤，沙盒退款通知也应生效。
+          const nEnv = String(payload?.data?.environment ?? '')
+          if (!cfg.appleAllowedEnvs?.has(nEnv)) {
+            // 不抛错、仍走下方统一落库：processed=false + err 留痕，
+            // 且按协议给 Apple 回 200（避免它无限重投同一通知）。
+            procError = 'environment_mismatch'
+            logger.warn(`[iap] 通知 environment 不在白名单: type=${type} got=${nEnv || '<缺失>'} want=${[...(cfg.appleAllowedEnvs ?? [])].join('/')} txn=${txnId ?? '-'}`)
+          } else {
+            if (!txn?.productId) throw new Error('通知缺少交易信息')
+            const { rows } = await pool.query(
+              `SELECT public.settle_apple_purchase($1,$2,$3,$4,$5,$6,$7,$8,$9) AS r`,
+              [
+                // 通知里没有「我们的用户」概念：owner 以首次核销该
+                // original_transaction_id 的记录为准（settle 函数内按
+                // original_txn 反查；查不到说明用户从未在客户端核销过，
+                // 落库为待认领状态，等客户端下次 verify 时对齐）。
+                null,
+                null,
+                String(txn.productId),
+                txnId,
+                origTxnId,
+                txn.expiresDate != null ? String(txn.expiresDate) : null,
+                txn.purchaseDate != null ? String(txn.purchaseDate) : null,
+                nEnv,
+                null,
+              ],
+            )
+            const r = rows[0]?.r
+            if (r?.error === 'owner_unresolved') {
+              // 用户还没在客户端核销过这笔订阅 → 只记通知，不发权益（没人可发）
+              procError = 'owner_unresolved'
+            } else if (r?.error) {
+              throw new Error(String(r.error))
+            }
+            processed = !procError
           }
-          processed = !procError
         } else if (type === 'REFUND' || type === 'REVOKE') {
           const { rows } = await pool.query(
             `SELECT public.revoke_apple_purchase($1,$2,$3) AS r`,

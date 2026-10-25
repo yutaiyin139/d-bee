@@ -137,30 +137,64 @@ export function createDbProxy(deps) {
     }
 
     // ── 转发 ──────────────────────────────────────────────
+    // 🔴 0039 修复两处资源管理缺陷：
+    //   ① 旧代码用 `req.signal` —— Node 的 http.IncomingMessage 上**没有**这个属性
+    //     （那是 fetch Request 的），恒为 undefined → 客户端断开后上游请求照跑，
+    //     连接泄漏。改为监听 res 'close' + AbortController。
+    //   ② 旧代码 `Buffer.from(await upstreamRes.arrayBuffer())` 把上游响应**整体
+    //     缓冲**进内存再回传 —— 大结果集（如全量 meal_entries 查询）会瞬时吃掉
+    //     等量内存。改为流式逐块透传，内存占用 O(chunk)。
+    const ac = new AbortController()
+    const onClose = () => ac.abort()
+    res.on('close', onClose)
+
     let upstreamRes
     try {
       upstreamRes = await fetch(target, {
         method: req.method,
         headers,
         body: body?.length ? body : undefined,
-        // 客户端断开时同步取消上游请求，避免泄漏连接
-        signal: req.signal ?? undefined,
+        signal: ac.signal,
       })
     } catch (err) {
+      res.off('close', onClose)
+      if (ac.signal.aborted && res.writableEnded) return // 客户端先走
       logger.error(`[db] 上游不可达 ${target.pathname} : ${err?.message || err}`)
       return pgrstError(res, 503, '数据库服务暂不可用', { code: 'PGRST_UPSTREAM_UNREACHABLE' })
     }
 
-    // ── 回传响应 ──────────────────────────────────────────
+    // ── 回传响应（流式）────────────────────────────────────
     const outHeaders = {}
     upstreamRes.headers.forEach((v, k) => {
       if (KEEP_RES_HEADERS.has(k.toLowerCase())) outHeaders[k] = v
     })
-    const payload = Buffer.from(await upstreamRes.arrayBuffer())
-    if (payload.length) outHeaders['content-length'] = payload.length
+    // content-length 由上游头透传（KEEP_RES_HEADERS 之外的一律丢弃）；
+    // 流式模式下网关不再自算长度，PostgREST 的响应本来就带 content-length。
 
-    res.writeHead(upstreamRes.status, outHeaders)
-    res.end(payload)
+    try {
+      res.writeHead(upstreamRes.status, outHeaders)
+      if (!upstreamRes.body) {
+        res.end()
+      } else {
+        // pump：逐块写入并尊重背压（write 返回 false 时等 drain）
+        const reader = upstreamRes.body.getReader()
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          if (!res.write(Buffer.from(value))) {
+            await new Promise((resolve) => res.once('drain', resolve))
+          }
+        }
+        res.end()
+      }
+    } catch (err) {
+      if (!ac.signal.aborted) {
+        logger.error(`[db] 响应透传中断 ${rest}: ${err?.message || err}`)
+      }
+      res.destroy()
+    } finally {
+      res.off('close', onClose)
+    }
 
     // 慢查询与错误留痕（成功且快的不打，避免日志噪音）
     if (upstreamRes.status >= 400) {

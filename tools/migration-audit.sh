@@ -249,6 +249,20 @@ chk "作废备份表对 authenticated 不可见（预期 0）" "SELECT has_table
 #   而矩阵的 WHERE 会把「表不存在」也报成失败，导致 0035 未应用的库误报安全问题。
 #   故只在这里做存在性检查，权限正确性由上面的 has_table_privilege=0 断言。
 
+echo " [0039] RPC 信任边界收紧 + llm_gate"
+chk "llm_gate 函数存在" "$(FN llm_gate)"
+chk "llm_gate 对 authenticated 不可执行（预期 0）" "SELECT has_function_privilege('authenticated','public.llm_gate(text)','EXECUTE')::int;" 0
+chk "llm_gate 对 anon 不可执行（预期 0）" "SELECT has_function_privilege('anon','public.llm_gate(text)','EXECUTE')::int;" 0
+chk "llm_gate 对 dbee_app 可执行（预期 1）" "SELECT has_function_privilege('dbee_app','public.llm_gate(text)','EXECUTE')::int;" 1
+
+echo " [0040] 积分聚合 + 榜单缓存"
+chk "honey_balance 函数存在" "$(FN honey_balance)"
+chk "honey_balance 对 authenticated 可执行（预期 1）" "SELECT has_function_privilege('authenticated','public.honey_balance()','EXECUTE')::int;" 1
+chk "honey_balance 对 anon 不可执行（预期 0）" "SELECT has_function_privilege('anon','public.honey_balance()','EXECUTE')::int;" 0
+chk "leaderboard_cache 表存在" "$(TBL leaderboard_cache)"
+chk "leaderboard_cache 对 authenticated 零权限（预期 0）" "SELECT has_table_privilege('authenticated','public.leaderboard_cache','SELECT')::int;" 0
+chk "leaderboard_cache 对 anon 零权限（预期 0）" "SELECT has_table_privilege('anon','public.leaderboard_cache','SELECT')::int;" 0
+
 # ─────────────────────────────────────────────────────────────────────
 echo
 echo "── C) 探针② 版本性（函数体特征串，识别覆盖式迁移的半成品）──"
@@ -280,6 +294,22 @@ echo " [0027] 邀请码单日频次限制（🔴 审计实测：函数体无 dai
 chk "bind_invite 含 daily_limit 分支" "$(BODY bind_invite daily_limit)"
 chk "bind_invite 含单日计数逻辑" "$(BODY bind_invite v_daily_binds)"
 
+echo " [0039] RPC 信任边界收紧（函数体特征串）"
+chk "grant_honey 含打卡事实验证（meal_entries）" "$(BODY grant_honey meal_entries)"
+chk "grant_honey 含里程碑实算（_lb_compute_streak）" "$(BODY grant_honey _lb_compute_streak)"
+chk "grant_photo_bonus 仅 streak7 + 7 连续事实验证" "$(BODY grant_photo_bonus v_key_date)"
+chk "consume_ai_quota 限额库内化（v_limit := 3）" "$(BODY consume_ai_quota 'v_limit := 3')"
+chk "consume_photo_quota 限额库内化（v_limit integer := 3）" "$(BODY consume_photo_quota 'v_limit integer := 3')"
+chk "redeem_honey 含 advisory 锁" "$(BODY redeem_honey pg_advisory_xact_lock)"
+chk "settle_invite_checkin 首次插入判定（v_first）" "$(BODY settle_invite_checkin v_first)"
+chk "llm_gate 含 scan 用途闸门（quota_not_claimed）" "$(BODY llm_gate quota_not_claimed)"
+
+echo " [0040] 榜单缓存版（函数体特征串）"
+chk "leaderboard 含缓存表读写" "$(BODY leaderboard leaderboard_cache)"
+chk "leaderboard 含防击穿 advisory 锁" "$(BODY leaderboard pg_advisory_xact_lock)"
+chk "leaderboard 含 400 天窗口" "$(BODY leaderboard 'v_window_from')"
+chk "honey_balance 含过期语义 FILTER" "$(BODY honey_balance expires_at)"
+
 # ─────────────────────────────────────────────────────────────────────
 echo
 echo "── D) 探针③ 可利用性 A：权限矩阵比对（设计应有 vs 库内实际）──"
@@ -309,6 +339,7 @@ WITH want(tbl, sel, ins, upd, del) AS (VALUES
   ('invite_attempts', false, false, false, false),
   ('ai_quota_claims', false, false, false, false),
   ('app_users',       false, false, false, false),
+  ('leaderboard_cache',false, false, false, false),
   ('schema_migrations',false, false, false, false)
 ),
 live AS (
@@ -353,7 +384,7 @@ WITH want(tbl) AS (VALUES
   ('recipes'),('invite_links'),('entitlements'),('ai_usage'),('badges'),
   ('honey_ledger'),('quota_bonus'),('payment_orders'),('payment_products'),
   ('redeem_codes'),('invite_attempts'),('ai_quota_claims'),('app_users'),
-  ('schema_migrations')
+  ('leaderboard_cache'),('schema_migrations')
 ),
 live AS (
   SELECT c.relname AS tbl,
@@ -474,6 +505,25 @@ BEGIN
       INSERT INTO _probe VALUES (3, 'ai_usage UPDATE count=0', 'DENIED 42501：无表权限或 RLS 拦截（细分见 D 段）');
     WHEN others THEN
       INSERT INTO _probe VALUES (3, 'ai_usage UPDATE count=0', 'BLOCKED: ' || SQLERRM);
+  END;
+
+  -- 探针 4（0039）：无打卡事实却调 grant_honey 领积分 —— 必须返回 false
+  --   （0039 前该调用会返回 true：只验金额白名单，不验业务事实）
+  BEGIN
+    EXECUTE 'SET ROLE authenticated';
+    PERFORM set_config('app.user_id', v_uid, false);
+    EXECUTE 'SELECT public.grant_honey($1, to_char(now() AT TIME ZONE ''Asia/Shanghai'',''YYYY-MM-DD''), $2)::int'
+      INTO v_rows USING 'checkin_meal', 5;
+    IF v_rows = 1 THEN
+      INSERT INTO _probe VALUES (4, 'grant_honey 无事实领分', 'ALLOWED 越权：返回 true（0039 事实验证未生效）');
+    ELSE
+      INSERT INTO _probe VALUES (4, 'grant_honey 无事实领分', 'DENIED 安全：返回 false（事实验证生效）');
+    END IF;
+  EXCEPTION
+    WHEN insufficient_privilege THEN
+      INSERT INTO _probe VALUES (4, 'grant_honey 无事实领分', 'DENIED 42501：无 EXECUTE 权限');
+    WHEN others THEN
+      INSERT INTO _probe VALUES (4, 'grant_honey 无事实领分', 'BLOCKED: ' || SQLERRM);
   END;
 
   EXECUTE 'RESET ROLE';

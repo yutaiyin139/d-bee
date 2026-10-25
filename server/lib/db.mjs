@@ -116,3 +116,43 @@ export function postgrestClaims(ownerId, extra = {}) {
     ...extra,
   }
 }
+
+/**
+ * 以「注入了某用户身份、但**保持连接角色不变**（dbee_app）」的方式执行一段查询。
+ *
+ * 与 asUser() 的关键区别：**不 SET LOCAL ROLE authenticated**。
+ * 用途：调用「仅授 dbee_app、SECURITY DEFINER、内部靠 auth.uid() 取身份」的
+ *   网关专用函数（如 0039 的 llm_gate）。这类函数 authenticated 无 EXECUTE 权限，
+ *   若走 asUser() 切到 authenticated 反而会 permission denied；而 SECURITY DEFINER
+ *   以 owner(postgres) 运行，函数体内的 auth.uid() 读的是本事务注入的 app.user_id GUC，
+ *   与调用者角色无关 —— 故只需注入 GUC，无需（也不能）切角色。
+ *
+ * 三级回退里只注入 ① app.user_id（llm_gate 用 auth.uid() 读它即可）；
+ * 为稳妥同时注入 ②③，与 asUser 覆盖同样的回退面。
+ *
+ * @param {import('pg').Pool} pool  必须是 dbee_app 连接池（持有目标函数 EXECUTE）
+ * @param {string} ownerId
+ * @param {(q: (sql:string, params?:unknown[]) => Promise<pg.QueryResult>) => Promise<T>} fn
+ * @returns {Promise<T>}
+ */
+export async function withUserIdentity(pool, ownerId, fn) {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query('SELECT set_config($1, $2, true)', ['app.user_id', String(ownerId)])
+    await client.query('SELECT set_config($1, $2, true)', ['request.jwt.claim.sub', String(ownerId)])
+    await client.query('SELECT set_config($1, $2, true)', [
+      'request.jwt.claims',
+      JSON.stringify({ sub: String(ownerId), role: 'authenticated' }),
+    ])
+    // 刻意不 SET ROLE：保持 dbee_app，才能通过 llm_gate 的 EXECUTE 权限校验。
+    const result = await fn((sql, params) => client.query(sql, params))
+    await client.query('COMMIT')
+    return result
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
+}

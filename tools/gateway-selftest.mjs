@@ -763,6 +763,139 @@ section('HTTP · 演示账户发码→验码→注册全链（固定码，不发
   await demoPool.end?.()
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// Part 4 · LLM 服务端权益闸门（0039 P0-C）+ 包装识别兜底 + 输入限制
+// ══════════════════════════════════════════════════════════════════════
+// 主 app 的 mockPool 没有 connect()，withUserIdentity 会抛错 → 闸门 fail-open，
+// 拒绝/兜底路径测不到。这里用可编程 gatePool（llm_gate 返回什么由测试指定）
+// 起第二个 app，逐分支覆盖。上游仍指向不可达地址：
+//   502 = 闸门放行后走到了 fetch；402 = 被闸门/兜底限额拦下。
+
+/** 可编程 pool：connect() 返回 mock client，llm_gate 的应答由 mode 决定 */
+function createGatePool() {
+  const state = { mode: { allowed: true, pro: false }, calls: 0 }
+  return {
+    state,
+    setMode(m) { state.mode = m },
+    async connect() {
+      if (state.mode === 'connect-throw') throw new Error('pool down')
+      return {
+        async query(sql) {
+          if (/llm_gate/.test(sql)) {
+            state.calls += 1
+            if (state.mode === 'query-throw') throw new Error('db error')
+            if (state.mode === 'malformed') return { rows: [{ g: 'not-an-object' }] }
+            return { rows: [{ g: state.mode }] }
+          }
+          return { rows: [], rowCount: 0 } // BEGIN / set_config / COMMIT
+        },
+        release() {},
+      }
+    },
+    async query() { return { rows: [], rowCount: 0 } },
+    async end() {},
+  }
+}
+
+section('HTTP · LLM 闸门（llm_gate）与包装识别兜底')
+{
+  const gatePool = createGatePool()
+  const gateCfg = { ...cfg, llmGateEnabled: true, llmPackageDailyCap: 2, llmVisionModel: 'deepseek-flash' }
+  const gateApp = createApp({ cfg: gateCfg, pool: gatePool, gatewayPool: gatePool, logger, enableDbProxy: false, enableLlm: true })
+  await new Promise((r) => gateApp.server.listen(0, '127.0.0.1', r))
+  const G = `http://127.0.0.1:${gateApp.server.address().port}/.cloud/llm/chat/completions`
+  const GH = { authorization: `Bearer ${signJwt({ sub: '7777777777777777777', role: 'authenticated' }, JWT_SECRET, 600)}` }
+  const visionMsg = {
+    role: 'user',
+    content: [
+      { type: 'text', text: '这是什么食物' },
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' } },
+    ],
+  }
+  const gpost = (body, headers = GH) => post(G, body, headers)
+
+  // ① 闸门放行（有 claim 可核销）→ 走到上游 → 502（上游不可达）
+  gatePool.setMode({ allowed: true, pro: false, claim_id: 1 })
+  let r = await gpost({ messages: [visionMsg] })
+  assert('视觉+闸门放行 → 502（到达上游）', r.status === 502, `实际 ${r.status}`)
+  assert('llm_gate 被调用', gatePool.state.calls === 1, `calls=${gatePool.state.calls}`)
+
+  // ② 文本请求 → 不调闸门（llmGate 内部 wantVision=false 直接放行）
+  const callsBefore = gatePool.state.calls
+  r = await gpost({ messages: [{ role: 'user', content: '你好' }] })
+  assert('文本请求 → 502（到达上游）', r.status === 502, `实际 ${r.status}`)
+  assert('文本请求不触发 llm_gate', gatePool.state.calls === callsBefore)
+
+  // ③ Pro 放行 → 502
+  gatePool.setMode({ allowed: true, pro: true })
+  r = await gpost({ messages: [visionMsg] })
+  assert('视觉+Pro → 502（到达上游）', r.status === 502, `实际 ${r.status}`)
+
+  // ④ 无 claim（quota_not_claimed）→ 落入包装识别兜底：cap=2，前 2 次放行
+  gatePool.setMode({ allowed: false, pro: false, reason: 'quota_not_claimed' })
+  r = await gpost({ messages: [visionMsg] })
+  assert('兜底第 1/2 次 → 502（放行到上游）', r.status === 502, `实际 ${r.status}`)
+  r = await gpost({ messages: [visionMsg] })
+  assert('兜底第 2/2 次 → 502（放行到上游）', r.status === 502, `实际 ${r.status}`)
+  r = await gpost({ messages: [visionMsg] })
+  assert('兜底第 3 次 → 402 quota_exhausted', r.status === 402, `实际 ${r.status}`)
+  const j = await r.json()
+  assert('402 错误码 = quota_exhausted', j.error?.code === 'quota_exhausted', JSON.stringify(j.error))
+  assert('402 带 retry-after', Number(r.headers.get('retry-after')) > 0)
+
+  // ⑤ 非兜底类拒绝（unauthenticated）→ 直接 402，不走兜底
+  gatePool.setMode({ allowed: false, pro: false, reason: 'unauthenticated' })
+  r = await gpost({ messages: [visionMsg] })
+  assert('闸门硬拒绝 → 402（不兜底）', r.status === 402, `实际 ${r.status}`)
+
+  // ⑥ fail-open：查询异常 / 返回畸形 → 放行（502），不阻塞业务
+  gatePool.setMode('query-throw')
+  r = await gpost({ messages: [visionMsg] })
+  assert('llm_gate 查询异常 → fail-open 502', r.status === 502, `实际 ${r.status}`)
+  gatePool.setMode('malformed')
+  r = await gpost({ messages: [visionMsg] })
+  assert('llm_gate 返回畸形 → fail-open 502', r.status === 502, `实际 ${r.status}`)
+  gatePool.setMode('connect-throw')
+  r = await gpost({ messages: [visionMsg] })
+  assert('pool.connect 异常 → fail-open 502', r.status === 502, `实际 ${r.status}`)
+
+  // ⑦ 输入限制：图片数超限（默认 4）→ 400 input_too_large，且不消耗兜底额度
+  gatePool.setMode({ allowed: false, pro: false, reason: 'quota_not_claimed' })
+  const manyImages = {
+    role: 'user',
+    content: Array.from({ length: 5 }, () => ({ type: 'image_url', image_url: { url: 'data:image/png;base64,AA==' } })),
+  }
+  r = await gpost({ messages: [manyImages] })
+  assert('5 张图 → 400 input_too_large', r.status === 400, `实际 ${r.status}`)
+  assert('400 错误码正确', (await r.json()).error?.code === 'input_too_large')
+
+  // ⑧ 消息条数超限（默认 60）→ 400
+  const manyMsgs = Array.from({ length: 61 }, (_, i) => ({ role: 'user', content: `m${i}` }))
+  r = await gpost({ messages: manyMsgs })
+  assert('61 条消息 → 400', r.status === 400, `实际 ${r.status}`)
+
+  gateApp.server.close()
+  gateApp.otp.close()
+  await gatePool.end?.()
+}
+
+section('HTTP · LLM 闸门开关（llmGateEnabled=false 时不查库）')
+{
+  const gatePool = createGatePool()
+  gatePool.setMode({ allowed: false, pro: false, reason: 'quota_not_claimed' })
+  const offApp = createApp({ cfg: { ...cfg, llmGateEnabled: false }, pool: gatePool, gatewayPool: gatePool, logger, enableDbProxy: false, enableLlm: true })
+  await new Promise((r) => offApp.server.listen(0, '127.0.0.1', r))
+  const r = await post(
+    `http://127.0.0.1:${offApp.server.address().port}/.cloud/llm/chat/completions`,
+    { messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AA==' } }] }] },
+    { authorization: `Bearer ${signJwt({ sub: '8888888888888888888', role: 'authenticated' }, JWT_SECRET, 600)}` },
+  )
+  assert('闸门关闭 → 视觉请求直达上游 502', r.status === 502, `实际 ${r.status}`)
+  assert('闸门关闭时不调 llm_gate', gatePool.state.calls === 0)
+  offApp.server.close()
+  offApp.otp.close()
+}
+
 // ── 收尾 ──────────────────────────────────────────────────────────────
 server.close()
 otp.close()

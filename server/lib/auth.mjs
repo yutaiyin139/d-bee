@@ -136,7 +136,7 @@ export function createAuthHandlers(deps) {
       const ident = resolveIdent({ phone: body.phone_number, email: body.email })
       if (ident.error) return cloudError(res, 400, ident.error, 'invalid_request')
 
-      const ip = clientIp(req)
+      const ip = clientIp(req, { trustedProxies: cfg.trustedProxyIps })
       // 频率限制①：同一标识 60 秒只能发一次（与前端倒计时一致）
       const rlIdent = deps.limiterIdent.hit(`${ident.kind}:${ident.value}`)
       if (!rlIdent.ok) {

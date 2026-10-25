@@ -49,6 +49,13 @@ load_secret() {
 load_secret JWT_SECRET      || SEC[JWT_SECRET]="$(rand_hex 32)"
 load_secret IDENT_PEPPER    || SEC[IDENT_PEPPER]="$(rand_hex 32)"
 load_secret SMS_MASTER_CODE || SEC[SMS_MASTER_CODE]="$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9' | head -c 24)"
+# LLM 密钥：环境变量优先（命令行显式传入），否则用 .secrets.local 里的持久值
+# （由 deploy/fetch-llm-secrets.py 从生产 env 回收）。两者皆无 → 留空，
+# 网关仍能启动，只是 /.cloud/llm 返回 503。
+load_secret LLM_API_KEY        || true
+load_secret LLM_VISION_API_KEY || true
+LLM_API_KEY="${LLM_API_KEY:-${SEC[LLM_API_KEY]:-}}"
+LLM_VISION_API_KEY="${LLM_VISION_API_KEY:-${SEC[LLM_VISION_API_KEY]:-}}"
 
 # 两个密钥绝不能相同（config.validate 会拦；这里提前生成期就保证）
 if [ "${SEC[JWT_SECRET]}" = "${SEC[IDENT_PEPPER]}" ]; then
@@ -89,6 +96,7 @@ sed \
   -e "s#__SMS_MASTER_CODE__#${SEC[SMS_MASTER_CODE]}#g" \
   -e "s#__DBEE_APP_PWD__#${DBEE_APP_PWD}#g" \
   -e "s#__LLM_API_KEY__#${LLM_API_KEY:-}#g" \
+  -e "s#__LLM_VISION_API_KEY__#${LLM_VISION_API_KEY:-}#g" \
   "$GW_DIR/gateway.env.template" > "$RENDERED_ENV"
 # WB_PUBLISHABLE_KEY 从前端源码提取（与 deploy.sh 同款做法，避免抄错静默失效）
 WBKEY="$(grep -oE 'wbpk_[A-Za-z0-9_]+' "$DIR/src/cloudConfig.ts" 2>/dev/null | head -1 || true)"
@@ -97,7 +105,8 @@ if grep -q '__' "$RENDERED_ENV"; then
   echo "!! env 仍有未替换占位符："; grep -n '__' "$RENDERED_ENV"; exit 1
 fi
 [ -n "$WBKEY" ] && echo "    publishableKey 已注入" || echo "    (未提取到 publishableKey，将跳过 access-key 校验)"
-[ -n "${LLM_API_KEY:-}" ] && echo "    LLM_API_KEY 已配置（LLM 代理启用）" || echo "    LLM_API_KEY 留空 → /.cloud/llm 返回 503（拍照识别/AI 教练暂不可用）"
+[ -n "${LLM_API_KEY:-}" ] && echo "    LLM_API_KEY 已配置（文本模型启用）" || echo "    LLM_API_KEY 留空 → 文本 LLM 503"
+[ -n "${LLM_VISION_API_KEY:-}" ] && echo "    LLM_VISION_API_KEY 已配置（视觉 provider 启用）" || echo "    !! LLM_VISION_API_KEY 留空 → 视觉回落到文本 provider（拍照识别会 4xx，生产不可接受）"
 
 echo "==> 2/4 上传部署资产"
 "$PY" "$SSH_PY" putfile "$RENDERED_ENV"                  /tmp/gateway.env.in

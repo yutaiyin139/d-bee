@@ -24,7 +24,43 @@
  *  3. 峰值时段（北京时间工作日 9–12、14–18 点）价格 2 倍。成本测算见计划文档 §A3。
  */
 import { verifyJwt, bearerFrom } from './jwt.mjs'
-import { cloudError } from './http.mjs'
+import { cloudError, RateLimiter } from './http.mjs'
+import { withUserIdentity } from './db.mjs'
+
+/**
+ * 服务端权益闸门（0039 P0-C 修复）。
+ *
+ * 为什么必须做：此前额度校验完全依赖客户端自觉调用 consume_photo_quota —— 
+ * 直接 POST /.cloud/llm/chat/completions（带合法 JWT）即可无限用 AI，
+ * 白烧 API key 费用。现在**视觉请求**由数据库 llm_gate 原子核销一条当日
+ * 额度占用记录（ai_quota_claims）：正常前端流程「先 consume 后调 LLM」必然
+ * 有 claim 可核销；绕过前端的裸调没有 claim → 落入包装识别日配额（有界）→ 拒绝。
+ *
+ * 文本请求不做业务额度（产品口径：只有拍照识别计费），由 usageLimiter 兜底。
+ *
+ * fail 策略：数据库查询本身异常 → **放行**（记 error 日志）。理由：llm_gate 依赖的
+ *   连接池与主数据面同生共死，它挂了业务本来就不可用；此时拒绝视觉请求只会把
+ *   「数据库抖动」误报成「额度用尽」，诱导用户付费升级（与 P0-2 fail-closed
+ *   原则的 UI 语义冲突）。滥用面已由 usageLimiter(200/日) + 全局限流封顶。
+ */
+async function llmGate(deps, ownerId, wantVision) {
+  const { cfg, logger, pool } = deps
+  if (!pool || cfg.llmGateEnabled === false) return { allowed: true, gate: 'disabled' }
+  if (!wantVision) return { allowed: true, gate: 'text' }
+  try {
+    const gate = await withUserIdentity(pool, ownerId, async (q) => {
+      const r = await q('SELECT public.llm_gate($1) AS g', ['scan'])
+      return r.rows[0]?.g ?? null
+    })
+    if (gate && typeof gate === 'object') return { ...gate, gate: 'db' }
+    // 函数缺失/返回异常 → 视为放行（迁移未跑时不致全网关瘫痪），但记日志
+    logger.error('[llm] llm_gate 返回异常形状，按放行处理（请确认 0039 已应用）')
+    return { allowed: true, gate: 'db-anomaly' }
+  } catch (err) {
+    logger.error(`[llm] llm_gate 查询失败，按放行处理: ${err?.message || err}`)
+    return { allowed: true, gate: 'db-error' }
+  }
+}
 
 /**
  * 模型目录。id 必须是上游真实可用的模型 ID。
@@ -78,6 +114,35 @@ function hasImageContent(messages) {
   )
 }
 
+/** 统计图片块数量（输入限制用） */
+function countImages(messages) {
+  if (!Array.isArray(messages)) return 0
+  let n = 0
+  for (const m of messages) {
+    if (Array.isArray(m?.content)) {
+      for (const p of m.content) if (p?.type === 'image_url') n += 1
+    }
+  }
+  return n
+}
+
+/**
+ * 输入规模校验（0039 性能/安全修复）。
+ * 此前 body 无任何规模约束：客户端可以塞 60 条超长消息 + 几十张 base64 大图，
+ * 单请求即可烧掉大量 token 费用并长时间占用流式连接。
+ * @returns {string|null} 违规原因；null = 通过
+ */
+function validateInput(messages, est, cfg) {
+  const maxMessages = cfg.llmMaxMessages || 60
+  const maxImages = cfg.llmMaxImages || 4
+  const maxTokens = cfg.llmMaxInputTokens || 32000
+  if (messages.length > maxMessages) return `消息条数超限（>${maxMessages}）`
+  const images = countImages(messages)
+  if (images > maxImages) return `图片数量超限（${images}>${maxImages}）`
+  if (est.input > maxTokens) return `输入规模超限（≈${est.input}>${maxTokens} token）`
+  return null
+}
+
 /**
  * 粗略 token 估算，仅用于日志与成本观测（不用于计费）。
  * 中文按 1 字 ≈ 1 token，其他按 4 字符 ≈ 1 token；每图固定 384（DeepSeek 官方上限）。
@@ -106,6 +171,18 @@ function estimateText(s) {
 export function createLlmHandlers(deps) {
   const { cfg, logger } = deps
   const catalog = buildModelCatalog(cfg)
+  // 在途流式请求计数（进程级）。SSE 长连接同时占用网关内存与上游并发额度，
+  // 超过上限直接 429，避免慢请求堆积成雪崩。
+  let activeStreams = 0
+  // 包装识别（条码兜底，无 claim）的独立日限额器。
+  // 不能复用 usageLimiter：RateLimiter.hit() 不支持按 key 覆盖 limit，
+  // 混用会让兜底通道错误地继承 200/日的宽松上限。
+  // key 带 dayKey()（北京时间日历日），午夜自然换新桶。
+  const fallbackLimiter = new RateLimiter({
+    windowMs: 86_400_000,
+    limit: Math.max(1, cfg.llmPackageDailyCap || 8),
+    maxKeys: 200_000,
+  })
 
   function authOwnerId(req) {
     const token = bearerFrom(req.headers)
@@ -165,6 +242,21 @@ export function createLlmHandlers(deps) {
         if (!upstreamApiKey) return llmError(res, 503, '视觉模型未配置（缺 API Key）', 'vision_not_configured')
       }
 
+      // ── 输入规模限制（0039：防超长 prompt / 多图烧钱）──────────
+      const est = estimateTokens(body.messages)
+      const violation = validateInput(body.messages, est, cfg)
+      if (violation) {
+        logger.warn(`[llm] owner=${ownerId} 输入超限被拒: ${violation}`)
+        return llmError(res, 400, violation, 'input_too_large', 'invalid_request_error')
+      }
+
+      // ── 并发流上限（进程级）──────────────────────────────
+      const maxStreams = cfg.llmMaxConcurrentStreams || 32
+      if (activeStreams >= maxStreams) {
+        res.setHeader('retry-after', '5')
+        return llmError(res, 429, 'AI 服务当前繁忙，请稍后重试', 'too_many_streams')
+      }
+
       // ── 每日用量兜底闸 ──────────────────────────────────
       // 数据库里另有 consume_ai_quota 做业务额度（3 免费 + 2 兑换）；
       // 这里是防「绕过业务额度直接打网关」的第二层，阈值宽松（默认 200/日）。
@@ -176,7 +268,34 @@ export function createLlmHandlers(deps) {
         }
       }
 
-      const est = estimateTokens(body.messages)
+      // ── 服务端权益闸门（0039 P0-C 修复的核心）───────────────
+      // 视觉请求必须持有当日额度占用（前端 consume_photo_quota 产生），
+      // 由 llm_gate 在数据库内**原子核销**一条 claim；文本请求放行
+      // （产品口径：仅拍照识别计额度）。
+      const gate = await llmGate(deps, ownerId, wantVision)
+      if (!gate.allowed) {
+        // 兜底通道：包装识别（条码兜底）按产品口径**不占拍照额度**、无 claim
+        // （见 src/pages/LogSheet.tsx 的 handlePackagePhoto）。若不放行，
+        // 免费用户扫包装会被闸门 402 —— 功能回归。
+        // 滥用面由「视觉兜底日限额」封顶：即便伪造无 claim 的视觉请求，
+        // 每人每天也最多 llmPackageDailyCap（默认 8）张，成本可控。
+        if (gate.reason === 'quota_not_claimed') {
+          const cap = Math.max(1, cfg.llmPackageDailyCap || 8)
+          const f = fallbackLimiter.hit(`llm_fallback:${ownerId}:${dayKey()}`)
+          if (f.ok) {
+            logger.info(`[llm] owner=${ownerId} 包装识别兜底放行（无 claim，剩 ${f.remaining}/${cap}）`)
+          } else {
+            res.setHeader('retry-after', String(f.retryAfterSec))
+            logger.warn(`[llm] owner=${ownerId} 包装识别兜底日限额已用尽（${cap}/日）`)
+            return llmError(res, 402, '今日识别次数已用完，请明日再试或升级 Pro', 'quota_exhausted')
+          }
+        } else {
+          logger.warn(`[llm] owner=${ownerId} 闸门拒绝 reason=${gate.reason || 'unknown'}`)
+          return llmError(res, 402, '今日识别额度已用尽，请明日再试或升级 Pro', 'quota_exhausted')
+        }
+      }
+
+      activeStreams += 1
       const upstreamBody = {
         model,
         messages: body.messages,
@@ -207,6 +326,10 @@ export function createLlmHandlers(deps) {
       // 客户端断开（用户切页/取消）→ 立刻取消上游请求，否则白烧 token
       const onClose = () => ac.abort()
       res.on('close', onClose)
+      // 🔴 修复：旧代码 fetch 用的是 AbortSignal.timeout()，与 ac 完全独立 ——
+      //    客户端断连后上游继续跑到超时，token 照烧。现在用 any() 合并：
+      //    任一触发（断连 / 超时）都取消上游。
+      const upstreamSignal = AbortSignal.any([ac.signal, AbortSignal.timeout(cfg.llmTimeoutMs)])
 
       let upstreamRes
       try {
@@ -218,10 +341,11 @@ export function createLlmHandlers(deps) {
             authorization: `Bearer ${upstreamApiKey}`,
           },
           body: JSON.stringify(upstreamBody),
-          signal: AbortSignal.timeout(cfg.llmTimeoutMs),
+          signal: upstreamSignal,
         })
       } catch (err) {
         res.off('close', onClose)
+        activeStreams -= 1
         if (ac.signal.aborted) return // 客户端已走，无需回应
         logger.error(`[llm] 上游请求失败: ${err?.message || err}`)
         return llmError(res, 502, 'AI 服务暂不可用，请稍后重试', 'llm_upstream_error')
@@ -229,6 +353,7 @@ export function createLlmHandlers(deps) {
 
       if (!upstreamRes.ok) {
         res.off('close', onClose)
+        activeStreams -= 1
         const text = await upstreamRes.text().catch(() => '')
         // 把上游的真实原因记进日志（DeepSeek 的 400 常含「模型不支持图片」这类关键信息）
         logger.error(`[llm] 上游 ${upstreamRes.status} model=${model}: ${text.slice(0, 500)}`)
@@ -286,6 +411,7 @@ export function createLlmHandlers(deps) {
         if (!ac.signal.aborted) logger.error(`[llm] 流式读取中断: ${err?.message || err}`)
       } finally {
         res.off('close', onClose)
+        activeStreams -= 1
       }
 
       // SDK 硬性要求：流必须以 [DONE] 结束，否则抛 gateway_stream_interrupted

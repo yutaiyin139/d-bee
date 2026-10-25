@@ -61,15 +61,38 @@ export function cloudError(res, status, message, code) {
   sendJson(res, status, payload)
 }
 
-/** 取客户端 IP。生产走 nginx，须信任 X-Forwarded-For 的**最后一跳之前的第一个**。 */
-export function clientIp(req, trustProxy = true) {
-  if (trustProxy) {
+/**
+ * 判断直连对端是否是「可信代理」（🔴 0039 XFF 信任边界修复）。
+ *
+ * 此前无条件信任 X-Forwarded-For 的**第一段** —— 而 XFF 是客户端可自由伪造的
+ * 请求头：攻击者带上 `X-Forwarded-For: 8.8.8.8` 即可让按 IP 的限流/风控
+ * 每次换一个「身份」，OTP 同 IP 每小时 20 次、API 每分钟限流全部形同虚设。
+ *
+ * 正确口径：**只有直连对端本身可信（回环 = 同机 nginx，或显式配置的代理 IP）时，
+ * 才解析它转发来的 XFF**；对端不可信 → 它的 XFF 是伪造，直接用 socket 地址。
+ * 生产拓扑是 nginx(同机) → 127.0.0.1:8080，直连对端恒为回环，语义不变。
+ */
+export function isTrustedPeer(remoteAddress, trustedSet) {
+  if (!remoteAddress) return false
+  const ip = remoteAddress.replace(/^::ffff:/, '')
+  if (ip === '127.0.0.1' || ip === '::1') return true
+  return trustedSet ? trustedSet.has(ip) : false
+}
+
+/**
+ * 取客户端 IP。
+ * @param {object} req
+ * @param {{trustedProxies?: Set<string>}} [opts] 可信代理 IP 集合（来自 cfg.trustedProxyIps）
+ */
+export function clientIp(req, opts = {}) {
+  const remote = req.socket?.remoteAddress
+  if (isTrustedPeer(remote, opts.trustedProxies)) {
     const xff = req.headers['x-forwarded-for']
     if (typeof xff === 'string' && xff.trim()) return xff.split(',')[0].trim()
     const real = req.headers['x-real-ip']
     if (typeof real === 'string' && real.trim()) return real.trim()
   }
-  return req.socket?.remoteAddress || 'unknown'
+  return remote || 'unknown'
 }
 
 /**

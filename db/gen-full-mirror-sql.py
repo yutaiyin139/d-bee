@@ -278,6 +278,15 @@ TABLE_GRANTS = {
 }
 
 # 函数 EXECUTE 授权（authenticated 角色）
+# 🔴 刻意不在清单内（0039 口径，与 tools/migration-audit.sh D 段一致）：
+#   · llm_gate(text)         —— 仅授 dbee_app（LLM 网关专用权益闸门），authenticated 不可执行
+#   · settle_apple_purchase 等 0037 IAP 函数 —— 仅授 dbee_app
+#   · release_ai_quota / _lb_compute_streak / _lb_mask_name —— 废弃或内部辅助
+# 🔴 0039/0040 的新对象（llm_gate、honey_balance()、leaderboard_cache 表）不入本基线镜像：
+#   本镜像 = functions.sql（2026-10-20 云库 0030 快照）的忠实重建，属「建库基线」；
+#   0039/0040 是叠加在基线之上的【增量迁移】，各自带 CREATE OR REPLACE / 建表 + GRANT，
+#   由 psql 顺序执行（见各迁移头部执行方式）。故此处不重复登记，避免与增量迁移双重授权。
+#   leaderboard() 仍在清单内——0040 用 CREATE OR REPLACE 覆盖其函数体，签名与授权不变。
 FUNCTION_GRANTS = [
     'badge_stats', 'bind_invite', 'consume_ai_quota', 'consume_photo_quota',
     'count_invitees', 'create_payment_order', 'expire_stale_honey', 'get_inviter_by_code',

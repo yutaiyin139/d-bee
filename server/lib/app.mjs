@@ -6,7 +6,7 @@
  * index.mjs 只负责读 env、连真库、listen。
  */
 import http from 'node:http'
-import { Router, RateLimiter, sendJson, cloudError, pgrstError, readJson } from './http.mjs'
+import { Router, RateLimiter, sendJson, cloudError, pgrstError, readJson, clientIp } from './http.mjs'
 import { OtpStore } from './otp.mjs'
 import { createAuthHandlers } from './auth.mjs'
 import { createDbProxy } from './dbproxy.mjs'
@@ -48,7 +48,8 @@ export function createApp(deps) {
 
   const auth = createAuthHandlers({ cfg, pool: gatewayPool, otp, logger, limiterIdent, limiterIp })
   const dbProxy = deps.enableDbProxy === false ? null : createDbProxy({ cfg, logger })
-  const llm = deps.enableLlm === false ? null : createLlmHandlers({ cfg, logger, usageLimiter })
+  // LLM 用业务池（dbee_app）：0039 的 llm_gate 只授 dbee_app EXECUTE。
+  const llm = deps.enableLlm === false ? null : createLlmHandlers({ cfg, logger, usageLimiter, pool })
   // IAP 走业务池（dbee_app）：核销函数 0037 只授 dbee_app EXECUTE。
   // 未配 APPLE_BUNDLE_ID 时端点自返 503（见 iap.mjs notConfigured），无需条件装配。
   const iap = deps.enableIap === false ? null : createIapHandlers({
@@ -148,10 +149,8 @@ export function createApp(deps) {
     // Apple webhook 也豁免：来源是 Apple 的少数固定 IP，按 IP 限流会把
     // 同一批订阅续订通知误伤成 429，而 Apple 对非 200 会重试 → 重试风暴。
     // 该端点的安全不靠限流，靠 JWS x5c 证书链验签（见 iap.mjs）。
-    const ipKey =
-      String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim() ||
-      req.socket?.remoteAddress ||
-      'unknown'
+    // 🔴 0039：XFF 只在直连对端可信时解析（clientIp 内部判定），防伪造 XFF 绕限流。
+    const ipKey = clientIp(req, { trustedProxies: cfg.trustedProxyIps })
     const rateLimitExempt =
       pathname === '/.cloud/healthz' ||
       pathname === '/.cloud/payment/apple/notifications'
