@@ -123,6 +123,18 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
   已在 FAILED 文件写明建议——若确认，应把备份目标改为自托管 `dbee` 的 `pg_dump`（本地 cron + 异地拉取），
   否则该自动化只能持续以「工具未注册」失败。**需用户人工决策，自动化不自作主张改通道。**
 
+### 2026-10-26 03:31（第 13 次）
+- 结果：**成功（通道恢复）**。产出 `db/backups/2026-10-26.json`（114005 字节，历史最大，覆盖 10-25 断档）。
+- 行数：profiles=17 / meal_entries=123 / water_logs=38 / exercise_logs=24 / weight_logs=3 /
+  **entitlements=1（首次非零！）** / ai_usage=22（合计 228 行）。
+- 校验：`.build-backup.cjs` + `.verify-backup.cjs` PASS——JSON.parse OK、7 表 row_counts 与
+  tables.<表>.length 及另发 count(*) 的线上实时行数三方一致。
+- 清理：cutoff=2026-09-26，现存最早 2026-10-13，无过期文件（目录 10 份每日 json）。
+- 观察：**entitlements 首条记录落地**（id=1，owner 2109869577155379200，plan=pro，source=honey，
+  pro_until=2026-10-26 19:38——付费转化的第一条真实数据）；与上次备份间隔 2 日（10-25 工具未注册失败，
+  本快照已覆盖 10-25 全部增量，无需补差）。10-25 当日新增：晚餐 4 条 + 夜宵砂糖橘 3 条 + 饮水 2 +
+  散步 1 + ai_usage 2 + pro 权益 1。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。
