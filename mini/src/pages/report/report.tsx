@@ -4,22 +4,22 @@
  * 差异点（小程序端能力诚实降级）：
  *  - 图表：主工程用内联 SVG，小程序端经 Charts.tsx 序列化为 data URI 的 Image
  *  - 日历热力：用 View 网格实现（无需 SVG）
- *  - 会员门控：小程序端暂无支付，区间切换不做 Pro 门控（免费用户可看近 7 天，30 天给提示）
+ *  - 会员门控：Pro / 终身（兑换码或积分兑换获得）可看 30 天，免费 7 天（对齐主工程 pro 门控）
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { View, Text, Button, Input } from '@tarojs/components'
-import Taro from '@tarojs/taro'
+import Taro, { useDidShow } from '@tarojs/taro'
 import { BarChart, LineChart, RatioBar, C_HONEY, C_BLUE, C_GREEN } from '../../components/Charts'
 import { IconLock, IconWeight } from '../../components/Icons'
 import { generateReportInsight } from '../../lib/ai'
-import { getProfile, listMealsBetween, listWeightLogsAsc, saveWeight, type MealEntry, type Profile, type WeightLog } from '../../lib/api'
+import { getProfile, listMealsBetween, listWeightLogsAsc, saveWeight, getEntitlement, type MealEntry, type Profile, type WeightLog } from '../../lib/api'
 import { shiftDate, todayKey, monthGrid } from '../../lib/nutrition'
 import {
   computeReport, forecastGoal, kcalByDate, monthCompareFromMeals, weightTrendTone,
   dayTone, type DayTone, type Forecast, type MonthCompare, type ReportData,
 } from '../../lib/report'
 import { WEIGHT_LIMIT, checkNumber, clampNumeric, rangeText, sanitizeNumeric } from '../../lib/validate'
-import { FREE_REPORT_DAYS, PRO_REPORT_DAYS } from '@dbee/shared'
+import { FREE_REPORT_DAYS, PRO_REPORT_DAYS, isPro } from '@dbee/shared'
 import './report.scss'
 
 const RANGES = [
@@ -69,6 +69,14 @@ export default function ReportPage() {
   })
 
   const today = todayKey()
+
+  // 会员状态：Pro / 终身可看 30 天报告（对齐主工程 ReportScreen 的 pro 门控）
+  const [pro, setPro] = useState(false)
+  const refreshEnt = useCallback(async () => {
+    try { setPro(isPro(await getEntitlement())) } catch { /* ignore */ }
+  }, [])
+  useEffect(() => { void refreshEnt() }, [refreshEnt])
+  useDidShow(() => { void refreshEnt() })
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -132,7 +140,7 @@ export default function ReportPage() {
   const calCells = useMemo(() => monthGrid(calCursor.y, calCursor.m), [calCursor])
 
   function pickRange(next: number) {
-    if (next > FREE_REPORT_DAYS) {
+    if (!pro && next > FREE_REPORT_DAYS) {
       Taro.showToast({ title: `免费版可看近 ${FREE_REPORT_DAYS} 天，${PRO_REPORT_DAYS} 天是 Pro 功能`, icon: 'none' })
       return
     }
@@ -160,6 +168,12 @@ export default function ReportPage() {
   }
 
   async function handleInsight() {
+    // 长文本 AI 复盘（本期解读）为会员专属（对齐主工程 ReportScreen 的 pro 门控）
+    if (!pro) {
+      Taro.showToast({ title: '「本期解读」是 Pro 会员专属功能', icon: 'none' })
+      Taro.navigateTo({ url: '/pages/paywall/paywall' })
+      return
+    }
     setInsightBusy(true)
     setInsightError('')
     try {

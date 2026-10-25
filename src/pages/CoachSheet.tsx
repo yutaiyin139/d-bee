@@ -5,6 +5,7 @@ import { errText } from '../lib/errmsg'
 import { getProfile } from '../lib/api'
 import { AiConsent } from '../components/AiConsent'
 import { grantAiConsent, hasAiConsent } from '../lib/aiConsent'
+import { usePlan } from '../state/plan'
 import type { Profile } from '../types'
 
 interface CoachSheetProps {
@@ -22,6 +23,7 @@ const COACH_RATE_LIMIT = 3
 const COACH_RATE_WINDOW_MS = 60 * 1000
 
 export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
+  const { pro } = usePlan()
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: 'coach',
@@ -50,8 +52,9 @@ export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, busy])
 
-  /** 检查是否触发限流；返回剩余秒数，0 表示可放行 */
+  /** 检查是否触发限流；返回剩余秒数，0 表示可放行。Pro 会员不限流。 */
   function rateLimitBlocked(): number {
+    if (pro) return 0
     const now = Date.now()
     const windowStart = now - COACH_RATE_WINDOW_MS
     const recent = askTimesRef.current.filter((t) => t > windowStart)

@@ -129,10 +129,11 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
       if (res.ok) {
         setRedeemMsg('兑换成功！')
         setBalance(await getHoneyBalance())
-        // pro1Day / pro30Day 兑换成功后立即刷新全局权益（entitlement）：
-        // 否则 usePlan.pro 仍是旧值，付费功能（生成解读 / 超 3 餐拍照）会继续按免费
-        // 处理，必须重启 App 才生效。ai1Scan 只发拍照额度、不动会员档位，无需刷新权益。
-        if (kind !== 'ai1Scan') void refresh()
+        // 兑换成功后立即刷新全局权益与额度：
+        //   · pro1Day/pro30Day → 刷新 entitlement，否则 usePlan.pro 仍是旧值，付费功能
+        //     （生成解读 / 超 3 餐拍照）继续按免费处理，须重启 App 才生效。
+        //   · ai1Scan → 刷新 photoQuota，否则 aiRemaining（剩余拍照次数）显示滞后。
+        void refresh()
       } else {
         // 余额已提前校验，此处 false 对 ai1Scan 而言基本是「已达每日兑换上限」，
         // 给精准提示而非笼统报错；其余档位透传具体原因。

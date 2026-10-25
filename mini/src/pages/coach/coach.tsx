@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { View, Text, Input, Button, ScrollView } from '@tarojs/components'
-import Taro, { useLoad } from '@tarojs/taro'
+import Taro, { useLoad, useDidShow } from '@tarojs/taro'
 import { askCoach, type CoachContext } from '../../lib/ai'
 import { COACH_QUESTION_RULE } from '../../lib/validate'
 import { errText } from '../../lib/errmsg'
 import {
-  getProfile, listMealsByDate, listWaterByDate, listExerciseByDate,
+  getProfile, listMealsByDate, listWaterByDate, listExerciseByDate, getEntitlement,
   type MealEntry, type WaterLog, type ExerciseLog, type Profile,
 } from '../../lib/api'
 import { todayKey, waterTargetMl } from '../../lib/nutrition'
+import { isPro } from '@dbee/shared'
 import { AiConsent } from '../../components/AiConsent'
 import { grantAiConsent, hasAiConsent } from '../../lib/aiConsent'
 import './coach.scss'
@@ -32,6 +33,7 @@ export default function Coach() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [pro, setPro] = useState(false)
   const [aiConsentOpen, setAiConsentOpen] = useState(false)
   const [pendingQuestion, setPendingQuestion] = useState('')
   const ctxRef = useRef<CoachContext>({
@@ -50,6 +52,13 @@ export default function Coach() {
 
   useLoad(() => {
     void buildCtx()
+    // 拉取会员状态：Pro 不限流（与主工程 CoachSheet 对齐）
+    void getEntitlement().then((ent) => setPro(isPro(ent))).catch(() => {})
+  })
+
+  // 页面返回（如从邀请中心兑换 Pro 后）时刷新会员状态，避免限流误判
+  useDidShow(() => {
+    void getEntitlement().then((ent) => setPro(isPro(ent))).catch(() => {})
   })
 
   /** 拉取今日实时数据，构造教练上下文（对齐主工程 Dashboard 的 coachCtx） */
@@ -84,6 +93,7 @@ export default function Coach() {
   }
 
   function rateLimitBlocked(): number {
+    if (pro) return 0
     const now = Date.now()
     const windowStart = now - COACH_RATE_WINDOW_MS
     const recent = askTimesRef.current.filter((t) => t > windowStart)

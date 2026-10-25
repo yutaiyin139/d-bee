@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { View, Text, Button, Input } from '@tarojs/components'
-import { useLoad } from '@tarojs/taro'
+import { useLoad, useDidShow } from '@tarojs/taro'
 import {
   todayKey,
   getProfile,
@@ -39,6 +39,11 @@ export default function Checkin() {
 
   useLoad(async () => {
     await refresh()
+  })
+
+  // 页面返回（如从邀请中心兑换额度后）时重新拉取额度，避免剩余次数显示滞后
+  useDidShow(() => {
+    void refresh()
   })
 
   async function refresh() {

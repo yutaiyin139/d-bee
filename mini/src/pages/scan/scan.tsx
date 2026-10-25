@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { View, Text, Button, Image, Input } from '@tarojs/components'
-import Taro, { useLoad } from '@tarojs/taro'
+import Taro, { useLoad, useDidShow } from '@tarojs/taro'
 import { recognizeFoodFromImage, type DetectedFood } from '../../lib/ai'
 import {
   todayKey,
@@ -43,6 +43,12 @@ export default function Scan() {
   useLoad(async () => {
     try { setProfile(await getProfile()) } catch { /* ignore */ }
     await refreshStats()
+  })
+
+  // 从邀请中心兑换 Pro / 兑换拍照额度后返回本页时，onShow 会再次触发，
+  // 重新拉取权益与额度（useLoad 只在首次加载触发，页面返回不重拉 → 兑换后不生效）。
+  useDidShow(() => {
+    void refreshStats()
   })
 
   async function refreshStats() {
