@@ -1012,6 +1012,44 @@ select {
   color: #8a5a16;
 }
 
+/* 冲突横幅闪烁高亮：点保存撞上「覆盖/追加」待决时，滚动定位 + 重放此动画，消除「保存没反应」观感 */
+.notice-pulse {
+  animation: noticePulse 0.9s ease 2;
+  border: 1px solid transparent;
+}
+
+@keyframes noticePulse {
+  0% {
+    border-color: transparent;
+    box-shadow: 0 0 0 0 rgba(230, 162, 60, 0);
+    transform: scale(1);
+  }
+  35% {
+    border-color: var(--honey-dark);
+    box-shadow: 0 0 0 4px rgba(230, 162, 60, 0.28);
+    transform: scale(1.012);
+  }
+  100% {
+    border-color: transparent;
+    box-shadow: 0 0 0 0 rgba(230, 162, 60, 0);
+    transform: scale(1);
+  }
+}
+
+/* 保存按钮待决态：冲突未选择时改为警示描边样式，暗示「还需先做选择」 */
+.btn.btn-hint {
+  background: #fdf0e0;
+  color: #8a5a16;
+  border: 1.5px dashed var(--honey-dark);
+  font-size: 15px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notice-pulse {
+    animation: none;
+  }
+}
+
 .empty-state {
   text-align: center;
   padding: 40px 20px;

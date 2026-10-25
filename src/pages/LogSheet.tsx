@@ -362,6 +362,11 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   const [dupHint, setDupHint] = useState<string | null>(null)
   // 覆盖确认：识别结果自动保存前，发现该餐次当天已有记录时弹确认
   const [overrideConfirm, setOverrideConfirm] = useState<{ open: boolean; count: number }>({ open: false, count: 0 })
+  // 冲突横幅定位：DOM 引用 + 闪烁计数（计数变化经 key 重建横幅节点，重放高亮动画）
+  const overrideBannerRef = useRef<HTMLDivElement | null>(null)
+  const [overridePulse, setOverridePulse] = useState(0)
+  // 保存按钮就近提示：点保存撞上冲突待决时短暂提示「请先选择覆盖或追加」
+  const [saveNudge, setSaveNudge] = useState<string | null>(null)
 
   const [text, setText] = useState('')
   const [preview, setPreview] = useState<string | null>(null)
@@ -708,7 +713,13 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   /** 手动保存：草稿未保存时走 settleDraft（统一覆盖/追加判断） */
   function handleSave() {
     if (items.length === 0) return
-    void settleDraft(items)
+    // 冲突横幅已打开 → 不再静默重查库，直接把用户带回横幅选择「覆盖 / 追加」
+    if (overrideConfirm.open) {
+      nudgeSave('请先选择「覆盖」或「追加」，再保存')
+      focusOverrideBanner()
+      return
+    }
+    void settleDraft(items, 'manual')
   }
 
   // 防重入：settleDraft 异步查库 + 落库，避免识别自动保存与关闭兜底并发触发两次
@@ -717,9 +728,10 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   /**
    * 把草稿落库到当前餐次（核心：识别成功即自动保存，消除「漏点保存导致额度白扣」）：
    *  - 该餐当天无记录 → 直接自动保存并关闭刷新
-   *  - 该餐已有记录 → 弹「覆盖 / 追加 / 取消」
+   *  - 该餐已有记录 → 弹「覆盖 / 追加 / 取消」；由保存按钮触发时自动滚动定位到横幅，
+   *    避免横幅在滚动容器顶部静默重渲染、用户误以为「保存没反应」
    */
-  async function settleDraft(list: DraftItem[]) {
+  async function settleDraft(list: DraftItem[], source: 'auto' | 'manual' | 'close' = 'auto') {
     if (settlingRef.current) return
     settlingRef.current = true
     setOverrideConfirm({ open: false, count: 0 })
@@ -745,10 +757,37 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
         return
       }
       setOverrideConfirm({ open: true, count: sameMealCount })
+      if (source === 'manual') {
+        // 用户点了保存却撞上冲突：滚动定位到横幅 + 闪烁高亮 + 就近文案提示
+        nudgeSave('该餐已有记录，请选择「覆盖」或「追加」后再保存')
+        focusOverrideBanner()
+      } else {
+        // 识别自动保存触发的冲突：仅闪烁一次，不强制滚动，避免打断用户当前浏览位置
+        setOverridePulse((n) => n + 1)
+      }
     } finally {
       settlingRef.current = false
     }
   }
+
+  /** 把冲突横幅带回视野：平滑滚动定位 + 重放闪烁高亮（等横幅渲染完成后再滚动） */
+  function focusOverrideBanner() {
+    setOverridePulse((n) => n + 1)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        overrideBannerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+    })
+  }
+
+  // 保存按钮就近提示：点保存却需先决冲突时，短暂提示「请先选择覆盖或追加」
+  const saveNudgeTimer = useRef<number | null>(null)
+  function nudgeSave(msg: string) {
+    setSaveNudge(msg)
+    if (saveNudgeTimer.current) window.clearTimeout(saveNudgeTimer.current)
+    saveNudgeTimer.current = window.setTimeout(() => setSaveNudge(null), 2600)
+  }
+  useEffect(() => () => { if (saveNudgeTimer.current) window.clearTimeout(saveNudgeTimer.current) }, [])
 
   /** 识别成功后：结果进草稿区，自动走 settleDraft */
   function autoSaveRecognized(drafts: DraftItem[]) {
@@ -759,6 +798,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   /** 覆盖：删除当天该餐次旧记录，再保存新草稿 */
   async function confirmOverride() {
     setOverrideConfirm({ open: false, count: 0 })
+    setSaveNudge(null)
     setSaving(true)
     setError('')
     try {
@@ -777,6 +817,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   /** 追加：直接保存新草稿，保留该餐次已有记录 */
   async function confirmAppend() {
     setOverrideConfirm({ open: false, count: 0 })
+    setSaveNudge(null)
     setSaving(true)
     setError('')
     try {
@@ -792,6 +833,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   /** 取消覆盖/追加：保留草稿，用户可手动编辑后点保存 */
   function cancelOverride() {
     setOverrideConfirm({ open: false, count: 0 })
+    setSaveNudge(null)
   }
 
   /** 关闭兜底：有未保存草稿时，无记录自动保存、有记录弹确认；否则直接关闭 */
@@ -884,7 +926,12 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
           )}
 
           {overrideConfirm.open && (
-            <div className="notice warn" style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+            <div
+              key={`override-${overridePulse}`}
+              ref={overrideBannerRef}
+              className="notice warn notice-pulse"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}
+            >
               <span style={{ flex: 1 }}>
                 {MEAL_LABELS[meal]}今天已记录 {overrideConfirm.count} 项。本次识别结果要「覆盖」还是「追加」到这一餐？
               </span>
@@ -1229,8 +1276,21 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
                   )}
                 </span>
               </div>
-              <button className="btn" style={{ marginBottom: 12 }} disabled={saving} onClick={handleSave}>
-                {saving ? <span className="spinner" /> : `保存到${MEAL_LABELS[meal]}`}
+              {saveNudge && (
+                <div className="notice warn" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <span style={{ flex: 1 }}>{saveNudge}</span>
+                  <button className="btn-text" style={{ fontSize: 13, flexShrink: 0 }} onClick={focusOverrideBanner}>
+                    去选择
+                  </button>
+                </div>
+              )}
+              <button
+                className={`btn${overrideConfirm.open ? ' btn-hint' : ''}`}
+                style={{ marginBottom: 12 }}
+                disabled={saving}
+                onClick={handleSave}
+              >
+                {saving ? <span className="spinner" /> : overrideConfirm.open ? `请先选择「覆盖」或「追加」` : `保存到${MEAL_LABELS[meal]}`}
               </button>
               <MealCheckup items={items} />
               <div className="card card-tight">
