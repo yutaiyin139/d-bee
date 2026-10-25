@@ -44,7 +44,7 @@ interface InviteCenterProps {
 }
 
 export function InviteCenter({ onClose }: InviteCenterProps) {
-  const { lifetime } = usePlan()
+  const { lifetime, refresh } = usePlan()
   const [code, setCode] = useState('')
   const [balance, setBalance] = useState<HoneyBalance | null>(null)
   const [ledger, setLedger] = useState<HoneyLedger[]>([])
@@ -129,6 +129,10 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
       if (res.ok) {
         setRedeemMsg('兑换成功！')
         setBalance(await getHoneyBalance())
+        // pro1Day / pro30Day 兑换成功后立即刷新全局权益（entitlement）：
+        // 否则 usePlan.pro 仍是旧值，付费功能（生成解读 / 超 3 餐拍照）会继续按免费
+        // 处理，必须重启 App 才生效。ai1Scan 只发拍照额度、不动会员档位，无需刷新权益。
+        if (kind !== 'ai1Scan') void refresh()
       } else {
         // 余额已提前校验，此处 false 对 ai1Scan 而言基本是「已达每日兑换上限」，
         // 给精准提示而非笼统报错；其余档位透传具体原因。
