@@ -1,6 +1,6 @@
 # D-Bee（自律蜜蜂）· 项目长期记忆（精简版；细节见当日日志与 docs/）
 
-## 进度快照（2026-10-24 上午，🎉 **V1.7.0 三端统一 + Apple IAP 验签落地 Node 网关 + P0 越权漏洞修复闭环**；泳道 A 自托管全栈已上线 E2E 全绿；iOS 编译卡点已定性=Mac 环境问题非代码缺陷）
+## 进度快照（2026-10-25 上午，🎉 **V1.7.0 三端统一 + Apple IAP 验签落地 + P0 越权修复闭环 + iOS 首次真机编译打通**；泳道 A 自托管全栈 E2E 全绿；Bundle ID 定案 `cn.dbeehealth.app`；视觉识别切双 provider 路由（文本 DeepSeek + 视觉 Qwen））
 
 - **✅ 6 项决策已拍板（10-22 晚）**：①主体=**有限责任公司** ②未提交产物**入库**（已提交 `b6b1725`+`43a5729`
   并推 origin/main）③LLM=**DeepSeek** ④短信=**先日志+万能码**（`SMS_PROVIDER=log`/`SMS_MASTER_CODE=888888`）
@@ -59,19 +59,26 @@
 - **🔴 DeepSeek 接线三个坑（查官方文档实测，会直接导致功能不可用）**：
   ① **`deepseek-chat` / `deepseek-reasoner` 已于 2026-07-24 退役**，官方只剩 `deepseek-flash` 与
   `deepseek-v4-pro` 两个 ID，**配置写旧 ID 会调用失败**；② **只有 flash 系列接受图片**，传图给其他模型返
-  `400 "This model does not support image"`（旧名 `deepseek-v4-flash-vision-exp` 已退役并入 flash）
-  → **文本与视觉统一用 `deepseek-flash`**；③ 网关 `/llm/models` **必须给 flash 标 `supportsImages: true`**，
-  否则前端 `pickModel(needVision)` 的 `filter(m=>m.supportsImages===true)` 选空 → 拍照识别报错
-  （另需过滤 `disabled!==true && enabled!==false`，见 `ai.ts:31`）。
+  `400 "This model does not support image"`（旧名 `deepseek-v4-flash-vision-exp` 已退役并入 flash；
+  **`deepseek-v4-pro` 明确 "Vision: Not supported"**）→ **文本统一用 `deepseek-flash`**；③ 网关 `/llm/models`
+  **必须给 flash 标 `supportsImages: true`**，否则前端 `pickModel(needVision)` 的 `filter(m=>m.supportsImages===true)`
+  选空 → 拍照识别报错（另需过滤 `disabled!==true && enabled!==false`，见 `ai.ts:31`）。
   **模型 ID 必须放服务端配置**（`.env` 的 `LLM_MODEL_VISION`）而非散落代码，DeepSeek 改名时只改一行。
+- **🎯 视觉识别已切双 provider 路由（10-24 落地，`63c0a71`+`cc96b65`）**：DeepSeek 视觉偏弱（官方定位
+  「快速便宜、细粒度图像细节偏弱」），无法胜任「一盘菜精准识别多道菜」→ **文本（AI 教练/周报/计划）走
+  DeepSeek `deepseek-flash`，图片识别走阿里云百炼 `qwen3.8-max-0902`**（视觉最强、用户 Workspace 有权限；
+  旧名 qwen-vl-max/qwen3-vl-plus 无权限 403）。`server/lib/config.mjs` 新增 `LLM_VISION_BASE_URL/KEY/MODEL` +
+  `LLM_IMAGE_DETAIL=high`（未配时回落原 llm 键，向后兼容）；`llm.mjs` wantVision 时走独立视觉 provider。
+  线上已部署验证：文本返回 `deepseek-flash`、视觉返回 `qwen3.8-max-0902` 均 200。**服务端切模型对三端即时生效，
+  无需重发 web/重打包**。⚠️ 部署线上 env 用「本地生成完整 env → SFTP 上传覆盖」最可靠（sed 对含特殊字符的
+  key 转义易错、旧文件 ^M 回车符会漏匹配）。
 - **版本/git**：Web V1.7.0 已发布（http://150.158.51.106/ ）；**V1.7.0 三端版本已统一**（`54ea9a0`，Android release
-  签名配置 + iOS 发布梳理）。最新 commit **`2985b51`**（docs(ios): App Store 发布完整准备清单——政策门槛核查 +
-  代码侧缺口 + 关键路径，22:00），前序 `3ea96da`（iOS 执行手册终版）、`47ff2ae`（storekit internalID 数字串格式）、
-  `dfa3191`（付费墙接商店价格 + 本地 StoreKit 测试环境）、`fa4342d`（今晚 Mac 编译手册）、
-  `9e1db43`（**Apple 验签落地 Node 网关 + 0037 核销迁移**）、`8da895f`（探针误报修复 + 每日备份体系）、
-  `e1795f4`（consumeAiQuota fail-closed P0-2）、`9cfa31c`（0034 迁移追踪表 + 0035 安全加固 + 0036 云库同步）、
-  `ef12b95`（迁移全面审计查出 P0 越权漏洞）。**工作区未提交**：`docs/今晚-Mac编译执行手册.md`（修改）、
-  `docs/各端逻辑梳理与iOS编译卡点排查-2026-10-24.md`（新增）+ 记忆文件（无源码变更）。
+  签名配置 + iOS 发布梳理）。最新 commit **`1bc27a7`**（feat(payment): Android/Web 微信支付 adapter，付费墙三端行为一致，
+  10-24 20:41）。10-24 单日新增 11 commit（`89f6300..1bc27a7`）：**iOS 首次真机编译打通 + 三处 iOS 独有 bug 修复**
+  （`89f6300` 补 NSPhotoLibraryAddUsageDescription / `dc1ea17` resultType 大小写 / `9165e75` 手册+排查报告）、
+  **Bundle ID 定案 `cn.dbeehealth.app`**（`23b295d` 三端统一 + `41a7351`/`ffd7203` 待办清单+定案记录）、
+  **`d3fb8cc` postinstall 自动构建 shared**、**视觉双 provider**（`cc96b65` 质量优化 + `63c0a71` 切 Qwen）、
+  `916d5fb`（壳层 UI 对齐品牌色）、`1bc27a7`（微信支付 adapter）。**工作区未提交**：仅记忆文件（无源码变更）。
 - **🎉 泳道 A 部署闭环（10-23 10:08）**：服务器 `150.158.51.106` 上 **nginx（自托管配置）+ dbee-gateway
   （Node 22.22.2 / :8080）+ PostgREST（16.4 / :3001）+ PG 17.11（dbee 库，0033 已应用）** 四件套均 active；
   `/.cloud/**` 全部走本机自托管栈，**不再依赖 WorkBuddy 云端**。8 项 E2E 全 ✓（含正常 OTP 路径：
@@ -133,19 +140,18 @@
   已一比一复刻主工程 11 页（含 coach / paywall / legal），tsc 0 错。受限能力（支付/健康步数/分享卡 canvas）
   诚实引导占位。`file:` 依赖路径：主工程 `file:packages/shared`、mini `file:../packages/shared`；
   mini tsconfig 需 `moduleResolution:"bundler"`（否则 `@dbee/shared/cloud-sdk` 子路径导不出）。
-- **原生 App**：Capacitor 8.5.3；阶段 0 解耦 ✅、Android 全过 ✅；iOS 待 Mac mini 首次构建（origin-proxy /
-  health / iap 三自研 Swift 插件 + @capacitor/camera 均未编译；Mac 第一件事 `npm install && npx cap sync ios`）。
+- **原生 App**：Capacitor 8.5.3；阶段 0 解耦 ✅、Android 全过 ✅；**iOS 首次编译已打通（10-24）并真机测试**
+  （origin-proxy / health / iap 三自研 Swift 插件 + @capacitor/camera 均编译通过；三处 iOS 独有 bug 已修，见「iOS 首次真机编译」条）。
   iOS 侧 StoreKit 测试环境已备好（`DbeeProducts.storekit` + 共享 scheme），`cap sync ios` 已重跑 5 插件识别正常。
-- **iOS 首次编译卡点已定性（10-24，非代码缺陷）**：三端代码正确、Xcode 27.1 兼容已核实（UIScene 已采纳、
-  swift-tools 5.9、platforms .iOS(.v15) 均过）；**唯一阻塞 = Mac mini 环境状态**，5 卡点已定位：
-  ①shared 未构建（`dist/` gitignore，Mac clone 后需先 `cd packages/shared && npm run build`）②CapApp-SPM 未解析
-  （`File→Packages→Reset Package Caches` + `Resolve Package Versions`，首次联网拉 capacitor-swift-pm 8.5.3）
-  ③`xcrun invalid active developer path`（真因：Xcode 27.1 真实安装位置非 `/Applications/Xcode.app`，升级后改名/残留空壳
-  → `mdfind` 找真实路径 + `sudo xcode-select -s <真实路径>/Contents/Developer`，**非重装非装 pod**；「CocoaPods is not
-  installed」是连带误报，纯 SPM 仓库从无 Podfile）④Xcode 27.1 兼容✅ ⑤StoreKit `Product.products(for:)` 传数组字面量
-  （大概率可编译，报错改 `Set(...)`）。建议（未实施）：根 package.json 加 `postinstall` 自动构建 shared 一劳永逸。
-  正确顺序：修 xcrun → build shared → `npm ci` → `npm run native:ios` → Xcode 首次 Cmd+R（联网拉 SPM）→ 真机回归。
-  详见 `docs/各端逻辑梳理与iOS编译卡点排查-2026-10-24.md`。
+- **iOS 首次真机编译已打通（10-24）**：根因层层拨开——「权限问题」→「xcrun 路径损坏」→ **真凶 = Xcode 只装了 3.8G 坏壳**
+  （完整 Xcode 27 应 ≥15GB，且 `usr/bin/xcrun` 根本不存在；`xcodebuild -version` 报「Xcode 27.1」实为 CLT 随版本号对齐，
+  极具迷惑性）。**判定铁律：验证 Xcode 完好 = `du -sh` ≥15GB + `xcodebuild -showsdks` 列出 iphoneos**，不能只看 `-version`。
+  删坏壳重装完整 Xcode 后：`cap sync ios`（5 插件）→ SPM 解析 → 编译通过 → 真机功能测试。**三处 iOS 独有 bug 已修**：
+  ①拍照无反应（缺 `NSPhotoLibraryAddUsageDescription`，前端 catch 静默吞 reject 掩盖了根因）②拍照后没进识别
+  （`resultType:'DataUrl'` 大小写 bug，iOS 精确匹配失败回退 base64，Android 因 toUpperCase 幸免）③Bundle ID 冲突
+  （`com.dbee.app` 被抢注 → 定案 `cn.dbeehealth.app`）。**postinstall 自动构建 shared 已落地**（`d3fb8cc`），
+  新 clone 一条 `npm ci` 直达，不再漏步。剩余：ASC 配 3 商品 + IAP capability + webhook → iOS 提审。
+  正确顺序（已固化入手册）：`npm ci`（含 postinstall 构建 shared）→ `npm run build`（vite）→ `npx cap sync ios` → Cmd+R。
 - **健康数据源**：只读系统健康平台，不直连手环；HealthKit 读授权不可探测→插件只报 completed，连接真源=
   云端 health_connected，重连入口常驻「我的>健康数据源」；`effectiveBurnKcal=max(burnKcal,activityKcal)` 不叠加。
   华为 Health Kit 阶段 3a 已落地（前端同构 + DbeeHealth 插件 Android 反射骨架，零 HMS 编译依赖）；
@@ -177,14 +183,12 @@
   ⚠️ iOS 的 `WechatOpenSDK` 来自第三方 SPM 镜像 `github.com/yanyin1986/WechatOpenSDK`（腾讯官方不经
   SPM 分发），上线前须核对 tag 或改官方 XCFramework。小程序 appid `wxb7c7122de9c3ab1f` 需做主体变更
   （趁未上线赶紧变，变更会使老用户 openid 失效需重新关联）。
-- **下一步（泳道 A 已闭环 ✅，Apple 验签已落地 ✅，首件是 Mac mini 编译 iOS + 提审）**：
+- **下一步（泳道 A 已闭环 ✅，Apple 验签已落地 ✅，iOS 首次真机编译已打通 ✅（10-24），首件是 ASC 配商品 + iOS 提审）**：
   ~~①服务器前置修复~~ ✅ ~~②部署 Node 网关~~ ✅ ~~③deploy-postgrest.sh~~ ✅ ~~④A4 切 nginx + 8 项回归~~ ✅
   ~~⑥Apple 验签落地网关 + 0037 核销~~ ✅（10-23 `9e1db43`，iap-selftest 41 断言全绿）；
-  ⑤**A5 Mac mini 首次构建 iOS**（三插件从未编译，首次必修编译错；`cap sync` 撞 safe-delete 守卫先 `mv` 出目录；
-  **卡点已定性（10-24）= 环境问题非代码，首步 `xcode-select -s` 修 xcrun developer path，详见「原生 App」条**；
-  本地 StoreKit 测试环境已就绪：`DbeeProducts.storekit` 3 商品 + 共享 scheme，免 ASC 建商品即可测
-  getProducts/purchase/restore 客户端链路）→ **ASC 配 3 商品（`dbee_pro_monthly`/`yearly`/`dbee_lifetime`）+
-  开 IAP capability + 填收款 + App Store Server Notifications V2 webhook 配指向网关 → iOS 提审**；
+  ⑤**A5 Mac mini 首次构建 iOS** ✅（10-24 已编译通过并真机测试，见「原生 App」条；三处 iOS 独有 bug 已修）→
+  **ASC 配 3 商品（`dbee_pro_monthly`/`yearly`/`dbee_lifetime`）+ 开 IAP capability + 填收款 +
+  App Store Server Notifications V2 webhook 配指向网关 → iOS 提审**；
   ⑦域名过户个人→企业 + ICP 备案主体变更（**用户已在走企业变更**；⚠️ 先查本省管局是否允许个人→企业直接变更，
   不允许须注销重备且**期间域名停解析**→ **A4 已做完且 IP 直连验证通过（http://150.158.51.106/ 首页 200）**，
   故可随时注销不停业务；**备案期不可加解析**，工信部短信核验 **24h 内必做**）；
@@ -196,8 +200,6 @@
   ⑯**可选安全加固**：PG `listen_addresses` 收回回环 / 腾讯云安全组关 5432 入站
   （现状 PG 监听 0.0.0.0，仅靠 pg_hba 白名单兜底，ufw inactive）。
   ⚠️ **老用户迁移三路径待拍板**（推荐 A：判定为开发数据不迁移，小程序与 App 均未上线）。
-  ⚠️ **遗留技术债**：`server/lib/llm.mjs:44` 硬编码 `supportsImages:true`，但 DeepSeek 无 vision 能力
-  → 一旦配上 `LLM_API_KEY`，拍照识别会坏（当前 key 留空返回 503，不阻塞部署）。
 - **待拍板（原 6 项已全部落定，剩余不阻塞开发）**：①**是否申请 ICP 经营许可证 = 是否现在背 3 人社保**
   （已建议**方案 A：暂不办，先 iOS IAP 验证付费**，等有付费数据再决定）；②Apple 账号先用**个人**上架抢时间
   还是等企业账号（建议**先申请 D-U-N-S 占位**、个人账号推进构建，证下来再决定切不切主体）；

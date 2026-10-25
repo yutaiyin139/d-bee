@@ -111,6 +111,18 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
   遂**不重复构建**，改为对本会话独立查询的实时行数做第三方交叉校验（PASS）。
   **后续同日重复触发的处置**：先 `ls` 目录——若当日 json 已存在且校验 PASS，直接复用并汇报，勿重建。
 
+### 2026-10-25 08:57（第 12 次）
+- 结果：**失败**，未产出 `db/backups/2026-10-25.json`（未写空备份、未覆盖 2026-10-24）。
+- 原因：与 10-19/10-20 同一故障面——`mcp__genie-baas__workbuddy_cloudservice_db_exec_sql` 未注册
+  （ToolSearch 精确名 + 3 组关键词均无；DeferExecuteTool 报 not found in deferred tools index）；
+  `workbuddy_cloud_service(inspect)` → `applications: []`、`activated:false`。
+- 已落 `db/backups/FAILED-2026-10-25.md`（时间、SQL 原文、错误串、已排除路径）。
+- 清理：cutoff=2026-09-25，现存最早 2026-10-13，无过期文件（目录 9 份每日 json）。
+- 附加排查：本地无 `psql`、无 `pg` 模块；`.env` 仅有自托管 `DBEE_*`，无云库连接串 → 无第二条合规通道。
+- ⚠️ 新增结构性判断：前端 10-23 已切自托管（泳道 A），云端 Postgres 很可能已非生产写入源。
+  已在 FAILED 文件写明建议——若确认，应把备份目标改为自托管 `dbee` 的 `pg_dump`（本地 cron + 异地拉取），
+  否则该自动化只能持续以「工具未注册」失败。**需用户人工决策，自动化不自作主张改通道。**
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。
