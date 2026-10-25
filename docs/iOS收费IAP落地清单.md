@@ -41,7 +41,7 @@ npx cap sync ios       # 同步 web 资源 + 插件到 iOS 工程
 （这两个插件当前只在 Windows 上写了骨架，从未编译，首次构建大概率要修编译错误。）
 
 ### 第 2 步：App Store Connect 配商品
-1. 登录 App Store Connect → 我的 App → 创建 App（Bundle ID `com.dbee.app`）
+1. 登录 App Store Connect → 我的 App → 创建 App（Bundle ID `cn.dbeehealth.app`，与工程 `capacitor.config.ts` 一致；⚠️ 原 `com.dbee.app` 已被抢注弃用，2026-10-25 更正）
 2. **订阅组 + 商品**：配置 3 个商品，Product ID 必须与代码一致：
    - `dbee_pro_monthly`（自动续期订阅，¥18）
    - `dbee_pro_yearly`（自动续期订阅，¥128）
