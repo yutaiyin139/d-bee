@@ -36,7 +36,7 @@ export interface Product {
 export const PRODUCTS: Product[] = [
   { id: 'proMonthly', plan: 'pro', name: '月订阅', price: 18, months: 1 },
   { id: 'proYearly', plan: 'pro', name: '年订阅', price: 128, months: 12, highlight: true },
-  { id: 'lifetime', plan: 'lifetime', name: '终身买断', price: 328 },
+  { id: 'lifetime', plan: 'lifetime', name: '终身买断', price: 298 },
 ]
 
 /** 是否为「已解锁会员」（pro 未过期 或 lifetime） */

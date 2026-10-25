@@ -11,7 +11,7 @@
 
 **今晚新增能力（相比 19:30 版手册）**：
 
-1. ✅ **本地 StoreKit 测试环境已配好**：`ios/App/DbeeProducts.storekit`（3 商品：月订阅 ¥18 / 年订阅 ¥128 / 终身买断 ¥328，zh_CN 本地化）+ 共享 scheme 已挂引用 → **不需要 App Store Connect 建商品，今晚真机就能测「拉商品→购买→恢复」**。
+1. ✅ **本地 StoreKit 测试环境已配好**：`ios/App/DbeeProducts.storekit`（3 商品：月订阅 ¥18 / 年订阅 ¥128 / 终身买断 ¥298，zh_CN 本地化）+ 共享 scheme 已挂引用 → **不需要 App Store Connect 建商品，今晚真机就能测「拉商品→购买→恢复」**。
 2. ✅ **付费墙接通商店价格**：iOS 打开付费墙时经 `DbeeIap.getProducts` 拉商店本地化价格展示（此前 fetchProducts 没有任何 UI 调用方，插件 getProducts 路径从未被触发）；拉不到时静默回退硬编码价。
 3. ✅ **修了一个类型谎言**：`iosIap.ts fetchProducts` 此前把商店 ID（`dbee_pro_monthly`）直接 `as ProductId`（键是 `proMonthly`），调用方按键索引会全 miss；已建反向映射。
 
@@ -174,7 +174,7 @@ e) 编译成功 → 自动装机启动
 | 4  | 扫条码                   | 摄像头拉起、识别                                                                                                                     | camera+zxing                  |
 | 5  | 健康数据源→连接 Apple Health | 授权弹窗（步数+活动能量）→ 今日数据计入                                                                                                        | dbee-health                   |
 | 6  | 分享                    | 系统分享面板                                                                                                                       | share                         |
-| 7  | **打开付费墙**             | **3 个商品按钮显示 StoreKit 本地化价格**（¥18.00/¥128.00/¥328.00，来自 .storekit 而非硬编码）                                                      | dbee-iap getProducts          |
+| 7  | **打开付费墙**             | **3 个商品按钮显示 StoreKit 本地化价格**（¥18.00/¥128.00/¥298.00，来自 .storekit 而非硬编码）                                                      | dbee-iap getProducts          |
 | 8  | **点商品→购买**            | **拉起本地 StoreKit 支付面板**（显示「环境：Xcode」角标）→ 确认 → 购买成功回调 → **前端提示「支付校验失败，请稍后重试或联系客服」** ← ⚠️ 这是预期！服务端核销不可用（§一-1.2③），fail-closed 设计 | dbee-iap purchase + verify 链路 |
 | 9  | **恢复购买**              | 走到「未找到可恢复的购买记录」或同样校验失败提示；不崩溃                                                                                                 | dbee-iap restore              |
 | 10 | Xcode 底部 console      | 无红色崩溃栈；无 `[originProxy] 未发现插件` 警告                                                                                            | —                             |
@@ -229,7 +229,7 @@ Xcode: Scheme Run→Options 确认挂 DbeeProducts.storekit
        Signing 选 Team → Cmd+R（首次拉 SPM 远程包，慢）
 
 回归: 登录(真短信)→记一餐→拍照→扫码→健康→分享
-IAP:  付费墙显示商店价(¥18.00/¥128.00/¥328.00)
+IAP:  付费墙显示商店价(¥18.00/¥128.00/¥298.00)
       → 购买拉起本地支付面板 → 「支付校验失败」= 预期(服务端未部署)
       Debug→StoreKit→Manage Transactions 可查本地交易
 报错对照 §五；清单外错误发回即时修

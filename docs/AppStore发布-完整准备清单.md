@@ -122,7 +122,7 @@
 3. **IAP 商品 3 个**（ID 必须与代码 `PRODUCT_IDS` 逐字一致）：
    - `dbee_pro_monthly`：自动续期订阅，¥18/月，订阅组 `dbee_pro`
    - `dbee_pro_yearly`：自动续期订阅，¥128/年，**同一订阅组**
-   - `dbee_lifetime`：非消耗型，¥328
+   - `dbee_lifetime`：非消耗型，¥298
    - 每个商品需：中英文名称/描述、审核截图、定价。
 4. **付费应用协议**：接受协议 + 对公银行 + 税务信息 → 状态「有效」是沙盒/生产购买的前提。
 5. **共享密钥**（App-Specific Shared Secret）：生成后配到服务端 `APPLE_SHARED_SECRET`（A1 部署项，见五）。

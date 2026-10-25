@@ -33,7 +33,7 @@ export const SCAN_FEATURE = 'scan'
 /* ── 定价（单位：元；最终以支付平台商品为准）────────────────── */
 export const PRICE_PRO_MONTHLY = 18
 export const PRICE_PRO_YEARLY = 128
-export const PRICE_LIFETIME = 328
+export const PRICE_LIFETIME = 298
 
 /** 订阅档位商品 ID 约定（App 内购 / 微信 / 支付宝共用） */
 export const PRODUCT_IDS = {

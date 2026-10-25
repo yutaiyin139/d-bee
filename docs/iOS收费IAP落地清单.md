@@ -45,7 +45,7 @@ npx cap sync ios       # 同步 web 资源 + 插件到 iOS 工程
 2. **订阅组 + 商品**：配置 3 个商品，Product ID 必须与代码一致：
    - `dbee_pro_monthly`（自动续期订阅，¥18）
    - `dbee_pro_yearly`（自动续期订阅，¥128）
-   - `dbee_lifetime`（非消耗型买断，¥328）
+   - `dbee_lifetime`（非消耗型买断，¥298）
 3. **协议、税务、银行**：填银行收款信息（收款的硬前提，不填无法测真支付）
 
 ### 第 3 步：Xcode 开启 In-App Purchase capability

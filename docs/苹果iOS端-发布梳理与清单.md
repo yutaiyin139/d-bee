@@ -116,7 +116,7 @@ npx cap sync ios
 | 订阅 webhook | ✅ **V2 通知端点已实现**（`/.cloud/payment/apple/notifications`：x5c 证书链钉扎验签，SUBSCRIBED/DID_RENEW 续订核销、REFUND/REVOKE 撤销权益、全量落库留痕）。⚠️ 需在 App Store Connect 配置通知 URL（依赖 HTTPS 域名） |
 | **整体** | ⚠️ 代码链路完整；上线前置 = 0037 执行 + 网关 env 配 APPLE_BUNDLE_ID/SHARED_SECRET + Mac 侧硬步骤 |
 
-**商品 ID**（App Store Connect 必须与代码一致）：`dbee_pro_monthly`(¥18 订阅) / `dbee_pro_yearly`(¥128 订阅) / `dbee_lifetime`(¥328 买断)。
+**商品 ID**（App Store Connect 必须与代码一致）：`dbee_pro_monthly`(¥18 订阅) / `dbee_pro_yearly`(¥128 订阅) / `dbee_lifetime`(¥298 买断)。
 
 ---
 

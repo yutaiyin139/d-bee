@@ -47,7 +47,7 @@ const PRO_ITEMS = [
 const PRICE_TAG: Record<string, string> = {
   proMonthly: '¥18 / 月',
   proYearly: '¥128 / 年（约 ¥10.7/月）',
-  lifetime: '¥328 永久',
+  lifetime: '¥298 永久',
 }
 
 export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void }) {
