@@ -2,6 +2,11 @@
 
 ## 进度快照（2026-10-26 上午，🎉 **V1.7.1 Web 已发布 + 上架前生产安全体检与加固（0039/0040 迁移 + 网关 ③④⑤）落地 + Apple IAP 验签端点已部署上线**；V1.7.0 三端统一 / 泳道 A 自托管闭环 / iOS 首次真机编译打通均已稳固；视觉双 provider（文本 DeepSeek `deepseek-flash` + 视觉 Qwen `qwen3.8-max-0902`）；Bundle ID 定案 `cn.com.dbee.app`）
 
+> 🔴 **明日（10-27）首要任务：七项安全修复**（详见当日日志 2026-10-26.md 末尾「明日修复」）。不依赖资质的先修：
+> ① JWT access TTL 降 30 分钟 + token_version 强制下线（需加 `app_users.token_version` 列）② appleSandbox prod 默认关
+> ③ LLM 视觉 fail-closed + 文本降额 ④ 积分 grant_honey 发分前查真实记录 ⑤ CORS Origin 白名单。
+> 卡资质：⑥ 万能码切真短信（等 10-28 短信签约）。待决策：⑦ 邮箱登录接 provider 还是关入口。
+
 - **✅ 6 项决策已拍板（10-22 晚）**：①主体=**有限责任公司** ②未提交产物**入库**（已提交 `b6b1725`+`43a5729`
   并推 origin/main）③LLM=**DeepSeek** ④短信=**先日志+万能码**（`SMS_PROVIDER=log`/`SMS_MASTER_CODE=888888`）
   ⑤网关语言=**Node**（`server/index.mjs`）⑥Apple 验签=**放 Node 网关**（**弃 `0029` 的 pg_net 方案，不再执行**）。
