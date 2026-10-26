@@ -28,6 +28,42 @@ function readInviteFromUrl(): string {
   }
 }
 
+/** 合法的法律文档 id（与 legal.ts 的 DOCS 对齐） */
+const LEGAL_IDS: readonly DocId[] = ['terms', 'privacy', 'disclaimer']
+
+/**
+ * 从 URL 解析法律文档 id，支持三种写法：
+ *   /legal/privacy      ← 推荐给外部填报（商店/备案/ASC 的隐私政策 URL）
+ *   /?legal=privacy     ← 查询参数兜底
+ *   #/legal/privacy     ← hash 兜底（静态托管无 SPA 回退时也能用）
+ * 依赖 nginx 的 SPA 回退（try_files → index.html），故 /legal/* 深链可直达。
+ */
+function readLegalFromUrl(): DocId | null {
+  try {
+    const { pathname, search, hash } = location
+    const fromPath = /^\/legal\/([a-z]+)\/?$/i.exec(pathname)?.[1]
+    const fromQuery = new URLSearchParams(search).get('legal')
+    const fromHash = /^#\/legal\/([a-z]+)\/?$/i.exec(hash)?.[1]
+    const raw = (fromPath ?? fromQuery ?? fromHash ?? '').toLowerCase()
+    return (LEGAL_IDS as readonly string[]).includes(raw) ? (raw as DocId) : null
+  } catch {
+    return null
+  }
+}
+
+/** 打开/关闭法律文档时同步 URL，保证可刷新、可分享、可被审核员直接访问 */
+function syncLegalUrl(id: DocId | null) {
+  try {
+    const target = id ? `/legal/${id}` : '/'
+    // 已在目标路径则不动（避免污染 history 栈）
+    if (location.pathname === target) return
+    if (id) history.pushState(null, '', target)
+    else history.replaceState(null, '', '/')
+  } catch {
+    /* 原生 WebView 或受限环境下静默降级：URL 不同步但页面仍可用 */
+  }
+}
+
 function maskAccount(user: unknown): string {
   const u = (user ?? {}) as Record<string, unknown>
   const phone = (u.phone ?? u.phone_number) as string | undefined
@@ -46,13 +82,32 @@ function maskAccount(user: unknown): string {
 export default function App() {
   // 法律文档页（用户协议 / 隐私政策 / 免责声明）以整屏浮层呈现，
   // 状态放在最外层，这样登录前（首页）和登录后都能打开同一份文档。
-  const [legal, setLegal] = useState<DocId | null>(null)
+  // 初值从 URL 解析：外部填报的隐私政策链接（/legal/privacy）可直达文档，
+  // 不必先经过首页再点开——商店/备案/ASC 审核员会直接访问该 URL。
+  const [legal, setLegal] = useState<DocId | null>(() => readLegalFromUrl())
+
+  const openLegal = useCallback((id: DocId) => {
+    setLegal(id)
+    syncLegalUrl(id)
+  }, [])
+
+  const closeLegal = useCallback(() => {
+    setLegal(null)
+    syncLegalUrl(null)
+  }, [])
+
+  // 浏览器前进/后退时跟随 URL 切换文档（否则返回键会直接退出深链页）
+  useEffect(() => {
+    const onPop = () => setLegal(readLegalFromUrl())
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
 
   return (
     <PlanProvider>
-      <AppInner onOpenLegal={setLegal} />
-      <PaywallSheet onOpenLegal={setLegal} />
-      {legal && <LegalPage id={legal} onBack={() => setLegal(null)} />}
+      <AppInner onOpenLegal={openLegal} />
+      <PaywallSheet onOpenLegal={openLegal} />
+      {legal && <LegalPage id={legal} onBack={closeLegal} />}
     </PlanProvider>
   )
 }
