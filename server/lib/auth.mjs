@@ -171,6 +171,15 @@ export function createAuthHandlers(deps) {
           masked: ident.masked,
           code,
           signName: cfg.smsSignName,
+          // tencent provider 所需凭据与模板参数（log provider 忽略这两个字段）
+          tencent: {
+            secretId: cfg.smsTencentSecretId,
+            secretKey: cfg.smsTencentSecretKey,
+            sdkAppId: cfg.smsTencentSdkAppId,
+            templateId: cfg.smsTencentTemplateId,
+            region: cfg.smsTencentRegion,
+          },
+          otpTtlMin: Math.max(1, Math.round((cfg.otpTtlSec || 300) / 60)),
           logger,
         })
         if (!sent.ok) return cloudError(res, 502, sent.error || '验证码发送失败', 'send_failed')

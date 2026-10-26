@@ -110,6 +110,17 @@ export function loadConfig(env = process.env) {
     smsProvider: (env.SMS_PROVIDER?.trim() || 'log').toLowerCase(),
     smsMasterCode: env.SMS_MASTER_CODE?.trim() || '',
     smsSignName: env.SMS_SIGN_NAME?.trim() || '自律蜜蜂',
+    // 腾讯云短信凭据（SMS_PROVIDER=tencent 时四项必填；采购签约后在控制台获取）。
+    // 实现零依赖：TC3-HMAC-SHA256 签名用 node:crypto 手写（见 lib/sms.mjs），
+    // 不装 tencentcloud-sdk-nodejs —— 与本工程「只依赖 pg」的审计面原则一致。
+    smsTencentSecretId: env.SMS_TENCENT_SECRET_ID?.trim() || '',
+    smsTencentSecretKey: env.SMS_TENCENT_SECRET_KEY?.trim() || '',
+    // SdkAppId：控制台「应用管理」里的 SDKAppID（纯数字，如 1400xxxxxx）
+    smsTencentSdkAppId: env.SMS_TENCENT_SDKAPPID?.trim() || '',
+    // TemplateId：控制台「正文模板管理」审核通过的模板 ID；
+    // 模板须形如「您的验证码是{1}，{2}分钟内有效」，{1}=code {2}=有效分钟
+    smsTencentTemplateId: env.SMS_TENCENT_TEMPLATE_ID?.trim() || '',
+    smsTencentRegion: env.SMS_TENCENT_REGION?.trim() || 'ap-guangzhou',
     // 审核演示账户（⑦）：仅对指定手机号生效的固定验证码，与全局万能码无关。
     // 用途：App Store 审核员没有真实手机号，用演示号 + 固定码登录。
     // 安全性：与万能码不同，它只解锁这一个号，不影响其他任何账号；
@@ -252,9 +263,23 @@ export function validate(cfg) {
   if (!cfg.dbPassword) {
     problems.push('缺少 DBEE_PWD（数据库密码）')
   }
-  if (cfg.smsProvider !== 'log') {
-    // 非 log 模式意味着要真发短信；当前只实现了 log，其余供应商待采购后再接
-    problems.push(`SMS_PROVIDER=${cfg.smsProvider} 尚未实现，当前只支持 log（日志+万能码）`)
+  if (cfg.smsProvider === 'tencent') {
+    // 采购签约后走真短信。四项凭据缺一即无法发送，启动就拦下（比运行时 502 好排查）
+    const missing = [
+      ['SMS_TENCENT_SECRET_ID', cfg.smsTencentSecretId],
+      ['SMS_TENCENT_SECRET_KEY', cfg.smsTencentSecretKey],
+      ['SMS_TENCENT_SDKAPPID', cfg.smsTencentSdkAppId],
+      ['SMS_TENCENT_TEMPLATE_ID', cfg.smsTencentTemplateId],
+    ].filter(([, v]) => !v).map(([k]) => k)
+    if (missing.length) {
+      problems.push(`SMS_PROVIDER=tencent 缺少凭据：${missing.join('、')}（控制台获取，详见 deploy/gateway/gateway.env.template）`)
+    }
+    // 真短信模式下留着万能码 = 后门；生产必须清空（app.mjs 也只在 log 模式传 masterCode）
+    if (cfg.smsMasterCode) {
+      problems.push('SMS_PROVIDER=tencent 时不应再配 SMS_MASTER_CODE —— 万能码是开发期后门，切真短信必须删除该行')
+    }
+  } else if (cfg.smsProvider !== 'log') {
+    problems.push(`SMS_PROVIDER=${cfg.smsProvider} 尚未实现，当前支持 log（日志+万能码）与 tencent（腾讯云真短信）`)
   }
   if (cfg.smsProvider === 'log' && !cfg.smsMasterCode) {
     problems.push('SMS_PROVIDER=log 时必须配 SMS_MASTER_CODE（万能验证码），否则无人能登录')
