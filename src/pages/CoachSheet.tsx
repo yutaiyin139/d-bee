@@ -16,6 +16,8 @@ interface CoachSheetProps {
 interface Msg {
   role: 'user' | 'coach'
   text: string
+  /** 流式生成中：渲染闪烁光标（「思考链路」可见） */
+  streaming?: boolean
 }
 
 /** 免费用户 AI 问答限流：1 分钟内最多 3 次提问（防刷，Pro 不限） */
@@ -78,11 +80,43 @@ export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
     setMessages((prev) => [...prev, { role: 'user', text: q }])
     askTimesRef.current.push(Date.now())
     setBusy(true)
+    // 立即插入一条「生成中」的教练气泡：随 SSE delta 增量追加，形成可见的
+    // 「思考链路」（打字机效果），而非旧版 spinner 转满全程后一次性蹦出答案。
+    setMessages((prev) => [...prev, { role: 'coach', text: '', streaming: true }])
+    let got = false
     try {
       // AI 问答不计入拍照额度（只有 AI 拍照识别才消耗次数）
-      const answer = await askCoach(q, ctx)
-      setMessages((prev) => [...prev, { role: 'coach', text: answer }])
+      const answer = await askCoach(q, ctx, (delta) => {
+        got = true
+        setMessages((prev) => {
+          const next = prev.slice()
+          const last = next[next.length - 1]
+          if (last && last.role === 'coach' && last.streaming) {
+            next[next.length - 1] = { ...last, text: last.text + delta }
+          }
+          return next
+        })
+      })
+      // 收尾：定稿整段答案、关闭 streaming 光标
+      setMessages((prev) => {
+        const next = prev.slice()
+        const last = next[next.length - 1]
+        if (last && last.role === 'coach' && last.streaming) {
+          next[next.length - 1] = { role: 'coach', text: answer }
+        }
+        return next
+      })
     } catch (e) {
+      // 出错时：若已流式吐出部分文字则保留（标记结束），否则移除空气泡再显示错误
+      setMessages((prev) => {
+        const next = prev.slice()
+        const last = next[next.length - 1]
+        if (last && last.role === 'coach' && last.streaming) {
+          if (got && last.text.trim()) next[next.length - 1] = { role: 'coach', text: last.text }
+          else next.pop()
+        }
+        return next
+      })
       setErr(errText(e, '回答失败，请重试'))
     } finally {
       setBusy(false)
@@ -111,17 +145,28 @@ export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
         </div>
 
         <div className="coach-body" ref={bodyRef}>
-          {messages.map((m, i) => (
-            <div key={i} className={`coach-msg ${m.role === 'user' ? 'mine' : ''}`}>
-              {m.text}
-            </div>
-          ))}
-          {busy && (
-            <div className="coach-msg coach-thinking">
-              <span className="spinner coach-spin" />
-              正在结合你的数据思考…
-            </div>
-          )}
+          {messages.map((m, i) => {
+            // 流式生成中的教练气泡：无文字时显示「思考中」，有文字后打字机渲染 + 光标
+            if (m.streaming) {
+              return (
+                <div key={i} className="coach-msg">
+                  {m.text
+                    ? <>{m.text}<span className="coach-caret" /></>
+                    : (
+                      <span className="coach-thinking">
+                        <span className="spinner coach-spin" />
+                        正在结合你的数据思考…
+                      </span>
+                    )}
+                </div>
+              )
+            }
+            return (
+              <div key={i} className={`coach-msg ${m.role === 'user' ? 'mine' : ''}`}>
+                {m.text}
+              </div>
+            )
+          })}
           {err && <div className="notice err">{err}</div>}
         </div>
 

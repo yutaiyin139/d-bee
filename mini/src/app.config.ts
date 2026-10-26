@@ -19,5 +19,13 @@ export default defineAppConfig({
     navigationBarBackgroundColor: '#fbf8f1',
     navigationBarTitleText: '自律蜜蜂',
     navigationBarTextStyle: 'black'
+  },
+  // wx.request 默认超时 60s：LLM 长回答（教练问答网关侧 llmTimeoutMs=120s）
+  // 会被掐死，与 iOS V1.7.0「问问小蜜」超时同病 → 显式放宽到 180s
+  networkTimeout: {
+    request: 180000,
+    connectSocket: 15000,
+    uploadFile: 180000,
+    downloadFile: 60000
   }
 })

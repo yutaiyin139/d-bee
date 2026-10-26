@@ -19,14 +19,17 @@ public class OriginProxyPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "OriginProxyPlugin"
     public let jsName = "OriginProxy"
     public let pluginMethods: [CAPPluginMethod] = [
-        CAPPluginMethod(name: "request", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "request", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "requestStream", returnType: CAPPluginReturnPromise)
     ]
 
     /// 应用创建时预留的发布域名 —— 必须与 Nginx 里那两行的值保持一致
     private static let defaultOrigin = "https://zilv-mifeng.app.workbuddy.host"
 
     private static let connectTimeout: TimeInterval = 15
-    private static let readTimeout: TimeInterval = 60
+    /// LLM 流式响应可达 120s（网关 llmTimeoutMs），加余量设 180s。
+    /// 旧值 60s 导致「问问小蜜」教练问答必超时（iOS V1.7.0 用户实测复现）。
+    private static let readTimeout: TimeInterval = 180
 
     /// 由原生栈决定的请求头，透传会坏事（原因同 Android 侧注释）
     private static let skippedRequestHeaders: Set<String> = [
@@ -131,5 +134,173 @@ public class OriginProxyPlugin: CAPPlugin, CAPBridgedPlugin {
     private func nonEmpty(_ value: String?, fallback: String) -> String {
         guard let value = value, !value.trimmingCharacters(in: .whitespaces).isEmpty else { return fallback }
         return value
+    }
+
+    // MARK: - requestStream（LLM SSE 流式转发，2026-10-26 新增）
+
+    /// 与 Android 侧 requestStream 行为逐条对齐（见 OriginProxyPlugin.java 同名方法注释）：
+    /// - 2xx + text/event-stream → 先 resolve 头信息，随后逐块 notifyListeners
+    ///   ("originProxyChunk")，正常结束 ("originProxyEnd")，中途异常 ("originProxyError")。
+    /// - 其余 → 整体缓冲，resolve 时带 data 字段（Base64）。
+    ///
+    /// 背景：iOS V1.7.0「问问小蜜」实测 60s 报「网络超时」且无增量输出——
+    /// 旧 `request` 用 dataTask 整体缓冲，长回答在 timeoutIntervalForResource
+    /// 内到不了结尾。流式通道逐块到达，readTimeout 语义变为「块间空闲超时」。
+    @objc func requestStream(_ call: CAPPluginCall) {
+        guard let urlString = call.getString("url"), !urlString.trimmingCharacters(in: .whitespaces).isEmpty else {
+            call.reject("OriginProxy.requestStream: url is required")
+            return
+        }
+        guard let url = URL(string: urlString) else {
+            call.reject("OriginProxy.requestStream: invalid url \(urlString)")
+            return
+        }
+
+        let method = normalizeMethod(call.getString("method"))
+        let origin = nonEmpty(call.getString("origin"), fallback: OriginProxyPlugin.defaultOrigin)
+        let referer = nonEmpty(call.getString("referer"), fallback: "\(origin)/")
+        let bodyIsBase64 = (call.getString("bodyEncoding") ?? "text") == "base64"
+        let streamId = nonEmpty(call.getString("streamId"), fallback: UUID().uuidString)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = OriginProxyPlugin.readTimeout
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+
+        if let headers = call.getObject("headers") {
+            for (name, value) in headers {
+                let lower = name.lowercased()
+                if OriginProxyPlugin.skippedRequestHeaders.contains(lower) { continue }
+                if let stringValue = value as? String {
+                    request.setValue(stringValue, forHTTPHeaderField: name)
+                } else if let anyValue = value as? CustomStringConvertible {
+                    request.setValue(anyValue.description, forHTTPHeaderField: name)
+                }
+            }
+        }
+        request.setValue(origin, forHTTPHeaderField: "Origin")
+        request.setValue(referer, forHTTPHeaderField: "Referer")
+
+        if let body = call.getString("body") {
+            request.httpBody = bodyIsBase64 ? (Data(base64Encoded: body) ?? Data()) : body.data(using: .utf8)
+        }
+
+        let sessionConfig = URLSessionConfiguration.ephemeral
+        // 流式语义：request 超时 = 「块间空闲」超时；资源总时长放宽到 10 分钟，
+        // 避免长回答被总时长掐死（网关侧 llmTimeoutMs=120s 先兜底）。
+        sessionConfig.timeoutIntervalForRequest = OriginProxyPlugin.readTimeout
+        sessionConfig.timeoutIntervalForResource = 600
+        let delegate = StreamDelegate(plugin: self, call: call, streamId: streamId)
+        let session = URLSession(configuration: sessionConfig, delegate: delegate, delegateQueue: nil)
+        // URLSession 对 delegate 持强引用直至 invalidate；外部再存一份防提前释放
+        delegate.retain(session: session)
+        session.dataTask(with: request).resume()
+    }
+
+    /// 流式转发的 delegate：头信息 → resolve；数据块 → 事件；结束/异常 → 事件。
+    /// 线程安全：URLSession delegate 回调在串行队列上，天然不并发。
+    private final class StreamDelegate: NSObject, URLSessionDataDelegate {
+        private weak var plugin: OriginProxyPlugin?
+        private let call: CAPPluginCall
+        private let streamId: String
+        private var headResolved = false
+        private var buffered = Data()
+        private var isSSE = false
+        private var session: URLSession?
+
+        init(plugin: OriginProxyPlugin, call: CAPPluginCall, streamId: String) {
+            self.plugin = plugin
+            self.call = call
+            self.streamId = streamId
+        }
+
+        func retain(session: URLSession) {
+            self.session = session
+        }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+                        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+            let http = response as? HTTPURLResponse
+            let status = http?.statusCode ?? 0
+            let contentType = (http?.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased()
+            isSSE = status >= 200 && status < 300 && contentType.contains("text/event-stream")
+
+            if isSSE {
+                var headers: [String: String] = [:]
+                for (key, value) in http?.allHeaderFields ?? [:] {
+                    guard let name = key as? String else { continue }
+                    if OriginProxyPlugin.skippedResponseHeaders.contains(name.lowercased()) { continue }
+                    if let stringValue = value as? String {
+                        headers[name] = stringValue
+                    } else if let anyValue = value as? CustomStringConvertible {
+                        headers[name] = anyValue.description
+                    }
+                }
+                headResolved = true
+                call.resolve([
+                    "streamId": streamId,
+                    "status": status,
+                    "statusText": HTTPURLResponse.localizedString(forStatusCode: status),
+                    "headers": headers,
+                    "url": response.url?.absoluteString ?? ""
+                ])
+            }
+            completionHandler(.allow)
+        }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+            if isSSE {
+                // 逐块转发：JS 侧 originProxyChunk → ReadableStream → SDK iterSSEEvents
+                plugin?.notifyListeners("originProxyChunk", data: [
+                    "streamId": streamId,
+                    "data": data.base64EncodedString()
+                ])
+            } else {
+                buffered.append(data)
+            }
+        }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+            defer {
+                self.session?.finishTasksAndInvalidate()
+                self.session = nil
+            }
+            if let error = error {
+                if headResolved {
+                    plugin?.notifyListeners("originProxyError", data: [
+                        "streamId": streamId,
+                        "message": error.localizedDescription
+                    ])
+                } else {
+                    call.reject("OriginProxy.requestStream failed: \(error.localizedDescription)")
+                }
+                return
+            }
+            let http = task.response as? HTTPURLResponse
+            let status = http?.statusCode ?? 0
+            if !headResolved {
+                // 非流式：整体缓冲回传（错误体必须完整，SDK httpError 要解析 JSON）
+                var headers: [String: String] = [:]
+                for (key, value) in http?.allHeaderFields ?? [:] {
+                    guard let name = key as? String else { continue }
+                    if OriginProxyPlugin.skippedResponseHeaders.contains(name.lowercased()) { continue }
+                    if let stringValue = value as? String {
+                        headers[name] = stringValue
+                    } else if let anyValue = value as? CustomStringConvertible {
+                        headers[name] = anyValue.description
+                    }
+                }
+                call.resolve([
+                    "streamId": streamId,
+                    "status": status,
+                    "statusText": http.map { HTTPURLResponse.localizedString(forStatusCode: $0.statusCode) } ?? "",
+                    "headers": headers,
+                    "data": buffered.base64EncodedString(),
+                    "url": task.response?.url?.absoluteString ?? ""
+                ])
+                return
+            }
+            plugin?.notifyListeners("originProxyEnd", data: ["streamId": streamId])
+        }
     }
 }

@@ -2044,6 +2044,29 @@ select {
   border-top-color: var(--honey-dark);
 }
 
+/* 流式「思考链路」光标：跟在增量文字尾部闪烁，标记仍在生成 */
+.coach-caret {
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--honey-dark);
+  border-radius: 1px;
+  animation: caretBlink 1s steps(1, end) infinite;
+}
+
+@keyframes caretBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coach-caret {
+    animation: none;
+  }
+}
+
 .coach-input {
   display: flex;
   gap: 10px;

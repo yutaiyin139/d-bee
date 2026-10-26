@@ -25,9 +25,12 @@
  * 鸭子类型探测，保证 Web 构建产物零新增依赖、体积不变。
  *
  * ── 已知限制（务必知悉）──────────────────────────────────────────────────────
- * 1. **不支持流式响应**：原生层会把整个响应体读完才回传，因此 LLM 的
- *    `stream: true` 会退化成一次性返回。接 LLM 对话时要么关流式，要么在插件里
- *    补 SSE 事件转发（阶段 2 的活儿）。
+ * 1. **流式响应**：新版原生插件提供 `requestStream`（chunk 经 Capacitor 事件
+ *    `originProxyChunk/End/Error` 逐块回传），本层据此构造 ReadableStream，
+ *    LLM 的 SSE 可增量消费（教练打字机效果）。**旧版插件**（只有 `request`）
+ *    自动回退整体缓冲模式 —— 流式退化成一次性返回，功能仍可用。
+ *    背景：iOS V1.7.0 用户实测「问问小蜜」无思考链路 + 60s 报网络超时，
+ *    根因即旧插件整体缓冲 + 60s 硬超时（原生超时已同步放宽到 180s）。
  * 2. **不支持中途取消**：不响应 `AbortSignal`，请求一旦发出只能等超时。
  * 3. 原生插件缺失时返回 undefined，调用方（cloud.ts）会退回默认 fetch ——
  *    此时行为与方案 B 之前一致（即登录会失败），但不会崩。
@@ -60,11 +63,27 @@ interface OriginProxyRequestOptions {
   bodyEncoding?: 'text' | 'base64'
   origin?: string
   referer?: string
+  /** requestStream 专用：本次流式请求的关联 ID（原生层随事件回传） */
+  streamId?: string
+}
+
+/** requestStream 的回执：HTTP 头信息立即可得，body 经事件通道逐块回传 */
+interface OriginProxyStreamHandle {
+  streamId: string
+  status: number
+  statusText: string
+  headers: Record<string, string>
+  /** 仅非 2xx / 非 SSE 响应时存在：原生已整体缓冲（SDK httpError 需要完整体） */
+  data?: string
 }
 
 /** 插件的最小结构（不引 @dbee/origin-proxy，保持零依赖） */
 interface OriginProxyPlugin {
   request: (options: OriginProxyRequestOptions) => Promise<OriginProxyResponse>
+  /** 新版插件才有：SSE/长响应逐块回传（事件 originProxyChunk/End/Error） */
+  requestStream?: (options: OriginProxyRequestOptions) => Promise<OriginProxyStreamHandle>
+  /** Capacitor 桥接的标准事件监听（原生 notifyListeners → 这里收到） */
+  addListener?: (eventName: string, handler: (payload: Record<string, unknown>) => void) => Promise<{ remove(): void }> | { remove(): void }
 }
 
 function getPlugin(): OriginProxyPlugin | null {
@@ -75,6 +94,23 @@ function getPlugin(): OriginProxyPlugin | null {
   const candidate = p as Partial<OriginProxyPlugin>
   if (typeof candidate.request !== 'function') return null
   return candidate as OriginProxyPlugin
+}
+
+/**
+ * 原生插件是否真实实现了 requestStream 方法。
+ *
+ * ⚠️ 不能用 `typeof plugin.requestStream === 'function'` 探测：Capacitor 的
+ * 插件 Proxy 对**任意属性名**都返回 wrapper 函数（get 陷阱 default 分支），
+ * 探测恒真；真正的未实现要到调用时才 reject「not implemented」。
+ * 可靠信源是原生桥注入的 PluginHeaders（注册时逐方法列出）。
+ */
+function nativeHasStreamMethod(): boolean {
+  if (typeof window === 'undefined') return false
+  const cap = (window as unknown as {
+    Capacitor?: { PluginHeaders?: ReadonlyArray<{ name: string; methods?: ReadonlyArray<{ name: string }> }> }
+  }).Capacitor
+  const header = cap?.PluginHeaders?.find((h) => h.name === 'OriginProxy')
+  return !!header?.methods?.some((m) => m.name === 'requestStream')
 }
 
 /**
@@ -131,34 +167,159 @@ async function nativeFetch(input: RequestInfo | URL, init?: RequestInit): Promis
     }
   }
 
+  const options: OriginProxyRequestOptions = {
+    url: request.url,
+    method: request.method,
+    headers,
+    body,
+    bodyEncoding,
+    origin: CLOUD_ORIGIN,
+  }
+
+  // ── 流式分支：LLM 的 SSE 请求（Accept: text/event-stream）走 requestStream ──
+  // 仅当原生桥 PluginHeaders 声明了 requestStream（新版插件）才走流式；
+  // 旧版插件（只有 request）自动落到整体缓冲分支。用 PluginHeaders 而非
+  // typeof 探测——Capacitor Proxy 对任意方法名都返回函数，typeof 恒真不可靠。
+  const wantsStream =
+    nativeHasStreamMethod() &&
+    String(headers['accept'] ?? '').includes('text/event-stream')
+  if (wantsStream) {
+    try {
+      return await nativeStreamFetch(plugin, options)
+    } catch (e) {
+      // 流式通道异常（如原生 requestStream 意外失败）→ 回退整体缓冲，保证功能可用
+      console.warn('[originProxy] 流式请求失败，回退缓冲模式：', e)
+    }
+  }
+
+  return bufferedFetch(plugin, options)
+}
+
+/** 整体缓冲转发：原生 request() 读完整个响应体再回传（旧插件唯一路径） */
+async function bufferedFetch(plugin: OriginProxyPlugin, options: OriginProxyRequestOptions): Promise<Response> {
   let result: OriginProxyResponse
   try {
-    result = await plugin.request({
-      url: request.url,
-      method: request.method,
-      headers,
-      body,
-      bodyEncoding,
-      origin: CLOUD_ORIGIN,
-    })
+    result = await plugin.request(options)
   } catch (e) {
     // 原生层失败（DNS / TLS / 超时）要映射成 fetch 的语义：抛 TypeError，
     // 云 SDK 会把它归类为 kind: 'network'。
     throw new TypeError(e instanceof Error ? e.message : String(e))
   }
+  return bufferedResponse(result.status, result.statusText, result.headers, result.data)
+}
 
-  const status = Number(result.status)
-  if (!Number.isFinite(status) || status < 100 || status > 599) {
-    throw new TypeError(`OriginProxy 返回了非法状态码：${result.status}`)
+/** 流式转发：先挂事件监听，再发起 requestStream，把原生 chunk 泵进 ReadableStream */
+async function nativeStreamFetch(plugin: OriginProxyPlugin, options: OriginProxyRequestOptions): Promise<Response> {
+  const streamId = `os${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+
+  let controller: ReadableStreamDefaultController<Uint8Array> | null = null
+  // Response 构造前收到的事件先缓冲，避免竞态丢块
+  const earlyChunks: Uint8Array[] = []
+  let earlyEnded = false
+  let earlyError: Error | null = null
+
+  const removals: Array<() => void> = []
+
+  const onChunk = (p: Record<string, unknown>) => {
+    if (p.streamId !== streamId) return
+    const bytes = base64ToBytes(typeof p.data === 'string' ? p.data : '')
+    if (bytes.byteLength === 0) return
+    if (controller) controller.enqueue(bytes)
+    else earlyChunks.push(bytes)
+  }
+  const onEnd = (p: Record<string, unknown>) => {
+    if (p.streamId !== streamId) return
+    dispose()
+    if (controller) {
+      try { controller.close() } catch { /* 已关闭 */ }
+    } else {
+      earlyEnded = true
+    }
+  }
+  const onError = (p: Record<string, unknown>) => {
+    if (p.streamId !== streamId) return
+    dispose()
+    const err = new TypeError(`OriginProxy 流中断：${String(p.message ?? 'unknown')}`)
+    if (controller) {
+      try { controller.error(err) } catch { /* 已结束 */ }
+    } else {
+      earlyError = err
+    }
   }
 
-  const bytes = base64ToBytes(result.data)
+  function dispose() {
+    while (removals.length > 0) {
+      try { removals.pop()?.() } catch { /* 忽略重复移除 */ }
+    }
+  }
+
+  // 必须先挂监听再发请求，防止 chunk 早于监听到达被丢弃
+  try {
+    const addListener = plugin.addListener!.bind(plugin)
+    const subs = await Promise.all([
+      addListener('originProxyChunk', onChunk),
+      addListener('originProxyEnd', onEnd),
+      addListener('originProxyError', onError),
+    ])
+    for (const s of subs) removals.push(() => s.remove())
+  } catch (e) {
+    throw new TypeError(e instanceof Error ? e.message : String(e))
+  }
+
+  let handle: OriginProxyStreamHandle
+  try {
+    handle = await plugin.requestStream!({ ...options, streamId })
+  } catch (e) {
+    dispose()
+    throw new TypeError(e instanceof Error ? e.message : String(e))
+  }
+
+  const status = Number(handle.status)
+  if (!Number.isFinite(status) || status < 100 || status > 599) {
+    dispose()
+    throw new TypeError(`OriginProxy 返回了非法状态码：${handle.status}`)
+  }
+
+  // 原生侧对非 2xx / 非 SSE 响应已整体缓冲（SDK 的 httpError 需要完整 JSON 体）
+  if (typeof handle.data === 'string') {
+    dispose()
+    return bufferedResponse(status, handle.statusText, handle.headers, handle.data)
+  }
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(c) {
+      controller = c
+      for (const chunk of earlyChunks) c.enqueue(chunk)
+      earlyChunks.length = 0
+      if (earlyError) c.error(earlyError)
+      else if (earlyEnded) c.close()
+    },
+  })
+  return new Response(stream, {
+    status,
+    statusText: handle.statusText || '',
+    headers: handle.headers,
+  })
+}
+
+/** 整体缓冲响应 → fetch Response（状态码校验 + bodyless 特例） */
+function bufferedResponse(
+  statusIn: number | string,
+  statusText: string | undefined,
+  headers: Record<string, string>,
+  base64Data: string,
+): Response {
+  const status = Number(statusIn)
+  if (!Number.isFinite(status) || status < 100 || status > 599) {
+    throw new TypeError(`OriginProxy 返回了非法状态码：${statusIn}`)
+  }
+  const bytes = base64ToBytes(base64Data)
   // 状态码 101/204/205/304 按规范不允许带 body，构造 Response 时会抛错
   const bodyless = status === 101 || status === 204 || status === 205 || status === 304
   return new Response(bodyless || bytes.byteLength === 0 ? null : toArrayBuffer(bytes), {
     status,
-    statusText: result.statusText || '',
-    headers: result.headers,
+    statusText: statusText || '',
+    headers,
   })
 }
 

@@ -17,6 +17,8 @@ import './coach.scss'
 interface Msg {
   role: 'user' | 'coach'
   text: string
+  /** 流式生成中：渲染闪烁光标（「思考链路」可见，对齐主工程 CoachSheet） */
+  streaming?: boolean
 }
 
 const COACH_RATE_LIMIT = 3
@@ -119,10 +121,41 @@ export default function Coach() {
     setMessages((prev) => [...prev, { role: 'user', text: q }])
     askTimesRef.current.push(Date.now())
     setBusy(true)
+    // 立即插入「生成中」教练气泡：随 SSE delta 增量追加，形成可见「思考链路」
+    setMessages((prev) => [...prev, { role: 'coach', text: '', streaming: true }])
+    let got = false
     try {
-      const answer = await askCoach(q, ctxRef.current)
-      setMessages((prev) => [...prev, { role: 'coach', text: answer }])
+      const answer = await askCoach(q, ctxRef.current, (delta) => {
+        got = true
+        setMessages((prev) => {
+          const next = prev.slice()
+          const last = next[next.length - 1]
+          if (last && last.role === 'coach' && last.streaming) {
+            next[next.length - 1] = { ...last, text: last.text + delta }
+          }
+          return next
+        })
+      })
+      // 收尾：定稿整段答案、关闭 streaming 光标
+      setMessages((prev) => {
+        const next = prev.slice()
+        const last = next[next.length - 1]
+        if (last && last.role === 'coach' && last.streaming) {
+          next[next.length - 1] = { role: 'coach', text: answer }
+        }
+        return next
+      })
     } catch (e) {
+      // 出错时：已吐出部分文字则保留（标记结束），否则移除空气泡再显示错误
+      setMessages((prev) => {
+        const next = prev.slice()
+        const last = next[next.length - 1]
+        if (last && last.role === 'coach' && last.streaming) {
+          if (got && last.text.trim()) next[next.length - 1] = { role: 'coach', text: last.text }
+          else next.pop()
+        }
+        return next
+      })
       setErr(errText(e, '回答失败，请重试'))
     } finally {
       setBusy(false)
@@ -143,16 +176,27 @@ export default function Coach() {
   return (
     <View className='coach-page'>
       <ScrollView className='coach-body' scrollY scrollIntoView='coach-bottom' scrollWithAnimation>
-        {messages.map((m, i) => (
-          <View key={i} className={`coach-msg ${m.role === 'user' ? 'mine' : ''}`}>
-            <Text>{m.text}</Text>
-          </View>
-        ))}
-        {busy && (
-          <View className='coach-msg coach-thinking'>
-            <Text>正在结合你的数据思考…</Text>
-          </View>
-        )}
+        {messages.map((m, i) => {
+          // 流式生成中的教练气泡：无文字显示「思考中」，有文字后打字机渲染 + 光标
+          if (m.streaming) {
+            return (
+              <View key={i} className='coach-msg'>
+                {m.text
+                  ? <Text>{m.text}<Text className='coach-caret'>▌</Text></Text>
+                  : (
+                    <View className='coach-thinking'>
+                      <Text>正在结合你的数据思考…</Text>
+                    </View>
+                  )}
+              </View>
+            )
+          }
+          return (
+            <View key={i} className={`coach-msg ${m.role === 'user' ? 'mine' : ''}`}>
+              <Text>{m.text}</Text>
+            </View>
+          )
+        })}
         {err ? <View className='notice err'><Text>{err}</Text></View> : null}
         <View id='coach-bottom' />
       </ScrollView>

@@ -1,6 +1,6 @@
 # D-Bee（自律蜜蜂）· 项目长期记忆（精简版；细节见当日日志与 docs/）
 
-## 进度快照（2026-10-25 上午，🎉 **V1.7.0 三端统一 + Apple IAP 验签落地 + P0 越权修复闭环 + iOS 首次真机编译打通**；泳道 A 自托管全栈 E2E 全绿；Bundle ID 定案 `cn.com.dbee.app`（`cn.dbeehealth.app` 不可用后改定）；视觉识别切双 provider 路由（文本 DeepSeek + 视觉 Qwen））
+## 进度快照（2026-10-26 上午，🎉 **V1.7.1 Web 已发布 + 上架前生产安全体检与加固（0039/0040 迁移 + 网关 ③④⑤）落地 + Apple IAP 验签端点已部署上线**；V1.7.0 三端统一 / 泳道 A 自托管闭环 / iOS 首次真机编译打通均已稳固；视觉双 provider（文本 DeepSeek `deepseek-flash` + 视觉 Qwen `qwen3.8-max-0902`）；Bundle ID 定案 `cn.com.dbee.app`）
 
 - **✅ 6 项决策已拍板（10-22 晚）**：①主体=**有限责任公司** ②未提交产物**入库**（已提交 `b6b1725`+`43a5729`
   并推 origin/main）③LLM=**DeepSeek** ④短信=**先日志+万能码**（`SMS_PROVIDER=log`/`SMS_MASTER_CODE=888888`）
@@ -72,13 +72,17 @@
   线上已部署验证：文本返回 `deepseek-flash`、视觉返回 `qwen3.8-max-0902` 均 200。**服务端切模型对三端即时生效，
   无需重发 web/重打包**。⚠️ 部署线上 env 用「本地生成完整 env → SFTP 上传覆盖」最可靠（sed 对含特殊字符的
   key 转义易错、旧文件 ^M 回车符会漏匹配）。
-- **版本/git**：Web V1.7.0 已发布（http://150.158.51.106/ ）；**V1.7.0 三端版本已统一**（`54ea9a0`，Android release
-  签名配置 + iOS 发布梳理）。最新 commit **`1bc27a7`**（feat(payment): Android/Web 微信支付 adapter，付费墙三端行为一致，
-  10-24 20:41）。10-24 单日新增 11 commit（`89f6300..1bc27a7`）：**iOS 首次真机编译打通 + 三处 iOS 独有 bug 修复**
-  （`89f6300` 补 NSPhotoLibraryAddUsageDescription / `dc1ea17` resultType 大小写 / `9165e75` 手册+排查报告）、
-  **Bundle ID 定案 `cn.com.dbee.app`**（`23b295d` 三端统一 + `41a7351`/`ffd7203` 待办清单+定案记录；10-25 `cn.dbeehealth.app` 不可用后改定）、
-  **`d3fb8cc` postinstall 自动构建 shared**、**视觉双 provider**（`cc96b65` 质量优化 + `63c0a71` 切 Qwen）、
-  `916d5fb`（壳层 UI 对齐品牌色）、`1bc27a7`（微信支付 adapter）。**工作区未提交**：仅记忆文件（无源码变更）。
+- **版本/git**：Web **V1.7.1 已发布**（http://150.158.51.106/ ，`index-BJB7byNW.js` 实测含 honey_balance/版本串 1.7.1）；
+  **V1.7.0 三端版本已统一**（`54ea9a0`）。最新 commit **`7460c90`**（chore: release/ 目录 gitignore，10-26）。
+  **10-25 晚～10-26 密集收敛（上架前安全/性能主线）**：
+  `3186680` fix(security) 35 文件 +2539/-85（0039/0040 迁移 + 网关 8 文件 + 前端配套 + 部署链路 + 7 个服务器实测脚本）；
+  `de9a3cc` fix(security) dbee-ssh.py 渲染泄露守卫 + V1.7.1 生产安全体检；
+  `c8d86a0` chore(release) 版本 bump 至 V1.7.1（Web/Android/iOS 三端，versionCode 12 / CURRENT_PROJECT 10）；
+  `195ca13` fix(log) LogSheet 保存按钮冲突态 UX 修复（自动定位到覆盖/追加横幅 + 闪烁提示）。
+  10-25 收敛：`dc0110d`+`8cba299`（0037 落地 + 综合报告 + mini 文案修复 + 日志去噪）、`1bc27a7`（微信支付 adapter）、
+  视觉双 provider `63c0a71`+`cc96b65`、postinstall 自动构建 shared `d3fb8cc`、Bundle ID 定案 `23b295d`。
+  **工作区未提交**：`native-plugins/dbee-origin-proxy` 的 read timeout 60s→180s（Android Java + iOS Swift 两处）——
+  修复「问问小蜜」教练问答流式响应超时（网关 llmTimeoutMs=120s，旧 60s 必超时，iOS V1.7.0 用户实测复现）。
 - **🎉 泳道 A 部署闭环（10-23 10:08）**：服务器 `150.158.51.106` 上 **nginx（自托管配置）+ dbee-gateway
   （Node 22.22.2 / :8080）+ PostgREST（16.4 / :3001）+ PG 17.11（dbee 库，0033 已应用）** 四件套均 active；
   `/.cloud/**` 全部走本机自托管栈，**不再依赖 WorkBuddy 云端**。8 项 E2E 全 ✓（含正常 OTP 路径：
@@ -106,6 +110,21 @@
   **不需要存储代理**——拍照识别走 base64 dataUrl 直塞 LLM `image_url`（`ai.ts:152/226`），全仓无 `cloud.storage` 调用。
   ⚠️ `0030` **已含 0025~0028 业务变更**（grep `AI_REDEEM_DAILY_LIMIT`/`streak7`/`newbie`/`invite_attempts`/
   `leaderboard` 命中 20 处），**勿盲跑 0025~0029 迁移**（会重复/冲突）；`0029` 已决定弃用。
+- **🔴 上架前生产安全体检与加固（10-26，`3186680`+`de9a3cc`，六项 ①–⑥ 已全部生效）**：10-26 凌晨服务器只读探查发现
+  **网关层完全未部署**（运行 10-23 骨架版，18/18 特征串探针全 OLD、`lib/iap.mjs` 缺失致 Apple 端点 404、LLM Pro 门控/
+  XFF 限流/dbproxy 资源管理均未上线）——数据库 0039/0040 已在库生效，但代码未部署。04:07 用户确认后按序完成部署：
+  密钥回收（`deploy/fetch-llm-secrets.py`）+ 模板固化（gateway.env.template 写死 Qwen 视觉键、API key 走占位符）+
+  提交 `3186680` + `deploy-gateway.sh` 一次成功 → **复验全绿**（18/18 探针 NEW、Apple verify/notifications 404→503
+  iap_not_configured 路由已注册、LLM 无 token 401、healthz 200）。六项状态：①RPC 信任边界✅②原子性✅③LLM 服务端授权✅
+  ④Apple 环境白名单（代码上线，生效前提=上架前配 APPLE_BUNDLE_ID/SHARED_SECRET）✅⑤XFF 信任边界+资源管理✅⑥honey_balance/
+  榜单缓存（DB 生效，前端待随下次发版触达）。
+  **新发现发布阻断项（V1.7.1 报告 `docs/V1.7.1-安全验证报告与发布实施计划-2026-10-26.md`）**：①SMS 万能码生产启用
+  （SMS_PROVIDER=log+24 位万能码，最高优先级，需实现 tencent()/aliyun() 真短信 provider）②5432 公网可连
+  （listen_addresses='*'+pg_hba 家庭宽带 IP 会漂移，生产只走回环应收回）③凭据泄露多处（探查脚本/临时文件/git 历史，
+  已加 `assert_no_leaked_secret()` 守卫 + 修 5 个脚本同类缺陷）④无 HTTPS+域名未解析（443 未监听，四端上架硬阻断）
+  ⑤服务器侧无备份定时器（日备靠本机自动化单点驱动）⑥P3：schema_migrations 0020/0030 重复登记、/tmp 无 noexec。
+  **V1.7.1 版本号现状**：package.json 1.7.1 / Android versionName 1.7.1 + versionCode 12 / iOS MARKETING_VERSION 1.7.1（2 处）+
+  CURRENT_PROJECT_VERSION 10 / mini 0.1.0。
 - **🔴 支付链路（已落地，10-23 `9e1db43`）**：Apple 验签**已从 pg_net 空壳改为 Node 网关**（`server/lib/iap.mjs` 479 行）：
   verifyReceipt 验签（21007/21008 沙盒自动切换、bundle_id 钉扎、transaction_id 全服幂等、恢复购买）+
   App Store Server Notifications V2 webhook（x5c 证书链钉扎验签、SUBSCRIBED/DID_RENEW 续订、REFUND/REVOKE 撤销、
@@ -183,12 +202,14 @@
   ⚠️ iOS 的 `WechatOpenSDK` 来自第三方 SPM 镜像 `github.com/yanyin1986/WechatOpenSDK`（腾讯官方不经
   SPM 分发），上线前须核对 tag 或改官方 XCFramework。小程序 appid `wxb7c7122de9c3ab1f` 需做主体变更
   （趁未上线赶紧变，变更会使老用户 openid 失效需重新关联）。
-- **下一步（泳道 A 已闭环 ✅，Apple 验签已落地 ✅，iOS 首次真机编译已打通 ✅（10-24），首件是 ASC 配商品 + iOS 提审）**：
+- **下一步（泳道 A 已闭环 ✅，Apple 验签已落地 ✅，iOS 首次真机编译已打通 ✅（10-24），V1.7.1 Web 已发布 ✅（10-26），首件是 ASC 配商品 + iOS 提审）**：
   ~~①服务器前置修复~~ ✅ ~~②部署 Node 网关~~ ✅ ~~③deploy-postgrest.sh~~ ✅ ~~④A4 切 nginx + 8 项回归~~ ✅
-  ~~⑥Apple 验签落地网关 + 0037 核销~~ ✅（10-23 `9e1db43`，iap-selftest 41 断言全绿）；
-  ⑤**A5 Mac mini 首次构建 iOS** ✅（10-24 已编译通过并真机测试，见「原生 App」条；三处 iOS 独有 bug 已修）→
+  ~~⑥Apple 验签落地网关 + 0037 核销~~ ✅（10-23 `9e1db43`，iap-selftest 41 断言全绿）；~~上架前安全体检 ①–⑥~~ ✅（10-26 全部生效）；
+  ⑤**A5 Mac mini 首次构建 iOS** ✅（10-24 已编译通过并真机测试，三处 iOS 独有 bug 已修）→
   **ASC 配 3 商品（`dbee_pro_monthly`/`yearly`/`dbee_lifetime`）+ 开 IAP capability + 填收款 +
-  App Store Server Notifications V2 webhook 配指向网关 → iOS 提审**；
+  App Store Server Notifications V2 webhook 配指向网关 + 配 APPLE_BUNDLE_ID/SHARED_SECRET/SANDBOX → iOS 提审**；
+  🔴**上架前未决阻断（见「上架前生产安全体检」条）**：①SMS 真短信 provider（替 log 万能码）②5432 收回回环
+  ③凭据轮换 ④HTTPS+域名解析（四端上架硬阻断，iOS ATS/webhook/微信支付宝抖音合法域名）；
   ⑦域名过户个人→企业 + ICP 备案主体变更（**用户已在走企业变更**；⚠️ 先查本省管局是否允许个人→企业直接变更，
   不允许须注销重备且**期间域名停解析**→ **A4 已做完且 IP 直连验证通过（http://150.158.51.106/ 首页 200）**，
   故可随时注销不停业务；**备案期不可加解析**，工信部短信核验 **24h 内必做**）；
@@ -205,6 +226,9 @@
   还是等企业账号（建议**先申请 D-U-N-S 占位**、个人账号推进构建，证下来再决定切不切主体）；
   ③**云库长期去留**（自托管彻底替代 / 回迁 / 双写）；④**老用户迁移三路径**（推荐 A：判定为开发数据不迁移）；
   ⑤**存量 7 行 `source='newbie'` bonus 处置**（A 作废推荐 / B 补偿保留 / C 连数据清，涉及删数据等确认）。
+  🔴**新增（10-26 体检，上架前须拍板）**：⑥**SMS 真短信通道**（现 log 万能码，需采购腾讯云短信签协议 +
+  实现 tencent()/aliyun() provider，上线/上架前必须）⑦**5432 是否收回回环**（生产链路走回环，无需对外）
+  ⑧**凭据轮换**（DeepSeek key / SSH 密码 / dbee_app 密码曾入 git 历史或明文出现）。
   ~~④经营范围 ⑤注册资本 ⑥对公账户 ⑦小程序主体~~ → **已全部答复**（④⑤✅ 满足、⑥在办下周完成、⑦需变更且流程已查证）。
   长期待办：华为应用市场上架（~~企业认证~~已完成✅ + 软著 + App备案）、营业执照已办结✅。
 

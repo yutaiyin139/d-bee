@@ -60,7 +60,11 @@ public class OriginProxyPlugin extends Plugin {
     private static final String DEFAULT_ORIGIN = "https://zilv-mifeng.app.workbuddy.host";
 
     private static final int CONNECT_TIMEOUT_MS = 15_000;
-    private static final int READ_TIMEOUT_MS = 60_000;
+    /**
+     * LLM 流式响应可达 120s（网关 llmTimeoutMs），加余量设 180s。
+     * 旧值 60s 导致「问问小蜜」教练问答必超时（与 iOS 同病）。
+     */
+    private static final int READ_TIMEOUT_MS = 180_000;
 
     /**
      * 这些请求头由原生栈自己决定，透传反而会坏事：
@@ -149,23 +153,10 @@ public class OriginProxyPlugin extends Plugin {
                     InputStream stream = status >= 400 ? conn.getErrorStream() : conn.getInputStream();
                     byte[] data = stream == null ? new byte[0] : readAll(stream);
 
-                    JSObject responseHeaders = new JSObject();
-                    Map<String, List<String>> headerFields = conn.getHeaderFields();
-                    if (headerFields != null) {
-                        for (Map.Entry<String, List<String>> entry : headerFields.entrySet()) {
-                            String name = entry.getKey();
-                            if (name == null) continue; // 第一项是状态行
-                            if (SKIPPED_RESPONSE_HEADERS.contains(name.toLowerCase(Locale.ROOT))) continue;
-                            List<String> values = entry.getValue();
-                            if (values == null || values.isEmpty()) continue;
-                            responseHeaders.put(name, join(values));
-                        }
-                    }
-
                     JSObject result = new JSObject();
                     result.put("status", status);
                     result.put("statusText", statusText == null ? "" : statusText);
-                    result.put("headers", responseHeaders);
+                    result.put("headers", buildHeaders(conn));
                     result.put("data", Base64.encodeToString(data, Base64.NO_WRAP));
                     result.put("url", url);
                     call.resolve(result);
@@ -178,6 +169,167 @@ public class OriginProxyPlugin extends Plugin {
                 }
             }
         });
+    }
+
+    /**
+     * 流式转发（LLM SSE 专用，2026-10-26 新增）。
+     *
+     * 背景：`request` 整体缓冲响应体，LLM 长回答在 READ_TIMEOUT_MS 内到不了
+     * 结尾 → iOS V1.7.0「问问小蜜」实测 60s 报「网络超时」，且全程无增量
+     * 输出（无「思考链路」）。本方法把响应逐块经 Capacitor 事件通道回传：
+     *   - 2xx + Content-Type: text/event-stream → 先 resolve 头信息
+     *     {streamId,status,statusText,headers}，随后每收到一块就
+     *     notifyListeners("originProxyChunk", {streamId,data:base64})，
+     *     流正常结束 notifyListeners("originProxyEnd")，中途异常
+     *     notifyListeners("originProxyError", {streamId,message})。
+     *   - 其余（错误响应 / 非 SSE）→ 与 request 相同整体缓冲，resolve 时
+     *     带 data 字段（SDK 的 httpError 需要完整 JSON 错误体）。
+     *
+     * JS 侧适配见 src/lib/originProxy.ts 的 nativeStreamFetch（事件泵进
+     * ReadableStream；旧版 App 没有本方法时 PluginHeaders 探测不到，自动
+     * 走缓冲 request，不会误调）。
+     *
+     * 注：HttpURLConnection.setReadTimeout 是「两次数据到达的间隔」超时，
+     * SSE 逐块到达时间隔很小，长回答不再被总时长掐死。
+     */
+    @PluginMethod
+    public void requestStream(final PluginCall call) {
+        final String url = call.getString("url");
+        if (url == null || url.trim().isEmpty()) {
+            call.reject("OriginProxy.requestStream: url is required");
+            return;
+        }
+
+        final String method = normalizeMethod(call.getString("method", "GET"));
+        final String origin = nonEmpty(call.getString("origin"), DEFAULT_ORIGIN);
+        final String referer = nonEmpty(call.getString("referer"), origin + "/");
+        final JSObject headers = call.getObject("headers");
+        final String body = call.getString("body");
+        final boolean bodyIsBase64 = "base64".equals(call.getString("bodyEncoding", "text"));
+        final String streamId = nonEmpty(call.getString("streamId"), "s" + System.nanoTime());
+
+        EXECUTOR.execute(new Runnable() {
+            @Override
+            public void run() {
+                HttpURLConnection conn = null;
+                boolean headResolved = false;
+                try {
+                    conn = (HttpURLConnection) new URL(url).openConnection();
+                    conn.setRequestMethod(method);
+                    conn.setInstanceFollowRedirects(false);
+                    conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+                    conn.setReadTimeout(READ_TIMEOUT_MS);
+                    conn.setUseCaches(false);
+
+                    if (headers != null) {
+                        for (Iterator<String> it = headers.keys(); it.hasNext(); ) {
+                            String name = it.next();
+                            if (name == null || SKIPPED_REQUEST_HEADERS.contains(name.toLowerCase(Locale.ROOT))) {
+                                continue;
+                            }
+                            String value = headers.optString(name, null);
+                            if (value == null) continue;
+                            conn.setRequestProperty(name, value);
+                        }
+                    }
+                    conn.setRequestProperty("Origin", origin);
+                    conn.setRequestProperty("Referer", referer);
+
+                    if (body != null) {
+                        byte[] payload = bodyIsBase64
+                                ? Base64.decode(body, Base64.DEFAULT)
+                                : body.getBytes(StandardCharsets.UTF_8);
+                        conn.setDoOutput(true);
+                        conn.setFixedLengthStreamingMode(payload.length);
+                        OutputStream os = conn.getOutputStream();
+                        try {
+                            os.write(payload);
+                        } finally {
+                            os.close();
+                        }
+                    }
+
+                    int status = conn.getResponseCode();
+                    String statusText = conn.getResponseMessage();
+                    String contentType = conn.getContentType() == null ? "" : conn.getContentType().toLowerCase(Locale.ROOT);
+                    boolean sse = status >= 200 && status < 300 && contentType.contains("text/event-stream");
+                    InputStream stream = status >= 400 ? conn.getErrorStream() : conn.getInputStream();
+
+                    if (!sse) {
+                        // 非流式：整体缓冲回传（错误体必须完整，SDK httpError 要解析 JSON）
+                        byte[] data = stream == null ? new byte[0] : readAll(stream);
+                        JSObject result = new JSObject();
+                        result.put("streamId", streamId);
+                        result.put("status", status);
+                        result.put("statusText", statusText == null ? "" : statusText);
+                        result.put("headers", buildHeaders(conn));
+                        result.put("data", Base64.encodeToString(data, Base64.NO_WRAP));
+                        result.put("url", url);
+                        headResolved = true;
+                        call.resolve(result);
+                        return;
+                    }
+
+                    // 流式：先回头信息（JS 侧据此构造 Response），再逐块事件回传
+                    JSObject head = new JSObject();
+                    head.put("streamId", streamId);
+                    head.put("status", status);
+                    head.put("statusText", statusText == null ? "" : statusText);
+                    head.put("headers", buildHeaders(conn));
+                    head.put("url", url);
+                    headResolved = true;
+                    call.resolve(head);
+
+                    if (stream != null) {
+                        try {
+                            byte[] chunk = new byte[8192];
+                            int read;
+                            while ((read = stream.read(chunk)) != -1) {
+                                JSObject ev = new JSObject();
+                                ev.put("streamId", streamId);
+                                ev.put("data", Base64.encodeToString(Arrays.copyOf(chunk, read), Base64.NO_WRAP));
+                                notifyListeners("originProxyChunk", ev);
+                            }
+                        } finally {
+                            stream.close();
+                        }
+                    }
+                    JSObject end = new JSObject();
+                    end.put("streamId", streamId);
+                    notifyListeners("originProxyEnd", end);
+                } catch (Exception e) {
+                    String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                    if (headResolved) {
+                        // 头已回给 JS：错误走事件通道，让 ReadableStream 以 error 收尾
+                        JSObject ev = new JSObject();
+                        ev.put("streamId", streamId);
+                        ev.put("message", message);
+                        notifyListeners("originProxyError", ev);
+                    } else {
+                        call.reject("OriginProxy.requestStream failed: " + message);
+                    }
+                } finally {
+                    if (conn != null) conn.disconnect();
+                }
+            }
+        });
+    }
+
+    /** 响应头 → JSObject（过滤原生栈已改写的编码/长度类头） */
+    private static JSObject buildHeaders(HttpURLConnection conn) {
+        JSObject responseHeaders = new JSObject();
+        Map<String, List<String>> headerFields = conn.getHeaderFields();
+        if (headerFields != null) {
+            for (Map.Entry<String, List<String>> entry : headerFields.entrySet()) {
+                String name = entry.getKey();
+                if (name == null) continue; // 第一项是状态行
+                if (SKIPPED_RESPONSE_HEADERS.contains(name.toLowerCase(Locale.ROOT))) continue;
+                List<String> values = entry.getValue();
+                if (values == null || values.isEmpty()) continue;
+                responseHeaders.put(name, join(values));
+            }
+        }
+        return responseHeaders;
     }
 
     /** 只允许 HttpURLConnection 认识的动词，避免运行时抛 ProtocolException */

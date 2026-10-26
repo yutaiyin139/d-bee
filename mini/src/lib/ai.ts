@@ -66,7 +66,11 @@ interface ChatMessage {
   content: string | ChatContentPart[]
 }
 
-async function collectText(messages: ChatMessage[], temperature = 0.2): Promise<string> {
+async function collectText(
+  messages: ChatMessage[],
+  temperature = 0.2,
+  onDelta?: (delta: string) => void,
+): Promise<string> {
   const needVision = messages.some(
     (m) => Array.isArray(m.content) && m.content.some((part) => part.type === 'image_url'),
   )
@@ -80,7 +84,12 @@ async function collectText(messages: ChatMessage[], temperature = 0.2): Promise<
     temperature,
   })) {
     const delta = chunk.choices?.[0]?.delta
-    if (delta?.content) text += delta.content
+    if (delta?.content) {
+      text += delta.content
+      // 增量回调：驱动「思考链路」实时渲染（SDK 的 wx.request chunked
+      // polyfill 逐块回传，与主工程 onDelta 语义一致）
+      if (onDelta) onDelta(delta.content)
+    }
   }
   return text
 }
@@ -265,8 +274,13 @@ export interface CoachContext {
   barriers: string[]
 }
 
-/** AI 饮食助手：把实时状态作为上下文，回答单条提问（对齐主工程 askCoach） */
-export async function askCoach(question: string, ctx: CoachContext): Promise<string> {
+/** AI 饮食助手：把实时状态作为上下文，回答单条提问（对齐主工程 askCoach）。
+ * onDelta 用于「思考链路」实时渲染（可选，不传则行为与旧版一致）。 */
+export async function askCoach(
+  question: string,
+  ctx: CoachContext,
+  onDelta?: (delta: string) => void,
+): Promise<string> {
   const goalText = ctx.goal === 'lose' ? '减脂' : ctx.goal === 'gain' ? '增重增肌' : '保持体重'
   const net = Math.round(ctx.eatenKcal - ctx.burnedKcal)
   const remain = Math.round(ctx.targetKcal - net)
@@ -284,6 +298,7 @@ export async function askCoach(question: string, ctx: CoachContext): Promise<str
       { role: 'user', content: user },
     ],
     0.55,
+    onDelta,
   )
 }
 

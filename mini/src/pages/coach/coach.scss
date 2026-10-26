@@ -35,6 +35,21 @@
       &.coach-thinking {
         color: $ink-2;
       }
+
+      /* 流式「思考链路」光标：跟在增量文字尾部闪烁（对齐主工程 .coach-caret） */
+      .coach-caret {
+        display: inline-block;
+        margin-left: 2px;
+        color: $honey-dark;
+        animation: caretBlink 1s steps(1, end) infinite;
+      }
+    }
+
+    .coach-thinking {
+      display: flex;
+      align-items: center;
+      color: $ink-2;
+      font-size: 26px;
     }
 
     .notice.err {
@@ -83,4 +98,10 @@
       }
     }
   }
+}
+
+/* 流式光标闪烁动画（微信小程序支持 CSS animation） */
+@keyframes caretBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }

@@ -48,7 +48,12 @@ interface ChatMessage {
   content: string | ChatContentPart[]
 }
 
-async function collectText(messages: ChatMessage[], temperature = 0.2, signal?: AbortSignal): Promise<string> {
+async function collectText(
+  messages: ChatMessage[],
+  temperature = 0.2,
+  signal?: AbortSignal,
+  onDelta?: (delta: string) => void,
+): Promise<string> {
   const needVision = messages.some(
     (m) => Array.isArray(m.content) && m.content.some((part) => part.type === 'image_url'),
   )
@@ -63,7 +68,12 @@ async function collectText(messages: ChatMessage[], temperature = 0.2, signal?: 
     ...(signal ? { signal } : {}),
   })) {
     const delta = chunk.choices?.[0]?.delta
-    if (delta?.content) text += delta.content
+    if (delta?.content) {
+      text += delta.content
+      // 增量回调：驱动「思考链路」实时渲染（Web 原生 SSE 直达；原生端经
+      // originProxy 流式通道逐块回传；旧版插件退化为结束时一次性回调）
+      if (onDelta) onDelta(delta.content)
+    }
   }
   return text
 }
@@ -314,8 +324,13 @@ export interface CoachContext {
   barriers: string[]
 }
 
-/** AI 饮食助手：把实时状态作为上下文，回答单条提问 */
-export async function askCoach(question: string, ctx: CoachContext): Promise<string> {
+/** AI 饮食助手：把实时状态作为上下文，回答单条提问。
+ * onDelta 用于「思考链路」实时渲染（可选，不传则行为与旧版一致）。 */
+export async function askCoach(
+  question: string,
+  ctx: CoachContext,
+  onDelta?: (delta: string) => void,
+): Promise<string> {
   const goalText = ctx.goal === 'lose' ? '减脂' : ctx.goal === 'gain' ? '增重增肌' : '保持体重'
   const net = Math.round(ctx.eatenKcal - ctx.burnedKcal)
   const remain = Math.round(ctx.targetKcal - net)
@@ -333,6 +348,8 @@ export async function askCoach(question: string, ctx: CoachContext): Promise<str
       { role: 'user', content: user },
     ],
     0.55,
+    undefined,
+    onDelta,
   )
 }
 
