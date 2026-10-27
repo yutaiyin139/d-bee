@@ -150,6 +150,7 @@
   · **CORS 未配白名单则拒绝所有跨域**（同源不受影响，当前 Web 走 nginx 同源反代故能跑；脚本已加提前拦截提示）。
   切换命令与验收清单见 `docs/公章与对公账户到手-行动清单-2026-10-26.md` §一 P1。
   模板正文约定：`您的验证码是{1}，{2}分钟内有效`（`TemplateParamSet` 按位传 `[code, otpTtlMin]`）。
+  ✅ **已入库 `e00387b`**（10-27 22:39，12 文件 +559/-311：部署脚本 + env 模板 + 5 份文档 + 记忆）。
 - **🔴 上架前生产安全体检与加固（10-26，`3186680`+`de9a3cc`，六项 ①–⑥ 已全部生效）**：10-26 凌晨服务器只读探查发现
   **网关层完全未部署**（运行 10-23 骨架版，18/18 特征串探针全 OLD、`lib/iap.mjs` 缺失致 Apple 端点 404、LLM Pro 门控/
   XFF 限流/dbproxy 资源管理均未上线）——数据库 0039/0040 已在库生效，但代码未部署。04:07 用户确认后按序完成部署：
@@ -250,7 +251,7 @@
   ④ appleSandbox 生产默认关 ✅ —— **①④ 已部署上线 + 端到端验证通过**（线上 access token `ver=1`/`TTL=1800s`、登出后旧 token 立即 401）；
   ③ LLM 视觉 fail-closed 503 + 文本独立降额 50/日 ✅ ⑤ functions.sql 同步 0039 事实验证版 ✅ ⑦ CORS Origin 白名单 ✅
   + email 验证码通道（163 SMTP provider，465/SSL）✅ —— **③⑤⑦+email 代码已就位 + 自测 300/0 全绿，待部署上线**（与①④同批或下次）；
-  卡资质：⑥ 万能码切真短信（等 10-28 签约，切 `SMS_PROVIDER=tencent` + 删万能码 + `DBEE_PROD=1`）。
+  卡资质：⑥ 万能码切真短信 —— 🟢 **已解锁且链路已入库（`e00387b`）**，只等腾讯云四项凭据到手跑一条命令（见「短信通道切换」条）。
   随后主线（上架前）：**ASC 配 3 商品（`dbee_pro_monthly`/`yearly`/`dbee_lifetime`）+ 开 IAP capability + 填收款 +
   App Store Server Notifications V2 webhook 配指向网关 + 配 APPLE_BUNDLE_ID/SHARED_SECRET/SANDBOX → iOS 提审**；
   资质到货后（公章 10-27 已到手、对公账户 10-28）→ 小程序主体变更 / 短信签约 / 商户号 / ASC 付费协议（iOS 沙盒前提）；
