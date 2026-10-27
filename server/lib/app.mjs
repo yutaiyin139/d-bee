@@ -7,6 +7,7 @@
  */
 import http from 'node:http'
 import { Router, RateLimiter, sendJson, cloudError, pgrstError, readJson, clientIp } from './http.mjs'
+import { isOriginAllowed } from './config.mjs'
 import { OtpStore } from './otp.mjs'
 import { createAuthHandlers } from './auth.mjs'
 import { createDbProxy } from './dbproxy.mjs'
@@ -129,9 +130,11 @@ export function createApp(deps) {
     const pathname = url.pathname
 
     // CORS：网关与前端同源（经 nginx），但原生端 CapacitorHttp 会带 Origin。
-    // 回显具体 Origin 而非 *，且不开 allow-credentials（JWT 走 Authorization 头，不用 cookie）
+    // 🔴 安全审计⑦：不再无条件回显 Origin —— 改白名单校验（isOriginAllowed）。
+    //   命中白名单才回显具体 Origin；未命中则不设 allow-origin，浏览器会阻断跨域读。
+    //   不开 allow-credentials（JWT 走 Authorization 头，不用 cookie）。
     const origin = req.headers.origin
-    if (origin) {
+    if (origin && isOriginAllowed(cfg, origin)) {
       res.setHeader('access-control-allow-origin', origin)
       res.setHeader(
         'access-control-allow-headers',

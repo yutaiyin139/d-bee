@@ -196,20 +196,33 @@ export function createAuthHandlers(deps) {
       // 识别依据：otp.demo 命中该号。这里跳过 sendCode，避免真短信模式下 502 挡住演示登录。
       const isDemoPhone = otp.demo && ident.kind === 'phone' && ident.value === otp.demo.phone
       if (!isDemoPhone) {
+        // 按通道分流 provider：phone → smsProvider；email → emailProvider（2026-10-27 解耦）
+        const isEmail = ident.kind === 'email'
+        const provider = isEmail ? cfg.emailProvider : cfg.smsProvider
         const sent = await sendCode({
-          provider: cfg.smsProvider,
-          channel: ident.kind === 'phone' ? 'sms' : 'email',
+          provider,
+          channel: isEmail ? 'email' : 'sms',
           to: ident.value,
           masked: ident.masked,
           code,
           signName: cfg.smsSignName,
-          // tencent provider 所需凭据与模板参数（log provider 忽略这两个字段）
+          // tencent provider 所需凭据与模板参数（log/smtp provider 忽略这些字段）
           tencent: {
             secretId: cfg.smsTencentSecretId,
             secretKey: cfg.smsTencentSecretKey,
             sdkAppId: cfg.smsTencentSdkAppId,
             templateId: cfg.smsTencentTemplateId,
             region: cfg.smsTencentRegion,
+          },
+          // smtp provider 所需凭据（log/tencent provider 忽略这些字段）
+          smtp: {
+            host: cfg.emailSmtpHost,
+            port: cfg.emailSmtpPort,
+            secure: cfg.emailSmtpSecure,
+            user: cfg.emailSmtpUser,
+            pass: cfg.emailSmtpPass,
+            from: cfg.emailSmtpFrom,
+            fromName: cfg.emailSmtpFromName,
           },
           otpTtlMin: Math.max(1, Math.round((cfg.otpTtlSec || 300) / 60)),
           logger,

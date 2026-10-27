@@ -29,7 +29,7 @@ import { withUserIdentity } from './db.mjs'
 import { getTokenVersion } from './identity.mjs'
 
 /**
- * 服务端权益闸门（0039 P0-C 修复）。
+ * 服务端权益闸门（0039 P0-C 修复 + 安全审计③ fail-closed）。
  *
  * 为什么必须做：此前额度校验完全依赖客户端自觉调用 consume_photo_quota —— 
  * 直接 POST /.cloud/llm/chat/completions（带合法 JWT）即可无限用 AI，
@@ -37,12 +37,14 @@ import { getTokenVersion } from './identity.mjs'
  * 额度占用记录（ai_quota_claims）：正常前端流程「先 consume 后调 LLM」必然
  * 有 claim 可核销；绕过前端的裸调没有 claim → 落入包装识别日配额（有界）→ 拒绝。
  *
- * 文本请求不做业务额度（产品口径：只有拍照识别计费），由 usageLimiter 兜底。
+ * 文本请求不做业务额度（产品口径：只有拍照识别计费），由独立文本日限额兜底。
  *
- * fail 策略：数据库查询本身异常 → **放行**（记 error 日志）。理由：llm_gate 依赖的
- *   连接池与主数据面同生共死，它挂了业务本来就不可用；此时拒绝视觉请求只会把
- *   「数据库抖动」误报成「额度用尽」，诱导用户付费升级（与 P0-2 fail-closed
- *   原则的 UI 语义冲突）。滥用面已由 usageLimiter(200/日) + 全局限流封顶。
+ * 🔴 fail 策略（安全审计③，2026-10-27）：此前数据库查询异常 → **放行**
+ *   （fail-open，注释承认是刻意为之）。风险：llm_gate 依赖的连接池一旦抖动，
+ *   视觉额度校验整体失效，任何人可无限用视觉模型白烧 API key 费用。
+ *   现改为 **fail-closed**：视觉请求在 llm_gate 查询异常 / 返回畸形时拒绝
+ *   （reason=gate_unavailable，网关回 503 而非 402，避免把「数据库抖动」误报成
+ *   「额度用尽」诱导用户付费升级）。视觉是计费功能，宁可短暂不可用，也不白烧钱。
  */
 async function llmGate(deps, ownerId, wantVision) {
   const { cfg, logger, pool } = deps
@@ -54,12 +56,12 @@ async function llmGate(deps, ownerId, wantVision) {
       return r.rows[0]?.g ?? null
     })
     if (gate && typeof gate === 'object') return { ...gate, gate: 'db' }
-    // 函数缺失/返回异常 → 视为放行（迁移未跑时不致全网关瘫痪），但记日志
-    logger.error('[llm] llm_gate 返回异常形状，按放行处理（请确认 0039 已应用）')
-    return { allowed: true, gate: 'db-anomaly' }
+    // 函数缺失/返回异常 → fail-closed（不再放行），记 error 日志
+    logger.error('[llm] llm_gate 返回异常形状，视觉请求按 fail-closed 拒绝（请确认 0039 已应用）')
+    return { allowed: false, gate: 'db-anomaly', reason: 'gate_unavailable' }
   } catch (err) {
-    logger.error(`[llm] llm_gate 查询失败，按放行处理: ${err?.message || err}`)
-    return { allowed: true, gate: 'db-error' }
+    logger.error(`[llm] llm_gate 查询失败，视觉请求按 fail-closed 拒绝: ${err?.message || err}`)
+    return { allowed: false, gate: 'db-error', reason: 'gate_unavailable' }
   }
 }
 
@@ -184,6 +186,13 @@ export function createLlmHandlers(deps) {
     limit: Math.max(1, cfg.llmPackageDailyCap || 8),
     maxKeys: 200_000,
   })
+  // 🔴 安全审计③：文本独立日限额器（不再与视觉共用 usageLimiter 200/日）。
+  //   文本不经过 llm_gate 业务额度，若不独立降额 = 200 次/日免费通用 LLM 代理。
+  const textLimiter = new RateLimiter({
+    windowMs: 86_400_000,
+    limit: Math.max(1, cfg.llmTextDailyCapPerUser || 50),
+    maxKeys: 200_000,
+  })
 
   async function authOwnerId(req) {
     const token = bearerFrom(req.headers)
@@ -272,9 +281,14 @@ export function createLlmHandlers(deps) {
 
       // ── 每日用量兜底闸 ──────────────────────────────────
       // 数据库里另有 consume_ai_quota 做业务额度（3 免费 + 2 兑换）；
-      // 这里是防「绕过业务额度直接打网关」的第二层，阈值宽松（默认 200/日）。
-      if (deps.usageLimiter) {
-        const u = deps.usageLimiter.hit(`llm:${ownerId}:${dayKey()}`)
+      // 这里是防「绕过业务额度直接打网关」的第二层。
+      // 🔴 安全审计③：文本与视觉**分开限额**——文本不经过 llm_gate 业务额度，
+      //   若共用宽松的 200/日，等于开放免费通用 LLM 代理；故文本走独立 textLimiter
+      //   （默认 50/日），视觉才走 usageLimiter（默认 200/日）。
+      const wantVisionReq = wantVision
+      const dayLimiter = wantVisionReq ? deps.usageLimiter : textLimiter
+      if (dayLimiter) {
+        const u = dayLimiter.hit(`llm:${ownerId}:${dayKey()}`)
         if (!u.ok) {
           res.setHeader('retry-after', String(u.retryAfterSec))
           return llmError(res, 429, '今日 AI 调用次数已达上限', 'rate_limited')
@@ -287,6 +301,13 @@ export function createLlmHandlers(deps) {
       // （产品口径：仅拍照识别计额度）。
       const gate = await llmGate(deps, ownerId, wantVision)
       if (!gate.allowed) {
+        // 🔴 安全审计③：llm_gate 查询异常（库抖动/函数缺失/返回畸形）→
+        //   fail-closed，返回 503（服务暂不可用），而非 402（额度用尽）——
+        //   避免把数据库故障误报成「额度用尽」诱导用户付费升级。
+        if (gate.reason === 'gate_unavailable') {
+          logger.error(`[llm] owner=${ownerId} 权益闸门不可用，视觉请求 fail-closed 拒绝`)
+          return llmError(res, 503, 'AI 服务暂不可用，请稍后重试', 'gate_unavailable')
+        }
         // 兜底通道：包装识别（条码兜底）按产品口径**不占拍照额度**、无 claim
         // （见 src/pages/LogSheet.tsx 的 handlePackagePhoto）。若不放行，
         // 免费用户扫包装会被闸门 402 —— 功能回归。

@@ -100,6 +100,14 @@ const cfg = {
   smsProvider: 'log',
   smsMasterCode: '888888',
   smsSignName: '自律蜜蜂',
+  emailProvider: 'log', // email 发码通道（与 smsProvider 解耦，2026-10-27）
+  emailSmtpHost: '',
+  emailSmtpPort: 587,
+  emailSmtpSecure: false,
+  emailSmtpUser: '',
+  emailSmtpPass: '',
+  emailSmtpFrom: '',
+  emailSmtpFromName: '自律蜜蜂',
   otpTtlSec: 300,
   otpMaxAttempts: 3,
   otpResendSec: 60,
@@ -113,6 +121,8 @@ const cfg = {
   llmModelVision: 'deepseek-flash',
   llmTimeoutMs: 5000,
   llmDailyCapPerUser: 100,
+  llmTextDailyCapPerUser: 50,
+  corsAllowedOrigins: new Set(), // 非生产默认空 → 回显任意 Origin（开发便利）
   postgrestUrl: 'http://127.0.0.1:1',
   postgrestJwtSecret: JWT_SECRET,
   postgrestSchema: 'public',
@@ -372,6 +382,11 @@ section('config · validate 拦住不安全配置')
   assert('只配 DEMO_PHONE 缺 DEMO_CODE 被拒', validate({ ...cfgBase, demoPhone: '13800000000', demoCode: '' }).length > 0)
   assert('只配 DEMO_CODE 缺 DEMO_PHONE 被拒', validate({ ...cfgBase, demoPhone: '', demoCode: '123456' }).length > 0)
   assert('演示码 = 万能码被拒（职责冲突）', validate({ ...cfgBase, demoPhone: '13800000000', demoCode: '888888' }).length > 0)
+  // email 通道校验（2026-10-27）：未配 emailProvider 不报错（视为 log 占位）
+  assert('未配 emailProvider → 不报错（log 占位）', validate(cfgBase).length === 0)
+  assert('emailProvider=smtp 缺凭据被拒', validate({ ...cfgBase, emailProvider: 'smtp', emailSmtpHost: '', emailSmtpFrom: '' }).length > 0)
+  assert('emailProvider=smtp 配齐凭据无问题', validate({ ...cfgBase, emailProvider: 'smtp', emailSmtpHost: 'smtp.example.com', emailSmtpFrom: 'noreply@example.com' }).length === 0, JSON.stringify(validate({ ...cfgBase, emailProvider: 'smtp', emailSmtpHost: 'smtp.example.com', emailSmtpFrom: 'noreply@example.com' })))
+  assert('emailProvider=未知值被拒', validate({ ...cfgBase, emailProvider: 'sendgrid' }).length > 0)
   // 生产环境允许保留演示账户（只锁一个号，非全局后门）；且切真短信后
   // 不再触发「生产 + log」那条最危险的规则（tencent 未实现会另报一条，属预期）。
   assert('生产 + 真短信 + 演示账户：不触发「生产+log 万能码」规则', (() => {
@@ -433,6 +448,50 @@ section('config · validate 拦住不安全配置')
   assert('配齐后无提示', warnings({ ...c, llmApiKey: 'sk-x', publishableKey: 'wbpk_x', appleBundleId: 'com.x', appleSharedSecret: 'sec' }).length === 0)
 }
 
+section('config · isOriginAllowed（安全审计⑦ CORS 白名单）')
+{
+  const { isOriginAllowed, warnings, loadConfig } = await import('../server/lib/config.mjs')
+  // 非生产 + 空白名单 → 回显任意 Origin（开发便利，旧行为）
+  const devCfg = { prod: false, corsAllowedOrigins: new Set() }
+  assert('非生产空白名单：任意 Origin 放行', isOriginAllowed(devCfg, 'http://evil.example.com') === true)
+  assert('非生产空白名单：capacitor 本地放行', isOriginAllowed(devCfg, 'capacitor://localhost') === true)
+  assert('无 Origin 头（同源/非浏览器）→ 不涉及 CORS，返回 true', isOriginAllowed(devCfg, null) === true)
+
+  // 生产 + 空白名单 → 拒绝所有跨域
+  const prodEmpty = { prod: true, corsAllowedOrigins: new Set() }
+  assert('生产空白名单：任意 Origin 拒绝', isOriginAllowed(prodEmpty, 'http://evil.example.com') === false)
+  assert('生产空白名单：合法 Origin 也拒绝（未配白名单）', isOriginAllowed(prodEmpty, 'https://dbee.example.com') === false)
+
+  // 生产 + 白名单 → 精确匹配
+  const prodAllow = { prod: true, corsAllowedOrigins: new Set(['https://dbee.example.com', 'https://*.cdn.example.com']) }
+  assert('白名单精确命中 → 放行', isOriginAllowed(prodAllow, 'https://dbee.example.com') === true)
+  assert('白名单未命中 → 拒绝', isOriginAllowed(prodAllow, 'https://evil.example.com') === false)
+  assert('通配子域命中 → 放行', isOriginAllowed(prodAllow, 'https://a.cdn.example.com') === true)
+  assert('通配子域多级命中 → 放行', isOriginAllowed(prodAllow, 'https://a.b.cdn.example.com') === true)
+  assert('通配不匹配裸域 → 拒绝', isOriginAllowed(prodAllow, 'https://cdn.example.com') === false)
+  assert('协议不符（http vs https）→ 拒绝', isOriginAllowed(prodAllow, 'http://dbee.example.com') === false)
+  assert('端口不符 → 拒绝', isOriginAllowed(prodAllow, 'https://dbee.example.com:8443') === false)
+  assert('畸形 Origin → 拒绝（不抛异常）', isOriginAllowed(prodAllow, 'not-a-url') === false)
+  // 大小写不敏感
+  assert('host 大小写不敏感', isOriginAllowed(prodAllow, 'https://DBEE.Example.COM') === true)
+
+  // warnings：生产未配白名单 → 提示
+  const warnCfg = loadConfig({
+    JWT_SECRET: 'a'.repeat(48), IDENT_PEPPER: 'b'.repeat(48), DBEE_PWD: 'pwd',
+    SMS_PROVIDER: 'tencent', SMS_MASTER_CODE: '',
+    SMS_TENCENT_SECRET_ID: 'sid', SMS_TENCENT_SECRET_KEY: 'skey',
+    SMS_TENCENT_SDKAPPID: '1400000000', SMS_TENCENT_TEMPLATE_ID: '123456',
+    DBEE_PROD: '1',
+  })
+  assert('生产未配 CORS 白名单 → warnings 提示',
+    warnings({ ...warnCfg, corsAllowedOrigins: new Set() })
+      .some((w) => w.includes('CORS_ALLOWED_ORIGINS')))
+  // 生产配了白名单 → 不提示
+  assert('生产配了白名单 → 无 CORS 提示',
+    !warnings({ ...warnCfg, corsAllowedOrigins: new Set(['https://dbee.example.com']) })
+      .some((w) => w.includes('CORS_ALLOWED_ORIGINS')))
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // Part 2 · 端到端 HTTP（真 server + mock pool）
 // ══════════════════════════════════════════════════════════════════════
@@ -484,6 +543,9 @@ section('HTTP · 发码参数校验')
   assert('非法手机号 → 400', r3.status === 400)
   const r4 = await post(`${A}/verification`, { email: 'user@example.com', usage: 'email' })
   assert('邮箱发码 → 200', r4.status === 200, `实际 ${r4.status}`)
+  const j4 = await r4.json()
+  assert('邮箱发码返回 verification_id', typeof j4.verification_id === 'string' && j4.verification_id.startsWith('ver_'))
+  assert('邮箱发码返回 is_user（boolean）', typeof j4.is_user === 'boolean')
 }
 
 section('HTTP · 发码频率限制（同标识 60s 一次）')
@@ -695,9 +757,38 @@ section('HTTP · 未注册路径与 CORS')
   assert('数据面（本测已禁用反代）→ 404 PGRST 形状', r2.status === 404 && !!(await r2.json()).code)
   const r3 = await fetch(BASE, { method: 'OPTIONS', headers: { origin: 'http://150.158.51.106' } })
   assert('OPTIONS 预检 → 204', r3.status === 204)
-  assert('回显具体 Origin（非通配）', r3.headers.get('access-control-allow-origin') === 'http://150.158.51.106')
+  assert('非生产空白名单：回显具体 Origin（非通配）', r3.headers.get('access-control-allow-origin') === 'http://150.158.51.106')
   assert('允许 authorization 头', (r3.headers.get('access-control-allow-headers') || '').includes('authorization'))
   assert('不开 allow-credentials', r3.headers.get('access-control-allow-credentials') === null)
+}
+
+section('HTTP · CORS 白名单（安全审计⑦，生产环境拒绝未授权 Origin）')
+{
+  const corsPool = createMockPool()
+  const corsCfg = {
+    ...cfg,
+    prod: true,
+    corsAllowedOrigins: new Set(['https://dbee.example.com']),
+  }
+  const corsApp = createApp({ cfg: corsCfg, pool: corsPool, gatewayPool: corsPool, logger, enableDbProxy: false, enableLlm: false })
+  await new Promise((r) => corsApp.server.listen(0, '127.0.0.1', r))
+  const CB = `http://127.0.0.1:${corsApp.server.address().port}/.cloud/healthz`
+
+  // 白名单命中 → 回显该 Origin
+  const ok = await fetch(CB, { headers: { origin: 'https://dbee.example.com' } })
+  assert('白名单命中 → 回显 allow-origin', ok.headers.get('access-control-allow-origin') === 'https://dbee.example.com')
+
+  // 白名单未命中 → 不设 allow-origin（浏览器会阻断跨域读）
+  const evil = await fetch(CB, { headers: { origin: 'https://evil.example.com' } })
+  assert('白名单未命中 → 不设 allow-origin', evil.headers.get('access-control-allow-origin') === null)
+
+  // 无 Origin 头（同源/非浏览器）→ 请求正常，不涉及 CORS
+  const noOrigin = await fetch(CB)
+  assert('无 Origin → 请求正常（不设 allow-origin 也不影响）', noOrigin.status === 200 && noOrigin.headers.get('access-control-allow-origin') === null)
+
+  corsApp.server.close()
+  corsApp.otp.close()
+  await corsPool.end?.()
 }
 
 section('HTTP · healthz（不鉴权，供探活）')
@@ -893,16 +984,25 @@ section('HTTP · LLM 闸门（llm_gate）与包装识别兜底')
   r = await gpost({ messages: [visionMsg] })
   assert('闸门硬拒绝 → 402（不兜底）', r.status === 402, `实际 ${r.status}`)
 
-  // ⑥ fail-open：查询异常 / 返回畸形 → 放行（502），不阻塞业务
+  // ⑥ 🔴 安全审计③：fail-closed —— 查询异常 / 返回畸形 → 拒绝（503），不阻塞但也不白烧钱
   gatePool.setMode('query-throw')
   r = await gpost({ messages: [visionMsg] })
-  assert('llm_gate 查询异常 → fail-open 502', r.status === 502, `实际 ${r.status}`)
+  assert('llm_gate 查询异常 → fail-closed 503', r.status === 503, `实际 ${r.status}`)
+  {
+    const jj = await r.json()
+    assert('503 错误码 = gate_unavailable', jj.error?.code === 'gate_unavailable', JSON.stringify(jj.error))
+  }
   gatePool.setMode('malformed')
   r = await gpost({ messages: [visionMsg] })
-  assert('llm_gate 返回畸形 → fail-open 502', r.status === 502, `实际 ${r.status}`)
+  assert('llm_gate 返回畸形 → fail-closed 503', r.status === 503, `实际 ${r.status}`)
   gatePool.setMode('connect-throw')
   r = await gpost({ messages: [visionMsg] })
-  assert('pool.connect 异常 → fail-open 502', r.status === 502, `实际 ${r.status}`)
+  assert('pool.connect 异常 → fail-closed 503', r.status === 503, `实际 ${r.status}`)
+
+  // ⑥b 文本请求不经过 llm_gate（wantVision=false），库异常也不影响文本
+  gatePool.setMode('query-throw')
+  r = await gpost({ messages: [{ role: 'user', content: '你好' }] })
+  assert('库异常时文本请求仍可走（502 到达上游，不因视觉闸门被拒）', r.status === 502, `实际 ${r.status}`)
 
   // ⑦ 输入限制：图片数超限（默认 4）→ 400 input_too_large，且不消耗兜底额度
   gatePool.setMode({ allowed: false, pro: false, reason: 'quota_not_claimed' })
@@ -939,6 +1039,39 @@ section('HTTP · LLM 闸门开关（llmGateEnabled=false 时不查库）')
   assert('闸门关闭时不调 llm_gate', gatePool.state.calls === 0)
   offApp.server.close()
   offApp.otp.close()
+}
+
+section('HTTP · 文本独立降额（安全审计③：文本不再共用 200/日）')
+{
+  const textPool = createGatePool()
+  // 文本请求 wantVision=false，不经过 llm_gate，也不走视觉 usageLimiter
+  const textCfg = { ...cfg, llmGateEnabled: true, llmTextDailyCapPerUser: 2, llmDailyCapPerUser: 100 }
+  const textApp = createApp({ cfg: textCfg, pool: textPool, gatewayPool: textPool, logger, enableDbProxy: false, enableLlm: true })
+  await new Promise((r) => textApp.server.listen(0, '127.0.0.1', r))
+  const T = `http://127.0.0.1:${textApp.server.address().port}/.cloud/llm/chat/completions`
+  const TH = { authorization: `Bearer ${signJwt({ sub: '6666666666666666666', role: 'authenticated' }, JWT_SECRET, 600)}` }
+  const tpost = () => post(T, { messages: [{ role: 'user', content: '你好' }] }, TH)
+
+  // 文本日限额 2：前 2 次放行（到达上游 → 502），第 3 次 429
+  const r1 = await tpost()
+  assert('文本第 1/2 次 → 502（到达上游）', r1.status === 502, `实际 ${r1.status}`)
+  const r2 = await tpost()
+  assert('文本第 2/2 次 → 502（到达上游）', r2.status === 502, `实际 ${r2.status}`)
+  const r3 = await tpost()
+  assert('文本第 3 次 → 429（独立降额生效，不是 200/日）', r3.status === 429, `实际 ${r3.status}`)
+  assert('429 错误码 = rate_limited', (await r3.json()).error?.code === 'rate_limited')
+
+  // 视觉请求不受文本限额影响（走独立的 usageLimiter 100/日）
+  const vpost = () => post(T, {
+    messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AA==' } }] }],
+  }, TH)
+  textPool.setMode({ allowed: true, pro: false, claim_id: 1 })
+  const v1 = await vpost()
+  assert('文本额度用尽后，视觉请求仍走独立额度（闸门放行 → 502）', v1.status === 502, `实际 ${v1.status}`)
+
+  textApp.server.close()
+  textApp.otp.close()
+  await textPool.end?.()
 }
 
 // ── 收尾 ──────────────────────────────────────────────────────────────

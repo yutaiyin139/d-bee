@@ -127,6 +127,19 @@ export function loadConfig(env = process.env) {
     // 模板须形如「您的验证码是{1}，{2}分钟内有效」，{1}=code {2}=有效分钟
     smsTencentTemplateId: env.SMS_TENCENT_TEMPLATE_ID?.trim() || '',
     smsTencentRegion: env.SMS_TENCENT_REGION?.trim() || 'ap-guangzhou',
+    // ── 邮件通道（email 登录验证码，与短信解耦，2026-10-27 新增）────────
+    // EMAIL_PROVIDER=log   默认：验证码进日志（开发占位，WEB 端收不到真邮件）
+    // EMAIL_PROVIDER=smtp  通用 SMTP 发信：企业邮箱/QQ/163/阿里企业邮/Resend/SendGrid 均可
+    //   凭据：EMAIL_SMTP_HOST / EMAIL_SMTP_PORT / EMAIL_SMTP_SECURE / EMAIL_SMTP_USER /
+    //         EMAIL_SMTP_PASS / EMAIL_SMTP_FROM / EMAIL_SMTP_FROM_NAME
+    emailProvider: (env.EMAIL_PROVIDER?.trim() || 'log').toLowerCase(),
+    emailSmtpHost: env.EMAIL_SMTP_HOST?.trim() || '',
+    emailSmtpPort: int(env.EMAIL_SMTP_PORT, 587),
+    emailSmtpSecure: bool(env.EMAIL_SMTP_SECURE, false),
+    emailSmtpUser: env.EMAIL_SMTP_USER?.trim() || '',
+    emailSmtpPass: env.EMAIL_SMTP_PASS?.trim() || '',
+    emailSmtpFrom: env.EMAIL_SMTP_FROM?.trim() || '',
+    emailSmtpFromName: env.EMAIL_SMTP_FROM_NAME?.trim() || '自律蜜蜂',
     // 审核演示账户（⑦）：仅对指定手机号生效的固定验证码，与全局万能码无关。
     // 用途：App Store 审核员没有真实手机号，用演示号 + 固定码登录。
     // 安全性：与万能码不同，它只解锁这一个号，不影响其他任何账号；
@@ -182,6 +195,11 @@ export function loadConfig(env = process.env) {
     llmTimeoutMs: int(env.LLM_TIMEOUT_MS, 120000),
     // 每用户每日 AI 调用上限的兜底闸（数据库里另有 consume_ai_quota，这是防打穿的第二层）
     llmDailyCapPerUser: int(env.LLM_DAILY_CAP, 200),
+    // 🔴 安全审计③：文本请求独立降额。
+    //   此前文本与视觉共用 llmDailyCapPerUser（200/日）——文本不经过 llm_gate 业务额度，
+    //   等于「200 次/日的免费通用 LLM 代理」（可拿它当免费 DeepSeek 用）。
+    //   产品口径只有拍照识别计费，文本仅用于轻量交互，20–50/日足够。
+    llmTextDailyCapPerUser: int(env.LLM_TEXT_DAILY_CAP, 50),
     // ── LLM 服务端授权与输入限制（0039 P0-C 配套）────────────────────
     // 视觉请求的服务端权益闸门开关。开启后：含图片的请求必须先经 llm_gate
     //   核销一条当日额度占用（正常「先 consume 后调 LLM」流程必然命中），
@@ -228,6 +246,19 @@ export function loadConfig(env = process.env) {
     // ── 限流 ───────────────────────────────────────────────
     rateLimitPerMin: int(env.RATE_LIMIT_PER_MIN, 300),
     bodyLimitBytes: int(env.BODY_LIMIT_BYTES, 32 * 1024 * 1024), // 32 MiB：base64 图片 + 富余
+    // ── CORS（安全审计⑦）───────────────────────────────────
+    // 🔴 此前无条件回显请求里的 Origin 头（`access-control-allow-origin: <任意>`），
+    //   等于向任意恶意网站开放「带着用户 JWT 的跨域请求」——JWT 虽不走 cookie，
+    //   但配合 XSS/CSRF 场景仍放大了攻击面。现在改为白名单：
+    //   · 生产（DBEE_PROD=1）：必须显式配 CORS_ALLOWED_ORIGINS，否则拒绝所有跨域 Origin；
+    //   · 非生产：未配时回显任意 Origin（开发/自测便利，与旧行为一致）。
+    //   支持精确域名与通配子域（*.example.com）。逗号分隔。
+    corsAllowedOrigins: new Set(
+      (env.CORS_ALLOWED_ORIGINS || '')
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean),
+    ),
     // 可信代理 IP 白名单（🔴 0039：XFF 只在直连对端可信时才被解析）。
     // 回环地址天然可信（同机 nginx），无需配置；若网关与 nginx 分机部署，
     // 把 nginx 的内网 IP 写进 TRUSTED_PROXY_IPS（逗号分隔）。
@@ -292,6 +323,19 @@ export function validate(cfg) {
   } else if (cfg.smsProvider !== 'log') {
     problems.push(`SMS_PROVIDER=${cfg.smsProvider} 尚未实现，当前支持 log（日志+万能码）与 tencent（腾讯云真短信）`)
   }
+  // ── 邮件通道校验 ──────────────────────────────────────────
+  if (cfg.emailProvider === 'smtp') {
+    const missing = [
+      ['EMAIL_SMTP_HOST', cfg.emailSmtpHost],
+      ['EMAIL_SMTP_FROM', cfg.emailSmtpFrom],
+    ].filter(([, v]) => !v).map(([k]) => k)
+    if (missing.length) {
+      problems.push(`EMAIL_PROVIDER=smtp 缺少凭据：${missing.join('、')}（详见 deploy/gateway/gateway.env.template）`)
+    }
+  } else if (cfg.emailProvider && cfg.emailProvider !== 'log') {
+    // 未配（undefined/''）视为 log 占位，不报错；配了未知值才报
+    problems.push(`EMAIL_PROVIDER=${cfg.emailProvider} 尚未实现，当前支持 log（日志占位）与 smtp（通用 SMTP）`)
+  }
   if (cfg.smsProvider === 'log' && !cfg.smsMasterCode) {
     problems.push('SMS_PROVIDER=log 时必须配 SMS_MASTER_CODE（万能验证码），否则无人能登录')
   }
@@ -326,5 +370,82 @@ export function warnings(cfg) {
     w.push('APPLE_SHARED_SECRET 未配置 —— 自动续期订阅商品验签会返回 21004（买断商品不受影响）')
   }
   if (cfg.prod && cfg.accessTtlSec > 30 * 86400) w.push('access token 有效期超过 30 天，偏长')
+  // 安全审计⑦：生产未配 CORS 白名单 → 提示（不阻断，跨域请求会被拒绝，同源不受影响）
+  if (cfg.prod && cfg.corsAllowedOrigins.size === 0) {
+    w.push('生产环境未配置 CORS_ALLOWED_ORIGINS —— 所有跨域请求将被拒绝（同源请求不受影响）')
+  }
   return w
+}
+
+/**
+ * 安全审计⑦：判断某个 Origin 是否在 CORS 白名单内。
+ *
+ * 规则：
+ *   · cfg 未开启白名单（非生产且未配）→ 放行任意 Origin（开发便利，旧行为）；
+ *   · 生产或显式配了白名单 → 严格匹配。
+ *
+ * 白名单条目支持三种形态（逗号分隔，大小写不敏感的 host 比较）：
+ *   · 完整 Origin（含 scheme，可带端口）：`https://dbee.example.com`
+ *   · 纯 host（不含 scheme，匹配任意 scheme）：`d-bee.com.cn`、`150.158.51.106`
+ *   · 通配子域（`*.` 前缀，可含或不含 scheme）：`*.example.com` 或 `https://*.cdn.example.com`
+ *     —— 匹配任意一级及更深子域，但不匹配裸域本身。
+ *
+ * 注：Origin 是 `scheme://host[:port]` 的完整串。端口不做归一化（http/https 默认
+ * 端口须写全，避免 `https://x:443` 与 `https://x` 二义）。capacitor://localhost 等
+ * 自定义 scheme 也按「完整 Origin」精确匹配处理。
+ *
+ * @param {object} cfg loadConfig 产物
+ * @param {string|null} origin 请求的 Origin 头（无 Origin = 同源/非浏览器，不涉及 CORS）
+ * @returns {boolean}
+ */
+export function isOriginAllowed(cfg, origin) {
+  if (!origin) return true // 无 Origin 头 = 非跨域，不设 allow-origin 也不影响
+  const allow = cfg.corsAllowedOrigins
+  // 非生产且未显式配白名单 → 回显任意 Origin（开发/自测便利）
+  if (!cfg.prod && allow.size === 0) return true
+  if (allow.size === 0) return false // 生产未配 → 拒绝所有跨域
+  let u
+  try {
+    u = new URL(origin)
+  } catch {
+    return false
+  }
+  const host = u.hostname.toLowerCase()
+  const port = u.port
+  const full = `${u.protocol}//${u.hostname.toLowerCase()}${port ? `:${port}` : ''}`.toLowerCase()
+
+  for (const raw of allow) {
+    const entry = raw.trim().toLowerCase()
+    if (!entry) continue
+
+    // 通配子域：`*.xxx` 或 `scheme://*.xxx`（含端口的 `scheme://*.xxx:port`）
+    const wildIdx = entry.indexOf('*.')
+    if (wildIdx >= 0) {
+      const prefix = entry.slice(0, wildIdx) // '' 或 'https://' 或 'https://'
+      const suffixWithPort = entry.slice(wildIdx + 1) // '.example.com' 或 '.cdn.example.com:8443'
+      // 拆出 host 后缀与可选端口
+      let suffixHost = suffixWithPort
+      let suffixPort = ''
+      const colon = suffixWithPort.lastIndexOf(':')
+      if (colon > 0) {
+        suffixHost = suffixWithPort.slice(0, colon)
+        suffixPort = suffixWithPort.slice(colon + 1)
+      }
+      // scheme 前缀约束：entry 带 scheme 时，Origin 的 scheme 必须一致
+      if (prefix && !full.startsWith(prefix)) continue
+      // host 必须以后缀结尾，且不是裸域本身（*.example.com 不匹配 example.com）
+      if (host.endsWith(suffixHost) && host !== suffixHost.slice(1)) {
+        // 端口约束：entry 显式带端口时须一致
+        if (suffixPort && port !== suffixPort) continue
+        return true
+      }
+      continue
+    }
+
+    // 完整 Origin 精确匹配
+    if (entry === full) return true
+    // 纯 host（无 scheme，如 `d-bee.com.cn`、`150.158.51.106`）→ 匹配任意 scheme
+    if (!entry.includes('://') && entry === host) return true
+  }
+  return false
 }

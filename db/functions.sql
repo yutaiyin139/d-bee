@@ -318,19 +318,85 @@ CREATE OR REPLACE FUNCTION public.grant_honey(p_reason text, p_ref_id text, p_am
  SET search_path TO 'public'
 AS $function$
 DECLARE
-  v_uid text := auth.uid();
-  v_ok boolean := false;
+  v_uid      text := auth.uid();
+  v_today    date := (now() AT TIME ZONE 'Asia/Shanghai')::date;
+  v_ref_date date;
+  v_expect   integer;
+  v_target   numeric;
+  v_total    numeric;
+  v_n        integer;
+  v_streak   integer;
 BEGIN
   IF v_uid IS NULL OR v_uid = '' THEN RETURN false; END IF;
   IF p_ref_id IS NULL OR btrim(p_ref_id) = '' THEN RETURN false; END IF;
-  IF p_reason = 'checkin_meal' THEN v_ok := p_amount = 5;
-  ELSIF p_reason = 'checkin_water' THEN v_ok := p_amount = 2;
-  ELSIF p_reason = 'checkin_exercise' THEN v_ok := p_amount = 2;
-  ELSIF p_reason = 'streak_milestone' THEN v_ok := p_amount IN (15, 40, 80, 120, 200, 400, 800);
-  ELSE v_ok := false; END IF;
-  IF NOT v_ok THEN RETURN false; END IF;
+
+  -- 🔴 安全审计⑤（0039 库内事实验证版）：不信任客户端入参，逐 reason 验证库内事实。
+  --  此前只校验「金额在白名单里」，任何登录用户可直接 RPC 领分自刷换 Pro。
+  IF p_reason = 'newbie' THEN
+    -- 固定业务键 + 固定金额；事实 = 已完善身体数据（身高体重均已填）
+    IF p_ref_id <> 'newbie' OR p_amount <> 150 THEN RETURN false; END IF;
+    PERFORM 1 FROM profiles
+      WHERE owner_id = v_uid AND height_cm IS NOT NULL AND current_weight_kg IS NOT NULL;
+    IF NOT FOUND THEN RETURN false; END IF;
+
+  ELSIF p_reason IN ('checkin_meal', 'checkin_water', 'checkin_exercise') THEN
+    -- 金额固定（5/2/2，与 packages/shared 的 CHECKIN_* 同源）
+    v_expect := CASE p_reason WHEN 'checkin_meal' THEN 5 ELSE 2 END;
+    IF p_amount <> v_expect THEN RETURN false; END IF;
+    -- ref_id 必须是日期，且只允许 今天/昨天（前端只在「今天」结算，昨天为跨零点容差）
+    BEGIN
+      v_ref_date := p_ref_id::date;
+    EXCEPTION WHEN others THEN
+      RETURN false;
+    END;
+    IF v_ref_date > v_today OR v_ref_date < v_today - 1 THEN RETURN false; END IF;
+    -- 库内事实验证（与 refund_checkin_*_by_date 的口径完全一致）
+    IF p_reason = 'checkin_meal' THEN
+      PERFORM 1 FROM meal_entries WHERE owner_id = v_uid AND log_date = v_ref_date LIMIT 1;
+      IF NOT FOUND THEN RETURN false; END IF;
+    ELSIF p_reason = 'checkin_water' THEN
+      SELECT COALESCE(SUM(amount_ml), 0) INTO v_total
+        FROM water_logs WHERE owner_id = v_uid AND log_date = v_ref_date;
+      SELECT COALESCE(current_weight_kg, 60) * 35 INTO v_target
+        FROM profiles WHERE owner_id = v_uid;
+      v_target := COALESCE(v_target, 2100);
+      IF v_total < v_target THEN RETURN false; END IF;
+    ELSE  -- checkin_exercise
+      PERFORM 1 FROM exercise_logs WHERE owner_id = v_uid AND log_date = v_ref_date LIMIT 1;
+      IF NOT FOUND THEN RETURN false; END IF;
+    END IF;
+
+  ELSIF p_reason = 'streak_milestone' THEN
+    -- ref_id 格式 '<N>d-<YYYY-MM-DD>'（与前端 Dashboard.tsx 拼法一致）
+    IF p_ref_id !~ '^[0-9]+d-[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN RETURN false; END IF;
+    BEGIN
+      v_n := split_part(p_ref_id, 'd-', 1)::integer;
+      v_ref_date := split_part(p_ref_id, 'd-', 2)::date;
+    EXCEPTION WHEN others THEN
+      RETURN false;
+    END;
+    -- 只允许「今天」结算（前端也仅在 activeToday 时调用）
+    IF v_ref_date <> v_today THEN RETURN false; END IF;
+    -- 金额必须等于里程碑表值（与 src/lib/invite.ts STREAK_HONEY 同源）
+    v_expect := CASE v_n WHEN 3 THEN 15 WHEN 7 THEN 40 WHEN 14 THEN 80
+                         WHEN 21 THEN 120 WHEN 30 THEN 200 WHEN 60 THEN 400
+                         WHEN 100 THEN 800 ELSE 0 END;
+    IF v_expect = 0 OR p_amount <> v_expect THEN RETURN false; END IF;
+    -- 事实：库内实算的当前连续打卡天数 == N（_lb_compute_streak 与 leaderboard 共用）
+    SELECT public._lb_compute_streak(
+             (SELECT array_agg(DISTINCT log_date::text ORDER BY log_date::text)
+                FROM meal_entries WHERE owner_id = v_uid),
+             v_today)
+      INTO v_streak;
+    IF COALESCE(v_streak, 0) <> v_n THEN RETURN false; END IF;
+
+  ELSE
+    RETURN false;  -- 未知 reason 一律拒绝
+  END IF;
+
   INSERT INTO honey_ledger (owner_id, amount, reason, ref_id, expires_at)
-  VALUES (v_uid, p_amount, p_reason, p_ref_id, now() + make_interval(days => GREATEST(p_ttl_days, 1)))
+  VALUES (v_uid, p_amount, p_reason, p_ref_id,
+          now() + make_interval(days => LEAST(GREATEST(COALESCE(p_ttl_days, 365), 1), 365)))
   ON CONFLICT DO NOTHING;
   RETURN FOUND;
 END;
@@ -343,20 +409,39 @@ CREATE OR REPLACE FUNCTION public.grant_photo_bonus(p_source text, p_grant_key t
  SET search_path TO 'public'
 AS $function$
 DECLARE
-  v_uid text := auth.uid();
-  v_ok boolean := false;
-  v_max_ttl integer;
+  v_uid      text := auth.uid();
+  v_today    date := (now() AT TIME ZONE 'Asia/Shanghai')::date;
+  v_key_date date;
+  v_cnt      integer;
 BEGIN
   IF v_uid IS NULL OR v_uid = '' THEN RETURN false; END IF;
   IF p_grant_key IS NULL OR btrim(p_grant_key) = '' THEN RETURN false; END IF;
-  IF p_source = 'newbie' THEN v_ok := p_amount = 3; v_max_ttl := 7;
-  ELSIF p_source = 'streak7' THEN v_ok := p_amount = 2; v_max_ttl := 7;
-  ELSIF p_source = 'honey' THEN v_ok := p_amount = 1; v_max_ttl := 7;
-  ELSE v_ok := false; END IF;
-  IF NOT v_ok THEN RETURN false; END IF;
-  IF p_ttl_days > v_max_ttl THEN RETURN false; END IF;
+
+  -- 🔴 安全审计⑤（0039 P0-B）：只允许 streak7。
+  --   · 'honey' 来源必须经 redeem_honey（扣积分后内部 INSERT quota_bonus），
+  --     对客户端开放 = 凭空造识别额度。
+  --   · 'newbie' 已被 0026 改为发 150 积分、0035 作废存量，不再对客户端开放。
+  IF p_source IS DISTINCT FROM 'streak7' THEN RETURN false; END IF;
+  IF p_amount <> 2 THEN RETURN false; END IF;
+  IF COALESCE(p_ttl_days, 7) NOT BETWEEN 1 AND 7 THEN RETURN false; END IF;
+
+  -- grant_key = 连续段第 7k 天的日期（前端 streak.ts streak7Date 的拼法）
+  BEGIN
+    v_key_date := p_grant_key::date;
+  EXCEPTION WHEN others THEN
+    RETURN false;
+  END;
+  IF v_key_date > v_today OR v_key_date < v_today - 2 THEN RETURN false; END IF;
+
+  -- 事实：以 v_key_date 结尾的最近 7 天每天都有饮食记录
+  SELECT count(DISTINCT log_date) INTO v_cnt
+    FROM meal_entries
+   WHERE owner_id = v_uid AND log_date <= v_key_date AND log_date > v_key_date - 7;
+  IF COALESCE(v_cnt, 0) < 7 THEN RETURN false; END IF;
+
   INSERT INTO quota_bonus (owner_id, source, grant_key, amount, consumed, expires_at)
-  VALUES (v_uid, p_source, p_grant_key, p_amount, 0, now() + make_interval(days => p_ttl_days))
+  VALUES (v_uid, p_source, p_grant_key, p_amount, 0,
+          now() + make_interval(days => COALESCE(p_ttl_days, 7)))
   ON CONFLICT (owner_id, source, grant_key) DO NOTHING;
   RETURN FOUND;
 END;

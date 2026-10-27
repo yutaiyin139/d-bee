@@ -56,13 +56,22 @@ load_secret LLM_API_KEY        || true
 load_secret LLM_VISION_API_KEY || true
 LLM_API_KEY="${LLM_API_KEY:-${SEC[LLM_API_KEY]:-}}"
 LLM_VISION_API_KEY="${LLM_VISION_API_KEY:-${SEC[LLM_VISION_API_KEY]:-}}"
+# 邮件通道（139 邮箱 SMTP）：账号 + 授权码。授权码是秘密，只从 .secrets.local / 环境变量读。
+load_secret EMAIL_SMTP_USER || true
+load_secret EMAIL_SMTP_PASS || true
+EMAIL_SMTP_USER="${EMAIL_SMTP_USER:-${SEC[EMAIL_SMTP_USER]:-}}"
+EMAIL_SMTP_PASS="${EMAIL_SMTP_PASS:-${SEC[EMAIL_SMTP_PASS]:-}}"
 
 # 两个密钥绝不能相同（config.validate 会拦；这里提前生成期就保证）
 if [ "${SEC[JWT_SECRET]}" = "${SEC[IDENT_PEPPER]}" ]; then
   SEC[IDENT_PEPPER]="$(rand_hex 32)"
 fi
 
-# 落盘（0600，仅本机本人可读）；每次部署重写以纳入新生成的项
+# 落盘（0600，仅本机本人可读）；每次部署重写以纳入新生成的项。
+# 🔴 必须**逐项持久化所有已知密钥**：此前这里只写 3 个键，把 LLM_API_KEY /
+#    LLM_VISION_API_KEY / SMTP 凭据全部抹掉 → 渲染出空值 → 部署后线上 LLM 被打成 503
+#    （2026-10-27 实际踩过，靠服务器 gateway.env.bak 回填才恢复）。
+#    现在「读到的就写回去」，新增密钥时在这里加一行即可。
 umask 077
 {
   echo "# D-Bee 网关密钥 · 自动生成于 $(date '+%F %T') · 不入库"
@@ -70,11 +79,28 @@ umask 077
   echo "JWT_SECRET=${SEC[JWT_SECRET]}"
   echo "IDENT_PEPPER=${SEC[IDENT_PEPPER]}"
   echo "SMS_MASTER_CODE=${SEC[SMS_MASTER_CODE]}"
+  # 以下四项为空则不写行（避免落盘空值键，下次读取时被误判为"已配置"）
+  [ -n "$LLM_API_KEY" ]        && echo "LLM_API_KEY=${LLM_API_KEY}"
+  [ -n "$LLM_VISION_API_KEY" ] && echo "LLM_VISION_API_KEY=${LLM_VISION_API_KEY}"
+  [ -n "$EMAIL_SMTP_USER" ]    && echo "EMAIL_SMTP_USER=${EMAIL_SMTP_USER}"
+  [ -n "$EMAIL_SMTP_PASS" ]    && echo "EMAIL_SMTP_PASS=${EMAIL_SMTP_PASS}"
+  true
 } > "$SECRETS"
 chmod 600 "$SECRETS" 2>/dev/null || true
 
 # 前置校验：PostgREST 与网关都要求 HS256 密钥 ≥32
 [ "${#SEC[JWT_SECRET]}" -ge 32 ] || { echo "!! JWT_SECRET < 32"; exit 1; }
+# 邮件通道已切 smtp → 凭据必须齐（否则线上发码 502，用户邮箱登录直接不可用）
+if grep -q '^EMAIL_PROVIDER=smtp' "$GW_DIR/gateway.env.template"; then
+  if [ -z "$EMAIL_SMTP_USER" ] || [ -z "$EMAIL_SMTP_PASS" ]; then
+    echo "!! EMAIL_PROVIDER=smtp 但缺少邮箱凭据。"
+    echo "   请设置：EMAIL_SMTP_USER='dbeeSupport@163.com' EMAIL_SMTP_PASS='<163邮箱授权码>' \\"
+    echo "           bash deploy/deploy-gateway.sh"
+    echo "   授权码在 163 邮箱「设置 → POP3/SMTP/IMAP → 开启 IMAP/SMTP」后短信验证生成，"
+    echo "   是 16 位大写字母（不是登录密码），且只显示一次。"
+    exit 1
+  fi
+fi
 
 export DBEE_HOST DBEE_USER DBEE_PWD
 export DBEE_JWT_SECRET="${SEC[JWT_SECRET]}"   # 供 dbee-ssh.py 的 __JWT_SECRET__ 占位符
@@ -90,6 +116,11 @@ echo "==> 1/4 渲染 gateway.env（注入密钥；密钥已持久化到 deploy/g
 # 模板里的占位符用 dbee-ssh.py 的 render 只能替换它认识的那几个，
 # 这里的秘密（IDENT_PEPPER/SMS_MASTER_CODE/DBEE_APP_PWD/LLM_API_KEY/WB_PUBLISHABLE_KEY）
 # 不在它的替换表里 → 直接本地 sed 精确替换，逐项校验无残留。
+#
+# 🔴 SMTP 授权码可能含 sed 特殊字符（# 是分隔符、& 会展开成匹配串、\ 是转义符）。
+#    不转义会**静默**写出错误的 env（密码被截断/插入垃圾），线上表现为发码 535。
+#    所以先 esc_sed 再替换。
+esc_sed() { local s="$1"; s="${s//\\/\\\\}"; s="${s//&/\\&}"; s="${s//#/\\#}"; printf '%s' "$s"; }
 sed \
   -e "s#__JWT_SECRET__#${SEC[JWT_SECRET]}#g" \
   -e "s#__IDENT_PEPPER__#${SEC[IDENT_PEPPER]}#g" \
@@ -97,6 +128,8 @@ sed \
   -e "s#__DBEE_APP_PWD__#${DBEE_APP_PWD}#g" \
   -e "s#__LLM_API_KEY__#${LLM_API_KEY:-}#g" \
   -e "s#__LLM_VISION_API_KEY__#${LLM_VISION_API_KEY:-}#g" \
+  -e "s#__EMAIL_SMTP_USER__#$(esc_sed "${EMAIL_SMTP_USER:-}")#g" \
+  -e "s#__EMAIL_SMTP_PASS__#$(esc_sed "${EMAIL_SMTP_PASS:-}")#g" \
   "$GW_DIR/gateway.env.template" > "$RENDERED_ENV"
 # WB_PUBLISHABLE_KEY 从前端源码提取（与 deploy.sh 同款做法，避免抄错静默失效）
 WBKEY="$(grep -oE 'wbpk_[A-Za-z0-9_]+' "$DIR/src/cloudConfig.ts" 2>/dev/null | head -1 || true)"
@@ -107,6 +140,12 @@ fi
 [ -n "$WBKEY" ] && echo "    publishableKey 已注入" || echo "    (未提取到 publishableKey，将跳过 access-key 校验)"
 [ -n "${LLM_API_KEY:-}" ] && echo "    LLM_API_KEY 已配置（文本模型启用）" || echo "    LLM_API_KEY 留空 → 文本 LLM 503"
 [ -n "${LLM_VISION_API_KEY:-}" ] && echo "    LLM_VISION_API_KEY 已配置（视觉 provider 启用）" || echo "    !! LLM_VISION_API_KEY 留空 → 视觉回落到文本 provider（拍照识别会 4xx，生产不可接受）"
+# 邮件通道：只打账号与密码长度，绝不打授权码明文
+if [ -n "${EMAIL_SMTP_USER:-}" ]; then
+  echo "    SMTP 发信账号 ${EMAIL_SMTP_USER}（授权码 ${#EMAIL_SMTP_PASS} 字符，已注入）"
+else
+  echo "    (未配 SMTP 账号；若 template 里 EMAIL_PROVIDER=log 则邮件验证码只进日志)"
+fi
 
 echo "==> 2/4 上传部署资产"
 "$PY" "$SSH_PY" putfile "$RENDERED_ENV"                  /tmp/gateway.env.in
