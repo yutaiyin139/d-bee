@@ -43,6 +43,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { verifyJwt, bearerFrom } from './jwt.mjs'
 import { cloudError } from './http.mjs'
+import { getTokenVersion } from './identity.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -236,7 +237,7 @@ export function verifyJws(jws) {
  *        这一不可能步骤，专测 SUBSCRIBED/DID_RENEW/REFUND 的处理分支。
  */
 export function createIapHandlers(deps) {
-  const { cfg, pool, logger } = deps
+  const { cfg, pool, logger, gatewayPool } = deps
   const fetchImpl = deps.fetchImpl
   const jwsVerify = deps.verifyJwsImpl ?? verifyJws
 
@@ -245,13 +246,23 @@ export function createIapHandlers(deps) {
     return cloudError(res, 503, 'Apple IAP 未配置（缺少 APPLE_BUNDLE_ID）', 'iap_not_configured')
   }
 
-  /** 取并校验 Bearer → ownerId；失败返回 null */
-  function authOwnerId(req) {
+  /** 取并校验 Bearer → ownerId；失败返回 null（🔴 安全审计①：带 token_version 校验） */
+  async function authOwnerId(req) {
     const token = bearerFrom(req.headers)
     if (!token) return null
     const v = verifyJwt(token, cfg.jwtSecret)
+    if (!v) return null
     const sub = v?.payload?.sub
-    return typeof sub === 'string' && sub ? sub : null
+    if (typeof sub !== 'string' || !sub) return null
+    if (gatewayPool && Number.isInteger(v.payload.ver)) {
+      try {
+        const cur = await getTokenVersion(gatewayPool, sub)
+        if (cur == null || cur !== v.payload.ver) return null
+      } catch (err) {
+        logger.error(`[iap] token_version 查询失败，跳过版本校验: ${err?.message || err}`)
+      }
+    }
+    return sub
   }
 
   return {
@@ -265,7 +276,7 @@ export function createIapHandlers(deps) {
      */
     async verify(req, res, body) {
       if (!cfg.appleBundleId) return notConfigured(res)
-      const ownerId = authOwnerId(req)
+      const ownerId = await authOwnerId(req)
       if (!ownerId) return cloudError(res, 401, '未登录或登录已过期', 'unauthorized')
 
       const receipt = typeof body?.receipt === 'string' ? body.receipt.trim() : ''

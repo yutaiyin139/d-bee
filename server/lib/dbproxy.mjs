@@ -31,6 +31,7 @@
  */
 import { signJwt, verifyJwt, bearerFrom } from './jwt.mjs'
 import { pgrstError, cloudError, readBody } from './http.mjs'
+import { getTokenVersion } from './identity.mjs'
 
 /** 允许透传给 PostgREST 的方法 */
 const ALLOWED_METHODS = new Set(['GET', 'POST', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'])
@@ -56,21 +57,35 @@ const KEEP_RES_HEADERS = new Set([
 
 /**
  * 构造 PostgREST 反代处理器。
- * @param {object} deps { cfg, logger }
+ * @param {object} deps { cfg, logger, gatewayPool }
  */
 export function createDbProxy(deps) {
-  const { cfg, logger } = deps
+  const { cfg, logger, gatewayPool } = deps
   const upstream = cfg.postgrestUrl
   const sameSecret = cfg.postgrestJwtSecret === cfg.jwtSecret
 
-  /** 校验前端 JWT，返回 sub；失败返回 null */
-  function verifyAccess(req) {
+  /**
+   * 校验前端 JWT，返回 sub；失败返回 null。
+   * 🔴 安全审计①：payload 含 ver 声明时，查库比对 token_version —— 登出/改密
+   *   已 bump 版本后，旧 access token 立即失效（不只靠 exp）。
+   *   gatewayPool 未注入（如自测）或查库失败时，退化为仅验签+exp（不放大成 401 风暴）。
+   */
+  async function verifyAccess(req) {
     const token = bearerFrom(req.headers)
     if (!token) return null
     const v = verifyJwt(token, cfg.jwtSecret)
     if (!v) return null
     const sub = v.payload?.sub
-    return typeof sub === 'string' && sub ? sub : null
+    if (typeof sub !== 'string' || !sub) return null
+    if (gatewayPool && Number.isInteger(v.payload.ver)) {
+      try {
+        const cur = await getTokenVersion(gatewayPool, sub)
+        if (cur == null || cur !== v.payload.ver) return null
+      } catch (err) {
+        logger.error(`[dbproxy] token_version 查询失败，跳过版本校验: ${err?.message || err}`)
+      }
+    }
+    return sub
   }
 
   /** 为 PostgREST 重签 JWT（或同密钥时透传原 token） */
@@ -99,7 +114,7 @@ export function createDbProxy(deps) {
     // ── 鉴权 ──────────────────────────────────────────────
     // 数据面**必须**登录：0030 已 REVOKE anon 的全部表权限，匿名请求即便透传也无权访问。
     // 在网关就拒掉，避免无意义的上游往返，也让 401 语义明确。
-    const ownerId = verifyAccess(req)
+    const ownerId = await verifyAccess(req)
     if (!ownerId) {
       return cloudError(res, 401, '未登录或登录已过期', 'unauthenticated')
     }

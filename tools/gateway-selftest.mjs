@@ -40,12 +40,13 @@ function createMockPool() {
       const s = sql.replace(/\s+/g, ' ')
 
       if (/INSERT INTO public\.app_users/i.test(s)) {
-        const [owner_id, ident_kind, ident_hash, ident_masked, password_hash] = params
+        const [owner_id, ident_kind, ident_hash, ident_masked, password_hash, token_version] = params
         const key = `${ident_kind}:${ident_hash}`
         if (byIdent.has(key) || rows.has(owner_id)) return { rowCount: 0, rows: [] }
         const row = {
           owner_id, ident_kind, ident_hash, ident_masked, password_hash,
           created_at: new Date().toISOString(), last_login_at: null, login_count: 0,
+          token_version: token_version ?? 1, // 0042：会话版本号
         }
         rows.set(owner_id, row)
         byIdent.set(key, owner_id)
@@ -65,6 +66,11 @@ function createMockPool() {
 
       if (/UPDATE public\.app_users/i.test(s)) {
         const r = rows.get(params[0])
+        if (/token_version = token_version \+ 1/i.test(s)) {
+          // 0042：登出 bump token_version，RETURNING 新版本
+          if (r) r.token_version = (r.token_version ?? 1) + 1
+          return { rowCount: r ? 1 : 0, rows: r ? [{ token_version: r.token_version }] : [] }
+        }
         if (r) { r.last_login_at = new Date().toISOString(); r.login_count += 1 }
         return { rowCount: r ? 1 : 0, rows: [] }
       }
@@ -392,8 +398,9 @@ section('config · validate 拦住不安全配置')
   assert('JWT_EXPIRES_IN=7d → 604800', loadConfig({ ...envBase, JWT_EXPIRES_IN: '7d' }).accessTtlSec === 604800)
   assert('JWT_EXPIRES_IN=900 → 900', loadConfig({ ...envBase, JWT_EXPIRES_IN: '900' }).accessTtlSec === 900)
   assert('JWT_EXPIRES_IN=12h → 43200', loadConfig({ ...envBase, JWT_EXPIRES_IN: '12h' }).accessTtlSec === 43200)
-  assert('JWT_EXPIRES_IN 非法 → 回退默认 7d', loadConfig({ ...envBase, JWT_EXPIRES_IN: 'garbage' }).accessTtlSec === 604800)
-  assert('JWT_EXPIRES_IN=0 → 回退默认（不接受 0 秒有效期）', loadConfig({ ...envBase, JWT_EXPIRES_IN: '0' }).accessTtlSec === 604800)
+  // 🔴 安全审计①：access TTL 默认从 7 天缩短到 30 分钟（缩小被盗窗口）
+  assert('JWT_EXPIRES_IN 非法 → 回退默认 30 分钟', loadConfig({ ...envBase, JWT_EXPIRES_IN: 'garbage' }).accessTtlSec === 1800)
+  assert('JWT_EXPIRES_IN=0 → 回退默认（不接受 0 秒有效期）', loadConfig({ ...envBase, JWT_EXPIRES_IN: '0' }).accessTtlSec === 1800)
 
   // 默认值与非致命提示
   const c = loadConfig(envBase)
@@ -403,6 +410,24 @@ section('config · validate 拦住不安全配置')
   assert('postgrestJwtSecret 默认复用 jwtSecret', c.postgrestJwtSecret === c.jwtSecret)
   assert('body 上限 32 MiB（base64 图片）', c.bodyLimitBytes === 32 * 1024 * 1024)
   assert('appleSandbox 默认 true（提审期用沙盒）', c.appleSandbox === true)
+  // 🔴 安全审计④：生产环境默认关沙盒；显式开沙盒触发 validate 拦截
+  // 注：用 validate(cfg) 直接测（cfgBase 形），避开 loadConfig 里
+  // 「生产+log 短信」这条更早触发的规则干扰。
+  const prodCfgBase = { ...cfgBase, prod: true, smsProvider: 'tencent', smsMasterCode: '' }
+  assert('生产 + appleSandbox=true → validate 拦截（防沙盒收据换真会员）',
+    validate({ ...prodCfgBase, appleSandbox: true }).some((x) => /APPLE_SANDBOX/.test(x)))
+  // appleSandbox=false 时，不应再出现 APPLE_SANDBOX 相关拦截（tencent 缺凭据是另一条，无关沙盒）
+  assert('生产 + appleSandbox=false → 不再有 APPLE_SANDBOX 拦截',
+    !validate({ ...prodCfgBase, appleSandbox: false }).some((x) => /APPLE_SANDBOX/.test(x)))
+  // loadConfig 层：生产环境（真短信已配齐）appleSandbox 默认 false，且默认只收 Production
+  const prodEnvFull = {
+    ...envBase, DBEE_PROD: '1', SMS_PROVIDER: 'tencent', SMS_MASTER_CODE: '',
+    SMS_TENCENT_SECRET_ID: 'sid', SMS_TENCENT_SECRET_KEY: 'skey',
+    SMS_TENCENT_SDKAPPID: '1400000000', SMS_TENCENT_TEMPLATE_ID: '123456',
+  }
+  const cpFull = loadConfig(prodEnvFull)
+  assert('生产环境 appleSandbox 默认 false', cpFull.appleSandbox === false)
+  assert('生产环境默认只收 Production', [...cpFull.appleAllowedEnvs].join(',') === 'Production', [...cpFull.appleAllowedEnvs].join(','))
   assert('缺 LLM_API_KEY 时给非致命提示', warnings({ ...c, llmApiKey: '' }).some((w) => w.includes('LLM_API_KEY')))
   assert('配了 bundleId 但缺 sharedSecret → 提示 21004 风险', warnings({ ...c, llmApiKey: 'sk-x', publishableKey: 'wbpk_x', appleBundleId: 'com.x', appleSharedSecret: '' }).some((w) => w.includes('APPLE_SHARED_SECRET')))
   assert('配齐后无提示', warnings({ ...c, llmApiKey: 'sk-x', publishableKey: 'wbpk_x', appleBundleId: 'com.x', appleSharedSecret: 'sec' }).length === 0)
@@ -640,6 +665,26 @@ section('HTTP · 登出 POST /v1/user/signout')
   await post(`${A}/user/signout`, {}, { authorization: `Bearer ${login.access_token}` })
   const r3 = await post(`${A}/token`, { grant_type: 'refresh_token', refresh_token: login.refresh_token })
   assert('登出后 refresh_token 已吊销 → 401', r3.status === 401, `实际 ${r3.status}`)
+}
+
+section('HTTP · 登出后旧 access token 立即失效（安全审计① token_version）')
+{
+  // 新登录拿一个带 ver 声明的 access token
+  const issued = otp.issue({ identKind: 'phone', identValue: PHONE, isExistingUser: true })
+  const v = otp.verify({ verificationId: issued.verificationId, code: '888888' })
+  const login = await (await post(`${A}/signin`, { username: PHONE, verification_token: v.verificationToken })).json()
+  const at = login.access_token
+  // 登出前：/user/me 应 200（token 有效）
+  const before = await get(`${A}/user/me`, { authorization: `Bearer ${at}` })
+  assert('登出前 /user/me → 200', before.status === 200, `实际 ${before.status}`)
+  // 登出（bump token_version）
+  await post(`${A}/user/signout`, {}, { authorization: `Bearer ${at}` })
+  // 登出后：同一 access token 应因 token_version 不匹配而 401（而不仅是靠 exp）
+  const after = await get(`${A}/user/me`, { authorization: `Bearer ${at}` })
+  assert('登出后旧 access token → 401（token_version 强制下线）', after.status === 401, `实际 ${after.status}`)
+  // 校验 access token 里确实带 ver 声明（否则上面的 401 只是巧合，不是版本校验）
+  const payload = JSON.parse(Buffer.from(at.split('.')[1], 'base64url').toString())
+  assert('access token 含 ver 声明', Number.isInteger(payload.ver), `ver=${payload.ver}`)
 }
 
 section('HTTP · 未注册路径与 CORS')

@@ -145,7 +145,7 @@ export function isOwnerId(v) {
 export async function findUserByIdent(pool, kind, value, pepper) {
   const hash = identHash(kind, value, pepper)
   const { rows } = await pool.query(
-    `SELECT owner_id, ident_kind, ident_masked, created_at, last_login_at, login_count
+    `SELECT owner_id, ident_kind, ident_masked, created_at, last_login_at, login_count, token_version
        FROM public.app_users
       WHERE ident_kind = $1 AND ident_hash = $2`,
     [kind, hash],
@@ -156,7 +156,7 @@ export async function findUserByIdent(pool, kind, value, pepper) {
 /** 按 owner_id 查用户（/user/me 用） */
 export async function findUserByOwnerId(pool, ownerId) {
   const { rows } = await pool.query(
-    `SELECT owner_id, ident_kind, ident_masked, created_at, last_login_at, login_count
+    `SELECT owner_id, ident_kind, ident_masked, created_at, last_login_at, login_count, token_version
        FROM public.app_users
       WHERE owner_id = $1`,
     [ownerId],
@@ -188,8 +188,8 @@ export async function ensureUser(pool, { kind, value, masked, passwordHash = nul
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const ownerId = newOwnerId()
     const { rowCount } = await pool.query(
-      `INSERT INTO public.app_users (owner_id, ident_kind, ident_hash, ident_masked, password_hash)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO public.app_users (owner_id, ident_kind, ident_hash, ident_masked, password_hash, token_version)
+       VALUES ($1, $2, $3, $4, $5, 1)
        ON CONFLICT DO NOTHING`,
       [ownerId, kind, hash, masked, passwordHash],
     )
@@ -213,6 +213,35 @@ export async function touchLogin(pool, ownerId) {
       WHERE owner_id = $1`,
     [ownerId],
   )
+}
+
+/**
+ * 会话版本号（0042）：登出 / 改密时 +1。
+ * 网关签发 access token 时把当前版本写进 payload.ver；校验时与库内比对，
+ * 不一致即拒绝 —— 已签发的旧 access token 立即失效（被盗会话可主动作废）。
+ * @returns {Promise<number>} bump 后的新版本号
+ */
+export async function bumpTokenVersion(pool, ownerId) {
+  const { rows } = await pool.query(
+    `UPDATE public.app_users
+        SET token_version = token_version + 1
+      WHERE owner_id = $1
+      RETURNING token_version`,
+    [ownerId],
+  )
+  return rows[0]?.token_version ?? null
+}
+
+/**
+ * 读当前会话版本号（校验 access token 的 ver 用）。
+ * 未找到用户（已被删除）返回 null。
+ */
+export async function getTokenVersion(pool, ownerId) {
+  const { rows } = await pool.query(
+    `SELECT token_version FROM public.app_users WHERE owner_id = $1`,
+    [ownerId],
+  )
+  return rows[0]?.token_version ?? null
 }
 
 /**

@@ -26,6 +26,7 @@
 import { verifyJwt, bearerFrom } from './jwt.mjs'
 import { cloudError, RateLimiter } from './http.mjs'
 import { withUserIdentity } from './db.mjs'
+import { getTokenVersion } from './identity.mjs'
 
 /**
  * 服务端权益闸门（0039 P0-C 修复）。
@@ -169,7 +170,7 @@ function estimateText(s) {
 }
 
 export function createLlmHandlers(deps) {
-  const { cfg, logger } = deps
+  const { cfg, logger, gatewayPool } = deps
   const catalog = buildModelCatalog(cfg)
   // 在途流式请求计数（进程级）。SSE 长连接同时占用网关内存与上游并发额度，
   // 超过上限直接 429，避免慢请求堆积成雪崩。
@@ -184,11 +185,23 @@ export function createLlmHandlers(deps) {
     maxKeys: 200_000,
   })
 
-  function authOwnerId(req) {
+  async function authOwnerId(req) {
     const token = bearerFrom(req.headers)
     if (!token) return null
     const v = verifyJwt(token, cfg.jwtSecret)
-    return typeof v?.payload?.sub === 'string' && v.payload.sub ? v.payload.sub : null
+    if (!v) return null
+    const sub = v.payload?.sub
+    if (typeof sub !== 'string' || !sub) return null
+    // 🔴 安全审计①：token_version 校验（登出/改密后旧 access token 立即失效）
+    if (gatewayPool && Number.isInteger(v.payload.ver)) {
+      try {
+        const cur = await getTokenVersion(gatewayPool, sub)
+        if (cur == null || cur !== v.payload.ver) return null
+      } catch (err) {
+        logger.error(`[llm] token_version 查询失败，跳过版本校验: ${err?.message || err}`)
+      }
+    }
+    return sub
   }
 
   return {
@@ -197,7 +210,7 @@ export function createLlmHandlers(deps) {
     /** GET /.cloud/llm/models */
     async listModels(req, res) {
       // 模型目录不含秘密，但仍要求登录：避免被当成公开探针刷
-      const ownerId = authOwnerId(req)
+      const ownerId = await authOwnerId(req)
       if (!ownerId) return cloudError(res, 401, '未登录或登录已过期', 'unauthenticated')
       if (!cfg.llmApiKey) return llmError(res, 503, 'LLM 未配置（缺 LLM_API_KEY）', 'llm_not_configured')
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
@@ -207,7 +220,7 @@ export function createLlmHandlers(deps) {
 
     /** POST /.cloud/llm/chat/completions —— 必须 SSE 流式 */
     async chatCompletions(req, res, body) {
-      const ownerId = authOwnerId(req)
+      const ownerId = await authOwnerId(req)
       if (!ownerId) return cloudError(res, 401, '未登录或登录已过期', 'unauthenticated')
       if (!cfg.llmApiKey) return llmError(res, 503, 'LLM 未配置（缺 LLM_API_KEY）', 'llm_not_configured')
 

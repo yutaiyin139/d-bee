@@ -47,13 +47,14 @@ export function createApp(deps) {
   const usageLimiter = new RateLimiter({ windowMs: 86_400_000, limit: cfg.llmDailyCapPerUser, maxKeys: 200_000 })
 
   const auth = createAuthHandlers({ cfg, pool: gatewayPool, otp, logger, limiterIdent, limiterIp })
-  const dbProxy = deps.enableDbProxy === false ? null : createDbProxy({ cfg, logger })
+  const dbProxy = deps.enableDbProxy === false ? null : createDbProxy({ cfg, logger, gatewayPool })
   // LLM 用业务池（dbee_app）：0039 的 llm_gate 只授 dbee_app EXECUTE。
-  const llm = deps.enableLlm === false ? null : createLlmHandlers({ cfg, logger, usageLimiter, pool })
+  // gatewayPool 用于 token_version 校验（安全审计①），与业务池分离。
+  const llm = deps.enableLlm === false ? null : createLlmHandlers({ cfg, logger, usageLimiter, pool, gatewayPool })
   // IAP 走业务池（dbee_app）：核销函数 0037 只授 dbee_app EXECUTE。
   // 未配 APPLE_BUNDLE_ID 时端点自返 503（见 iap.mjs notConfigured），无需条件装配。
   const iap = deps.enableIap === false ? null : createIapHandlers({
-    cfg, pool, logger,
+    cfg, pool, logger, gatewayPool,
     ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
     ...(deps.verifyJwsImpl ? { verifyJwsImpl: deps.verifyJwsImpl } : {}),
   })

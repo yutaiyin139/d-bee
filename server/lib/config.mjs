@@ -89,18 +89,24 @@ export function loadConfig(env = process.env) {
 
   const jwtSecret = require('JWT_SECRET', '生产必须是独立随机值：node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"')
   // 拦住开发占位符跑到生产：这个值在仓库历史与文档里出现过，等于公开
-  if (bool(env.DBEE_PROD, false) && /dev-only|change-me|changeme/i.test(jwtSecret)) {
+  const cfgProd = bool(env.DBEE_PROD, false)
+  if (cfgProd && /dev-only|change-me|changeme/i.test(jwtSecret)) {
     throw new Error('JWT_SECRET 仍是开发占位符，生产环境拒绝启动')
   }
 
   const cfg = {
-    prod: bool(env.DBEE_PROD, false),
+    prod: cfgProd,
     host: env.GATEWAY_HOST?.trim() || '127.0.0.1',
     port: int(env.GATEWAY_PORT, 8080),
 
     // ── auth ───────────────────────────────────────────────
     jwtSecret,
-    accessTtlSec: parseTtlSafe(env.JWT_EXPIRES_IN, 7 * 86400),
+    // 🔴 安全审计①（2026-10-26）：access TTL 从 7 天缩短到 30 分钟。
+    //   access 是无状态 JWT，无法主动吊销；7 天 = 被盗会话可用 7 天。
+    //   30 分钟 + 可吊销的 refresh（30 天）滚动续期，是被盗窗口的标准做法：
+    //   即使 token 泄露，30 分钟内失效；用户主动登出则立即可作废（见 token_version）。
+    //   保留 JWT_EXPIRES_IN 覆盖入口，排查/特殊场景可调，但默认收紧。
+    accessTtlSec: parseTtlSafe(env.JWT_EXPIRES_IN, 30 * 60),
     refreshTtlSec: parseTtlSafe(env.JWT_REFRESH_EXPIRES_IN, 30 * 86400),
     // 前端 SDK 的 publishableKey（src/cloudConfig.ts 里的 wbpk_…）。
     // 自托管下它只是「应用标识」，不承担安全职责（真密钥是 JWT_SECRET），
@@ -197,8 +203,13 @@ export function loadConfig(env = process.env) {
     // ── Apple IAP（C1）─────────────────────────────────────
     appleBundleId: env.APPLE_BUNDLE_ID?.trim() || '',
     appleSharedSecret: env.APPLE_SHARED_SECRET?.trim() || '',
-    // 沙盒环境开关：提审阶段用 true，正式上架后改 false
-    appleSandbox: bool(env.APPLE_SANDBOX, true),
+    // 🔴 安全审计④（2026-10-26）：沙盒开关默认值按是否生产环境区分。
+    //   · 非生产（提审/开发）：默认 true（审核员用沙盒账号，双环境都收）。
+    //   · 生产（DBEE_PROD=1）：默认 false —— 正式上架后若漏改，沙盒收据
+    //     （沙盒账号假钱购买）能换真会员。除非**显式** APPLE_SANDBOX=1，
+    //     否则生产一律只收 Production 环境收据。
+    //   validate() 另有兜底：prod 且 appleSandbox 显式为 true 时给出致命拦截。
+    appleSandbox: cfgProd ? bool(env.APPLE_SANDBOX, false) : bool(env.APPLE_SANDBOX, true),
     appleWebhookSecret: env.APPLE_WEBHOOK_SECRET?.trim() || '',
     // 🔴 0039：收据环境白名单。Apple 验签响应的 environment 字段标明收据来源
     //   （Sandbox / Production）。此前不做校验 → 正式上架后，任何拥有沙盒账号的
@@ -209,7 +220,7 @@ export function loadConfig(env = process.env) {
     appleAllowedEnvs: new Set(
       (env.APPLE_ALLOWED_ENVS || '').trim()
         ? (env.APPLE_ALLOWED_ENVS || '').split(',').map((s) => s.trim()).filter(Boolean)
-        : bool(env.APPLE_SANDBOX, true)
+        : bool(env.APPLE_SANDBOX, !cfgProd)
           ? ['Sandbox', 'Production']
           : ['Production'],
     ),
@@ -295,6 +306,12 @@ export function validate(cfg) {
   }
   if (cfg.demoPhone && cfg.demoCode && cfg.smsMasterCode && cfg.demoCode === cfg.smsMasterCode) {
     problems.push('DEMO_CODE 不能与 SMS_MASTER_CODE 相同 —— 演示码应只锁定演示号，万能码是全局后门，二者职责不同')
+  }
+  // 🔴 安全审计④：生产环境若显式 APPLE_SANDBOX=1，沙盒收据可换真会员。
+  //   这是「正式上架忘关沙盒」的最后一道兜底。确实需要（如灰度期双环境）时，
+  //   用 APPLE_ALLOWED_ENVS=Sandbox,Production 显式表达意图，而非留 APPLE_SANDBOX=1。
+  if (cfg.prod && cfg.appleSandbox) {
+    problems.push('生产环境（DBEE_PROD=1）不应开启 APPLE_SANDBOX —— 沙盒收据可兑换真会员；确需双环境请显式设 APPLE_ALLOWED_ENVS=Sandbox,Production')
   }
   return problems.filter(Boolean)
 }

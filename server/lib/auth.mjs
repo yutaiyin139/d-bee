@@ -30,6 +30,7 @@ import { signJwt, verifyJwt, bearerFrom } from './jwt.mjs'
 import {
   resolveIdent, findUserByIdent, findUserByOwnerId,
   ensureUser, touchLogin, hashPassword, normalizePhone, normalizeEmail,
+  bumpTokenVersion, getTokenVersion,
 } from './identity.mjs'
 import { sendCode } from './sms.mjs'
 import { cloudError, clientIp } from './http.mjs'
@@ -97,8 +98,37 @@ export function createAuthHandlers(deps) {
     return typeof sub === 'string' && sub ? sub : null
   }
 
+  /**
+   * 🔴 安全审计①（token_version 强制下线）：
+   * 带 token_version 校验的鉴权 —— 验签 + 验 exp 后，再比对 payload.ver 与库内
+   * token_version。不一致（用户已登出/改密 bump 过版本）→ 拒绝，旧 access token
+   * 立即失效。仅在 payload 含 ver 声明时才查库（向后兼容旧 token，旧 token 靠缩短
+   * 后的 exp 自然过期）。
+   * @returns {Promise<string|null>} ownerId 或 null
+   */
+  async function authOwnerIdStrict(req) {
+    const token = bearerFrom(req.headers)
+    if (!token) return null
+    const v = verifyJwt(token, cfg.jwtSecret)
+    if (!v) return null
+    const sub = v.payload?.sub
+    if (typeof sub !== 'string' || !sub) return null
+    // 旧 token 无 ver 声明：不做版本校验（靠缩短后的 exp 兜底），仅验签+exp
+    if (!Number.isInteger(v.payload.ver)) return sub
+    try {
+      const cur = await getTokenVersion(pool, sub)
+      // 用户不存在 → 拒绝；版本不一致 → 拒绝（会话已被主动作废）
+      if (cur == null || cur !== v.payload.ver) return null
+    } catch (err) {
+      // 查库失败不放大成 401 风暴：记日志后按「版本校验不可用」放行，
+      // 仍受 exp 兜底（token_version 是纵深防御，不是唯一防线）
+      logger.error(`[auth] token_version 查询失败，跳过版本校验: ${err?.message || err}`)
+    }
+    return sub
+  }
+
   /** 组装会话载荷（字段名须与 SDK parseSession 对齐） */
-  function sessionPayload(ownerId, user) {
+  async function sessionPayload(ownerId, user, ver) {
     const accessToken = signJwt(
       {
         sub: ownerId,
@@ -107,6 +137,8 @@ export function createAuthHandlers(deps) {
         name: user?.nickname ?? '',
         avatar_url: user?.avatar_url ?? '',
         is_anonymous: false,
+        // 🔴 安全审计①：会话版本号，登出/改密时 +1，校验时比对（强制下线）
+        ver: ver ?? 1,
       },
       cfg.jwtSecret,
       cfg.accessTtlSec,
@@ -231,11 +263,11 @@ export function createAuthHandlers(deps) {
         })
         await touchLogin(pool, created.ownerId)
         logger.info(`[auth] signin 建号（token 有效但无档案）${kind}=${maskAny(kind, value)} owner=${created.ownerId}`)
-        return { status: 200, body: sessionPayload(created.ownerId, null) }
+        return { status: 200, body: await sessionPayload(created.ownerId, null, 1) }
       }
       await touchLogin(pool, user.owner_id)
       logger.info(`[auth] 登录成功 ${kind}=${maskAny(kind, value)} owner=${user.owner_id}`)
-      return { status: 200, body: sessionPayload(user.owner_id, null) }
+      return { status: 200, body: await sessionPayload(user.owner_id, null, user.token_version) }
     },
 
     /** ── 新用户注册（verification_token + 标识 + 可选密码）── */
@@ -269,7 +301,7 @@ export function createAuthHandlers(deps) {
       })
       await touchLogin(pool, r.ownerId)
       logger.info(`[auth] 注册${r.created ? '' : '（已存在，幂等）'} ${kind}=${maskAny(kind, value)} owner=${r.ownerId}`)
-      return { status: 200, body: sessionPayload(r.ownerId, null) }
+      return { status: 200, body: await sessionPayload(r.ownerId, null, 1) }
     },
 
     /** ── refresh ───────────────────────────────────────── */
@@ -282,8 +314,10 @@ export function createAuthHandlers(deps) {
       const rec = refresh.consume(rt)
       if (!rec) return cloudError(res, 401, 'refresh_token 无效或已过期', 'invalid_grant')
       // 旋转：发新 refresh_token，旧的已在 consume 时删除
+      // 🔴 安全审计①：新 access token 也要带当前 token_version，保持版本链一致
+      const ver = await getTokenVersion(pool, rec.ownerId)
       const accessToken = signJwt(
-        { sub: rec.ownerId, role: 'authenticated', is_anonymous: false },
+        { sub: rec.ownerId, role: 'authenticated', is_anonymous: false, ver: ver ?? 1 },
         cfg.jwtSecret,
         cfg.accessTtlSec,
       )
@@ -304,7 +338,9 @@ export function createAuthHandlers(deps) {
 
     /** ── 当前用户 ──────────────────────────────────────── */
     async userMe(req, res) {
-      const ownerId = authOwnerId(req)
+      // 🔴 安全审计①：用 strict 鉴权（含 token_version 校验），登出/改密后
+      //   旧 access token 立即失效，不能再用它读个人信息。
+      const ownerId = await authOwnerIdStrict(req)
       if (!ownerId) return cloudError(res, 401, '未登录或登录已过期', 'unauthenticated')
       const user = await findUserByOwnerId(pool, ownerId)
       if (!user) return cloudError(res, 401, '账号不存在', 'unauthenticated')
@@ -332,13 +368,22 @@ export function createAuthHandlers(deps) {
       // 登出即便 token 已过期也应成功（SDK 侧无条件清本地会话）
       if (ownerId) {
         const n = refresh.revokeAll(ownerId)
-        logger.info(`[auth] 登出 owner=${ownerId} 吊销 refresh=${n}`)
+        // 🔴 安全审计①：bump token_version，让该用户**已签发的 access token**
+        //   也立即失效（不只是内存里的 refresh）。这是「被盗会话可主动作废」的关键。
+        //   bump 失败不阻断登出（refresh 已吊销，且 access 有 exp 兜底）。
+        try {
+          await bumpTokenVersion(pool, ownerId)
+        } catch (err) {
+          logger.error(`[auth] 登出 bump token_version 失败 owner=${ownerId}: ${err?.message || err}`)
+        }
+        logger.info(`[auth] 登出 owner=${ownerId} 吊销 refresh=${n} + bump token_version`)
       }
       return { status: 200, body: { ok: true } }
     },
 
     /** 供 A2/A3 复用的鉴权辅助 */
     authOwnerId,
+    authOwnerIdStrict,
     checkAccessKey,
   }
 }
