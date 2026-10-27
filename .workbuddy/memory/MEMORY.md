@@ -1,13 +1,12 @@
 # D-Bee（自律蜜蜂）· 项目长期记忆（精简版；细节见当日日志与 docs/）
 
-## 进度快照（2026-10-27 上午，🎉 **V1.7.1 Web 已发布 + 上架前生产安全体检与加固（0039/0040 迁移 + 网关 ③④⑤）落地 + Apple IAP 验签端点已部署上线 + 腾讯云短信 provider 已实现**；V1.7.0 三端统一 / 泳道 A 自托管闭环 / iOS 首次真机编译打通均已稳固；视觉双 provider（文本 DeepSeek `deepseek-flash` + 视觉 Qwen `qwen3.8-max-0902`）；Bundle ID 定案 `cn.com.dbee.app`）
+## 进度快照（2026-10-27 晚，🎉 **V1.7.2 已 bump 三端（Android vc13 / iOS build 11）+ 七项安全修复①③④⑤⑦全部代码落地、①④已部署上线端到端验证 + email 验证码通道（163 SMTP）上线**；V1.7.1 Web 已发布 / 上架前生产安全体检（0039/0040 + 网关 ③④⑤）/ Apple IAP 验签端点 / 腾讯云短信 provider 均已稳固；视觉双 provider（文本 DeepSeek `deepseek-flash` + 视觉 Qwen `qwen3.8-max-0902`）；Bundle ID 定案 `cn.com.dbee.app`）
 
-> 🔴 **今日（10-27）首要任务：七项安全修复**（详见 2026-10-26.md 末尾「明日修复」）。不依赖资质的先修：
-> ① JWT access TTL 降 30 分钟 + token_version 强制下线（需加 `app_users.token_version` 列）② appleSandbox prod 默认关
-> ③ LLM 视觉 fail-closed + 文本降额 ④ 积分 grant_honey 发分前查真实记录 ⑤ CORS Origin 白名单。
-> 卡资质：⑥ 万能码切真短信（腾讯云 provider 已实现 `b54675b`，等 10-28 短信签约后切 `SMS_PROVIDER=tencent` + 删万能码 + `DBEE_PROD=1`）。
-> 待决策：⑦ 邮箱登录接 provider（腾讯云 SES/DirectMail/Resend）还是关入口。
-> **今日资质到货**：公章（10-27）+ 对公账户（10-28）到手 → 小程序主体变更 / 短信签约 / 商户号 / ASC 付费协议可启动。
+> 🔴 **七项安全修复（10-27）进展**：① JWT access TTL 7 天→30 分钟 + refresh 滚动 + `app_users.token_version` 强制下线（迁移 0042 已落库）
+> ② appleSandbox 生产默认关 + validate 拦截 ③ LLM 视觉 fail-closed 503 + 文本独立降额 50/日 ④ grant_honey 发分前查真实记录（functions.sql 同步 0039）
+> ⑤ CORS Origin 白名单 `isOriginAllowed` ⑦ email 验证码通道（163 SMTP provider，465/SSL）。**①④ 已部署上线 + 端到端验证全过**（access token `ver=1`/TTL 1800s、登出后旧 token 立即 401）；③⑤⑦ 代码已就位待部署。
+> 卡资质：⑥ 万能码切真短信 —— 🟢 **已解锁（10-27 晚短信审核通过、短信可用）**，切换只剩一条命令（见「短信通道切换」条）。
+> **今日资质到货**：公章（10-27）已到手，已梳理 18 项盖章清单 `docs/公章使用清单-2026-10-27.md`；对公账户（10-28）到手 → 小程序主体变更 / 短信签约 / 商户号 / ASC 付费协议可启动。
 
 - **✅ 6 项决策已拍板（10-22 晚）**：①主体=**有限责任公司** ②未提交产物**入库**（已提交 `b6b1725`+`43a5729`
   并推 origin/main）③LLM=**DeepSeek** ④短信=**先日志+万能码**（`SMS_PROVIDER=log`/`SMS_MASTER_CODE=888888`）
@@ -28,7 +27,7 @@
   有真实付费数据再决定是否背这个固定成本。**4 件确认项已全部答复（10-22 晚）**：经营范围**已含**
   「第二类增值电信业务」✅ / 注册资本 **≥100 万认缴** ✅ / 对公账户**在办、下周完成** 🟡 /
   小程序 `wxb7c7122de9c3ab1f` 仍是**个人主体、需变更** 🟡。→ **ICP 证的执照类前提已全部就位**，
-  将来办证仅剩「3 人社保 + 域名过户到公司」两个缺口。
+  将来办证仅剩「3 人社保」一个缺口（~~域名过户到公司~~ **✅ 已完成 10-27**）。
 - **📱 小程序主体变更流程（查证腾讯客服官方口径，10-22）**：入口后台→设置→主体信息→小程序主体变更；
   四步 + **¥300 审核费（不退）** + 审核 1–7 工作日。🎯 **本项目可免公证**（官方免公证第 1 条 =
   个人主体→企业、且个人即目标企业**法人**）：公证材料处再传申请函 + 法人身份证正反面 +
@@ -80,7 +79,14 @@
   无需重发 web/重打包**。⚠️ 部署线上 env 用「本地生成完整 env → SFTP 上传覆盖」最可靠（sed 对含特殊字符的
   key 转义易错、旧文件 ^M 回车符会漏匹配）。
 - **版本/git**：Web **V1.7.1 已发布**（http://150.158.51.106/ ，`index-BJB7byNW.js` 实测含 honey_balance/版本串 1.7.1）；
-  **V1.7.0 三端版本已统一**（`54ea9a0`）。最新 commit **`4f5ff2c`**（docs(memory): 七项安全审计结论 + 明日修复计划存档，10-26 23:20）。
+  **版本已 bump 至 V1.7.2**（`e6234e4`，三端：package.json 1.7.2 / Android versionCode 13 / iOS build 11，待随安全修复部署后发版）。
+  **V1.7.0 三端版本已统一**（`54ea9a0`）。最新 commit **`e6234e4`**（chore(release): 版本 bump 至 V1.7.2，10-27）。
+  **10-27 全天（4 commit，`4f5ff2c..e6234e4`）**：
+  `ab516a2` fix(security) 七项安全修复之①④——JWT 强化（TTL 30min + token_version 强制下线，迁移 0042）+ appleSandbox 生产默认关；
+  `5821dbe` feat(gateway) email 验证码通道上线（163 SMTP，465/SSL 零依赖 node:tls 手写）+ 安全审计③⑤⑦修复（LLM fail-closed + 文本降额 50/日 + CORS Origin 白名单）；
+  `be2267f` docs(legal+备案) 主体过户后法律文本公司化 + 联系邮箱统一 163 + 备案路径改注销重备（+ 公章使用清单 443 行）；
+  `e6234e4` chore(release) 版本 bump V1.7.2。
+  **工作区未提交**：`docs/公章使用清单-2026-10-27.md`（修改，13:40 后补充）。
   **10-25 晚～10-26 全天密集收敛（上架前安全/性能主线 + 资质到货）**：
   `3186680` fix(security) 35 文件 +2539/-85（0039/0040 迁移 + 网关 8 文件 + 前端配套 + 部署链路 + 7 个服务器实测脚本）；
   `de9a3cc` fix(security) dbee-ssh.py 渲染泄露守卫 + V1.7.1 生产安全体检；
@@ -95,7 +101,6 @@
   `9e809b7` docs 数据库切换详细规划（四端云库依赖/分叉量化/分阶段切换）、
   `3049375`+`1a53e47` pgAdmin 空表根因诊断（RLS+auth.uid() 机制闭环）+ 0041 dbee_admin 只读排查角色、
   `4f5ff2c` 七项安全审计结论存档。**工作区已干净**（origin-proxy 180s 超时已随 `50cb9cc` 提交）。
-  工作区未提交：无（此前 origin-proxy read timeout 60s→180s 已在 `50cb9cc` 收敛）。
 - **🎉 泳道 A 部署闭环（10-23 10:08）**：服务器 `150.158.51.106` 上 **nginx（自托管配置）+ dbee-gateway
   （Node 22.22.2 / :8080）+ PostgREST（16.4 / :3001）+ PG 17.11（dbee 库，0033 已应用）** 四件套均 active；
   `/.cloud/**` 全部走本机自托管栈，**不再依赖 WorkBuddy 云端**。8 项 E2E 全 ✓（含正常 OTP 路径：
@@ -132,6 +137,19 @@
   备案变更→域名过户→A 记录→80 公网→签 HTTPS→三端指 https://d-bee.com.cn（乐观 2 周/保守 4 周）；过渡期云库唯一真相源，
   切换日一次性收口（0042-data-sync-final.sql，原 0041 编号已被 dbee_admin 只读角色占用）。分阶段：0 安全整改（5432 收口+ufw 最优先）→
   1 账号映射+合并（HTTPS 前演练）→ 2 T-0 切换（HTTPS 就绪日）→ 3 观察期 T+30（云库只读保活）。详见 `docs/数据库切换详细规划-2026-10-26.md`。
+- **📱 短信通道切换（10-27 晚审核通过、短信可用；切换已简化为一条命令）**：`server/lib/sms.mjs` 的 tencent provider
+  （TC3-HMAC-SHA256 手写、零依赖）+ `config.validate` 门禁早已就绪，但**部署链路曾是缺口**——`deploy-gateway.sh`
+  只渲染 `SMS_MASTER_CODE`，腾讯云四项凭据在模板里是注释，**拿到凭据也传不进去**。10-27 已补齐：
+  ①模板四项凭据改占位符 `__SMS_TENCENT_*__` ②脚本注入 + 持久化到 `.secrets.local`（空值不落行，避免误判已配置）
+  ③环境变量覆盖 `SMS_PROVIDER`/`DBEE_PROD`/`CORS_ALLOWED_ORIGINS`/`APPLE_ALLOWED_ENVS`/`APPLE_SANDBOX`
+  ④tencent 模式**自动摘除 `SMS_MASTER_CODE`**（validate 规则「tencent+万能码=拒启」由脚本代劳）
+  ⑤缺凭据 fail-fast 前置校验 ⑥所有 sed 注入值经 `esc_sed` 转义（`#`/`&`/`\` 会静默写坏 env）。
+  🔴 **`DBEE_PROD=1` 的两个连带效应（最易踩）**：
+  · **Apple 收据自动收紧为只收 Production**（`appleAllowedEnvs` 默认值依赖 `cfgProd`，`appleSandbox` 同步变 false）
+    → iOS 未提审、沙盒验签没测完时**必须显式带 `APPLE_ALLOWED_ENVS=Sandbox,Production`**，否则 StoreKit 沙盒购买全失败；
+  · **CORS 未配白名单则拒绝所有跨域**（同源不受影响，当前 Web 走 nginx 同源反代故能跑；脚本已加提前拦截提示）。
+  切换命令与验收清单见 `docs/公章与对公账户到手-行动清单-2026-10-26.md` §一 P1。
+  模板正文约定：`您的验证码是{1}，{2}分钟内有效`（`TemplateParamSet` 按位传 `[code, otpTtlMin]`）。
 - **🔴 上架前生产安全体检与加固（10-26，`3186680`+`de9a3cc`，六项 ①–⑥ 已全部生效）**：10-26 凌晨服务器只读探查发现
   **网关层完全未部署**（运行 10-23 骨架版，18/18 特征串探针全 OLD、`lib/iap.mjs` 缺失致 Apple 端点 404、LLM Pro 门控/
   XFF 限流/dbproxy 资源管理均未上线）——数据库 0039/0040 已在库生效，但代码未部署。04:07 用户确认后按序完成部署：
@@ -224,31 +242,30 @@
   ⚠️ iOS 的 `WechatOpenSDK` 来自第三方 SPM 镜像 `github.com/yanyin1986/WechatOpenSDK`（腾讯官方不经
   SPM 分发），上线前须核对 tag 或改官方 XCFramework。小程序 appid `wxb7c7122de9c3ab1f` 需做主体变更
   （趁未上线赶紧变，变更会使老用户 openid 失效需重新关联）。
-- **下一步（泳道 A 已闭环 ✅，Apple 验签已落地 ✅，iOS 首次真机编译已打通 ✅（10-24），V1.7.1 Web 已发布 ✅（10-26），腾讯云短信 provider 已实现 ✅（10-26 `b54675b`），首件是今天的七项安全修复）**：
+- **下一步（泳道 A 已闭环 ✅，Apple 验签已落地 ✅，iOS 首次真机编译已打通 ✅（10-24），V1.7.1 Web 已发布 ✅（10-26），腾讯云短信 provider 已实现 ✅（10-26 `b54675b`），七项安全修复①③④⑤⑦已落地 ✅（10-27）、①④已部署上线，版本已 bump V1.7.2）**：
   ~~①服务器前置修复~~ ✅ ~~②部署 Node 网关~~ ✅ ~~③deploy-postgrest.sh~~ ✅ ~~④A4 切 nginx + 8 项回归~~ ✅
   ~~⑥Apple 验签落地网关 + 0037 核销~~ ✅（10-23 `9e1db43`，iap-selftest 41 断言全绿）；~~上架前安全体检 ①–⑥~~ ✅（10-26 全部生效）；
   ⑤**A5 Mac mini 首次构建 iOS** ✅（10-24 已编译通过并真机测试，三处 iOS 独有 bug 已修）；
-  🔴**今日（10-27）首件 = 七项安全修复**（见 2026-10-26.md「明日修复」，不依赖资质先修）：
-  ① JWT access TTL 降 30 分钟 + refresh 滚动 + `app_users.token_version` 强制下线（迁移加列）② appleSandbox prod 默认关 + validate 拦截
-  → **①④ 已完成并线上部署 + 端到端验证通过**（10-27：迁移 0042 落库 + `deploy-gateway.sh` 部署 + 重启；
-  线上实测 access token `ver=1`/`TTL=1800s`、登出后旧 token 立即 401；部署中途 LLM 密钥被清空已从 .bak 回填修复）；
-  → **③⑤⑦ 代码已完成 + 自测 294/0 全绿**（10-27：③ LLM 视觉 fail-closed 503 + 文本独立降额 50/日；
-  ⑤ `functions.sql` 同步 0039 事实验证版 grant_honey/grant_photo_bonus（线上已修复，仅消除源码漂移）；
-  ⑦ CORS Origin 白名单 `isOriginAllowed`，生产未配拒绝所有跨域）；**尚未部署上线**（待与①④同批或下次部署）。
-  卡资质：⑥ 万能码切真短信（等 10-28 签约，切 `SMS_PROVIDER=tencent` + 删万能码 + `DBEE_PROD=1`）；待决策：⑦ 邮箱登录接 provider 或关入口。
+  🔴**七项安全修复（10-27）**：① JWT 强化 ✅（迁移 0042 已落库，access TTL 30min + token_version 强制下线）
+  ④ appleSandbox 生产默认关 ✅ —— **①④ 已部署上线 + 端到端验证通过**（线上 access token `ver=1`/`TTL=1800s`、登出后旧 token 立即 401）；
+  ③ LLM 视觉 fail-closed 503 + 文本独立降额 50/日 ✅ ⑤ functions.sql 同步 0039 事实验证版 ✅ ⑦ CORS Origin 白名单 ✅
+  + email 验证码通道（163 SMTP provider，465/SSL）✅ —— **③⑤⑦+email 代码已就位 + 自测 300/0 全绿，待部署上线**（与①④同批或下次）；
+  卡资质：⑥ 万能码切真短信（等 10-28 签约，切 `SMS_PROVIDER=tencent` + 删万能码 + `DBEE_PROD=1`）。
   随后主线（上架前）：**ASC 配 3 商品（`dbee_pro_monthly`/`yearly`/`dbee_lifetime`）+ 开 IAP capability + 填收款 +
   App Store Server Notifications V2 webhook 配指向网关 + 配 APPLE_BUNDLE_ID/SHARED_SECRET/SANDBOX → iOS 提审**；
-  资质到货后（公章 10-27 + 对公账户 10-28）→ 小程序主体变更 / 短信签约 / 商户号 / ASC 付费协议（iOS 沙盒前提）；
-  🔴**上架前未决阻断（见「上架前生产安全体检」条）**：①SMS 真短信 provider（代码已实现，等签约）②5432 收回回环
-  ③凭据轮换 ④HTTPS+域名解析（四端上架硬阻断，iOS ATS/webhook/微信支付宝抖音合法域名）；
-  ⑦域名过户个人→企业 + ICP 备案主体变更（**用户已在走企业变更**；⚠️ 先查本省管局是否允许个人→企业直接变更，
-  不允许须注销重备且**期间域名停解析**→ **A4 已做完且 IP 直连验证通过（http://150.158.51.106/ 首页 200）**，
-  故可随时注销不停业务；**备案期不可加解析**，工信部短信核验 **24h 内必做**）；
+  资质到货后（公章 10-27 已到手、对公账户 10-28）→ 小程序主体变更 / 短信签约 / 商户号 / ASC 付费协议（iOS 沙盒前提）；
+  🔴**上架前未决阻断（见「上架前生产安全体检」条）**：~~①SMS 真短信 provider~~ 🟢 **已解锁（10-27 审核通过，一条命令切换，见「短信通道切换」条）**
+  ②5432 收回回环 ③凭据轮换 ④HTTPS+域名解析（四端上架硬阻断，iOS ATS/webhook/微信支付宝抖音合法域名）；
+  ⑦~~域名过户个人→企业~~ **✅ 已完成（10-27，WHOIS Registrant = 北京迪蜂科技有限公司）**；ICP 备案主体变更
+  （**备案路径已定 = 注销重备**（10-27 `be2267f`；🔴 **备案省份 = 北京**，不在「个人→企业」直接变更白名单；
+  ⚠️ 北京管局新规：法人非京籍须**北京居住证或连续 6 个月北京社保**，主体负责人必须为法定代表人
+  → **先确认法人户籍材料再提交注销**）；注销后域名停解析、备案期不可加解析，工信部短信核验 **24h 内必做**；
+  A4 已做完且 IP 直连验证通过，可随时注销不停业务）；
   ⑧**软著登记**（30–60 工作日，周期最长，越早越好）+ App 备案 + 算法备案；
   ⑨小程序主体变更（**流程已查证、可免公证**，详见上方专条；趁未上线尽早做）；
   ⑩华为/小米企业入驻后替换 dbee-health 插件方法体并真机验收（小米入驻审核已完成 10-26，下一步=运动健康数据服务申请）；⑪分享卡片 O-3 落地（零资质依赖传播抓手）；
   ⑫**实测 D-Bee 自己的 MAPE**（竞品分析最后缺口，文案能否说「准」的依据）；⑬彩页按新定位重写（现基于 V1.4 已落后）；
-  ⑭Android 真机复测 V1.7.0 APK（已重打 V1.7.1 vc12 待真机验收）；⑮小程序三端真机联调；
+  ⑭Android 真机复测 V1.7.0 APK（已重打 V1.7.1 vc12 待真机验收，V1.7.2 vc13 已 bump 待重打）；⑮小程序三端真机联调；
   ⑯**可选安全加固**：PG `listen_addresses` 收回回环 / 腾讯云安全组关 5432 入站
   （现状 PG 监听 0.0.0.0，仅靠 pg_hba 白名单兜底，ufw inactive）。
   ⚠️ **老用户迁移三路径待拍板**（推荐 A：判定为开发数据不迁移，小程序与 App 均未上线）。
@@ -257,10 +274,10 @@
   还是等企业账号（建议**先申请 D-U-N-S 占位**、个人账号推进构建，证下来再决定切不切主体）；
   ③**云库长期去留**（自托管彻底替代 / 回迁 / 双写）；④**老用户迁移三路径**（推荐 A：判定为开发数据不迁移）；
   ⑤**存量 7 行 `source='newbie'` bonus 处置**（A 作废推荐 / B 补偿保留 / C 连数据清，涉及删数据等确认）。
-  🔴**新增（10-26 体检，上架前须拍板）**：⑥**SMS 真短信通道**（现 log 万能码，需采购腾讯云短信签协议 +
-  实现 tencent()/aliyun() provider，上线/上架前必须）⑦**5432 是否收回回环**（生产链路走回环，无需对外）
-  ⑧**凭据轮换**（DeepSeek key / SSH 密码 / dbee_app 密码曾入 git 历史或明文出现）
-  ⑨**邮箱登录去留**（10-26 审计发现 email 无邮件通道——接腾讯云 SES/DirectMail/Resend 或关闭入口 + validate 拦截）。
+  🔴**新增（10-26 体检，上架前须拍板）**：~~⑥**SMS 真短信通道**~~ 🟢 **已解锁（10-27 审核通过）**：
+  切换只剩一条命令（凭据到手即执行），详见「短信通道切换」条；⑦**5432 是否收回回环**（生产链路走回环，无需对外）
+  ⑧**凭据轮换**（DeepSeek key / SSH 密码 / dbee_app 密码曾入 git 历史或明文出现）。
+  ~~⑨邮箱登录去留~~ → **已落定（10-27）**：接 email 通道（163 SMTP provider `5821dbe`，零依赖 node:tls 手写，465/SSL + 授权码），联系邮箱统一 163（`be2267f`）。
   ~~④经营范围 ⑤注册资本 ⑥对公账户 ⑦小程序主体~~ → **已全部答复**（④⑤✅ 满足、⑥在办下周完成、⑦需变更且流程已查证）。
   长期待办：华为应用市场上架（~~企业认证~~已完成✅ + 软著 + App备案）、营业执照已办结✅。
 
@@ -336,8 +353,12 @@ V8 服务**勿设** `MemoryDenyWriteExecute`（JIT 要可写可执行内存）�
 （顺序反了则清理时的 `open_sftp()` 撞上断连会把已拿到的输出全吞）；`JWT_SECRET`/`IDENT_PEPPER`/`SMS_MASTER_CODE`
 存 `deploy/gateway/.secrets.local` 跨部署复用（**改 JWT_SECRET=全员登出，改 IDENT_PEPPER=老用户身份失配**）；
 网关与 PostgREST **必须共用同一 HS256 jwt-secret**（否则数据面全 401）；`DBEE_PROD=1` + `SMS_PROVIDER=log`
-会被 `config.validate()` 拒启动（短信未采购前只能不设 DBEE_PROD）；配置项要两头对齐（`cfg.dbSsl` 曾在
-config.mjs 未定义 → `DBEE_SSL=1` 静默失效）；服务器 PG 17.11 监听 `0.0.0.0:5432`（**公网可达**，非旧记忆的
+会被 `config.validate()` 拒启动（短信未采购前只能不设 DBEE_PROD）；🔴 **`DBEE_PROD=1` 会连带把 Apple 收据
+收紧为只收 Production**（`appleAllowedEnvs` 默认值依赖 `cfgProd`）→ iOS 沙盒测试期须显式
+`APPLE_ALLOWED_ENVS=Sandbox,Production`，否则 StoreKit 沙盒购买验签全失败；配置项要两头对齐（`cfg.dbSsl` 曾在
+config.mjs 未定义 → `DBEE_SSL=1` 静默失效）；**env 模板加新占位符必须同步改 `deploy-gateway.sh` 的 sed 注入表**
+（否则 `install-gateway.sh` 的 `grep -q '__'` 门禁直接拦下部署；且所有注入值都要过 `esc_sed`，
+`#`/`&`/`\` 不转义会**静默**写坏 env）；服务器 PG 17.11 监听 `0.0.0.0:5432`（**公网可达**，非旧记忆的
 「仅回环」，靠 pg_hba 白名单兜底、ufw inactive），Node 未预装（apt 仅 v18，项目要 ≥22）→ 官方 tarball +
 sha256 钉死 + npmmirror 镜像优先。
 

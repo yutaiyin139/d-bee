@@ -207,7 +207,9 @@ e) 编译成功 → 自动装机启动
 
 1. **服务端 A1**（Windows 侧 1 次 SSH，随时可做）：执行 0037 迁移 + 网关 env 配 `APPLE_BUNDLE_ID=com.dbee.app`、`APPLE_SHARED_SECRET`（ASC 生成后）、`APPLE_SANDBOX=1` + 重启网关。做完后自建端点的 verify/notifications 即活。
 2. **ASC 建 App + 3 商品**（ID 必须与代码一致：`dbee_pro_monthly`/`dbee_pro_yearly`/`dbee_lifetime`）+ 接受《付费应用协议》（协议「有效」才能沙盒测试）→ 之后把 scheme 的 StoreKit Configuration 切回 None（走真沙盒）。
-3. **短信**：服务已购，等公章签协议 → 我切 `SMS_PROVIDER=tencent` + 删万能码 + 加 `DBEE_PROD=1`。
+3. **短信**：🟢 **审核已通过（10-27），短信可用**。一条命令切换（脚本自动摘除万能码 + 追加 `DBEE_PROD=1`）：
+   `SMS_PROVIDER=tencent DBEE_PROD=1 SMS_TENCENT_SECRET_ID/SECRET_KEY/SDKAPPID/TEMPLATE_ID=... APPLE_ALLOWED_ENVS=Sandbox,Production bash deploy/deploy-gateway.sh`
+   ⚠️ 必须带 `APPLE_ALLOWED_ENVS=Sandbox,Production`——`DBEE_PROD=1` 会让 Apple 收据默认只收 Production，否则 iOS 沙盒购买验签全失败。
 4. 个人→公司开发者迁移（D-U-N-S）；备案+HTTPS 后切数据面、配 webhook、Associated Domains；微信真实 AppID。
 
 ---
