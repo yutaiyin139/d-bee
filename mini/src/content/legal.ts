@@ -3,17 +3,30 @@
  *
  * 差异：小程序端无 import.meta.env，备案号等易变信息在此以常量占位，
  * 备案号下来后改为从后端下发或在此文件更新即可。
+ *
+ * 🔴 运营主体（2026-10-27 起）：域名 d-bee.com.cn 已过户至「北京迪蜂科技有限公司」，
+ *   法律文本责任主体由「开发者」改为公司，与主工程保持一致。改主工程 legal.ts 时须同步此文件。
  */
+
+/** 运营主体全称。须与营业执照、主工程 SITE.operator 逐字一致。 */
+const OPERATOR = '北京迪蜂科技有限公司'
+/** 运营主体注册地址（营业执照住所）。留空则该句不渲染，避免写错地址。 */
+const OPERATOR_ADDRESS = ''
+/** 完整主体表述，供各文档复用。 */
+const operatorLine = () =>
+  OPERATOR_ADDRESS ? `${OPERATOR}（注册地址：${OPERATOR_ADDRESS}）` : OPERATOR
 
 export const SITE = {
   name: '自律蜜蜂',
   nameEn: 'D-Bee',
   version: '1.6.9',
+  operator: OPERATOR,
   icp: '',
   icpUrl: 'https://beian.miit.gov.cn/',
   police: '',
   policeUrl: 'https://beian.mps.gov.cn/',
-  contactEmail: 'support@d-bee.com.cn',
+  /** 对外公示联系邮箱。🔴 2026-10-27 由 support@d-bee.com.cn（域名无 MX 收不到信）改为 163，须与主工程一致。 */
+  contactEmail: 'dbeeSupport@163.com',
 }
 
 export type DocId = 'terms' | 'privacy' | 'disclaimer'
@@ -32,7 +45,7 @@ export type Doc = {
   sections: DocSection[]
 }
 
-const UPDATED = '2026 年 10 月 15 日'
+const UPDATED = '2026 年 10 月 27 日'
 
 export const DOCS: Doc[] = [
   {
@@ -40,13 +53,13 @@ export const DOCS: Doc[] = [
     title: '用户协议',
     updated: UPDATED,
     intro:
-      `欢迎使用${SITE.name}（${SITE.nameEn}，以下称「本服务」）。本服务是一个个人饮食与生活习惯记录工具。在使用前，请阅读并理解本协议全部内容；开始使用即表示你已同意本协议。`,
+      `欢迎使用${SITE.name}（${SITE.nameEn}，以下称「本服务」）。本服务由 ${operatorLine()}（以下称「我们」）运营，是一个供个人用户记录自身饮食与生活习惯的工具。在使用前，请阅读并理解本协议全部内容；开始使用即表示你已同意本协议。`,
     sections: [
       {
         h: '一、服务内容',
         p: [
           '本服务为你提供每日饮食、饮水量、体重与运动情况的记录功能，并根据你自行填写的基础信息估算每日能量参考值，以图表形式展示你的记录趋势，同时提供常见食物营养成分查询与图像识别辅助填写功能。',
-          '本服务为个人开发并免费提供，不销售任何商品或服务，不涉及在线支付。',
+          `本服务由 ${SITE.operator} 开发并运营，当前在本小程序内免费提供，不销售任何商品或服务，不涉及在线支付。`,
         ],
       },
       {
@@ -70,7 +83,7 @@ export const DOCS: Doc[] = [
       {
         h: '四、知识产权',
         p: [
-          '本服务的界面设计、程序代码及相关素材的权利归开发者所有。你自行填写的记录数据归你本人所有。',
+          `本服务的界面设计、程序代码、商标及相关素材的权利归 ${SITE.operator} 所有。你自行填写的记录数据归你本人所有。`,
         ],
       },
       {
@@ -93,7 +106,9 @@ export const DOCS: Doc[] = [
       },
       {
         h: '八、联系方式',
-        p: [`如对本协议有疑问，可发送邮件至 ${SITE.contactEmail}。`],
+        p: [
+          `本协议的运营主体为 ${operatorLine()}。如对本协议有疑问，可发送邮件至 ${SITE.contactEmail}。`,
+        ],
       },
     ],
   },
@@ -104,6 +119,13 @@ export const DOCS: Doc[] = [
     intro:
       `本政策说明${SITE.name}（${SITE.nameEn}）会收集哪些信息、如何使用与保护这些信息，以及你可以如何管理自己的数据。我们仅收集为提供服务所必需的信息。`,
     sections: [
+      {
+        h: '零、个人信息处理者',
+        p: [
+          `本服务的个人信息处理者为 ${operatorLine()}。`,
+          `如你对个人信息的处理有任何疑问、意见或投诉，可通过本政策第八条载明的方式联系我们；我们将在 15 个工作日内答复。你也可以向履行个人信息保护职责的部门投诉、举报。`,
+        ],
+      },
       {
         h: '一、我们收集的信息',
         list: [
@@ -169,6 +191,7 @@ export const DOCS: Doc[] = [
       {
         h: '八、政策更新与联系方式',
         p: [
+          `个人信息处理者：${operatorLine()}。`,
           `本政策如有更新，我们会在站内提示。如对隐私保护有疑问，可发送邮件至 ${SITE.contactEmail}。`,
         ],
       },
@@ -179,7 +202,7 @@ export const DOCS: Doc[] = [
     title: '免责声明',
     updated: UPDATED,
     intro:
-      `${SITE.name}（${SITE.nameEn}）是一个个人记录与数据整理工具，不是医疗器械，也不提供任何医疗服务。请在使用前仔细阅读以下说明。`,
+      `${SITE.name}（${SITE.nameEn}）是一个供个人使用的记录与数据整理工具，由 ${SITE.operator} 运营，不是医疗器械，也不提供任何医疗服务。请在使用前仔细阅读以下说明。`,
     sections: [
       {
         h: '一、数据性质为估算值',

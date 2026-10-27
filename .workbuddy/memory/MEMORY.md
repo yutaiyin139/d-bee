@@ -230,7 +230,11 @@
   ⑤**A5 Mac mini 首次构建 iOS** ✅（10-24 已编译通过并真机测试，三处 iOS 独有 bug 已修）；
   🔴**今日（10-27）首件 = 七项安全修复**（见 2026-10-26.md「明日修复」，不依赖资质先修）：
   ① JWT access TTL 降 30 分钟 + refresh 滚动 + `app_users.token_version` 强制下线（迁移加列）② appleSandbox prod 默认关 + validate 拦截
-  ③ LLM 视觉 fail-closed + 文本独立降额 ④ grant_honey 发分前服务端查真实 meal/water/exercise 记录 ⑤ CORS Origin 白名单；
+  → **①④ 已完成并线上部署 + 端到端验证通过**（10-27：迁移 0042 落库 + `deploy-gateway.sh` 部署 + 重启；
+  线上实测 access token `ver=1`/`TTL=1800s`、登出后旧 token 立即 401；部署中途 LLM 密钥被清空已从 .bak 回填修复）；
+  → **③⑤⑦ 代码已完成 + 自测 294/0 全绿**（10-27：③ LLM 视觉 fail-closed 503 + 文本独立降额 50/日；
+  ⑤ `functions.sql` 同步 0039 事实验证版 grant_honey/grant_photo_bonus（线上已修复，仅消除源码漂移）；
+  ⑦ CORS Origin 白名单 `isOriginAllowed`，生产未配拒绝所有跨域）；**尚未部署上线**（待与①④同批或下次部署）。
   卡资质：⑥ 万能码切真短信（等 10-28 签约，切 `SMS_PROVIDER=tencent` + 删万能码 + `DBEE_PROD=1`）；待决策：⑦ 邮箱登录接 provider 或关入口。
   随后主线（上架前）：**ASC 配 3 商品（`dbee_pro_monthly`/`yearly`/`dbee_lifetime`）+ 开 IAP capability + 填收款 +
   App Store Server Notifications V2 webhook 配指向网关 + 配 APPLE_BUNDLE_ID/SHARED_SECRET/SANDBOX → iOS 提审**；

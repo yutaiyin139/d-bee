@@ -1,10 +1,18 @@
 /**
  * 站点信息与法律文本。
  *
- * 备案号等易变信息全部走构建期环境变量，不写死在代码里 ——
+ * 备案号、运营主体地址等易变信息全部走构建期环境变量，不写死在代码里 ——
  * 备案号下来后只需在构建时传入，无需改代码：
- *   VITE_ICP_BEIAN=沪ICP备2026123456号-1 npm run build
+ *   VITE_ICP_BEIAN=京ICP备2026123456号-1 npm run build
  * 留空则该行不渲染，避免展示假备案号。
+ *
+ * 🔴 运营主体（2026-10-27 起）：域名 d-bee.com.cn 已过户至「北京迪蜂科技有限公司」
+ *   （WHOIS Registrant 实测），法律文本的责任主体随之从「开发者」改为公司。
+ *   这不只是措辞问题：
+ *     · PIPL 第 17 条要求告知「个人信息处理者的名称和联系方式」——原隐私政策
+ *       通篇未披露处理者身份，属合规缺口，本次补上（见 privacy §零）；
+ *     · 用户协议的权利归属、免责声明的责任主体须与实际运营方一致，否则争议时
+ *       「谁承担责任」不明确，条款可能被认定无效。
  */
 
 const env = (k: string): string => ((import.meta.env[k] as string | undefined) ?? '').trim()
@@ -13,14 +21,32 @@ export const SITE = {
   name: '自律蜜蜂',
   nameEn: 'D-Bee',
   version: __APP_VERSION__,
-  /** ICP 备案号（网站备案），如「沪ICP备2026123456号-1」 */
+  /**
+   * 运营主体（企业全称）。默认值 = WHOIS 域名持有者，与营业执照须逐字一致。
+   * 若工商做过名称变更，用 VITE_SITE_OPERATOR 覆盖，不必改代码。
+   */
+  operator: env('VITE_SITE_OPERATOR') || '北京迪蜂科技有限公司',
+  /** 运营主体注册地址（营业执照上的住所）。留空则该句不渲染，避免写错地址。 */
+  operatorAddress: env('VITE_SITE_OPERATOR_ADDRESS'),
+  /** ICP 备案号（网站备案），如「京ICP备2026123456号-1」 */
   icp: env('VITE_ICP_BEIAN'),
   icpUrl: 'https://beian.miit.gov.cn/',
   /** 公安联网备案号（ICP 备案通过后办理） */
   police: env('VITE_POLICE_BEIAN'),
   policeUrl: 'https://beian.mps.gov.cn/',
-  contactEmail: env('VITE_CONTACT_EMAIL') || 'support@d-bee.com.cn',
+  /**
+   * 对外公示的联系邮箱（PIPL 第 17 条要求处理者联系方式**可达**）。
+   * 🔴 2026-10-27 改为 163 邮箱：原 support@d-bee.com.cn 因域名无 MX 记录收不到信，
+   *   原备用的 139 邮箱也不作为对外公示口径。163 邮箱自带 MX，立即可达。
+   *   注意：站内公示邮箱与 SMTP 发信账号是同一个（见 gateway.env.template），
+   *   将来若换成企业邮箱，两处要一起改。
+   */
+  contactEmail: env('VITE_CONTACT_EMAIL') || 'dbeeSupport@163.com',
 }
+
+/** 运营主体的完整表述（含地址，地址未配则只出名称）——供各文档复用，避免多处拼接不一致。 */
+export const operatorLine = (): string =>
+  SITE.operatorAddress ? `${SITE.operator}（注册地址：${SITE.operatorAddress}）` : SITE.operator
 
 export type DocId = 'terms' | 'privacy' | 'disclaimer'
 
@@ -38,7 +64,7 @@ export type Doc = {
   sections: DocSection[]
 }
 
-const UPDATED = '2026 年 10 月 15 日'
+const UPDATED = '2026 年 10 月 27 日'
 
 export const DOCS: Doc[] = [
   {
@@ -46,7 +72,7 @@ export const DOCS: Doc[] = [
     title: '用户协议',
     updated: UPDATED,
     intro:
-      `欢迎使用${SITE.name}（${SITE.nameEn}，以下称「本服务」）。本服务是一个个人饮食与生活习惯记录工具。在使用前，请阅读并理解本协议全部内容；开始使用即表示你已同意本协议。`,
+      `欢迎使用${SITE.name}（${SITE.nameEn}，以下称「本服务」）。本服务由 ${operatorLine()}（以下称「我们」）运营，是一个供个人用户记录自身饮食与生活习惯的工具。在使用前，请阅读并理解本协议全部内容；开始使用即表示你已同意本协议。`,
     sections: [
       {
         h: '一、服务内容',
@@ -76,7 +102,7 @@ export const DOCS: Doc[] = [
       {
         h: '四、知识产权',
         p: [
-          '本服务的界面设计、程序代码及相关素材的权利归开发者所有。你自行填写的记录数据归你本人所有。',
+          `本服务的界面设计、程序代码、商标及相关素材的权利归 ${SITE.operator} 所有。你自行填写的记录数据归你本人所有。`,
         ],
       },
       {
@@ -112,7 +138,9 @@ export const DOCS: Doc[] = [
       },
       {
         h: '九、联系方式',
-        p: [`如对本协议有疑问，可发送邮件至 ${SITE.contactEmail}。`],
+        p: [
+          `本协议的运营主体为 ${operatorLine()}。如对本协议有疑问，可发送邮件至 ${SITE.contactEmail}。`,
+        ],
       },
     ],
   },
@@ -123,6 +151,13 @@ export const DOCS: Doc[] = [
     intro:
       `本政策说明${SITE.name}（${SITE.nameEn}）会收集哪些信息、如何使用与保护这些信息，以及你可以如何管理自己的数据。我们仅收集为提供服务所必需的信息。`,
     sections: [
+      {
+        h: '零、个人信息处理者',
+        p: [
+          `本服务的个人信息处理者为 ${operatorLine()}。`,
+          `如你对个人信息的处理有任何疑问、意见或投诉，可通过本政策第八条载明的方式联系我们；我们将在 15 个工作日内答复。你也可以向履行个人信息保护职责的部门投诉、举报。`,
+        ],
+      },
       {
         h: '一、我们收集的信息',
         list: [
@@ -188,6 +223,7 @@ export const DOCS: Doc[] = [
       {
         h: '八、政策更新与联系方式',
         p: [
+          `个人信息处理者：${operatorLine()}。`,
           `本政策如有更新，我们会在站内提示。如对隐私保护有疑问，可发送邮件至 ${SITE.contactEmail}。`,
         ],
       },
@@ -198,7 +234,7 @@ export const DOCS: Doc[] = [
     title: '免责声明',
     updated: UPDATED,
     intro:
-      `${SITE.name}（${SITE.nameEn}）是一个个人记录与数据整理工具，不是医疗器械，也不提供任何医疗服务。请在使用前仔细阅读以下说明。`,
+      `${SITE.name}（${SITE.nameEn}）是一个供个人使用的记录与数据整理工具，由 ${SITE.operator} 运营，不是医疗器械，也不提供任何医疗服务。请在使用前仔细阅读以下说明。`,
     sections: [
       {
         h: '一、数据性质为估算值',
