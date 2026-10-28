@@ -142,8 +142,8 @@ npx cap sync ios
 - [x] UI token 化三端一致（web `:root` ↔ mini `tokens.scss`，8 个语义衍生色同名同值）
 - [x] 隐私清单 / 权限说明 / 出口合规核对
 - [ ] 数据面决策（见第三节，受备案阻塞）
-- [ ] 🔴 **商店展示截图（10-28 实测缺口）**：Apple 2026-10 起 iPhone 必填槽位为 **6.3" 中型屏 1179×2556 或 1206×2622**；仓库现有截图全是 780×1688（Web 预览尺寸），**无一张符合任何槽位**；`dbee-review-*.png`（1242×2688）是 IAP 商品审核截图，不能挪用。补图需在模拟器/真机截，详见《AppStore产品页-填报包-2026-10-28.md》§五
-- [ ] 🔴 **iPad 截图同为必填**：`TARGETED_DEVICE_FAMILY = "1,2"`（iPhone+iPad）→ 需补 **iPad 13" 2064×2752 或 2048×2732** 至少一张；否则改 Device Family 为 `1`（需 Mac 上改工程 + 重签，不建议）
+- [x] ✅ **商店展示截图（10-28 已补齐）**：Apple 2026-10 起 iPhone 必填槽位为 **6.3" 中型屏 1179×2556 或 1206×2622**；已用 `deploy/shot-store.mjs`（store-preview.html 假 iOS 环境 + Playwright 精确像素）生成 5 张 **1179×2556**（`deploy/screenshots/store/iphone-*.png`），付费墙 iOS 形态 7 项断言全过（有恢复购买、无微信/支付宝/兑换码、价格 ¥18/¥128/¥298），详见《AppStore产品页-填报包-2026-10-28.md》§五。⚠️ 上传前人工过目画面；最终以 ASC 上传页实际标红槽位为准（若提示 6.9" 按 1320×2868 重出）
+- [x] ✅ **iPad 截图同为必填（10-28 已补齐）**：`TARGETED_DEVICE_FAMILY = "1,2"`（iPhone+iPad）→ 已生成 5 张 **2048×2732**（`deploy/screenshots/store/ipad-*.png`，`node deploy/shot-store.mjs --ipad`，`?full=1` 解除 480px 宽限铺满屏宽），无需再改 Device Family
 - [x] 产品页元数据文案（名称/副标题/关键词/推广文本/描述/版权 + 3 商品显示名与描述）已备齐并通过字数实测，见《AppStore产品页-填报包-2026-10-28.md》
 
 ### B. 必须在 Mac 上完成（上架硬步骤）
