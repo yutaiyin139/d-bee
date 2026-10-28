@@ -20,6 +20,16 @@ interface AuthScreenProps {
 }
 
 type Channel = 'phone' | 'email'
+/**
+ * 邮箱通道的两种登录方式：
+ *   otp      —— 验证码登录（默认，新邮箱在此注册）
+ *   password —— 密码登录（老邮箱直接登录，无需收信）
+ *
+ * 为什么需要 password：App Store 审核员拿不到我们演示邮箱的收信权限，
+ * 只会发验证码的登录页对审核员等于「无法进入 App」（Guideline 2.1 拒因）。
+ * SDK 的 signInWithPassword 早已支持，注册时也一直在存密码，这里只是把入口补上。
+ */
+type EmailMode = 'otp' | 'password'
 
 export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: AuthScreenProps) {
   // 原生端专用：连接自检面板（懒加载；Web 端恒为 null，分包不会被加载）
@@ -43,6 +53,9 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
   const pendingEmail = useRef<{ email: string; verificationId: string; isExistingUser: boolean } | null>(null)
   const [emailCodeSent, setEmailCodeSent] = useState(false)
   const [needPassword, setNeedPassword] = useState(false)
+  /** 邮箱登录方式：验证码（含注册）/ 密码（见 EmailMode 说明）。
+   *  密码字段与注册时共用同一个 `password` state——两种模式互斥，不会同时出现。 */
+  const [emailMode, setEmailMode] = useState<EmailMode>('otp')
 
   // 邀请码（选填）：新用户注册时填写可绑定邀请关系。
   // 链接带入（?invite=CODE）时预填；手动场景默认收起，点击「有邀请码？」才展开。
@@ -208,6 +221,33 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
       pendingEmail.current = null
       // 同手机号：只要有邀请码就尝试绑定，不依赖 isExistingUser，bind_invite 幂等。
       await tryBindInvite()
+      onSignedIn()
+    } catch (e) {
+      setError(errText(e, '登录失败'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function submitEmailPasswordLogin() {
+    if (!isEmail(email)) {
+      setError(email.trim() === '' ? '请输入邮箱地址' : '请输入正确的邮箱地址')
+      return
+    }
+    const pw = checkText(password, PASSWORD_RULE)
+    if (!pw.ok) {
+      setError(pw.error || '请输入至少 6 位密码')
+      return
+    }
+    setError('')
+    setBusy(true)
+    try {
+      const res = await cloud.auth.signInWithPassword({ email, password })
+      if (res.error) {
+        setError(res.error.message || '邮箱或密码不正确')
+        return
+      }
+      // 密码登录不涉及新注册，无邀请码可绑（邀请码仅注册时生效）
       onSignedIn()
     } catch (e) {
       setError(errText(e, '登录失败'))
@@ -384,48 +424,96 @@ export function AuthScreen({ onSignedIn, onOpenLegal, initialInviteCode = '' }: 
               />
             </div>
 
-            <div className="field">
-              <label htmlFor="email-code">验证码</label>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <input
-                  id="email-code"
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="6 位验证码"
-                  value={emailCode}
-                  maxLength={6}
-                  onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, ''))}
-                />
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  style={{ width: 118, flexShrink: 0, fontSize: 14 }}
-                  disabled={busy || countdown > 0}
-                  onClick={sendEmailCode}
-                >
-                  {countdown > 0 ? `${countdown}s` : emailCodeSent ? '重新获取' : '获取验证码'}
+            {emailMode === 'otp' ? (
+              <>
+                <div className="field">
+                  <label htmlFor="email-code">验证码</label>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <input
+                      id="email-code"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="6 位验证码"
+                      value={emailCode}
+                      maxLength={6}
+                      onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, ''))}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ width: 118, flexShrink: 0, fontSize: 14 }}
+                      disabled={busy || countdown > 0}
+                      onClick={sendEmailCode}
+                    >
+                      {countdown > 0 ? `${countdown}s` : emailCodeSent ? '重新获取' : '获取验证码'}
+                    </button>
+                  </div>
+                </div>
+
+                {needPassword && (
+                  <div className="field">
+                    <label htmlFor="password">设置密码</label>
+                    <input
+                      id="password"
+                      type="password"
+                      placeholder="至少 6 位，用于以后登录"
+                      maxLength={PASSWORD_RULE.max}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                    <div className="helper">首次使用该邮箱，需要设置一个密码；设置后可直接用密码登录</div>
+                  </div>
+                )}
+
+                <button className="btn" disabled={busy || emailCode.length < 4} onClick={submitEmailLogin}>
+                  {busy ? <span className="spinner" /> : '登录 / 注册'}
                 </button>
-              </div>
-            </div>
 
-            {needPassword && (
-              <div className="field">
-                <label htmlFor="password">设置密码</label>
-                <input
-                  id="password"
-                  type="password"
-                  placeholder="至少 6 位，用于以后登录"
-                  maxLength={PASSWORD_RULE.max}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-                <div className="helper">首次使用该邮箱，需要设置一个密码</div>
-              </div>
+                <div style={{ textAlign: 'center', marginTop: 12 }}>
+                  <button
+                    className="btn-text"
+                    style={{ fontSize: 13, color: 'var(--ink-3)' }}
+                    disabled={busy}
+                    onClick={() => { setEmailMode('password'); setError(''); setNeedPassword(false) }}
+                  >
+                    已有密码？点此用密码登录
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="field">
+                  <label htmlFor="password-login">密码</label>
+                  <input
+                    id="password-login"
+                    type="password"
+                    placeholder="至少 6 位"
+                    maxLength={PASSWORD_RULE.max}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </div>
+
+                <button
+                  className="btn"
+                  disabled={busy || password.trim().length < PASSWORD_RULE.min}
+                  onClick={submitEmailPasswordLogin}
+                >
+                  {busy ? <span className="spinner" /> : '登录'}
+                </button>
+
+                <div style={{ textAlign: 'center', marginTop: 12 }}>
+                  <button
+                    className="btn-text"
+                    style={{ fontSize: 13, color: 'var(--ink-3)' }}
+                    disabled={busy}
+                    onClick={() => { setEmailMode('otp'); setError('') }}
+                  >
+                    改用邮箱验证码登录
+                  </button>
+                </div>
+              </>
             )}
-
-            <button className="btn" disabled={busy || emailCode.length < 4} onClick={submitEmailLogin}>
-              {busy ? <span className="spinner" /> : '登录 / 注册'}
-            </button>
           </>
         )}
 
