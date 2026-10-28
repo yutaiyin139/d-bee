@@ -51,7 +51,8 @@ fi
 SUDO install -m 0644 -o root -g root "$NEWCONF" "$TARGET"
 rm -f "$NEWCONF"
 echo "  已安装自托管配置到 $TARGET"
-echo "    server_name: $(SUDO grep -E '^\s*server_name' "$TARGET" | head -1 | tr -s ' ')"
+echo "    server_name 块（双域名：d-bee.cn=Web端 / d-bee.com.cn=官网）:"
+SUDO grep -E '^\s*server_name' "$TARGET" | tr -s ' ' | sed 's/^/      /'
 echo "    上游: $(SUDO grep -E 'proxy_pass http://dbee_gateway' "$TARGET" | head -1 | tr -s ' ')"
 
 # 移除默认站点，避免抢 80

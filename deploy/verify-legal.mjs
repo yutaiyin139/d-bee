@@ -7,7 +7,7 @@
  *
  * 用法：
  *   node deploy/verify-legal.mjs http://150.158.51.106/
- *   node deploy/verify-legal.mjs https://d-bee.com.cn/
+ *   node deploy/verify-legal.mjs https://d-bee.cn/
  */
 import { createRequire } from 'node:module'
 import { mkdirSync, existsSync, readdirSync } from 'node:fs'

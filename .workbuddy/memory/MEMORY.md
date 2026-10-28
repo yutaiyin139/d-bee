@@ -6,7 +6,8 @@
 > ② appleSandbox 生产默认关 + validate 拦截 ③ LLM 视觉 fail-closed 503 + 文本独立降额 50/日 ④ grant_honey 发分前查真实记录（functions.sql 同步 0039）
 > ⑤ CORS Origin 白名单 `isOriginAllowed` ⑦ email 验证码通道（163 SMTP provider，465/SSL）。**①④ 已部署上线 + 端到端验证全过**（access token `ver=1`/TTL 1800s、登出后旧 token 立即 401）；③⑤⑦ 代码已就位待部署。
 > 卡资质：⑥ 万能码切真短信 —— 🟢 **已解锁（10-27 晚短信审核通过、短信可用）**，切换只剩一条命令（见「短信通道切换」条）。
-> **今日资质到货**：公章（10-27）已到手，已梳理 18 项盖章清单 `docs/公章使用清单-2026-10-27.md`；对公账户（10-28）到手 → 小程序主体变更 / 短信签约 / 商户号 / ASC 付费协议可启动。
+> **今日资质到货**：公章（10-27）已到手，已梳理 18 项盖章清单 `docs/公章使用清单-2026-10-27.md`；对公账户（10-28）**已开立完毕** → 小程序主体变更 / 短信签约 / 商户号 / ASC 付费协议可启动（执行步骤见 `docs/对公账户到手-后续执行步骤-2026-10-28.md`）。
+> **📌 双域名规划定案（10-28）**：`d-bee.cn` = 自律蜜蜂 Web 端（隐私政策 URL / Apple webhook / Universal Link / 原生端 endpoint 全用它）；`d-bee.com.cn` = 公司官网（纯静态，不调网关）。两域名均在公司名下，**打包同一企业备案订单**（一单两站，京ICP备XXXX号-1/-2）。**Bundle ID `cn.com.dbee.app` 继续使用**（Apple/Google 不校验域名归属，改动成本极大）。代码侧改造已完成（nginx 双 server 块 / setup-https 多域名 SAN / CORS / 全仓域名口径，详见 10-28 日志），服务器侧执行等备案+解析生效。
 
 - **✅ 6 项决策已拍板（10-22 晚）**：①主体=**有限责任公司** ②未提交产物**入库**（已提交 `b6b1725`+`43a5729`
   并推 origin/main）③LLM=**DeepSeek** ④短信=**先日志+万能码**（`SMS_PROVIDER=log`/`SMS_MASTER_CODE=888888`）
@@ -80,13 +81,15 @@
   key 转义易错、旧文件 ^M 回车符会漏匹配）。
 - **版本/git**：Web **V1.7.1 已发布**（http://150.158.51.106/ ，`index-BJB7byNW.js` 实测含 honey_balance/版本串 1.7.1）；
   **版本已 bump 至 V1.7.2**（`e6234e4`，三端：package.json 1.7.2 / Android versionCode 13 / iOS build 11，待随安全修复部署后发版）。
-  **V1.7.0 三端版本已统一**（`54ea9a0`）。最新 commit **`e6234e4`**（chore(release): 版本 bump 至 V1.7.2，10-27）。
-  **10-27 全天（4 commit，`4f5ff2c..e6234e4`）**：
+  **V1.7.0 三端版本已统一**（`54ea9a0`）。  最新 commit **`4f69214`**（docs(memory): 短信切换链路入库记录 + 待办勾选，10-27）。
+  **10-27 全天（6 commit，`4f5ff2c..4f69214`）**：
   `ab516a2` fix(security) 七项安全修复之①④——JWT 强化（TTL 30min + token_version 强制下线，迁移 0042）+ appleSandbox 生产默认关；
   `5821dbe` feat(gateway) email 验证码通道上线（163 SMTP，465/SSL 零依赖 node:tls 手写）+ 安全审计③⑤⑦修复（LLM fail-closed + 文本降额 50/日 + CORS Origin 白名单）；
   `be2267f` docs(legal+备案) 主体过户后法律文本公司化 + 联系邮箱统一 163 + 备案路径改注销重备（+ 公章使用清单 443 行）；
-  `e6234e4` chore(release) 版本 bump V1.7.2。
-  **工作区未提交**：`docs/公章使用清单-2026-10-27.md`（修改，13:40 后补充）。
+  `e6234e4` chore(release) 版本 bump V1.7.2；
+  `e00387b` feat(deploy) 短信通道「一条命令切换」链路补齐（腾讯云审核通过，12 文件 +559/-311）；
+  `4f69214` docs(memory) 短信切换链路入库记录 + 待办勾选。
+  **工作区已干净**（无未提交改动）。
   **10-25 晚～10-26 全天密集收敛（上架前安全/性能主线 + 资质到货）**：
   `3186680` fix(security) 35 文件 +2539/-85（0039/0040 迁移 + 网关 8 文件 + 前端配套 + 部署链路 + 7 个服务器实测脚本）；
   `de9a3cc` fix(security) dbee-ssh.py 渲染泄露守卫 + V1.7.1 生产安全体检；
@@ -134,7 +137,7 @@
   自建网关唯一缺口 = 无 `/v1/login-wechat`（code2session 在云侧）。**数据双向分叉每天扩大**（云库领先 meal_entries 128/97 等；
   自建独有 app_users/profiles#19/apple_*/schema_migrations）。**账号分裂事故**：186****4728 云库=2110364580268998656（真实）
   vs 10-24 Web 登录生成的 1792845025064566575（空壳），根因两套发号（平台 210/211 vs 自建时间戳 179）。切换时机=
-  备案变更→域名过户→A 记录→80 公网→签 HTTPS→三端指 https://d-bee.com.cn（乐观 2 周/保守 4 周）；过渡期云库唯一真相源，
+  备案变更→域名过户→A 记录→80 公网→签 HTTPS→三端指 https://d-bee.cn（10-28 双域名定案：Web 端 = d-bee.cn；乐观 2 周/保守 4 周）；过渡期云库唯一真相源，
   切换日一次性收口（0042-data-sync-final.sql，原 0041 编号已被 dbee_admin 只读角色占用）。分阶段：0 安全整改（5432 收口+ufw 最优先）→
   1 账号映射+合并（HTTPS 前演练）→ 2 T-0 切换（HTTPS 就绪日）→ 3 观察期 T+30（云库只读保活）。详见 `docs/数据库切换详细规划-2026-10-26.md`。
 - **📱 短信通道切换（10-27 晚审核通过、短信可用；切换已简化为一条命令）**：`server/lib/sms.mjs` 的 tencent provider
@@ -291,7 +294,7 @@
 ## 已定技术路线（勿再讨论）
 
 Capacitor 8.5.3 混合壳；React18 + Vite5 + TS；appId `cn.com.dbee.app`（**2026-10-24 定案，原 `com.dbee.app` 被 Apple 抢注、
-`com.d-bee.app` 因 Android 禁连字符弃用**；域名 `d-bee.com.cn` 与 Bundle ID 是两个独立体系互不影响）；Windows 出 Android、Mac mini M4 出 iOS；
+`com.d-bee.app` 因 Android 禁连字符弃用**；域名与 Bundle ID 是两个独立体系互不影响——10-28 双域名定案后 Web 端域名 = `d-bee.cn`，Bundle ID 不变）；Windows 出 Android、Mac mini M4 出 iOS；
 Node≥22 / JDK21 / Xcode≥26。健康数据源只读系统平台（iOS HealthKit / Android Health Connect / 华为 Health Kit
 需先上架华为市场 / 小米官方 SDK），详见 `docs/健康数据源方案.md`。
 

@@ -41,7 +41,8 @@ import { isNative } from './platform'
 /**
  * 应用创建时预留的发布域名（applicationId = wbapp_w6iIU6TqTyHvJxESPTxBTy）。
  * 云端按它做精确匹配，**换域名等于登录失效**，不要随手改。
- * 若将来启用自有域名 d-bee.com.cn，这里要与云端预留来源、Nginx 三处同步变更。
+ * 若将来启用自有域名 d-bee.cn（双域名规划中 Web 端的正式域名），
+ * 这里要与云端预留来源、Nginx 三处同步变更。
  */
 const CLOUD_ORIGIN = 'https://zilv-mifeng.app.workbuddy.host'
 

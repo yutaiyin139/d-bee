@@ -14,7 +14,12 @@
   __SUDO_PWD__    -> DBEE_PWD
   __SITE_ORIGIN__ -> DBEE_SITE_ORIGIN   （站点对外来源，如 https://dbee.example.com）
   __SERVER_NAME__ -> DBEE_SERVER_NAME   （nginx server_name，如 dbee.example.com 1.2.3.4 _）
-  __DOMAIN__      -> DBEE_DOMAIN
+  __CORP_SERVER_NAME__ -> DBEE_CORP_SERVER_NAME
+                                        （公司官网 server 块的 server_name，
+                                         默认 'd-bee.com.cn www.d-bee.com.cn'）
+  __DOMAIN__      -> DBEE_DOMAIN    （自律蜜蜂 Web 端主域名，如 d-bee.cn）
+  __DOMAINS__     -> DBEE_DOMAINS   （空格分隔的多域名列表，certbot 多域名 SAN 证书用；
+                                     留空则退回 DBEE_DOMAIN 单域名）
   __EMAIL__       -> DBEE_CERT_EMAIL
   __WEBAPP_KEY__  -> DBEE_WEBAPP_KEY   （自测用 publishableKey，由 deploy.sh 从 src/cloudConfig.ts 自动提取）
   __JWT_SECRET__  -> DBEE_JWT_SECRET   （网关与 PostgREST 必须共用的 HS256 密钥，见 deploy-postgrest.sh）
@@ -38,7 +43,13 @@ SUBS = {
     PLACEHOLDER: PWD,
     "__SITE_ORIGIN__": os.environ.get("DBEE_SITE_ORIGIN", ""),
     "__SERVER_NAME__": os.environ.get("DBEE_SERVER_NAME", "_"),
+    # 公司官网 server 块（d-bee.com.cn）。与 Web 端主块分开，避免 conflicting server name。
+    "__CORP_SERVER_NAME__": os.environ.get(
+        "DBEE_CORP_SERVER_NAME", "d-bee.com.cn www.d-bee.com.cn"),
     "__DOMAIN__": os.environ.get("DBEE_DOMAIN", ""),
+    # 多域名 SAN 证书列表（空格分隔）。deploy.sh 从 DBEE_DOMAINS 传入；
+    # 未传时留空串，setup-https.sh 内部退回 __DOMAIN__ 单域名。
+    "__DOMAINS__": os.environ.get("DBEE_DOMAINS", ""),
     "__EMAIL__": os.environ.get("DBEE_CERT_EMAIL", ""),
     "__WEBAPP_KEY__": os.environ.get("DBEE_WEBAPP_KEY", ""),
     # 网关与 PostgREST 必须共用同一个 HS256 密钥，否则网关签发的 JWT

@@ -141,7 +141,8 @@ if [ "$EFF_PROD_MODE" = "1" ]; then
     echo "!! DBEE_PROD=1 但 CORS_ALLOWED_ORIGINS 为空 —— 生产下所有跨域请求将被拒绝。"
     echo "   当前 Web 端走 nginx 同源反代（/.cloud/**），同源不受影响，故可接受；"
     echo "   但若有任何跨域调用（如小程序 webview、独立前端域名），请先配置："
-    echo "   CORS_ALLOWED_ORIGINS='https://d-bee.com.cn,capacitor://localhost,https://localhost' \\"
+    echo "   （双域名规划：Web 端 = d-bee.cn；官网 d-bee.com.cn 纯静态不调网关，无需入白名单）"
+    echo "   CORS_ALLOWED_ORIGINS='https://d-bee.cn,https://www.d-bee.cn,capacitor://localhost,https://localhost' \\"
     echo "           bash deploy/deploy-gateway.sh"
     echo "   确认只走同源、可继续 → 设 SKIP_CORS_CHECK=1 重跑。"
     [ -n "${SKIP_CORS_CHECK:-}" ] || exit 1

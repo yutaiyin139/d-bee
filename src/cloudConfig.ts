@@ -8,14 +8,14 @@
 //     自托管站点下浏览器会**绕过本站 Nginx 直连云端**，而云端在跨域预检时
 //     不允许 apikey 请求头（已实测），数据库请求会被整体拦掉 → App 不可用。
 //   - 若 endpoint 指向某个固定来源，则用**其他**来源访问时又会被跨域拦掉
-//     （例如构建时写死 https://d-bee.com.cn，用 http://150.158.51.106 打开就坏）。
+//     （例如构建时写死 https://d-bee.cn，用 http://150.158.51.106 打开就坏）。
 //
 // 因此这里**默认取当前页面的来源**（window.location.origin），运行时确定：
 //   - 官方域名部署：origin = https://zilv-mifeng.app.workbuddy.host
 //     —— 该来源本身就是云端，天然同源，直连即可
 //   - 自托管 IP：origin = http://150.158.51.106
 //     —— 请求发往本站，由 Nginx 反代到云端（见 deploy/nginx.conf.example）
-//   - 自托管域名：origin = https://d-bee.com.cn
+//   - 自托管域名：origin = https://d-bee.cn（自律蜜蜂 Web 端正式域名）
 //     —— 同上
 //
 // 好处：同一份构建产物在 IP / 自建域名 / 官方域名下**都能直接工作**，
@@ -37,7 +37,8 @@
 //   1. VITE_NATIVE_ENDPOINT（构建时显式注入，最可控）
 //   2. 官方云端域名 CLOUD_HOST（走 https://，满足 iOS ATS 要求）
 // 未来若启用自有域名，只需在原生构建时注入：
-//   VITE_NATIVE_ENDPOINT=https://d-bee.com.cn npm run build
+//   VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build
+//   （双域名规划：原生端一律走 Web 端域名 d-bee.cn，官网 d-bee.com.cn 不承载 API）
 //
 // ⚠️ 注意：原生端直连云端时，SDK 会用 fetch 发送 apikey 请求头，属于跨域；
 // 这依赖 CapacitorHttp 插件在原生层补发请求（绕过 WebView 的 CORS 预检）。

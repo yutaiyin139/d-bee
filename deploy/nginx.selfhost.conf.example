@@ -93,5 +93,49 @@ server {
 }
 
 # ── HTTPS ──────────────────────────────────────────────────────────
-# 等 ICP 备案通过、域名解析生效后：见 deploy/setup-https.sh（certbot 会往本 server
+# 等 ICP 备案通过、域名解析生效后：见 deploy/setup-https.sh（certbot 会往各 server
 # 块补 443 监听与证书路径）。自托管后 443 同样反代到 dbee_gateway，逻辑不变。
+
+# ══════════════════════════════════════════════════════════════════
+# 公司官网 server 块（双域名规划 2026-10-28）
+#   d-bee.cn      = 自律蜜蜂 Web 端（上面的主 server 块）
+#   d-bee.com.cn  = 公司官网（本块，纯静态，不反代网关）
+# ⚠️ 两个域名必须分属不同 server 块：混在同一个 server_name 里会导致
+#    官网请求落到 SPA、Web 端请求落到官网（conflicting server name 警告）。
+# ⚠️ certbot --nginx 按 server_name 定位 server 块，本块存在是多域名 SAN
+#    证书（setup-https.sh 的 DBEE_DOMAINS）能一次签发两个域名的前提。
+# ══════════════════════════════════════════════════════════════════
+server {
+    listen 80;
+    listen [::]:80;
+    server_name __CORP_SERVER_NAME__;
+
+    # 官网静态文件目录（与 Web 端 /var/www/d-bee 分开，互不覆盖）
+    root /var/www/d-bee-corp;
+    index index.html;
+
+    client_max_body_size 5m;
+
+    gzip on;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css application/javascript application/json
+               image/svg+xml;
+
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # 官网未上线前的占位：目录里还没有 index.html 时返回 503 而非 403，
+    # 便于探活区分「官网没部署」和「nginx 坏了」。部署官网后本兜底自然失效。
+    location / {
+        try_files $uri $uri/ @corp_placeholder;
+    }
+    location @corp_placeholder {
+        default_type text/html;
+        return 503 '<!doctype html><meta charset="utf-8"><title>网站建设中</title><h1>北京迪蜂科技有限公司官网建设中</h1>';
+    }
+}
+

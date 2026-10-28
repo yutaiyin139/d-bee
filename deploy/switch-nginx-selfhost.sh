@@ -7,11 +7,14 @@
 #     bash deploy/switch-nginx-selfhost.sh
 #
 #   可选：
-#     SERVER_NAME='_ 150.158.51.106 d-bee.com.cn www.d-bee.com.cn'
-#       nginx server_name（默认 '_ <HOST> d-bee.com.cn www.d-bee.com.cn'）。
-#       默认已含正式域名：重跑本脚本不会把已绑定的域名覆盖掉。
+#     SERVER_NAME='_ 150.158.51.106 d-bee.cn www.d-bee.cn'
+#       主 server 块（自律蜜蜂 Web 端）的 server_name，默认 '_ <HOST> d-bee.cn www.d-bee.cn'。
+#       默认已含 Web 端正式域名：重跑本脚本不会把已绑定的域名覆盖掉。
 #       域名仅写入 server_name（预认领），不触发任何 DNS；备案+解析生效前，
 #       站点仍只经 IP 访问，加域名零副作用。HTTPS 见 deploy/setup-https.sh。
+#     DBEE_CORP_SERVER_NAME='d-bee.com.cn www.d-bee.com.cn'
+#       公司官网 server 块的 server_name（独立块，见 nginx.selfhost.conf.example）。
+#       ⚠️ 官网域名不要写进 SERVER_NAME，两块重复会 conflicting server name。
 #
 # 前置：deploy-gateway.sh 与 deploy-postgrest.sh 都已跑完（网关 + 数据面在线）。
 # 本脚本做：渲染自托管 nginx 配置 → 上传 → 远端备份+安装+reload+全链路E2E验证。
@@ -32,9 +35,17 @@ SSH_PY="$DIR/deploy/dbee-ssh.py"
 GW_DIR="$DIR/deploy/gateway"
 SECRETS="$GW_DIR/.secrets.local"
 
-SERVER_NAME="${SERVER_NAME:-_ $DBEE_HOST d-bee.com.cn www.d-bee.com.cn}"
+# 双域名规划（2026-10-28）：主 server 块只放 Web 端域名（d-bee.cn，备案+解析生效前
+# 可先用 _ + IP 预认领）；官网域名 d-bee.com.cn 由模板里独立的公司官网 server 块
+# 承载（__CORP_SERVER_NAME__，默认 'd-bee.com.cn www.d-bee.com.cn'）。
+# ⚠️ 不要把官网域名加回主块 SERVER_NAME —— 两块重复声明同一域名会触发
+#    conflicting server name，且请求分流不可预期。
+SERVER_NAME="${SERVER_NAME:-_ $DBEE_HOST d-bee.cn www.d-bee.cn}"
 export DBEE_HOST DBEE_USER DBEE_PWD
 export DBEE_SERVER_NAME="$SERVER_NAME"
+# 官网块 server_name 可覆盖（如需临时下线官网块，传空串即可让渲染结果为空 server_name，
+# 但更推荐保留默认值：域名未解析时该块零流量、零副作用）
+export DBEE_CORP_SERVER_NAME="${DBEE_CORP_SERVER_NAME:-d-bee.com.cn www.d-bee.com.cn}"
 # publishableKey：与 deploy.sh 同款，从前端源码提取（避免手抄漂移）
 WEBAPP_KEY="$(grep -oE 'wbpk_[A-Za-z0-9_]+' "$DIR/src/cloudConfig.ts" 2>/dev/null | head -1 || true)"
 export DBEE_WEBAPP_KEY="$WEBAPP_KEY"

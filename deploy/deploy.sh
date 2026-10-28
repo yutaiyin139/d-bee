@@ -13,11 +13,16 @@
 #
 # ── 用法 3：上 HTTPS（需域名已解析 + ICP 备案通过）──────────────
 #   DBEE_HOST=150.158.51.106 DBEE_USER=ubuntu DBEE_PWD='密码' \
-#   DBEE_DOMAIN=dbee.example.com DBEE_CERT_EMAIL=you@example.com \
+#   DBEE_DOMAIN=d-bee.cn DBEE_CERT_EMAIL=you@example.com \
+#   bash deploy/deploy.sh https
+#   多域名 SAN 证书（双域名规划：d-bee.cn=Web端 / d-bee.com.cn=官网）：
+#   DBEE_DOMAIN=d-bee.cn \
+#   DBEE_DOMAINS='d-bee.cn www.d-bee.cn d-bee.com.cn www.d-bee.com.cn' \
 #   bash deploy/deploy.sh https
 #
 # 可选环境变量：
 #   DBEE_DOMAIN        域名（不带协议）。设置后 SITE_ORIGIN 自动变 https://域名
+#   DBEE_DOMAINS       空格分隔的多域名列表（https 模式签 SAN 证书用；留空退回单域名）
 #   DBEE_CERT_EMAIL    Let's Encrypt 通知邮箱（https 模式用，留空则不注册邮箱）
 #   SITE_ORIGIN        强制指定前端内写死的站点来源（覆盖上面的自动推导）
 #   SERVER_NAME        强制指定 nginx server_name（默认「域名 服务器IP _」）
@@ -58,6 +63,7 @@ export DBEE_HOST DBEE_USER DBEE_PWD
 export DBEE_SITE_ORIGIN="$SITE_ORIGIN"
 export DBEE_SERVER_NAME="$SERVER_NAME"
 export DBEE_DOMAIN
+export DBEE_DOMAINS="${DBEE_DOMAINS:-}"
 export DBEE_CERT_EMAIL="${DBEE_CERT_EMAIL:-}"
 
 # 自测用 publishableKey：直接从源码提取，避免脚本里再抄一份（抄错会静默地把自测变成假警报）
