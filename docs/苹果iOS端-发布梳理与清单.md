@@ -1,6 +1,7 @@
-# 苹果 iOS 端 · 发布梳理与清单（V1.7.0）
+# 苹果 iOS 端 · 发布梳理与清单（V1.7.2）
 
-> 更新：2026-10-23 19:30 ｜ 版本：1.7.0 (build 9) ｜ 开发机：Windows（无法本地编译/签名 iOS）  
+> 更新：2026-10-28 ｜ 版本：1.7.2 (build 11) ｜ 开发机：Windows（无法本地编译/签名 iOS）  
+> ⚠️ **10-28 三处口径更新**：① Bundle ID 已定案 `cn.com.dbee.app`（原 `com.dbee.app` 被 Apple 抢注弃用）；② 双域名规划落地——`d-bee.cn` = 自律蜜蜂 Web 端（隐私政策 / webhook / Universal Link / 原生端 endpoint），`d-bee.com.cn` = 公司官网；③ 对公账户已开立（10-28），1.5 银行/税务信息今天可办。追踪底账以 `docs/收费模块-前置条件待办清单.md` §一 为准。  
 > 一句话结论：**工程配置、隐私合规、3 个 Swift 插件静态审查（对照官方 SDK 逐一核实 API 签名）全部就绪，web 资源已重建并同步到含网关验签的最新 dist；「上架」只剩 DEVELOPMENT_TEAM 等 Mac 硬步骤。今晚编译照《docs/今晚-Mac编译执行手册.md》执行。**  
 > ⚠️ 10-23 晚修正一处误判：IAP **不需要** Xcode capability（StoreKit 对 App Store 应用是隐式能力），收费前置在 ASC 与服务端。
 
@@ -12,7 +13,7 @@
 | ----------------------- | ------------------------------------ | -------------------------- | ---------------------- |
 | MARKETING_VERSION       | `1.7.0`                              | `project.pbxproj` ×2       | ✅ 与 web/android 对齐     |
 | CURRENT_PROJECT_VERSION | `9`                                  | `project.pbxproj` ×2       | ✅ 已 bump（上一版 8）        |
-| Bundle Identifier       | `com.dbee.app`                       | pbxproj + capacitor.config | ✅ 三端一致                 |
+| Bundle Identifier       | `cn.com.dbee.app`（⚠️ 已定案，原 `com.dbee.app` 被抢注弃用，勿改） | pbxproj + capacitor.config | ✅ 三端一致                 |
 | Deployment Target       | iOS 15.0                             | pbxproj                    | ✅                      |
 | Device Family           | `1,2`（iPhone+iPad）                   | pbxproj                    | ✅                      |
 | Swift Version           | 5.0                                  | pbxproj                    | ✅                      |
@@ -47,13 +48,13 @@
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | **iOS ATS**       | App Transport Security 默认**禁止 HTTP 明文**；`http://150.158.51.106` 会被 ATS 拦截（Info.plist 未配、也不应配 `NSAllowsArbitraryLoads`） |
 | **必须 HTTPS + 域名** | ATS 要求合法 TLS 证书，证书需绑定**域名**（IP 证书不被信任/难签发）                                                                             |
-| **备案**            | 国内服务器对外提供 Web 服务需 ICP 备案；`d-bee.com.cn` 当前**无 A 记录**且备案主体「个人→企业」变更中（备案期加解析会被拦截）                                        |
+| **备案**            | 国内服务器对外提供 Web 服务需 ICP 备案；`d-bee.cn` 当前**无 A 记录**且备案主体「个人→企业」变更中（注销个人备案+企业重备，两域名打包同一订单；备案期加解析会被拦截）                                        |
 
 ### 切换路径（待备案+HTTPS 就绪后）
 
 ```bash
 # 原生端构建时注入绝对 HTTPS 域名（指向 150.158.51.106 的 nginx）
-VITE_NATIVE_ENDPOINT=https://d-bee.com.cn npm run build
+VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build
 npx cap sync ios
 ```
 
@@ -148,9 +149,9 @@ npx cap sync ios
 2. 编译 3 个本地 Swift 插件（dbee-iap / dbee-health / origin-proxy），**修首次编译错误**
 3. Signing & Capabilities：登录 Apple ID → 选 **DEVELOPMENT_TEAM**（HealthKit capability 已在 entitlements 配好；**IAP 无需加 capability**——StoreKit 对 App Store 应用是隐式能力，2026-10-23 修正）
 4. 替换微信真实 AppID（如启用微信登录）
-5. App Store Connect：创建 App（`com.dbee.app`）→ 配 3 个商品 → 填协议/税务/银行（**对公账户下来后填银行账户**）→ 配 Server Notifications URL = `https://d-bee.com.cn/.cloud/payment/apple/notifications`（依赖 HTTPS）
+5. App Store Connect：创建 App（`cn.com.dbee.app`）→ 配 3 个商品（18/128/298）→ 填协议/税务/银行（**对公账户已到（10-28），今天可填**）→ 生成 App 共享密钥 → 配 Server Notifications URL = `https://d-bee.cn/.cloud/payment/apple/notifications`（依赖备案+HTTPS，暂不可填）
 6. 服务器执行 `0037-apple-iap-settlement.sql` + 网关 env 配 `APPLE_BUNDLE_ID`/`APPLE_SHARED_SECRET`（App Store Connect → App 信息 → 共享密钥）+ 重启网关（收费前置；0029 已作废勿执行）
-7. Archive → Upload → TestFlight 内测（沙盒账号走 `APPLE_SANDBOX=1`，验签已支持 21007/21008 自动切换）→ 提审
+7. Archive → Upload → TestFlight 内测（沙盒账号走 `APPLE_SANDBOX=1`，验签已支持 21007/21008 自动切换）→ 提审（🔴 **中国区提审强制需 App 备案号**，App 备案依赖软著 + ICP 备案，见收费清单 1.13；TestFlight 内测不受此限）
 
 ### C. 依赖外部条件
 
@@ -165,6 +166,6 @@ npx cap sync ios
 | 无 DEVELOPMENT_TEAM               | 无法签名/上架                                       | Mac 上 Xcode 登录开发者账号                                                                          |
 | Swift 插件未编译                      | 可能编译失败                                        | ✅ 10-23 静态审查通过（API 签名逐一对照官方 SDK 核实），风险已降级为「低」；仍需 Mac 首次构建确认                                  |
 | ~~无 In-App Purchase capability~~ | ~~收费不可用~~                                     | **2026-10-23 修正：StoreKit IAP 无需 capability**（隐式能力）。收费真正前置 = ASC 建 App+商品+付费协议 + 服务端 0037/env |
-| 备案域名 + HTTPS 未就绪                 | 数据面无法切服务器；微信 Universal Link 与 webhook URL 不可用 | `d-bee.com.cn` 备案完成 + 签证书 + 加 A 记录                                                           |
+| 备案域名 + HTTPS 未就绪                 | 数据面无法切服务器；微信 Universal Link 与 webhook URL 不可用 | `d-bee.cn` 备案完成 + 签证书 + 加 A 记录                                                           |
 | 0037 迁移未执行 + 网关 APPLE\_* env 未配  | IAP 核销落库无入口（端点 503）                           | 服务器执行 0037 + env 配置 + 重启网关（**代码已就绪**）                                                        |
 | 对公账户未下来                          | App Store Connect 银行/税务信息无法填全 → 商品不能售卖        | 对公账户办结（申请中）                                                                                  |
