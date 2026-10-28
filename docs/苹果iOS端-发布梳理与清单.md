@@ -1,7 +1,7 @@
 # 苹果 iOS 端 · 发布梳理与清单（V1.7.2）
 
 > 更新：2026-10-28 ｜ 版本：1.7.2 (build 11) ｜ 开发机：Windows（无法本地编译/签名 iOS）  
-> ⚠️ **10-28 三处口径更新**：① Bundle ID 已定案 `cn.com.dbee.app`（原 `com.dbee.app` 被 Apple 抢注弃用）；② 双域名规划落地——`d-bee.cn` = 自律蜜蜂 Web 端（隐私政策 / webhook / Universal Link / 原生端 endpoint），`d-bee.com.cn` = 公司官网；③ 对公账户已开立（10-28），1.5 银行/税务信息今天可办。追踪底账以 `docs/收费模块-前置条件待办清单.md` §一 为准。  
+> ⚠️ **10-28 三处口径更新**：① Bundle ID 已定案 `cn.com.dbee.app`（原 `com.dbee.app` 被 Apple 抢注弃用）；② 双域名规划落地——`d-bee.cn` = 自律蜜蜂 Web 端（隐私政策 / webhook / Universal Link / 原生端 endpoint），`d-bee.com.cn` = 公司官网；③ 对公账户已开立（10-28），但 Apple 账号仍是个人主体 → 付费协议今天先按个人版本办（W-8BEN + 本人卡），对公收款等 1.12 迁移后换绑。追踪底账以 `docs/收费模块-前置条件待办清单.md` §一 为准。  
 > 一句话结论：**工程配置、隐私合规、3 个 Swift 插件静态审查（对照官方 SDK 逐一核实 API 签名）全部就绪，web 资源已重建并同步到含网关验签的最新 dist；「上架」只剩 DEVELOPMENT_TEAM 等 Mac 硬步骤。今晚编译照《docs/今晚-Mac编译执行手册.md》执行。**  
 > ⚠️ 10-23 晚修正一处误判：IAP **不需要** Xcode capability（StoreKit 对 App Store 应用是隐式能力），收费前置在 ASC 与服务端。
 
@@ -129,7 +129,7 @@ npx cap sync ios
 
 1. **Apple 3.1.1**：iOS 数字商品（会员）必须走 IAP，**兑换码方案提审前要删除**（禁止绕过 IAP）。
 2. 订阅必须提供「恢复购买」+「管理订阅」入口（否则 2.1 / 3.1.2 被拒）—— 前端已具备 restore，管理订阅入口需确认。
-3. 抽成：首年 30%，次年/中小开发者 15%。
+3. 抽成：📌 **2026-03-15 起中国内地新费率**（Apple 官方公告，无需另签条款自动生效）——标准 IAP/付费 App **25%**（原 30%）；参加 **App Store Small Business Program**（年收入 <$100 万，新项目天然符合）或订阅第二年后续费 **12%**（原 15%）。SBP 报名入口在付费协议生效后出现，审核数周，建议协议 Active 后尽早报名。
 
 ---
 
@@ -149,7 +149,7 @@ npx cap sync ios
 2. 编译 3 个本地 Swift 插件（dbee-iap / dbee-health / origin-proxy），**修首次编译错误**
 3. Signing & Capabilities：登录 Apple ID → 选 **DEVELOPMENT_TEAM**（HealthKit capability 已在 entitlements 配好；**IAP 无需加 capability**——StoreKit 对 App Store 应用是隐式能力，2026-10-23 修正）
 4. 替换微信真实 AppID（如启用微信登录）
-5. App Store Connect：创建 App（`cn.com.dbee.app`）→ 配 3 个商品（18/128/298）→ 填协议/税务/银行（**对公账户已到（10-28），今天可填**）→ 生成 App 共享密钥 → 配 Server Notifications URL = `https://d-bee.cn/.cloud/payment/apple/notifications`（依赖备案+HTTPS，暂不可填）
+5. App Store Connect：创建 App（`cn.com.dbee.app`）→ 配 3 个商品（18/128/298）→ 填协议/税务/银行（⚠️ 个人主体先按 W-8BEN + 本人账户办；对公换绑等账号迁移，见收费清单 1.5/1.12）→ 生成 App 共享密钥 → 配 Server Notifications URL = `https://d-bee.cn/.cloud/payment/apple/notifications`（依赖备案+HTTPS，暂不可填）
 6. 服务器执行 `0037-apple-iap-settlement.sql` + 网关 env 配 `APPLE_BUNDLE_ID`/`APPLE_SHARED_SECRET`（App Store Connect → App 信息 → 共享密钥）+ 重启网关（收费前置；0029 已作废勿执行）
 7. Archive → Upload → TestFlight 内测（沙盒账号走 `APPLE_SANDBOX=1`，验签已支持 21007/21008 自动切换）→ 提审（🔴 **中国区提审强制需 App 备案号**，App 备案依赖软著 + ICP 备案，见收费清单 1.13；TestFlight 内测不受此限）
 
@@ -168,4 +168,4 @@ npx cap sync ios
 | ~~无 In-App Purchase capability~~ | ~~收费不可用~~                                     | **2026-10-23 修正：StoreKit IAP 无需 capability**（隐式能力）。收费真正前置 = ASC 建 App+商品+付费协议 + 服务端 0037/env |
 | 备案域名 + HTTPS 未就绪                 | 数据面无法切服务器；微信 Universal Link 与 webhook URL 不可用 | `d-bee.cn` 备案完成 + 签证书 + 加 A 记录                                                           |
 | 0037 迁移未执行 + 网关 APPLE\_* env 未配  | IAP 核销落库无入口（端点 503）                           | 服务器执行 0037 + env 配置 + 重启网关（**代码已就绪**）                                                        |
-| 对公账户未下来                          | App Store Connect 银行/税务信息无法填全 → 商品不能售卖        | 对公账户办结（申请中）                                                                                  |
+| ~~对公账户未下来~~                   | ✅ 已开立（10-28）；⚠️ 但 Apple 账号为个人主体，对公换绑依赖 1.12 迁移        | D-U-N-S 下证 → 账号迁移为组织 → 重签协议 + W-8BEN-E + 绑对公（生产售卖前完成）                                                                                  |
