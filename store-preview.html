@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <title>D-Bee 商店截图</title>
+    <script>
+      // 注入最小 Capacitor 桩，使 platformName() 返回 'ios'。
+      // 目的：付费墙按 iOS 形态渲染（隐藏微信支付/支付宝/兑换码，显示「恢复购买」），
+      // 否则截出来的图带第三方支付入口，会被 Apple 以 Guideline 3.1.1 拒审。
+      // 刻意不提供 Plugins.DbeeIap / DbeeHealth → 商品拉取与健康同步静默降级，
+      // 付费墙回退到硬编码价格（¥18 / ¥128 / ¥298），与 ASC 实际定价一致。
+      window.Capacitor = {
+        getPlatform: function () {
+          return 'ios'
+        },
+        isNativePlatform: function () {
+          return true
+        },
+        platform: 'ios',
+        Plugins: {},
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/store-preview-main.tsx"></script>
+  </body>
+</html>
