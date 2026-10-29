@@ -61,6 +61,14 @@ const variantsArg = (() => {
   const i = process.argv.indexOf('--variants')
   return i > 0 ? Math.max(1, parseInt(process.argv[i + 1], 10) || 1) : 1
 })()
+// --layout brand|showcase：仅对 16:9 有意义（3:2 恒为 showcase，版位原始尺寸不被裁）。
+// 默认按页面自身规则：16:9 → brand（内容收敛进 Apple art safe area），3:2 → showcase。
+// showcase 是满幅 UI 展示布局，作为备选保留，须在 ASC 预览工具确认两个版位都显示完整后才可上传。
+const layoutArg = (() => {
+  const i = process.argv.indexOf('--layout')
+  const v = i > 0 ? process.argv[i + 1] : ''
+  return v === 'brand' || v === 'showcase' ? v : ''
+})()
 
 const ACTIVE = onlyArg ? TARGETS.filter((t) => t.key.startsWith(onlyArg) || t.ratio === onlyArg) : TARGETS
 if (ACTIVE.length === 0) {
@@ -156,7 +164,8 @@ for (const t of ACTIVE) {
   page.on('pageerror', (e) => errors.push(`[${t.key}] ${String(e)}`))
 
   for (let v = 0; v < variantsArg; v++) {
-    const url = `file:///${PAGE.replace(/\\/g, '/')}?ratio=${t.ratio}&variant=${v}`
+    const layoutQuery = layoutArg ? `&layout=${layoutArg}` : ''
+    const url = `file:///${PAGE.replace(/\\/g, '/')}?ratio=${t.ratio}&variant=${v}${layoutQuery}`
     await page.goto(url, { waitUntil: 'load', timeout: 30000 })
     // 页面在所有图片解码 + fitPhones 后置 data-ready=1
     await page.waitForFunction(() => document.body.dataset.ready === '1', null, { timeout: 15000 }).catch(() => {
@@ -164,32 +173,57 @@ for (const t of ACTIVE) {
     })
     await page.waitForTimeout(900)
 
-    const file = path.join(OUT, `creative-${t.ratio}-${t.w}x${t.h}-v${v}.png`)
+    // 布局以页面实际解析结果为准（3:2 恒为 showcase），写进文件名避免两套方案互相覆盖
+    const layout = await page.evaluate(() => document.body.dataset.layout || 'showcase')
+    const suffix = layout === 'showcase' && t.ratio === '16x9' ? '-showcase' : ''
+    const file = path.join(OUT, `creative-${t.ratio}-${t.w}x${t.h}-v${v}${suffix}.png`)
     await page.screenshot({ path: file, fullPage: false })
 
-    // 素材图必须铺满画布，检查是否有溢出/空白（手机组被裁是常见事故）
+    // 素材图必须铺满画布，检查是否有溢出/空白（手机组被裁是常见事故）。
+    // brand 布局（16:9 通用素材）不含手机组——按 Apple 官方 art safe area 口径，
+    // UI 界面只放在 3:2 搜索结果素材里，故此处改为按布局分支检查。
     const overflow = await page.evaluate(() => {
       const st = document.getElementById('stage')
-      const stack = document.querySelector('.phone-stack')
-      const phones = Array.from(document.querySelectorAll('.phone'))
       const sr = st.getBoundingClientRect()
+      const layout = document.body.dataset.layout || 'showcase'
+      const copy = document.querySelector('.copy').getBoundingClientRect()
+      const stack = document.querySelector('.phone-stack')
       let worst = 0
-      for (const p of phones) {
-        const r = p.getBoundingClientRect()
-        worst = Math.max(worst, r.right - sr.right, sr.left - r.left)
+      let stackW = 0
+      if (layout === 'showcase') {
+        for (const p of document.querySelectorAll('.phone')) {
+          if (getComputedStyle(p).display === 'none') continue
+          const r = p.getBoundingClientRect()
+          if (r.width === 0) continue
+          worst = Math.max(worst, r.right - sr.right, sr.left - r.left, r.bottom - sr.bottom, sr.top - r.top)
+        }
+        stackW = Math.round(stack.getBoundingClientRect().width)
+      } else {
+        // brand：手机组应已隐藏；核心文案必须落在 Apple 模板 art safe area 内
+        // （universal = 1402×962 物理，水平居中、垂直中心 39% 画布高）
+        const safeL = sr.left + sr.width / 2 - ((1402 / 5244) * sr.width) / 2
+        const safeR = sr.left + sr.width / 2 + ((1402 / 5244) * sr.width) / 2
+        const safeT = sr.top + sr.height * 0.39 - ((962 / 2950) * sr.height) / 2
+        const safeB = sr.top + sr.height * 0.39 + ((962 / 2950) * sr.height) / 2
+        worst = Math.max(worst, safeL - copy.left, copy.right - safeR, safeT - copy.top, copy.bottom - safeB)
+        const phonesHidden = getComputedStyle(document.querySelector('.phones')).display === 'none'
+        if (!phonesHidden) worst = Math.max(worst, 9999)
       }
       return {
+        layout,
         stageW: Math.round(sr.width),
-        stackW: Math.round(stack.getBoundingClientRect().width),
+        stackW,
         overflowPx: Math.round(worst),
-        copyH: Math.round(document.querySelector('.copy').getBoundingClientRect().height),
+        copyH: Math.round(copy.height),
         stageH: Math.round(sr.height),
       }
     })
-    const flag = overflow.overflowPx > 2 ? ' ⚠️溢出' : ''
+    const flag = overflow.overflowPx > 2 ? (overflow.layout === 'brand' ? ' ⚠️超出安全区' : ' ⚠️溢出') : ''
     console.log(
       `  ✅ v${v} → ${path.relative(ROOT, file)}` +
-        `  [stage ${overflow.stageW}×${overflow.stageH}, 手机组 ${overflow.stackW}, 文案高 ${overflow.copyH}${flag}]`,
+        `  [${overflow.layout} · stage ${overflow.stageW}×${overflow.stageH}` +
+        (overflow.layout === 'showcase' ? `, 手机组 ${overflow.stackW}` : '') +
+        `, 文案高 ${overflow.copyH}${flag}]`,
     )
     results.push([t.key, t.w, t.h, v, file])
   }

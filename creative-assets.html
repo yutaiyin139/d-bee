@@ -80,7 +80,9 @@
 
       /* ── 左侧文案区 ─────────────────────────── */
       .copy {
-        position: relative;
+        /* 不能用 position:relative —— 否则内部 .footnote 的绝对定位会以 .copy 为
+           包含块，而它需要相对 .stage 定位（.copy 是 flex item，z-index 仍生效）。 */
+        position: static;
         z-index: 2;
         flex: 0 0 auto;
         width: 43vw;
@@ -255,7 +257,7 @@
         gap: 1.2vw;
       }
       [data-ratio='16x9'] .phone {
-        height: 78vh;
+        height: 66vh;
         aspect-ratio: 1179 / 2556;
       }
       [data-ratio='16x9'] .phone.side {
@@ -296,6 +298,221 @@
         gap: 2vw;
       }
 
+      /* ── 16:9「通用素材」的品牌向布局（brand）─────────────────────
+         Apple 把 16:9（5244×2950）标为 "Product page header OR search results
+         (universal)"——一张图被两个版位分别裁切，且《Asset Best Practices》要求
+         「keeping key aspects of your art within the safe area defined in each
+         template」「确保焦点图案位于构图的中心，以防止出现任何不必要的裁剪」。
+         第三方实测 Apple 官方 PSD 的 "Art Safe Area" 图层：
+           header 3840×1646   → 1646×661  居中（17.2%）
+           search 3840×2560   → 2168×1030 居中（22.7%）
+           universal 5244×2950→ 1402×962  水平居中、垂直在中心上方（仅 8.7%）
+         universal 的安全区最小，业界结论是「只放 logo 或单一主体，不要放 UI 界面」；
+         UI 界面应放在 3:2 搜索结果素材（Apple 对搜索版位的原话：
+         「展示亲身体验。可以考虑分享界面、内容或游戏画面」）。
+
+         因此 16:9 采用品牌向布局：核心文本收敛进 26.7% × 32.6%（=1402×962 物理，
+         中心位于 39% 画布高）的安全区；安全区外只放装饰（纹理/色彩/剪影），
+         不放 logo 与文本 —— 与 Apple「安全区外用 mood: sky, texture, colour」一致。
+         手机剪影为 CSS 绘制的装饰图形，不含真实 UI 截图。 */
+      body[data-layout='brand'] .stage {
+        display: block;
+        padding: 0;
+      }
+      body[data-layout='brand'] .copy {
+        position: absolute;
+        left: 50%;
+        top: 39vh; /* 安全区中心 = 39% 画布高（Apple 模板实测：中心偏上） */
+        transform: translate(-50%, -50%);
+        width: 26.7vw; /* = 1402 / 5244 */
+        max-height: 32.6vh; /* = 962 / 2950 */
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        gap: 0;
+      }
+      body[data-layout='brand'] .brand {
+        flex-direction: column;
+        gap: 0.6vw;
+        margin-bottom: 0.9vw;
+      }
+      body[data-layout='brand'] .brand img {
+        width: 3.4vw;
+        height: 3.4vw;
+        border-radius: 0.78vw;
+        box-shadow: 0 0.4vw 1.4vw rgba(185, 116, 13, 0.26);
+      }
+      body[data-layout='brand'] .brand-name {
+        font-size: 2.3vw;
+        letter-spacing: 0.06em;
+      }
+      body[data-layout='brand'] .brand-sub {
+        font-size: 0.85vw;
+        letter-spacing: 0.22em;
+      }
+      body[data-layout='brand'] .headline {
+        font-size: 1.62vw;
+        line-height: 1.42;
+        margin-bottom: 0.75vw;
+        letter-spacing: 0.01em;
+      }
+      body[data-layout='brand'] .headline em::after {
+        height: 0.42vw;
+        border-radius: 0.25vw;
+        bottom: 0.08vw;
+        left: -0.12vw;
+        right: -0.12vw;
+      }
+      /* 通用素材安全区极小 → 长副标题与 3 条特性会溢出安全区，
+         且 Apple 要求顶部横幅「聚焦单个清晰明确的理念」，故在 brand 布局下不展示。
+         这些信息保留在 3:2 搜索结果素材（showcase 布局）中。 */
+      body[data-layout='brand'] .subline,
+      body[data-layout='brand'] .features {
+        display: none;
+      }
+      /* 合规角标移入安全区内（放在品牌向布局的最下方），确保任何裁切下都不丢失 */
+      body[data-layout='brand'] .footnote {
+        position: static;
+        margin-top: 0.9vw;
+        font-size: 0.58vw;
+        text-align: center;
+        letter-spacing: 0.01em;
+      }
+      /* 真实 UI 手机组在 brand 布局下隐藏（UI 界面交给 3:2 搜索素材展示） */
+      body[data-layout='brand'] .phones {
+        display: none;
+      }
+
+      /* brand 布局的装饰层：安全区外的「mood」——蜂巢纹理光斑 + 手机剪影。
+         纯装饰、不含 logo 与文本，被任何版位裁掉都不影响信息传达。 */
+      .decor {
+        display: none;
+      }
+      body[data-layout='brand'] .decor {
+        display: block;
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        overflow: hidden;
+      }
+      .decor .ghost {
+        position: absolute;
+        border-radius: 3vw;
+        background: linear-gradient(160deg, rgba(242, 169, 59, 0.16) 0%, rgba(251, 230, 194, 0.5) 100%);
+        border: 0.16vw solid rgba(242, 169, 59, 0.2);
+        aspect-ratio: 1179 / 2556;
+        height: 62vh;
+        box-shadow: 0 2vw 4vw rgba(185, 116, 13, 0.1);
+      }
+      .decor .ghost::before {
+        content: '';
+        position: absolute;
+        inset: 0.7vw;
+        border-radius: 2.4vw;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='208' viewBox='0 0 120 208'%3E%3Cpath d='M60 8 L108 36 L108 92 L60 120 L12 92 L12 36 Z' fill='none' stroke='%23b9740d' stroke-opacity='0.16' stroke-width='4'/%3E%3Cpath d='M60 116 L108 144 L108 200 L60 228 L12 200 L12 144 Z' fill='none' stroke='%23b9740d' stroke-opacity='0.11' stroke-width='4'/%3E%3C/svg%3E");
+        background-size: 26% auto;
+        opacity: 0.85;
+      }
+      .decor .ghost.left {
+        left: 3.5vw;
+        top: 19vh;
+        transform: rotate(-6deg);
+        opacity: 0.75;
+      }
+      .decor .ghost.right {
+        right: 3.5vw;
+        top: 19vh;
+        transform: rotate(6deg);
+        opacity: 0.75;
+      }
+      .decor .glow {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(6vw);
+      }
+      .decor .glow.a {
+        width: 40vw;
+        height: 40vw;
+        left: -12vw;
+        bottom: -16vw;
+        background: rgba(242, 169, 59, 0.2);
+      }
+      .decor .glow.b {
+        width: 34vw;
+        height: 34vw;
+        right: -10vw;
+        top: -14vw;
+        background: rgba(253, 241, 218, 0.9);
+      }
+
+      /* ── 16:9 满幅展示布局（showcase，备选）────────────────────────
+         视觉冲击力更强，但依赖「两个版位均为居中式裁切」这一未公开的假设
+         （Apple 明确不公布裁切算法，只给了模板安全区 + ASC 预览工具）。
+         几何裁切交集 = 中央 84.38% × 76.18%，实测内容全部在交集内、无元素被切断；
+         但按 Apple 官方 8.7% art safe area 口径，边缘文案存在被裁风险。
+         → 默认不用；仅在 ASC 预览工具确认两处版位显示完整后再考虑上传。
+         用法：URL 加 &layout=showcase */
+      body[data-layout='showcase'] .stage[data-ratio='16x9'] {
+        /* 横向 9.8vw：把内容压进 3:2 裁切边界（7.81%）内并留 ~2% 画布宽缓冲，
+           因为 Apple 未公开裁切的对齐算法，居中假设不能当作保证。 */
+        padding: 7.6vw 9.8vw;
+        gap: 2.6vw;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='16x9'] .footnote {
+        left: 9.8vw;
+        bottom: 7.9vw;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='16x9'] .copy {
+        width: 41vw;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='16x9'] .brand {
+        margin-bottom: 1.7vw;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='16x9'] .brand img {
+        width: 3.9vw;
+        height: 3.9vw;
+        border-radius: 0.9vw;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='16x9'] .brand-name {
+        font-size: 1.6vw;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='16x9'] .brand-sub {
+        font-size: 0.95vw;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='16x9'] .headline {
+        font-size: 3.5vw;
+        margin-bottom: 1.05vw;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='16x9'] .headline em::after {
+        height: 0.9vw;
+        border-radius: 0.5vw;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='16x9'] .subline {
+        font-size: 1.55vw;
+        margin-bottom: 1.8vw;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='16x9'] .features {
+        gap: 0.8vw;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='16x9'] .feature {
+        padding: 0.65vw 1vw;
+        border-radius: 0.85vw;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='16x9'] .feature-dot {
+        width: 1.75vw;
+        height: 1.75vw;
+        font-size: 0.95vw;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='16x9'] .feature-text {
+        font-size: 1.25vw;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='16x9'] .feature-text span {
+        font-size: 0.95vw;
+      }
+
       /* 底部合规角标：数据仅供参考、不构成医疗建议（与 App 内口径一致） */
       .footnote {
         position: absolute;
@@ -311,6 +528,12 @@
   <body>
     <div class="stage" id="stage" data-ratio="16x9">
       <div class="honeycomb"></div>
+      <div class="decor">
+        <div class="glow b"></div>
+        <div class="glow a"></div>
+        <div class="ghost left"></div>
+        <div class="ghost right"></div>
+      </div>
 
       <div class="copy">
         <div class="brand">
@@ -348,6 +571,11 @@
             </div>
           </div>
         </div>
+
+        <!-- 合规角标放在 .copy 内：brand 布局下随文案一起进安全区（position:static），
+             showcase / 3:2 布局下仍以 .stage 为包含块绝对定位到左下角
+             （.copy 为 position:static，不构成包含块）。 -->
+        <div class="footnote" id="footnote">界面为演示数据 · 营养估算仅供参考，不构成医疗建议</div>
       </div>
 
       <div class="phones">
@@ -363,15 +591,23 @@
           </div>
         </div>
       </div>
-
-      <div class="footnote">界面为演示数据 · 营养估算仅供参考，不构成医疗建议</div>
     </div>
 
     <script>
-      // 由 shot-creative.mjs 通过 query 驱动：?ratio=16x9|3x2&variant=N
+      // 由 shot-creative.mjs 通过 query 驱动：?ratio=16x9|3x2&variant=N&layout=brand|showcase
       const params = new URLSearchParams(location.search)
       const ratio = params.get('ratio') === '3x2' ? '3x2' : '16x9'
       document.getElementById('stage').dataset.ratio = ratio
+
+      // 布局选择：
+      //   16:9（通用素材）默认 brand —— 核心内容收敛进 Apple 模板的 art safe area
+      //     （1402×962 物理 / 仅占画布 8.7%，水平居中、垂直在 39% 画布高），
+      //     安全区外只放装饰。可用 &layout=showcase 切到满幅展示布局（备选）。
+      //   3:2（搜索结果素材）恒为 showcase —— 版位原始尺寸、不被裁切，
+      //     且 Apple 对搜索版位原话「展示亲身体验。可以考虑分享界面、内容或游戏画面」，
+      //     UI 截图正应放这里。
+      const layout = ratio === '3x2' ? 'showcase' : params.get('layout') === 'showcase' ? 'showcase' : 'brand'
+      document.body.dataset.layout = layout
 
       // 多个文案变体：同一版位可上传多张（Apple 每个版位最多 10 张），
       // 变体之间强调不同卖点，便于 A/B 与本地化替换。
@@ -394,35 +630,44 @@
       document.getElementById('subline').textContent = v.subline
 
       /**
-       * 手机组自适应缩放：测量 .phone-stack 的原始布局宽度，
-       * 若超出 .phones 容器可用宽度则整体缩小（transform: scale）。
+       * 手机组自适应缩放：测量 .phone-stack 的原始布局尺寸，
+       * 若超出 .phones 容器则整体缩小（transform: scale）。
        * 用 scale 而非改 height，是为了保持 vh 基准与错层关系不被破坏。
        * 必须在所有 <img> 解码后测量（aspect-ratio 依赖图片尺寸生效）。
        *
        * 测量用各 .phone 的 getBoundingClientRect 并集而非 scrollWidth：
        * scrollWidth 不含 transform（scale/translateY）与负 margin 的视觉影响，
        * 而溢出检查（shot-creative.mjs）看的是视觉 rect，两者口径必须一致。
+       *
+       * 二维缩放：取宽/高两个方向缩放比的较小者。16:9 通用素材被 stage padding
+       * 压进裁切安全区后高度也变紧，只按宽度会漏掉纵向溢出。
        */
       function fitPhones() {
         const holder = document.querySelector('.phones')
         const stack = document.querySelector('.phone-stack')
         if (!holder || !stack) return
         stack.style.transform = ''
-        const avail = holder.clientWidth
-        if (avail <= 0) return
+        const availW = holder.clientWidth
+        const availH = holder.clientHeight
+        if (availW <= 0 || availH <= 0) return
         let minX = Infinity
         let maxX = -Infinity
+        let minY = Infinity
+        let maxY = -Infinity
         for (const p of stack.querySelectorAll('.phone')) {
           if (getComputedStyle(p).display === 'none') continue
           const r = p.getBoundingClientRect()
           if (r.width === 0) continue
           minX = Math.min(minX, r.left)
           maxX = Math.max(maxX, r.right)
+          minY = Math.min(minY, r.top)
+          maxY = Math.max(maxY, r.bottom)
         }
-        const need = maxX - minX
-        if (need > avail) {
-          const k = Math.max(0.5, avail / need)
-          stack.style.transform = `scale(${k.toFixed(4)})`
+        const needW = maxX - minX
+        const needH = maxY - minY
+        const k = Math.min(availW / needW, availH / needH)
+        if (k < 1) {
+          stack.style.transform = `scale(${Math.max(0.4, k).toFixed(4)})`
           stack.style.transformOrigin = 'center center'
         }
       }
