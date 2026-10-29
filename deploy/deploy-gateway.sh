@@ -125,11 +125,19 @@ if grep -q '^EMAIL_PROVIDER=smtp' "$GW_DIR/gateway.env.template"; then
 fi
 # 短信已切真短信（tencent/aliyun）→ 对应凭据必须齐（否则 config.validate 拒启，网关起不来）
 # 有效 provider = 环境变量覆盖优先，否则取模板值（两条切换路径都要拦）
-EFF_SMS_PROVIDER="${SMS_PROVIDER:-$(grep -E '^SMS_PROVIDER=' "$GW_DIR/gateway.env.template" | head -1 | cut -d= -f2-)}"
+# 🔴 三处 `${VAR:-$(grep ...)}` 都必须带 `|| true`：模板里这些键可能是**注释态**
+#    （如 DBEE_PROD / CORS_ALLOWED_ORIGINS），grep 无匹配返回 1 → set -o pipefail
+#    使整个管道返回 1 → set -e 在第一个 echo 前**静默退出**（exit 1、零输出，极难排查；
+#    2026-10-29 切 aliyun 时实踩）。历史上没暴露是因为传了 DBEE_PROD=1 时 ${VAR:-...}
+#    会短路，命令替换根本不执行 —— 只有「不传该变量」才触发，属条件性潜伏 bug。
+EFF_SMS_PROVIDER="${SMS_PROVIDER:-$(grep -E '^SMS_PROVIDER=' "$GW_DIR/gateway.env.template" | head -1 | cut -d= -f2- || true)}"
 if [ "$EFF_SMS_PROVIDER" = "tencent" ]; then
   MISS=()
   for k in SMS_TENCENT_SECRET_ID SMS_TENCENT_SECRET_KEY SMS_TENCENT_SDKAPPID SMS_TENCENT_TEMPLATE_ID; do
-    [ -z "${SEC[$k]}" ] && MISS+=("$k")
+    # 🔴 不能用 `[ -z ... ] && MISS+=(...)`：凭据齐全时 `[ -z ]` 为假返回 1，
+    #    短路后整个复合命令返回 1，被 `set -e` 判定失败 → 脚本在第一个 echo 前静默退出
+    #    （2026-10-29 切 aliyun 时实踩；exit 1 且无任何输出）。改用 if 显式分支。
+    if [ -z "${SEC[$k]:-}" ]; then MISS+=("$k"); fi
   done
   if [ ${#MISS[@]} -gt 0 ]; then
     echo "!! SMS_PROVIDER=tencent 但缺少凭据：${MISS[*]}"
@@ -145,7 +153,8 @@ if [ "$EFF_SMS_PROVIDER" = "tencent" ]; then
 elif [ "$EFF_SMS_PROVIDER" = "aliyun" ]; then
   MISS=()
   for k in SMS_ALIYUN_ACCESS_KEY_ID SMS_ALIYUN_ACCESS_KEY_SECRET SMS_ALIYUN_TEMPLATE_CODE; do
-    [ -z "${SEC[$k]}" ] && MISS+=("$k")
+    # 同上：if 显式分支，避免 set -e 误杀（凭据齐全反而是触发条件）
+    if [ -z "${SEC[$k]:-}" ]; then MISS+=("$k"); fi
   done
   if [ ${#MISS[@]} -gt 0 ]; then
     echo "!! SMS_PROVIDER=aliyun 但缺少凭据：${MISS[*]}"
@@ -160,9 +169,9 @@ elif [ "$EFF_SMS_PROVIDER" = "aliyun" ]; then
 fi
 # 切真短信后 DBEE_PROD=1 会连带触发 CORS 白名单硬要求（生产未配 → 拒绝所有跨域请求，
 # 会导致 Web 端跨域调用全挂）。此处提前拦，避免「短信切通了、Web 却登录不了」的连锁事故。
-EFF_PROD_MODE="${DBEE_PROD:-$(grep -E '^DBEE_PROD=' "$GW_DIR/gateway.env.template" | head -1 | cut -d= -f2-)}"
+EFF_PROD_MODE="${DBEE_PROD:-$(grep -E '^DBEE_PROD=' "$GW_DIR/gateway.env.template" | head -1 | cut -d= -f2- || true)}"
 if [ "$EFF_PROD_MODE" = "1" ]; then
-  EFF_CORS="${CORS_ALLOWED_ORIGINS:-$(grep -E '^CORS_ALLOWED_ORIGINS=' "$GW_DIR/gateway.env.template" | head -1 | cut -d= -f2-)}"
+  EFF_CORS="${CORS_ALLOWED_ORIGINS:-$(grep -E '^CORS_ALLOWED_ORIGINS=' "$GW_DIR/gateway.env.template" | head -1 | cut -d= -f2- || true)}"
   if [ -z "$EFF_CORS" ]; then
     echo "!! DBEE_PROD=1 但 CORS_ALLOWED_ORIGINS 为空 —— 生产下所有跨域请求将被拒绝。"
     echo "   当前 Web 端走 nginx 同源反代（/.cloud/**），同源不受影响，故可接受；"
