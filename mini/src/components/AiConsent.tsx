@@ -36,7 +36,10 @@ export function AiConsent({ kind, onAgree, onDecline }: AiConsentProps) {
         </View>
         <View className='ai-consent-body'>
           <Text className='ai-consent-desc'>{body.desc}</Text>
-          <Text className='ai-consent-hint'>不同意仍可继续使用手动记录、文字录入、扫条码等非 AI 功能。</Text>
+          {/* 🔴 2026-10-29 修正：原照抄主工程文案写「文字录入、扫条码」，但小程序端
+              这两个功能都不存在（无 scanCode 调用、parseFoodFromText 无 UI 入口，
+              见 paywall.tsx:36 注释）。向用户承诺不存在的能力属虚假告知，改为实际可用项。 */}
+          <Text className='ai-consent-hint'>不同意仍可继续使用手动记录、打卡、饮水与体重记录等非 AI 功能。</Text>
         </View>
         <View className='ai-consent-foot'>
           <Button className='btn btn-ghost' onClick={onDecline} disabled={busy}>不同意</Button>
