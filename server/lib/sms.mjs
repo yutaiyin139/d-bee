@@ -5,18 +5,19 @@
  *   · `log`     —— 开发日志+万能码（仅限开发）
  *   · `tencent` —— 腾讯云真短信（2026-10-26 实现）
  *   · `smtp`    —— 通用 SMTP 邮件（2026-10-27 实现，供 email 登录验证码）
+ *   · `aliyun`  —— 阿里云真短信（2026-10-29 实现，签名/模板 SMS_512482436 已审核通过）
  *
- * tencent / smtp 实现零依赖：TC3-HMAC-SHA256 签名、SMTP 会话均用 node:crypto / node:net
- * 手写，不装任何云厂商 SDK —— 与本工程「只依赖 pg」的审计面原则一致。
+ * tencent / smtp / aliyun 实现零依赖：TC3-HMAC-SHA256、RPC HMAC-SHA1 签名、SMTP 会话
+ * 均用 node:crypto / node:net 手写，不装任何云厂商 SDK —— 与本工程「只依赖 pg」的审计面原则一致。
  *
  * ⚠️ 日志纪律：
  *   · log 模式刻意打验证码（否则没法登录），仅限开发。
- *   · tencent / smtp 模式日志只打掩码与消息 ID，**绝不打明文码**。
- *   · SMS_PROVIDER=tencent 时 config.validate() 强制要求删掉 SMS_MASTER_CODE；
+ *   · tencent / aliyun / smtp 模式日志只打掩码与消息 ID，**绝不打明文码**。
+ *   · SMS_PROVIDER=tencent/aliyun 时 config.validate() 强制要求删掉 SMS_MASTER_CODE；
  *     DBEE_PROD=1 且 provider=log 会拒绝启动。
  */
 
-import { createHmac, createHash } from 'node:crypto'
+import { createHmac, createHash, randomUUID } from 'node:crypto'
 import net from 'node:net'
 import tls from 'node:tls'
 
@@ -145,9 +146,60 @@ const PROVIDERS = {
     }
   },
 
-  /** 占位：阿里云等采购后再实现（签名形态不同，参照 tencent 的表驱动接法）。 */
-  async aliyun() {
-    return { ok: false, provider: 'aliyun', error: 'SMS_PROVIDER=aliyun 尚未实现（待采购后接入）' }
+  /**
+   * 阿里云 SMS（SendSms，RPC 风格 API，Version=2017-05-25，HMAC-SHA1 签名）。
+   * 所需参数（由 auth.mjs 从 cfg 透传）：
+   *   aliyun.accessKeyId / aliyun.accessKeySecret / aliyun.templateCode /
+   *   aliyun.endpoint（默认 dysmsapi.aliyuncs.com）
+   * 模板约定：SMS_512482436 形如「您的验证码为${code}，该验证码${ttl}分钟内有效」——
+   *   TemplateParam 传 JSON 串 {"code":"...","ttl":"..."}。
+   *   ⚠️ 变量名（code/ttl）必须与控制台审核通过的模板正文**逐字一致**，
+   *      否则返回 isv.TEMPLATE_PARAMS_ILLEGAL；若模板变量名不同，改这里即可。
+   * 文档：https://help.aliyun.com/zh/sms/developer-reference/api-dysmsapi-2017-05-25-sendsms
+   *      签名：https://help.aliyun.com/zh/sdk/product-overview/v3-request-structure-and-signature
+   *      （RPC 签名算法：参数排序 → 百分号编码 → StringToSign → HMAC-SHA1）
+   */
+  async aliyun({ to, masked, code, signName, logger, aliyun, otpTtlMin }) {
+    const missing = ['accessKeyId', 'accessKeySecret', 'templateCode'].filter((k) => !aliyun?.[k])
+    if (missing.length) {
+      logger.error(`[SMS] aliyun 凭据缺失：${missing.map((k) => `SMS_ALIYUN_${k.toUpperCase()}`).join('、')}`)
+      return { ok: false, provider: 'aliyun', error: '短信通道未配置完整，请联系管理员' }
+    }
+    // 国内手机号：阿里云 PhoneNumbers 接受 11 位裸号；带 +86 前缀也兼容（剥掉）
+    const phone = (to || '').replace(/^\+?86/, '')
+    // TemplateParam 是 JSON 串；变量名须与模板正文一致（见上方模板约定）
+    const templateParam = JSON.stringify({
+      code: String(code),
+      ttl: String(otpTtlMin ?? 5),
+    })
+
+    try {
+      const body = await aliyunRpcRequest({
+        host: aliyun.endpoint || 'dysmsapi.aliyuncs.com',
+        action: 'SendSms',
+        version: '2017-05-25',
+        accessKeyId: aliyun.accessKeyId,
+        accessKeySecret: aliyun.accessKeySecret,
+        bizParams: {
+          PhoneNumbers: phone,
+          SignName: signName,
+          TemplateCode: aliyun.templateCode,
+          TemplateParam: templateParam,
+        },
+      })
+      // 响应形态：{ Code: "OK", Message: "OK", RequestId, BizId }
+      if (body?.Code !== 'OK') {
+        // 常见码：isv.BUSINESS_LIMIT_CONTROL（限频）/ isv.SMS_SIGNATURE_ILLEGAL /
+        //   isv.TEMPLATE_PARAMS_ILLEGAL（模板变量名不匹配）/ isv.AMOUNT_NOT_ENOUGH（余额不足）
+        logger.error(`[SMS] aliyun 发送失败 ${masked}: Code=${body?.Code} Message=${body?.Message} RequestId=${body?.RequestId || ''}`)
+        return { ok: false, provider: 'aliyun', error: `验证码发送失败（${body?.Code || 'unknown'}），请稍后重试` }
+      }
+      logger.info(`[SMS] aliyun 已发送 ${masked} BizId=${body?.BizId} RequestId=${body?.RequestId}`)
+      return { ok: true, provider: 'aliyun', messageId: body?.BizId }
+    } catch (err) {
+      logger.error(`[SMS] aliyun 请求异常：${err?.message || err}`)
+      return { ok: false, provider: 'aliyun', error: '验证码发送失败，请稍后重试' }
+    }
   },
 }
 
@@ -222,6 +274,68 @@ async function tc3Request({ service, host, action, version, region, payload, sec
   return json?.Response ?? {}
 }
 
+// ── 阿里云 RPC 签名（HMAC-SHA1，手写，零依赖） ────────────────────────
+// 与腾讯云 TC3 不同：阿里云旧版 RPC API 把**全部参数**（含公共参数）放 query，
+// 按字典序排序 → 逐个百分号编码 → 拼 canonicalized query → 组 StringToSign →
+// 以 `AccessKeySecret + "&"` 为密钥做 HMAC-SHA1 → Base64，签名本身也作为一个参数。
+// 参考：https://help.aliyun.com/zh/sdk/product-overview/v3-request-structure-and-signature
+
+/** 阿里云专用百分号编码：在 encodeURIComponent 基础上再修正三处
+ *  （RFC 3986 与阿里云签名规范的差异）：空格须为 %20（非 +）、
+ *  `*` 须编码为 %2A、`~` 须还原为字面量（%7E → ~）。 */
+function aliyunEncode(v) {
+  return encodeURIComponent(String(v))
+    .replace(/\+/g, '%20')
+    .replace(/\*/g, '%2A')
+    .replace(/%7E/g, '~')
+}
+
+async function aliyunRpcRequest({ host, action, version, accessKeyId, accessKeySecret, bizParams }) {
+  // 1) 公共参数（RPC 签名要求：Format/Version/AccessKeyId/SignatureMethod/
+  //    Timestamp/SignatureVersion/SignatureNonce；Signature 稍后补）
+  const params = {
+    Format: 'JSON',
+    Version: version,
+    AccessKeyId: accessKeyId,
+    SignatureMethod: 'HMAC-SHA1',
+    Timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'), // UTC，形如 2026-10-29T01:02:03Z
+    SignatureVersion: '1.0',
+    SignatureNonce: randomUUID(),
+    Action: action,
+    ...bizParams,
+  }
+
+  // 2) 按 key 字典序排序，逐个编码后拼 canonicalized query string
+  const canonical = Object.keys(params)
+    .sort()
+    .map((k) => `${aliyunEncode(k)}=${aliyunEncode(params[k])}`)
+    .join('&')
+
+  // 3) StringToSign = HTTPMethod + "&" + encode("/") + "&" + encode(canonical)
+  //    （GET 请求，Path 固定为 "/"，两者都要再编码一次）
+  const stringToSign = `GET&${aliyunEncode('/')}&${aliyunEncode(canonical)}`
+
+  // 4) 签名密钥 = AccessKeySecret + "&"；HMAC-SHA1 后 Base64
+  const signature = createHmac('sha1', `${accessKeySecret}&`)
+    .update(stringToSign)
+    .digest('base64')
+
+  // 5) 发起 GET：canonical + Signature（Signature 值同样要百分号编码）
+  const url = `https://${host}/?${canonical}&Signature=${aliyunEncode(signature)}`
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: { Host: host, Accept: 'application/json' },
+    signal: AbortSignal.timeout(10_000), // 发短信必须快失败，别把登录接口拖挂
+  })
+  const json = await res.json().catch(() => ({}))
+  // HTTP 4xx/5xx 时阿里云把错误放在 { Code, Message, RequestId, HostId }；
+  // 200 时业务成功/失败也在 Code（OK / isv.*）。统一透传给上层判 Code。
+  if (!res.ok && !json?.Code) {
+    throw new Error(`HTTP ${res.status}: ${JSON.stringify(json).slice(0, 300)}`)
+  }
+  return json
+}
+
 /**
  * 发送验证码。
  * @param {object} p
@@ -233,6 +347,7 @@ async function tc3Request({ service, host, action, version, region, payload, sec
  * @param {string} p.signName
  * @param {object} p.logger     { info, warn, error }
  * @param {object} [p.tencent]  腾讯云凭据 { secretId, secretKey, sdkAppId, templateId, region }
+ * @param {object} [p.aliyun]   阿里云凭据 { accessKeyId, accessKeySecret, templateCode, endpoint }
  * @param {object} [p.smtp]     SMTP 凭据 { host, port, secure, user, pass, from, fromName }
  * @param {number} [p.otpTtlMin] 验证码有效分钟（模板参数 {2}）
  */

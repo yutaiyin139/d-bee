@@ -68,6 +68,13 @@ for k in SMS_TENCENT_SECRET_ID SMS_TENCENT_SECRET_KEY SMS_TENCENT_SDKAPPID SMS_T
   v="${!k:-${SEC[$k]:-}}"
   SEC[$k]="$v"
 done
+# 阿里云短信凭据（三项，2026-10-29 签名+模板审核通过）。AccessKeySecret 是秘密，
+# 只从 .secrets.local / 环境变量读；TEMPLATE_CODE 非机密但同源管理，便于「一条命令切换」。
+for k in SMS_ALIYUN_ACCESS_KEY_ID SMS_ALIYUN_ACCESS_KEY_SECRET SMS_ALIYUN_TEMPLATE_CODE; do
+  load_secret "$k" || true
+  v="${!k:-${SEC[$k]:-}}"
+  SEC[$k]="$v"
+done
 
 # 两个密钥绝不能相同（config.validate 会拦；这里提前生成期就保证）
 if [ "${SEC[JWT_SECRET]}" = "${SEC[IDENT_PEPPER]}" ]; then
@@ -95,6 +102,10 @@ umask 077
   for k in SMS_TENCENT_SECRET_ID SMS_TENCENT_SECRET_KEY SMS_TENCENT_SDKAPPID SMS_TENCENT_TEMPLATE_ID; do
     [ -n "${SEC[$k]}" ] && echo "$k=${SEC[$k]}"
   done
+  # 阿里云短信三项凭据（空则不写行）
+  for k in SMS_ALIYUN_ACCESS_KEY_ID SMS_ALIYUN_ACCESS_KEY_SECRET SMS_ALIYUN_TEMPLATE_CODE; do
+    [ -n "${SEC[$k]}" ] && echo "$k=${SEC[$k]}"
+  done
   true
 } > "$SECRETS"
 chmod 600 "$SECRETS" 2>/dev/null || true
@@ -112,7 +123,7 @@ if grep -q '^EMAIL_PROVIDER=smtp' "$GW_DIR/gateway.env.template"; then
     exit 1
   fi
 fi
-# 短信已切 tencent → 四项凭据必须齐（否则 config.validate 拒启，网关起不来）
+# 短信已切真短信（tencent/aliyun）→ 对应凭据必须齐（否则 config.validate 拒启，网关起不来）
 # 有效 provider = 环境变量覆盖优先，否则取模板值（两条切换路径都要拦）
 EFF_SMS_PROVIDER="${SMS_PROVIDER:-$(grep -E '^SMS_PROVIDER=' "$GW_DIR/gateway.env.template" | head -1 | cut -d= -f2-)}"
 if [ "$EFF_SMS_PROVIDER" = "tencent" ]; then
@@ -129,6 +140,21 @@ if [ "$EFF_SMS_PROVIDER" = "tencent" ]; then
     echo "   SMS_TENCENT_TEMPLATE_ID='<模板 ID>' \\"
     echo "           bash deploy/deploy-gateway.sh"
     echo "   控制台：smsv2.console.tencentcloud.com（密钥建议用短信子账号最小权限密钥）"
+    exit 1
+  fi
+elif [ "$EFF_SMS_PROVIDER" = "aliyun" ]; then
+  MISS=()
+  for k in SMS_ALIYUN_ACCESS_KEY_ID SMS_ALIYUN_ACCESS_KEY_SECRET SMS_ALIYUN_TEMPLATE_CODE; do
+    [ -z "${SEC[$k]}" ] && MISS+=("$k")
+  done
+  if [ ${#MISS[@]} -gt 0 ]; then
+    echo "!! SMS_PROVIDER=aliyun 但缺少凭据：${MISS[*]}"
+    echo "   请设置后重跑（AccessKeySecret 会持久化到 deploy/gateway/.secrets.local，不必每次传）："
+    echo "   SMS_ALIYUN_ACCESS_KEY_ID='<RAM 用户 AccessKeyId>' \\"
+    echo "   SMS_ALIYUN_ACCESS_KEY_SECRET='<RAM 用户 AccessKeySecret>' \\"
+    echo "   SMS_ALIYUN_TEMPLATE_CODE='SMS_512482436' \\"
+    echo "           bash deploy/deploy-gateway.sh"
+    echo "   控制台：dysms.console.aliyun.com（🔴 用 RAM 子账号 + AliyunDysmsFullAccess，勿用主账号 AK）"
     exit 1
   fi
 fi
@@ -182,18 +208,21 @@ sed \
   -e "s#__SMS_TENCENT_SECRET_KEY__#$(esc_sed "${SEC[SMS_TENCENT_SECRET_KEY]:-}")#g" \
   -e "s#__SMS_TENCENT_SDKAPPID__#$(esc_sed "${SEC[SMS_TENCENT_SDKAPPID]:-}")#g" \
   -e "s#__SMS_TENCENT_TEMPLATE_ID__#$(esc_sed "${SEC[SMS_TENCENT_TEMPLATE_ID]:-}")#g" \
+  -e "s#__SMS_ALIYUN_ACCESS_KEY_ID__#$(esc_sed "${SEC[SMS_ALIYUN_ACCESS_KEY_ID]:-}")#g" \
+  -e "s#__SMS_ALIYUN_ACCESS_KEY_SECRET__#$(esc_sed "${SEC[SMS_ALIYUN_ACCESS_KEY_SECRET]:-}")#g" \
+  -e "s#__SMS_ALIYUN_TEMPLATE_CODE__#$(esc_sed "${SEC[SMS_ALIYUN_TEMPLATE_CODE]:-}")#g" \
   "$GW_DIR/gateway.env.template" > "$RENDERED_ENV"
-# 🔴 切真短信后自动摘除万能码行：config.validate() 规定 SMS_PROVIDER=tencent 时
+# 🔴 切真短信后自动摘除万能码行：config.validate() 规定 SMS_PROVIDER=tencent/aliyun 时
 #    不得再配 SMS_MASTER_CODE（否则网关拒启）。模板保留该行是为了 log 模式默认值，
 #    这里按实际 provider 处理，避免「改了 provider 忘删万能码 → 部署直接失败」。
-if grep -qE '^SMS_PROVIDER=tencent' "$RENDERED_ENV"; then
+if grep -qE '^SMS_PROVIDER=(tencent|aliyun)' "$RENDERED_ENV"; then
   sed -i '/^SMS_MASTER_CODE=/d' "$RENDERED_ENV"
-  echo "    SMS_PROVIDER=tencent → 已自动摘除 SMS_MASTER_CODE（万能码后门关闭）"
+  echo "    SMS_PROVIDER=$(grep -E '^SMS_PROVIDER=' "$RENDERED_ENV" | cut -d= -f2-) → 已自动摘除 SMS_MASTER_CODE（万能码后门关闭）"
 fi
 # ── 运行模式 / 短信通道 / CORS / Apple 环境：支持环境变量覆盖，切换不必改入库模板 ──
 #   用法：SMS_PROVIDER=tencent DBEE_PROD=1 SMS_TENCENT_SECRET_ID=... bash deploy/deploy-gateway.sh
 #   规则：模板里已有该键（含被注释掉的）→ 就地改写/追加生效行；没有 → 追加一行。
-#   覆盖 tencent 时同样执行万能码摘除（validate 规则：tencent + 万能码 = 拒启）。
+#   覆盖真短信（tencent/aliyun）时同样执行万能码摘除（validate 规则：真短信 + 万能码 = 拒启）。
 override_env() {
   local key="$1" val="$2"
   if grep -qE "^${key}=" "$RENDERED_ENV"; then
@@ -208,9 +237,9 @@ for k in DBEE_PROD CORS_ALLOWED_ORIGINS APPLE_ALLOWED_ENVS APPLE_SANDBOX; do
 done
 if [ -n "${SMS_PROVIDER:-}" ]; then
   override_env SMS_PROVIDER "$SMS_PROVIDER"
-  if [ "$SMS_PROVIDER" = "tencent" ]; then
+  if [ "$SMS_PROVIDER" = "tencent" ] || [ "$SMS_PROVIDER" = "aliyun" ]; then
     sed -i '/^SMS_MASTER_CODE=/d' "$RENDERED_ENV"
-    echo "    覆盖 SMS_PROVIDER=tencent → 已摘除 SMS_MASTER_CODE（万能码后门关闭）"
+    echo "    覆盖 SMS_PROVIDER=${SMS_PROVIDER} → 已摘除 SMS_MASTER_CODE（万能码后门关闭）"
   fi
 fi
 # 🔴 DBEE_PROD=1 的连带效应：config.mjs 里 appleAllowedEnvs 默认值依赖 cfgProd，
@@ -243,6 +272,8 @@ fi
 # 短信通道状态（按渲染后产物判定，覆盖也如实反映；只打 provider/签名，绝不打 SecretKey）
 if grep -qE '^SMS_PROVIDER=tencent' "$RENDERED_ENV"; then
   echo "    短信通道 tencent 真短信（SDKAPPID=${SEC[SMS_TENCENT_SDKAPPID]} TEMPLATE_ID=${SEC[SMS_TENCENT_TEMPLATE_ID]}，SecretKey 已注入，万能码已摘除）"
+elif grep -qE '^SMS_PROVIDER=aliyun' "$RENDERED_ENV"; then
+  echo "    短信通道 aliyun 真短信（TEMPLATE_CODE=${SEC[SMS_ALIYUN_TEMPLATE_CODE]}，AccessKeySecret 已注入，万能码已摘除）"
 else
   echo "    短信通道 log（验证码进 journald + 万能码可用，属开发态）"
 fi

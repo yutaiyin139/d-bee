@@ -127,6 +127,17 @@ export function loadConfig(env = process.env) {
     // 模板须形如「您的验证码是{1}，{2}分钟内有效」，{1}=code {2}=有效分钟
     smsTencentTemplateId: env.SMS_TENCENT_TEMPLATE_ID?.trim() || '',
     smsTencentRegion: env.SMS_TENCENT_REGION?.trim() || 'ap-guangzhou',
+    // 阿里云短信凭据（SMS_PROVIDER=aliyun 时三项必填；2026-10-29 签名+模板审核通过）。
+    // 实现零依赖：RPC HMAC-SHA1 签名用 node:crypto 手写（见 lib/sms.mjs），
+    // 不装 @alicloud/dysmsapi SDK —— 与本工程「只依赖 pg」的审计面原则一致。
+    // AccessKey 建议用 RAM 子账号并只授 AliyunDysmsFullAccess（勿用主账号 AK）。
+    smsAliyunAccessKeyId: env.SMS_ALIYUN_ACCESS_KEY_ID?.trim() || '',
+    smsAliyunAccessKeySecret: env.SMS_ALIYUN_ACCESS_KEY_SECRET?.trim() || '',
+    // TemplateCode：控制台「模板管理」审核通过的模板 CODE（形如 SMS_5124xxxxx）；
+    // 模板正文变量名须为 code（验证码）与 ttl（有效分钟），见 sms.mjs aliyun 实现
+    smsAliyunTemplateCode: env.SMS_ALIYUN_TEMPLATE_CODE?.trim() || '',
+    // endpoint 默认国内中心（华北2）；国际短信才需改 dysmsapi.ap-southeast-1.aliyuncs.com
+    smsAliyunEndpoint: env.SMS_ALIYUN_ENDPOINT?.trim() || 'dysmsapi.aliyuncs.com',
     // ── 邮件通道（email 登录验证码，与短信解耦，2026-10-27 新增）────────
     // EMAIL_PROVIDER=log   默认：验证码进日志（开发占位，WEB 端收不到真邮件）
     // EMAIL_PROVIDER=smtp  通用 SMTP 发信：企业邮箱/QQ/163/阿里企业邮/Resend/SendGrid 均可
@@ -320,8 +331,22 @@ export function validate(cfg) {
     if (cfg.smsMasterCode) {
       problems.push('SMS_PROVIDER=tencent 时不应再配 SMS_MASTER_CODE —— 万能码是开发期后门，切真短信必须删除该行')
     }
+  } else if (cfg.smsProvider === 'aliyun') {
+    // 阿里云真短信（2026-10-29）。三项凭据缺一即无法发送，启动就拦下
+    const missing = [
+      ['SMS_ALIYUN_ACCESS_KEY_ID', cfg.smsAliyunAccessKeyId],
+      ['SMS_ALIYUN_ACCESS_KEY_SECRET', cfg.smsAliyunAccessKeySecret],
+      ['SMS_ALIYUN_TEMPLATE_CODE', cfg.smsAliyunTemplateCode],
+    ].filter(([, v]) => !v).map(([k]) => k)
+    if (missing.length) {
+      problems.push(`SMS_PROVIDER=aliyun 缺少凭据：${missing.join('、')}（阿里云控制台获取，详见 deploy/gateway/gateway.env.template）`)
+    }
+    // 真短信模式下留着万能码 = 后门；生产必须清空（app.mjs 也只在 log 模式传 masterCode）
+    if (cfg.smsMasterCode) {
+      problems.push('SMS_PROVIDER=aliyun 时不应再配 SMS_MASTER_CODE —— 万能码是开发期后门，切真短信必须删除该行')
+    }
   } else if (cfg.smsProvider !== 'log') {
-    problems.push(`SMS_PROVIDER=${cfg.smsProvider} 尚未实现，当前支持 log（日志+万能码）与 tencent（腾讯云真短信）`)
+    problems.push(`SMS_PROVIDER=${cfg.smsProvider} 尚未实现，当前支持 log（日志+万能码）、tencent（腾讯云真短信）与 aliyun（阿里云真短信）`)
   }
   // ── 邮件通道校验 ──────────────────────────────────────────
   if (cfg.emailProvider === 'smtp') {

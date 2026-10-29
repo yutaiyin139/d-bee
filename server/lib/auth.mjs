@@ -214,6 +214,13 @@ export function createAuthHandlers(deps) {
             templateId: cfg.smsTencentTemplateId,
             region: cfg.smsTencentRegion,
           },
+          // aliyun provider 所需凭据（2026-10-29；log/smtp/tencent provider 忽略这些字段）
+          aliyun: {
+            accessKeyId: cfg.smsAliyunAccessKeyId,
+            accessKeySecret: cfg.smsAliyunAccessKeySecret,
+            templateCode: cfg.smsAliyunTemplateCode,
+            endpoint: cfg.smsAliyunEndpoint,
+          },
           // smtp provider 所需凭据（log/tencent provider 忽略这些字段）
           smtp: {
             host: cfg.emailSmtpHost,
