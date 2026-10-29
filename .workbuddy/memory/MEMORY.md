@@ -405,6 +405,22 @@ config.mjs 未定义 → `DBEE_SSL=1` 静默失效）；**env 模板加新占位
 `#`/`&`/`\` 不转义会**静默**写坏 env）；服务器 PG 17.11 监听 `0.0.0.0:5432`（**公网可达**，非旧记忆的
 「仅回环」，靠 pg_hba 白名单兜底、ufw inactive），Node 未预装（apt 仅 v18，项目要 ≥22）→ 官方 tarball +
 sha256 钉死 + npmmirror 镜像优先。
+- 🔴 **`deploy-gateway.sh` 是「全站永久锁死」级地雷（10-29 实测确认）**：它用本地模板**覆盖**
+  `/etc/dbee/gateway.env`，而本地 `.env` 缺 `IDENT_PEPPER`/`JWT_SECRET`/SMTP → 覆盖后全站
+  `ident_hash` **无法重算、所有账户再也认不出来，不可恢复**。改网关代码一律走**手术式脚本**
+  （参照 `deploy/apply-password-login-fix.sh`）：只传代码文件 → 语法校验 → env 指纹记录 → 备份 →
+  `install` → 重启 → healthz 探活失败自动回滚 → **断言 env sha256 前后一致**。
+  SSH 账号 = `.env` 的 `USER=ubuntu` + `SSH_PWD`（**不是** `DBEE_USER=dbee_app`，那是应用/DB 账号）。
+- **网关鉴权头是 `x-wb-webapp-access-key`（不是 `apikey`）**，且云端按 **Origin 精确匹配**校验 →
+  Node 侧脚本必须注入 `Origin`/`Referer`，否则报「the session is invalid, expired or issued for
+  another client」（极易误判成凭证失效）。库内真实表名见 `db/migrations/`（`profiles`/`meal_entries`/
+  `honey_ledger`…，**没有 `habit`/`habits`**，猜表名探测数据面必 404）。
+- **`signIn` 端点承载两条路径**：`{username, verification_token}`（验证码）与 `{username, password}`
+  （密码）。改鉴权时务必两条都回归；密码路径的标识必须自己归一化（SDK 手机侧发 `+86 138…` **带空格**，
+  库内 `ident_hash` 按**裸 11 位**算）。回归用 `tools/selftest-password-login.mjs`（35 项断言）。
+- **审核演示账户是两套互不相通的账户**（同邮箱同密码）：iOS = WorkBuddy 云库（owner
+  `2115454156301934592`）、web = 自建 PG（owner `1793280185303313979`）。iOS 切自建库后必须**在新库
+  重建账户并预置演示数据**，否则审核员登录进空账户 → Guideline 2.1 风险。
 
 ## 过审合规
 
