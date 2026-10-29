@@ -45,10 +45,26 @@ const PASSWORD = process.env.REVIEW_PASSWORD || '888888'
 const require = createRequire(path.join(ROOT, 'package.json'))
 const { createWorkBuddyCloud } = require('@tencent-ai/workbuddy-cloud-sdk')
 
+/**
+ * 云端按 **Origin 精确匹配** 校验客户端（详见 src/lib/originProxy.ts）：
+ * 缺 Origin 时连 signIn 都会被拒，报「the session is invalid, expired or
+ * issued for another client」——看着像账号不存在/密码错，其实是头没带。
+ * 浏览器里 Origin 是 forbidden header 无法手设，但 Node 可以，
+ * 所以这里包一层 fetch 强制注入，让脚本的判定结果可信。
+ */
+const ORIGIN = process.env.REVIEW_ORIGIN || ENDPOINT
+const nodeFetch = (input, init) => {
+  const headers = new Headers(init?.headers)
+  if (!headers.has('Origin')) headers.set('Origin', ORIGIN)
+  if (!headers.has('Referer')) headers.set('Referer', `${ORIGIN}/`)
+  return fetch(input, { ...init, headers })
+}
+
 const cloud = createWorkBuddyCloud({
   endpoint: ENDPOINT,
   oauthRelayBaseUrl: OAUTH_RELAY,
   publishableKey: PUBLISHABLE_KEY,
+  fetch: nodeFetch,
 })
 
 const cmd = process.argv[2] || ''
