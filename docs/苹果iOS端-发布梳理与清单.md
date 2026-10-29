@@ -246,3 +246,11 @@ npx cap sync ios
 | 云库凭证失效（`invalid_client / credential is invalid or revoked`） | ❌ **误判**。根因是探测时发错鉴权头：正确头为 `x-wb-webapp-access-key`（非 `apikey`），且云端按 **Origin 精确匹配**校验，须同时带 `Origin`/`Referer`。补齐后 `/.cloud/database/rest/` → 200 + PostgREST swagger，`/.cloud/auth/v1/user/me` → 401 `UNAUTHENTICATED`（路由正常）。**iOS 数据面健康** |
 | 审核演示账户未注册（10-29 日志「验证码过期未完成」） | ❌ **已过期作废**。`signInWithPassword` 实测登录成功，user.id `2115454156301934592`。脚本 `check` 曾误报失败，根因同上是缺 Origin，已修 |
 | 线上服务器跑旧版隐私页 | ✅ **已修复**。重新部署 1.7.3，`verify-legal.mjs` 全量 PASS |
+| web 端密码登录报 400「缺少 verification_token」 | ✅ **真缺陷，已修并上线**（10-29 夜，commit `8d4a0ef`）。自建网关 `signIn` 只实现了验证码路径，SDK `signInWithPassword` 的 `{username,password}` 无分支可走。影响面 = **web 端所有设过密码的用户**。修复含标识归一化 / 防枚举 / 双维度限流 / 日志脱敏，`selftest-password-login.mjs` **35/35**，线上 signin 200 + access_token、`user/me` 200、业务表带 token 读取 200。⚠️ 部署走手术式脚本，**绝不可跑 `deploy-gateway.sh`**（覆盖 `gateway.env` 会丢 `IDENT_PEPPER` → 全站永久锁死）。详见卷首结论⑤、§八.3、§九.A |
+
+### ⚠️ 10-29 夜新增的「未来阻塞」（现在不挡，但切库时必炸）
+
+| 隐患 | 触发时机 | 后果 | 预防 |
+| --- | ------- | --- | --- |
+| **演示账户在两套库里是互不相通的两个账户** | iOS 数据面从云库切到自建库（备案 + HTTPS 就绪后） | 审核员登录进**空账户**（无档案、无蜂蜜、无记录）→ Guideline 2.1「App Completeness」风险 | 切库时必须在自建库**重建** `dbeesupport@163.com` 并**预置演示数据**（`profiles` / `honey_ledger` / 若干 `meal_entries`），再跑一遍 §八.3 的复检命令 |
+| 自建库现有 6 个真实用户是迁移/注册产生的，与云库用户**无对应关系** | 同上 | 老用户在 iOS 上的历史数据不会跟过来 | 切库前先做一次云库 → 自建库的**用户与数据迁移方案**（含 `ident_hash` 需用自建库的 `IDENT_PEPPER` 重算，两套 pepper 不同则哈希不可搬） |
