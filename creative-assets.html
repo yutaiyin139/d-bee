@@ -7,15 +7,17 @@
       App Store「创意素材」（Creative Assets）生成页 —— 与设备截图槽位是两套独立资产。
 
       版位（Apple《Creative assets specifications》现行口径）：
+        · 产品页面标题（原生尺寸）：21:9 → 3840×1646（PNG/JPEG）
         · 产品页面标题 / 搜索结果 通用素材：16:9 → 5244×2950（仅 PNG）
         · 搜索结果图：3:2 → 最小 1920×1280、最大 3840×2560（PNG/JPEG）
       硬性约束：不得含 alpha 通道或透明度（出图脚本用 PIL 转 RGB 落盘）。
 
       布局策略：全部用 vw 单位（设计基准画布 1600 宽，1vw = 16px）。
-      这样同一份 DOM 在 2622×1475（16:9）与 1920×1280 / 960×640（3:2）下等比适配，
-      文字始终矢量光栅化，配合 deviceScaleFactor=2 得到精确像素且不糊。
+      这样同一份 DOM 在 1920×823（21:9）、2622×1475（16:9）与 1920×1280 / 960×640（3:2）
+      下等比适配，文字始终矢量光栅化，配合 deviceScaleFactor=2 得到精确像素且不糊。
 
-      16:9 与 3:2 比例不同（1.778 vs 1.5），不能互相缩放 → 用 [data-ratio] 出两套布局：
+      三种比例互不相同（2.333 / 1.778 / 1.5），不能互相缩放 → 用 [data-ratio] 出三套布局：
+        21:9 → brand（超宽横幅，主标题单行；Apple 要求该版位「聚焦单个清晰明确的理念」）
         16:9 → 右侧 3 台手机（横向空间充裕）
         3:2  → 右侧 2 台手机
 
@@ -448,6 +450,118 @@
         background: rgba(253, 241, 218, 0.9);
       }
 
+      /* ── 21:9 产品页面标题（原生尺寸 3840×1646）─────────────────────
+         这是 header 版位的**原始尺寸**，不会像 16:9 通用素材那样被按别的比例裁切；
+         但 Apple 官方 PSD 模板仍为它标了 Art Safe Area = 1646×661 **居中**（占画布
+         17.2%），因为实际展示会随设备 / 方向 / 语言产生额外裁切。故核心内容仍收敛
+         进该区，区外只放装饰（蜂巢纹理、光斑、手机剪影）——与 16:9 brand 同一策略。
+
+         与 universal（1402×962、中心在 39% 画布高）不同：header 的安全区**居中**，
+         所以 top 用 50vh 而非 39vh。
+
+         Apple 对顶部横幅的要求是「聚焦单个清晰明确的理念。视觉上过于密集或杂乱的
+         素材资源会削弱冲击力」→ 主标题排**单行**（21:9 横向充裕、纵向仅 823 CSS px），
+         副标题与 3 条特性不展示（它们保留在 3:2 搜索素材里）。 */
+      body[data-layout='brand'] .stage[data-ratio='21x9'] .copy {
+        top: 50vh; /* header 模板 art safe area 居中 */
+        width: 42.86vw; /* = 1646 / 3840 */
+        max-height: 40.16vh; /* = 661 / 1646 */
+      }
+      body[data-layout='brand'] .stage[data-ratio='21x9'] .brand {
+        flex-direction: row; /* 超宽横幅用横向品牌行，省下纵向空间给主标题 */
+        gap: 0.9vw;
+        margin-bottom: 1.1vw;
+      }
+      body[data-layout='brand'] .stage[data-ratio='21x9'] .brand img {
+        width: 3.2vw;
+        height: 3.2vw;
+        border-radius: 0.74vw;
+      }
+      body[data-layout='brand'] .stage[data-ratio='21x9'] .brand-name {
+        font-size: 1.7vw;
+        letter-spacing: 0.05em;
+        text-align: left;
+      }
+      body[data-layout='brand'] .stage[data-ratio='21x9'] .brand-sub {
+        font-size: 0.78vw;
+        letter-spacing: 0.18em;
+      }
+      body[data-layout='brand'] .stage[data-ratio='21x9'] .headline {
+        font-size: 2.7vw; /* 单行 12 字 × 2.7vw ≈ 32.4vw < 42.86vw 安全区宽 */
+        line-height: 1.3;
+        margin-bottom: 0;
+      }
+      body[data-layout='brand'] .stage[data-ratio='21x9'] .headline em::after {
+        height: 0.7vw;
+        border-radius: 0.4vw;
+        bottom: 0.12vw;
+        left: -0.18vw;
+        right: -0.18vw;
+      }
+      body[data-layout='brand'] .stage[data-ratio='21x9'] .footnote {
+        margin-top: 1.1vw;
+        font-size: 0.62vw;
+      }
+      /* 装饰剪影按 21:9 的矮画幅重新定位（画布高仅 823 CSS px） */
+      .stage[data-ratio='21x9'] .decor .ghost {
+        height: 74vh;
+        border-radius: 3.4vw;
+      }
+      .stage[data-ratio='21x9'] .decor .ghost.left {
+        left: 5vw;
+        top: 13vh;
+        transform: rotate(-7deg);
+      }
+      .stage[data-ratio='21x9'] .decor .ghost.right {
+        right: 5vw;
+        top: 13vh;
+        transform: rotate(7deg);
+      }
+
+      /* 21:9 满幅备选（showcase）：真实 UI + 主标题 + 副标题，两台手机。
+         ⚠️ 刻意**隐藏 3 条特性条**——header 版位忌视觉密集（Apple 原话见上），
+         且画布纵向只有 823 CSS px，塞不下。默认不产出，需显式 --layout showcase。 */
+      body[data-layout='showcase'] .stage[data-ratio='21x9'] {
+        padding: 6vh 6vw;
+        gap: 3vw;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='21x9'] .copy {
+        width: 40vw;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='21x9'] .headline {
+        font-size: 3vw;
+        margin-bottom: 1vw;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='21x9'] .subline {
+        font-size: 1.35vw;
+        margin-bottom: 0;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='21x9'] .features {
+        display: none;
+      }
+      body[data-layout='showcase'] .stage[data-ratio='21x9'] .footnote {
+        left: 6vw;
+        bottom: 3vh;
+      }
+      [data-ratio='21x9'] .phone-stack {
+        gap: 1.4vw;
+      }
+      [data-ratio='21x9'] .phone {
+        height: 82vh;
+        aspect-ratio: 1179 / 2556;
+      }
+      [data-ratio='21x9'] .phone.side {
+        transform: translateY(3vh) scale(0.86);
+        margin: 0 -2.6vw;
+      }
+      [data-ratio='21x9'] .phone.main {
+        transform: scale(1.02);
+        z-index: 2;
+      }
+      [data-ratio='21x9'] .phone.third {
+        display: none;
+      }
+
       /* ── 16:9 满幅展示布局（showcase，备选）────────────────────────
          视觉冲击力更强，但依赖「两个版位均为居中式裁切」这一未公开的假设
          （Apple 明确不公布裁切算法，只给了模板安全区 + ASC 预览工具）。
@@ -594,12 +708,16 @@
     </div>
 
     <script>
-      // 由 shot-creative.mjs 通过 query 驱动：?ratio=16x9|3x2&variant=N&layout=brand|showcase
+      // 由 shot-creative.mjs 通过 query 驱动：?ratio=21x9|16x9|3x2&variant=N&layout=brand|showcase
       const params = new URLSearchParams(location.search)
-      const ratio = params.get('ratio') === '3x2' ? '3x2' : '16x9'
+      const RATIO_PARAM = params.get('ratio')
+      const ratio = RATIO_PARAM === '3x2' || RATIO_PARAM === '21x9' ? RATIO_PARAM : '16x9'
       document.getElementById('stage').dataset.ratio = ratio
 
       // 布局选择：
+      //   21:9（产品页面标题·原生尺寸）默认 brand —— 超宽横幅，Apple 要求「聚焦单个
+      //     清晰明确的理念」，主标题单行、核心内容收敛进 header 模板 art safe area
+      //     （1646×661 物理，居中）。可用 &layout=showcase 切满幅 UI 备选。
       //   16:9（通用素材）默认 brand —— 核心内容收敛进 Apple 模板的 art safe area
       //     （1402×962 物理 / 仅占画布 8.7%，水平居中、垂直在 39% 画布高），
       //     安全区外只放装饰。可用 &layout=showcase 切到满幅展示布局（备选）。
@@ -611,22 +729,28 @@
 
       // 多个文案变体：同一版位可上传多张（Apple 每个版位最多 10 张），
       // 变体之间强调不同卖点，便于 A/B 与本地化替换。
+      // headlineWide = 21:9 brand 专用单行版（无 <br>）：该画布纵向仅 823 CSS px，
+      // 两行标题会挤压安全区，且 Apple 对顶部横幅要求「聚焦单个清晰明确的理念」。
       const VARIANTS = [
         {
           headline: '拍一张，<br />就知道这餐<em>多少卡</em>',
+          headlineWide: '拍一张，就知道这餐<em>多少卡</em>',
           subline: 'AI 拍照识别卡路里，自动算出蛋白质、碳水与脂肪，帮你吃对而不是少吃。',
         },
         {
           headline: '不用称重，<br /><em>随手拍</em>就能记一餐',
+          headlineWide: '不用称重，<em>随手拍</em>就能记一餐',
           subline: '识别食物与份量，自动写入饮食日记；饮水、体重、运动也一并记录。',
         },
         {
           headline: '吃对了没有？<br /><em>饮食体检</em>告诉你',
+          headlineWide: '吃对了没有？<em>饮食体检</em>告诉你',
           subline: '按营养成分与烹调方式本地推算，指出高脂、精制主食等问题并给出替换建议。',
         },
       ]
       const v = VARIANTS[Number(params.get('variant') || 0) % VARIANTS.length]
-      document.getElementById('headline').innerHTML = v.headline
+      const useWide = ratio === '21x9' && layout === 'brand'
+      document.getElementById('headline').innerHTML = useWide ? v.headlineWide : v.headline
       document.getElementById('subline').textContent = v.subline
 
       /**

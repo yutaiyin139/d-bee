@@ -7,23 +7,28 @@
  *   两者比例不同（竖屏 0.46 vs 横版 1.78/1.5），**不可互相缩放**。
  *
  * 版位与尺寸（Apple《Creative assets specifications》现行口径）：
- *   16:9 通用素材        5244×2950  仅 PNG   （产品页面标题 / 搜索结果 二选一）
+ *   21:9 产品页面标题      3840×1646  PNG/JPEG（版位原生尺寸，不被裁切）
+ *   16:9 通用素材          5244×2950  仅 PNG   （产品页面标题 / 搜索结果 二选一）
  *   3:2  搜索结果（最大） 3840×2560  PNG/JPEG
  *   3:2  搜索结果（最小） 1920×1280  PNG/JPEG
  *   硬性约束：不得含 alpha 通道或透明度 → 落盘前用 PIL 转 RGB（24-bit）。
  *
  * 渲染策略：CSS viewport = 目标像素 / 2，deviceScaleFactor = 2。
+ *   3840×1646 → 1920×823 @2x（1646/2=823 整除，比例 2.3329 vs 官方 21:9=2.3333，
+ *   官方标注本身即取整值，以 3840×1646 为准）
  *   5244×2950 → 2622×1475 @2x（2950/2=1475 整除；与 16:9 理论值 2949.75 差 0.25px，
  *   官方标注本身即为四舍五入值，以 5244×2950 为准）
  *   3840×2560 → 1920×1280 @2x；1920×1280 → 960×640 @2x
- *   页面全部用 vw 单位 → 同一份 DOM 等比适配两种画布比例，文字矢量光栅化不糊。
+ *   页面全部用 vw 单位 → 同一份 DOM 等比适配三种画布比例，文字矢量光栅化不糊。
  *
  * 用法：
- *   node deploy/shot-creative.mjs              # 出全部 3 个尺寸（variant 0）
+ *   node deploy/shot-creative.mjs              # 出全部 4 个尺寸（variant 0）
  *   node deploy/shot-creative.mjs --variants 3 # 每个尺寸出 3 个文案变体
+ *   node deploy/shot-creative.mjs --only 21x9  # 只出 3840×1646（产品页面标题）
  *   node deploy/shot-creative.mjs --only 16x9  # 只出 5244×2950
  *
  * 输出：deploy/screenshots/creative/
+ *   creative-21x9-3840x1646-v{N}.png
  *   creative-16x9-5244x2950-v{N}.png
  *   creative-3x2-3840x2560-v{N}.png
  *   creative-3x2-1920x1280-v{N}.png
@@ -48,6 +53,7 @@ const PAGE = path.join(ROOT, 'creative-assets.html')
 
 // 目标规格：key 用于 --only 过滤，ratio 驱动页面布局分支
 const TARGETS = [
+  { key: '21x9', ratio: '21x9', w: 3840, h: 1646, scale: 2, placement: '产品页面标题 · 版位原生尺寸（PNG/JPEG）' },
   { key: '16x9', ratio: '16x9', w: 5244, h: 2950, scale: 2, placement: '产品页面标题/搜索结果 通用素材（仅 PNG）' },
   { key: '3x2-max', ratio: '3x2', w: 3840, h: 2560, scale: 2, placement: '搜索结果图 · 最大' },
   { key: '3x2-min', ratio: '3x2', w: 1920, h: 1280, scale: 2, placement: '搜索结果图 · 最小' },
@@ -61,14 +67,26 @@ const variantsArg = (() => {
   const i = process.argv.indexOf('--variants')
   return i > 0 ? Math.max(1, parseInt(process.argv[i + 1], 10) || 1) : 1
 })()
-// --layout brand|showcase：仅对 16:9 有意义（3:2 恒为 showcase，版位原始尺寸不被裁）。
-// 默认按页面自身规则：16:9 → brand（内容收敛进 Apple art safe area），3:2 → showcase。
+// --layout brand|showcase：对 21:9 与 16:9 有意义（3:2 恒为 showcase，版位原始尺寸不被裁）。
+// 默认按页面自身规则：21:9/16:9 → brand（内容收敛进 Apple art safe area），3:2 → showcase。
 // showcase 是满幅 UI 展示布局，作为备选保留，须在 ASC 预览工具确认两个版位都显示完整后才可上传。
 const layoutArg = (() => {
   const i = process.argv.indexOf('--layout')
   const v = i > 0 ? process.argv[i + 1] : ''
   return v === 'brand' || v === 'showcase' ? v : ''
 })()
+
+/**
+ * Apple 官方 PSD 模板的 "Art Safe Area" 图层实测值（第三方 2026-09-24 下载，
+ * 文件日期 2026-08-05）。以画布宽高的**比例**表达，便于换算到任意 viewport：
+ *   header  3840×1646 → 1646×661 居中          = 42.86% × 40.16%
+ *   universal 5244×2950 → 1402×962，水平居中、垂直中心在 **39%** 画布高 = 26.73% × 32.61%
+ * 两者数值不同（尤其垂直中心），不可混用。
+ */
+const ART_SAFE = {
+  '21x9': { wFrac: 1646 / 3840, hFrac: 661 / 1646, cyFrac: 0.5 },
+  '16x9': { wFrac: 1402 / 5244, hFrac: 962 / 2950, cyFrac: 0.39 },
+}
 
 const ACTIVE = onlyArg ? TARGETS.filter((t) => t.key.startsWith(onlyArg) || t.ratio === onlyArg) : TARGETS
 if (ACTIVE.length === 0) {
@@ -175,49 +193,53 @@ for (const t of ACTIVE) {
 
     // 布局以页面实际解析结果为准（3:2 恒为 showcase），写进文件名避免两套方案互相覆盖
     const layout = await page.evaluate(() => document.body.dataset.layout || 'showcase')
-    const suffix = layout === 'showcase' && t.ratio === '16x9' ? '-showcase' : ''
+    const suffix = layout === 'showcase' && t.ratio !== '3x2' ? '-showcase' : ''
     const file = path.join(OUT, `creative-${t.ratio}-${t.w}x${t.h}-v${v}${suffix}.png`)
     await page.screenshot({ path: file, fullPage: false })
 
     // 素材图必须铺满画布，检查是否有溢出/空白（手机组被裁是常见事故）。
     // brand 布局（16:9 通用素材）不含手机组——按 Apple 官方 art safe area 口径，
     // UI 界面只放在 3:2 搜索结果素材里，故此处改为按布局分支检查。
-    const overflow = await page.evaluate(() => {
-      const st = document.getElementById('stage')
-      const sr = st.getBoundingClientRect()
-      const layout = document.body.dataset.layout || 'showcase'
-      const copy = document.querySelector('.copy').getBoundingClientRect()
-      const stack = document.querySelector('.phone-stack')
-      let worst = 0
-      let stackW = 0
-      if (layout === 'showcase') {
-        for (const p of document.querySelectorAll('.phone')) {
-          if (getComputedStyle(p).display === 'none') continue
-          const r = p.getBoundingClientRect()
-          if (r.width === 0) continue
-          worst = Math.max(worst, r.right - sr.right, sr.left - r.left, r.bottom - sr.bottom, sr.top - r.top)
+    const overflow = await page.evaluate(
+      (safeArea) => {
+        const st = document.getElementById('stage')
+        const sr = st.getBoundingClientRect()
+        const layout = document.body.dataset.layout || 'showcase'
+        const copy = document.querySelector('.copy').getBoundingClientRect()
+        const stack = document.querySelector('.phone-stack')
+        let worst = 0
+        let stackW = 0
+        if (layout === 'showcase') {
+          for (const p of document.querySelectorAll('.phone')) {
+            if (getComputedStyle(p).display === 'none') continue
+            const r = p.getBoundingClientRect()
+            if (r.width === 0) continue
+            worst = Math.max(worst, r.right - sr.right, sr.left - r.left, r.bottom - sr.bottom, sr.top - r.top)
+          }
+          stackW = Math.round(stack.getBoundingClientRect().width)
+        } else if (safeArea) {
+          // brand：手机组应已隐藏；核心文案必须落在 Apple 模板 art safe area 内。
+          // 各比例的安全区数值不同（header 1646×661 居中 / universal 1402×962 中心 39%），
+          // 由调用方按 ratio 传入比例值，此处只做换算。
+          const safeL = sr.left + sr.width / 2 - (safeArea.wFrac * sr.width) / 2
+          const safeR = sr.left + sr.width / 2 + (safeArea.wFrac * sr.width) / 2
+          const safeT = sr.top + sr.height * safeArea.cyFrac - (safeArea.hFrac * sr.height) / 2
+          const safeB = sr.top + sr.height * safeArea.cyFrac + (safeArea.hFrac * sr.height) / 2
+          worst = Math.max(worst, safeL - copy.left, copy.right - safeR, safeT - copy.top, copy.bottom - safeB)
+          const phonesHidden = getComputedStyle(document.querySelector('.phones')).display === 'none'
+          if (!phonesHidden) worst = Math.max(worst, 9999)
         }
-        stackW = Math.round(stack.getBoundingClientRect().width)
-      } else {
-        // brand：手机组应已隐藏；核心文案必须落在 Apple 模板 art safe area 内
-        // （universal = 1402×962 物理，水平居中、垂直中心 39% 画布高）
-        const safeL = sr.left + sr.width / 2 - ((1402 / 5244) * sr.width) / 2
-        const safeR = sr.left + sr.width / 2 + ((1402 / 5244) * sr.width) / 2
-        const safeT = sr.top + sr.height * 0.39 - ((962 / 2950) * sr.height) / 2
-        const safeB = sr.top + sr.height * 0.39 + ((962 / 2950) * sr.height) / 2
-        worst = Math.max(worst, safeL - copy.left, copy.right - safeR, safeT - copy.top, copy.bottom - safeB)
-        const phonesHidden = getComputedStyle(document.querySelector('.phones')).display === 'none'
-        if (!phonesHidden) worst = Math.max(worst, 9999)
-      }
-      return {
-        layout,
-        stageW: Math.round(sr.width),
-        stackW,
-        overflowPx: Math.round(worst),
-        copyH: Math.round(copy.height),
-        stageH: Math.round(sr.height),
-      }
-    })
+        return {
+          layout,
+          stageW: Math.round(sr.width),
+          stackW,
+          overflowPx: Math.round(worst),
+          copyH: Math.round(copy.height),
+          stageH: Math.round(sr.height),
+        }
+      },
+      ART_SAFE[t.ratio] || null,
+    )
     const flag = overflow.overflowPx > 2 ? (overflow.layout === 'brand' ? ' ⚠️超出安全区' : ' ⚠️溢出') : ''
     console.log(
       `  ✅ v${v} → ${path.relative(ROOT, file)}` +
