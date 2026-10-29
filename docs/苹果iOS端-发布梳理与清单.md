@@ -145,6 +145,7 @@ npx cap sync ios
 - [x] ✅ **商店展示截图（10-28 已补齐）**：Apple 2026-10 起 iPhone 必填槽位为 **6.3" 中型屏 1179×2556 或 1206×2622**；已用 `deploy/shot-store.mjs`（store-preview.html 假 iOS 环境 + Playwright 精确像素）生成 5 张 **1179×2556**（`deploy/screenshots/store/iphone-*.png`），付费墙 iOS 形态 7 项断言全过（有恢复购买、无微信/支付宝/兑换码、价格 ¥18/¥128/¥298），详见《AppStore产品页-填报包-2026-10-28.md》§五。⚠️ 上传前人工过目画面；最终以 ASC 上传页实际标红槽位为准（若提示 6.9" 按 1320×2868 重出）
 - [x] ✅ **iPad 截图同为必填（10-28 已补齐）**：`TARGETED_DEVICE_FAMILY = "1,2"`（iPhone+iPad）→ 已生成 5 张 **2048×2732**（`deploy/screenshots/store/ipad-*.png`，`node deploy/shot-store.mjs --ipad`，`?full=1` 解除 480px 宽限铺满屏宽），无需再改 Device Family
 - [x] 产品页元数据文案（名称/副标题/关键词/推广文本/描述/版权 + 3 商品显示名与描述）已备齐并通过字数实测，见《AppStore产品页-填报包-2026-10-28.md》
+- [x] ✅ **创意素材（Creative Assets，10-29 已出图）**：与设备截图是**两套独立资产**（横版营销图 vs 竖屏界面，比例不同不可互相缩放），用于产品页面标题 / 搜索结果版位，**选填**（iOS/iPadOS 27 起）。已按官方三个尺寸精确出图：`creative-16x9-5244x2950-v0.png`（仅 PNG）、`creative-3x2-3840x2560-v0.png`、`creative-3x2-1920x1280-v0.png`，均在 `deploy/screenshots/creative/`。PIL 复核尺寸精确 + **RGB 无 alpha 通道**（Apple 硬约束，带 alpha 即拒收）+ 无 transparency 块；DOM 断言 39 项全过（无溢出/无重叠/图片全解码）。复现 `node deploy/shot-creative.mjs`，详见《AppStore产品页-填报包-2026-10-28.md》§五·补
 
 ### B. 必须在 Mac 上完成（上架硬步骤）
 
