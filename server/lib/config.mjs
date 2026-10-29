@@ -115,7 +115,10 @@ export function loadConfig(env = process.env) {
 
     smsProvider: (env.SMS_PROVIDER?.trim() || 'log').toLowerCase(),
     smsMasterCode: env.SMS_MASTER_CODE?.trim() || '',
-    smsSignName: env.SMS_SIGN_NAME?.trim() || '自律蜜蜂',
+    // 签名默认值（2026-10-29 实测口径）：阿里云账号下唯一审核通过的签名是
+    // 「北京迪蜂科技有限公司」（「自律蜜蜂」尚未在该账号申请）。品牌签名审核
+    // 通过后设 SMS_SIGN_NAME=自律蜜蜂 一行 env 即可切换，无需改代码。
+    smsSignName: env.SMS_SIGN_NAME?.trim() || '北京迪蜂科技有限公司',
     // 腾讯云短信凭据（SMS_PROVIDER=tencent 时四项必填；采购签约后在控制台获取）。
     // 实现零依赖：TC3-HMAC-SHA256 签名用 node:crypto 手写（见 lib/sms.mjs），
     // 不装 tencentcloud-sdk-nodejs —— 与本工程「只依赖 pg」的审计面原则一致。
