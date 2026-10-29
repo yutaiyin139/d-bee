@@ -1,10 +1,15 @@
 node_modules/
 dist/
 *.local
+# 秘密文件的任何备份变体（.secrets.local.bak-* 等，2026-10-29 险些误提交）
+*.local.bak*
 .env
 .env.*
 !.env.example
 .DS_Store
+
+# 数据库临时备份（含真实用户数据，约定不入库）
+db/.tmp-backup.sql
 
 # Python 编译缓存（py_compile / import 产物）
 __pycache__/
