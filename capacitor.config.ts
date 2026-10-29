@@ -41,10 +41,10 @@ const config: CapacitorConfig = {
   //   Wechat_CapgoCapacitorWechat），导致 iOS 编译失败。
   //   （办照后启用微信时再单独处理其 SDK 集成。）
   android: {
-    includePlugins: ['@dbee/origin-proxy', '@dbee/health', '@capacitor/share', '@capgo/capacitor-wechat', '@capacitor/camera'],
+    includePlugins: ['@dbee/origin-proxy', '@dbee/health', '@capacitor/share', '@capgo/capacitor-wechat', '@capacitor/camera', '@capacitor/app'],
   },
   ios: {
-    includePlugins: ['@dbee/origin-proxy', '@capacitor/share', '@dbee/health', '@dbee/iap', '@capacitor/camera'],
+    includePlugins: ['@dbee/origin-proxy', '@capacitor/share', '@dbee/health', '@dbee/iap', '@capacitor/camera', '@capacitor/app'],
   },
   plugins: {
     CapacitorHttp: {

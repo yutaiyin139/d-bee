@@ -2267,6 +2267,75 @@ select {
   background: var(--bg);
 }
 
+/* ── 首次启动隐私政策同意门（P0 合规）───────────────────────────
+   z-index 50：低于 .legal-overlay(60) —— 用户点《隐私政策》链接时，
+   文档页盖在本弹窗之上，读完返回仍回到本弹窗（同意未给出前不放行）。
+   不可跳过：无遮罩点击关闭、无 checkbox 默认勾选，只能点按钮表态。 */
+.privacy-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+.privacy-card {
+  width: 100%;
+  max-width: 420px;
+  margin: auto;
+  padding: 24px 20px 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+
+.privacy-card h1 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.privacy-body {
+  margin: 0 0 10px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--ink-2);
+}
+
+/* 协议链接：行内按钮，视觉上必须是「可点击的链接」而非普通文字 */
+.privacy-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--honey-dark);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.75;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.privacy-tip {
+  margin: 14px 0 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+
+.privacy-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.privacy-actions .btn {
+  height: 46px;
+  font-size: 15px;
+}
+
 .legal-page {
   max-width: 480px;
   margin: 0 auto;

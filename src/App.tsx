@@ -4,6 +4,7 @@ import { IconChart, IconMe, IconToday } from './components/Icons'
 import { getProfile } from './lib/api'
 import type { Profile } from './types'
 import type { DocId } from './content/legal'
+import { readLegalFromUrl, syncLegalUrl } from './lib/legalRoute'
 import { AuthScreen } from './pages/AuthScreen'
 import { Dashboard } from './pages/Dashboard'
 import { LegalPage } from './pages/LegalPage'
@@ -28,41 +29,8 @@ function readInviteFromUrl(): string {
   }
 }
 
-/** 合法的法律文档 id（与 legal.ts 的 DOCS 对齐） */
-const LEGAL_IDS: readonly DocId[] = ['terms', 'privacy', 'disclaimer']
-
-/**
- * 从 URL 解析法律文档 id，支持三种写法：
- *   /legal/privacy      ← 推荐给外部填报（商店/备案/ASC 的隐私政策 URL）
- *   /?legal=privacy     ← 查询参数兜底
- *   #/legal/privacy     ← hash 兜底（静态托管无 SPA 回退时也能用）
- * 依赖 nginx 的 SPA 回退（try_files → index.html），故 /legal/* 深链可直达。
- */
-function readLegalFromUrl(): DocId | null {
-  try {
-    const { pathname, search, hash } = location
-    const fromPath = /^\/legal\/([a-z]+)\/?$/i.exec(pathname)?.[1]
-    const fromQuery = new URLSearchParams(search).get('legal')
-    const fromHash = /^#\/legal\/([a-z]+)\/?$/i.exec(hash)?.[1]
-    const raw = (fromPath ?? fromQuery ?? fromHash ?? '').toLowerCase()
-    return (LEGAL_IDS as readonly string[]).includes(raw) ? (raw as DocId) : null
-  } catch {
-    return null
-  }
-}
-
-/** 打开/关闭法律文档时同步 URL，保证可刷新、可分享、可被审核员直接访问 */
-function syncLegalUrl(id: DocId | null) {
-  try {
-    const target = id ? `/legal/${id}` : '/'
-    // 已在目标路径则不动（避免污染 history 栈）
-    if (location.pathname === target) return
-    if (id) history.pushState(null, '', target)
-    else history.replaceState(null, '', '/')
-  } catch {
-    /* 原生 WebView 或受限环境下静默降级：URL 不同步但页面仍可用 */
-  }
-}
+// 法律文档 URL 路由（readLegalFromUrl / syncLegalUrl）已抽到 lib/legalRoute.ts，
+// 供 App 与首启隐私门（PrivacyGate）共用单一真源 —— 详见该文件头注释。
 
 function maskAccount(user: unknown): string {
   const u = (user ?? {}) as Record<string, unknown>
