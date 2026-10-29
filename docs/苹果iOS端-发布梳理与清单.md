@@ -1,11 +1,12 @@
 # 苹果 iOS 端 · 发布梳理与清单（V1.7.3）
 
 > 更新：2026-10-29 ｜ 版本：1.7.3 (build 12) ｜ 开发机：Windows（无法本地编译/签名 iOS）  
-> ✅ **10-29 四项实证结论**（本轮逐一联网/真机验证，非推断）：
+> ✅ **10-29 五项实证结论**（本轮逐一联网/真机验证，非推断）：
 > ① **云库存活**：iOS 数据面 `https://zilv-mifeng.app.workbuddy.host` 的 `publishableKey` **仍然有效**——`/.cloud/database/rest/` 返回 200 + PostgREST swagger，`/.cloud/auth/v1/user/me` 返回 401 `UNAUTHENTICATED`（路由正常）。此前一次探测报 `invalid_client` 是**发错了鉴权头**（正确头是 `x-wb-webapp-access-key`，且云端按 **Origin 精确匹配**校验，须同时带 `Origin`/`Referer`），不是凭证失效。→ **iOS 端登录与数据读写不受阻**。
 > ② **审核演示账户已可用**：`dbeesupport@163.com` / `888888` 经真实 SDK `signInWithPassword` 验证**登录成功**（user.id `2115454156301934592`）。10-29 日志记的「验证码过期未完成」已过期作废。`tools/setup-review-account.mjs` 此前 `check` 误报失败，根因是脚本未注入 Origin，已修（补 `nodeFetch` 包装）。
 > ③ **线上服务器已更新到 1.7.3**：`http://150.158.51.106/` 重新部署，`verify-legal.mjs` 全量 **PASS**（隐私门四要素、深链放行、七方 SDK 公示、6 条公示 URL 全 200、隐私政策正文 3082 字〔旧版仅 1531〕、页脚 v1.7.3、零 console/page error）。深链 `/legal/privacy`、`/legal/terms`、`/legal/disclaimer` 均 200 → **ASC 隐私政策 URL 可填 `http://150.158.51.106/legal/privacy`**。
 > ④ **`d-bee.cn` 仍无 DNS 记录**（`nslookup` → Non-existent domain），企业 ICP 备案进行中。故 ASC **不要**填 `https://d-bee.cn/legal/privacy`（审核员点开即死链 → 2.1 拒审），先填上面的 IP 深链，备案通过后再改。
+> ⑤ 🔴→✅ **修复一处生产缺陷：自建网关从未实现密码登录**（10-29 夜，用户在 web 端实测暴露）。用审核账户在 `http://150.158.51.106/` 密码登录报 **400「缺少 verification_token」**——根因是主端切自建网关时只实现了验证码路径，`server/lib/auth.mjs` 的 `signIn` 拿不到 `verification_token` 就直接拒，而 SDK `signInWithPassword` 发的是 `{username, password}`（`identity.mjs` 的 `verifyPassword()` 早已写好却从未被调用）。影响面是 **web 端所有设过密码的用户**，不止演示账户。已补 `signInWithPassword` 分支 + 手术式热修上线（不动 `gateway.env`），线上实测 **200 + access_token**、`user/me` 与业务表读取全通，防枚举/限流/日志脱敏自测 **35/35 通过**。⚠️ **注意两套数据面不要混淆**：web 端 = 自建网关 + 自建 PG；iOS 端 = WorkBuddy 云库（`zilv-mifeng.app.workbuddy.host`），两边 `dbeesupport@163.com` 是**互不相通的两个账户**（owner 分别为 `1793280185303313979` / `2115454156301934592`）。详见 §八.3。
 >
 > ⚠️ **10-28 三处口径更新**：① Bundle ID 已定案 `cn.com.dbee.app`（原 `com.dbee.app` 被 Apple 抢注弃用）；② 双域名规划落地——`d-bee.cn` = 自律蜜蜂 Web 端（隐私政策 / webhook / Universal Link / 原生端 endpoint），`d-bee.com.cn` = 公司官网；③ 对公账户已开立（10-28），但 Apple 账号仍是个人主体 → 付费协议今天先按个人版本办（W-8BEN + 本人卡），对公收款等 1.12 迁移后换绑。追踪底账以 `docs/收费模块-前置条件待办清单.md` §一 为准。  
 > 一句话结论：**工程侧 V1.7.3 已全部就绪**（版本三端一致、隐私同意门 + 七方 SDK 公示已进 iOS 包、线上服务器已同步到 1.7.3、云库数据面与审核演示账户均已实证可用、付费墙 3.1.1/3.1.2 要件齐备）。**剩下的是 Mac 硬步骤 + 资质链**：Mac 上补 DEVELOPMENT_TEAM 并首次编译 3 个 Swift 插件 → Archive/Upload → **TestFlight 内测（今天/明天可做，不受备案号限制）**。🔴 **中国区正式上架明天做不到**：卡在企业 ICP 备案（进行中）与软著登记（总闸门·未提交，AI 条款须用户本人决策）→ App 备案号拿不到，ASC 无法提交中国区审核。详见 §八.5、§十.1。  
@@ -141,7 +142,20 @@ npx cap sync ios
 
 1. **Apple 3.1.1**：iOS 数字商品（会员）必须走 IAP，**兑换码方案提审前要删除**（禁止绕过 IAP）。→ ✅ **已确认**：`PaywallSheet.tsx` 的兑换码输入用 `!isIOS()` 包裹，iOS 下完全不渲染；付费墙 iOS 点商品直接 `buyProduct(id, 'apple')` 走内购。蜂蜜兑换（邀请中心）是 earned 积分，属 3.1.1 允许的虚拟货币，不受影响。
 2. 订阅必须提供「恢复购买」+「管理订阅」入口（否则 2.1 / 3.1.2 被拒）。→ **恢复购买 ✅**：iOS 下 `isIOS()` 分支渲染「恢复购买」按钮，`restorePurchases` 已接线。**法律链接 ✅**：付费墙内含《使用条款》《隐私政策》按钮（3.1.2 硬要求）。⚠️ **「管理订阅」入口 ❌ 未实现**：全仓 `grep` 无 `管理订阅`/`itms-apps`/`showManageSubscriptions`，`@dbee/iap` 插件也未暴露该能力。**建议**：付费墙/我的页加一个「管理订阅」按钮跳 `itms-apps://apps.apple.com/account/subscriptions`（Apple 官方深链，无需新插件），成本极低、直接消掉一个 3.1.2 风险点。**注**：Apple 对「仅恢复购买、无管理订阅入口」通常按 3.1.2 打回而非硬拒，首发免费+订阅未开时可暂缓，但补上更稳。
-3. **审核演示账户（5.1.1）**：✅ **已实证可用**——`dbeesupport@163.com` / `888888`，`signInWithPassword` 登录成功（user.id `2115454156301934592`）。ASC「App 审核信息」填：用户名 `dbeesupport@163.com`、密码 `888888`、备注「打开 App → 登录页切『邮箱』→ 点『已有密码？点此用密码登录』→ 输入上述邮箱与密码」。⚠️ 该账户数据在 **WorkBuddy 云库**，与 iOS 包数据面同源，审核员登录后能正常读写。
+3. **审核演示账户（5.1.1）**：✅ **两套数据面均已实证可用**——账号密码同为 `dbeesupport@163.com` / `888888`，但它们是**互不相通的两个账户**，务必按端对号入座：
+
+   | 端 | 数据面 | 账户 owner | 验证方式与结果（10-29 夜实测） |
+   | - | ----- | --------- | --------------------------- |
+   | **iOS App（提审用的就是这条）** | WorkBuddy 云库 `https://zilv-mifeng.app.workbuddy.host` | `2115454156301934592` | ✅ 真实 SDK `signInWithPassword` 登录成功；`tools/setup-review-account.mjs check` 通过 |
+   | **web 端（自建网关）** | `http://150.158.51.106` + 自建 PG | `1793280185303313979` | ✅ `POST /.cloud/auth/v1/signin {username,password}` → **200 + access_token**；`user/me` 200（`login_count` 递增）；`profiles`/`honey_ledger` 带 token 读取 200。**修复前此处报 400「缺少 verification_token」**（见卷首结论⑤） |
+
+   ASC「App 审核信息」填：用户名 `dbeesupport@163.com`、密码 `888888`、备注「打开 App → 登录页切『邮箱』→ 点『已有密码？点此用密码登录』→ 输入上述邮箱与密码」。⚠️ 提审用的演示账户在**云库**，与 iOS 包数据面同源，审核员登录后能正常读写；**web 端那个账户的修复不影响 iOS 提审**，但它是产品自身可用性缺陷，必须修（已修）。
+   🔴 **提审前复检命令**（任一端不可用即会被拒 2.1）：
+   ```bash
+   node tools/setup-review-account.mjs check          # iOS 侧（云库）
+   node tools/selftest-password-login.mjs             # web 侧（网关，35 项断言）
+   ```
+
 4. 抽成：📌 **2026-03-15 起中国内地新费率**（Apple 官方公告，无需另签条款自动生效）——标准 IAP/付费 App **25%**（原 30%）；参加 **App Store Small Business Program**（年收入 <$100 万，新项目天然符合）或订阅第二年后续费 **12%**（原 15%）。SBP 报名入口在付费协议生效后出现，审核数周，建议协议 Active 后尽早报名。
 5. 🔴 **中国区提审强制需「App 备案号」，且 Apple 后台有接口级强校验**（10-29 联网核实，此前文档只写了「需要备案号」，漏了校验规则）：
 
@@ -183,6 +197,8 @@ npx cap sync ios
 - [x] `npm run build` + `npx cap sync ios`（web 资源同步到最新 dist，含隐私门与七方 SDK 公示；产物已 grep 复核）
 - [x] **线上服务器重新部署到 1.7.3**（10-29）：此前线上跑旧版（隐私政策仅 1531 字、无隐私门、SDK 公示全缺），而 ASC 填的隐私政策 URL 指向它 → 审核员会看到不合规的旧页面。已用 `SKIP_BUILD=1 bash deploy/deploy.sh`（纯前端更新，不动 nginx）修复，`verify-legal.mjs http://150.158.51.106/` **全量 PASS**。⚠️ 部署用 SSH 账号是 `.env` 里的 `USER=ubuntu` + `SSH_PWD`，**不是** `DBEE_USER=dbee_app`（那是应用/DB 账号，用它 SSH 会 Authentication failed）
 - [x] **审核演示账户实证可用**（10-29）：`node tools/setup-review-account.mjs check` → 登录成功；顺带修了脚本缺 Origin 导致的误报
+- [x] 🔴→✅ **修复自建网关「密码登录」缺失并热修上线**（10-29 夜）：`server/lib/auth.mjs` 新增 `signInWithPassword` 分支（原 `signIn` 只认 `verification_token`，SDK 的 `{username,password}` 无路可走 → 400「缺少 verification_token」）。含标识归一化（SDK 手机侧发 `+86 138…` 带空格形态，库内 `ident_hash` 按裸 11 位算，不归一化必查不到人）、防枚举（账户不存在/密码错/未设密码一律同文案 401 + DUMMY 哈希恒定耗时）、双维度限流（标识 10 次/15 分钟 + IP 30 次/15 分钟）、日志脱敏。`identity.mjs` 补 `findUserWithPasswordByIdent`（独立函数而非给 `findUserByIdent` 加敏感列）与 `DUMMY_PASSWORD_HASH`。自测 `node tools/selftest-password-login.mjs` → **35/35 通过**。
+  ⚠️ **部署红线**：**绝不能跑 `deploy-gateway.sh`**——它会用本地模板覆盖 `/etc/dbee/gateway.env`，而本地 `.env` 缺 `IDENT_PEPPER`/`JWT_SECRET`/SMTP，覆盖会致 `ident_hash` 无法重算、**全站永久锁死**。改用手术式脚本 `deploy/apply-password-login-fix.sh`（只传两个代码文件 → 语法校验 → env 指纹备份 → install → 重启 → healthz 探活失败自动回滚 → **断言 env sha256 前后一致**）。实测：healthz 200、env sha256 一致、备份在 `/opt/dbee-gateway/.bak-20261029-220823/`。
 - [x] **云库存活性实证**（10-29）：iOS 数据面凭证有效，登录/读写不受阻
 - [x] UI token 化三端一致（web `:root` ↔ mini `tokens.scss`，8 个语义衍生色同名同值）
 - [x] 隐私清单 / 权限说明 / 出口合规核对
@@ -191,9 +207,6 @@ npx cap sync ios
 - [x] 产品页元数据文案（名称/副标题/关键词/推广文本/描述/版权 + 3 商品显示名与描述）已备齐并通过字数实测，见《AppStore产品页-填报包-2026-10-28.md》
 - [ ] ⚠️ **「管理订阅」入口未实现**（见 §八.2）：建议加 `itms-apps://apps.apple.com/account/subscriptions` 跳转按钮，低成本消掉 3.1.2 风险
 - [ ] 数据面决策（见第三节，受备案阻塞；**当前维持云库，已实证可用，V1.7.3 可正常上架**）
-- [x] ✅ **商店展示截图（10-28 已补齐）**：Apple 2026-10 起 iPhone 必填槽位为 **6.3" 中型屏 1179×2556 或 1206×2622**；已用 `deploy/shot-store.mjs`（store-preview.html 假 iOS 环境 + Playwright 精确像素）生成 5 张 **1179×2556**（`deploy/screenshots/store/iphone-*.png`），付费墙 iOS 形态 7 项断言全过（有恢复购买、无微信/支付宝/兑换码、价格 ¥18/¥128/¥298），详见《AppStore产品页-填报包-2026-10-28.md》§五。⚠️ 上传前人工过目画面；最终以 ASC 上传页实际标红槽位为准（若提示 6.9" 按 1320×2868 重出）
-- [x] ✅ **iPad 截图同为必填（10-28 已补齐）**：`TARGETED_DEVICE_FAMILY = "1,2"`（iPhone+iPad）→ 已生成 5 张 **2048×2732**（`deploy/screenshots/store/ipad-*.png`，`node deploy/shot-store.mjs --ipad`，`?full=1` 解除 480px 宽限铺满屏宽），无需再改 Device Family
-- [x] 产品页元数据文案（名称/副标题/关键词/推广文本/描述/版权 + 3 商品显示名与描述）已备齐并通过字数实测，见《AppStore产品页-填报包-2026-10-28.md》
 - [x] ✅ **创意素材（Creative Assets，10-29 已出图）**：与设备截图是**两套独立资产**（横版营销图 vs 竖屏界面，比例不同不可互相缩放），用于产品页面标题 / 搜索结果版位，**选填**（iOS/iPadOS 27 起）；走 ASC **Asset Library** 上传（非截屏区），首个版本未获批前须随 App 版本一起提交。已按官方三个尺寸精确出图：`creative-16x9-5244x2950-v0.png`（仅 PNG，**brand 布局**——核心内容收敛进 Apple 模板 art safe area 1402×962/8.7%，因 16:9 是 universal 素材会被 21:9 与 3:2 两版位裁切）、`creative-3x2-3840x2560-v0.png` 与 `creative-3x2-1920x1280-v0.png`（showcase 满幅 UI 布局，版位原始尺寸不被裁），均在 `deploy/screenshots/creative/`；另有 16:9 满幅备选 `-showcase.png`（须先过 ASC 预览工具才可用）。PIL 复核尺寸精确 + **RGB 无 alpha 通道**（Apple 硬约束）+ 无 transparency；DOM 断言 **126 项全过**（3 尺寸 × 3 文案变体，含 art safe area 与安全区外无文字检查）；对 16:9 产物做 21:9/3:2/交集三种裁切实证均无内容切断。复现 `node deploy/verify-creative.mjs && node deploy/shot-creative.mjs`，详见《AppStore产品页-填报包-2026-10-28.md》§五·补
 
 ### B. 必须在 Mac 上完成（上架硬步骤）

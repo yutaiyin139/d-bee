@@ -10,9 +10,12 @@
  *   POST /.cloud/auth/v1/verification/verify   验码 → 一次性 verification_token
  *        req  { verification_id, verification_code }
  *        resp { verification_token }
- *   POST /.cloud/auth/v1/signin                老用户换会话
- *        req  { username, verification_token }
+ *   POST /.cloud/auth/v1/signin                登录（**两条路径共用此端点**）
+ *        req  { username, verification_token }   ← 验证码登录（verifyOtp 第二跳）
+ *        req  { username, password }             ← 密码登录（signInWithPassword）
  *        resp { access_token, refresh_token, expires_in, sub, ... }
+ *        ⚠️ SDK 的 signInWithPassword 与 verifyOtp(isExistingUser=true) 都 POST 到这里，
+ *           靠 body 里有没有 verification_token 分流（见 signIn 的实现注释）
  *   POST /.cloud/auth/v1/signup                新用户换会话
  *        req  { verification_token, phone_number|email, password? }
  *        resp 同 signin
@@ -20,6 +23,12 @@
  *        req  { grant_type: 'refresh_token', refresh_token }
  *   GET  /.cloud/auth/v1/user/me               当前用户
  *   POST /.cloud/auth/v1/user/signout          登出
+ *
+ * 🔴 2026-10-29 补实现「密码登录」：此前 signin 只认 verification_token，收到
+ *    SDK 发来的 { username, password } 一律 400「缺少 verification_token」。
+ *    前端 AuthScreen 的密码登录入口与 identity.mjs 的 verifyPassword() 早就存在，
+ *    唯独网关这一跳没接上 → web 端设过密码的用户全部无法用密码登录，
+ *    包括 App Store 审核演示账户（审核员收不到我们的验证码邮件，只能靠密码登录）。
  *
  * 会话载荷字段名对齐 SDK 的 parseSession/userFromSessionPayload：
  *   access_token / refresh_token / expires_in / sub / is_anonymous / name / avatar_url
@@ -29,11 +38,25 @@ import { randomBytes } from 'node:crypto'
 import { signJwt, verifyJwt, bearerFrom } from './jwt.mjs'
 import {
   resolveIdent, findUserByIdent, findUserByOwnerId,
+  findUserWithPasswordByIdent, verifyPassword, DUMMY_PASSWORD_HASH,
   ensureUser, touchLogin, hashPassword, normalizePhone, normalizeEmail,
   bumpTokenVersion, getTokenVersion,
 } from './identity.mjs'
 import { sendCode } from './sms.mjs'
-import { cloudError, clientIp } from './http.mjs'
+import { cloudError, clientIp, RateLimiter } from './http.mjs'
+
+/**
+ * 密码登录的暴力破解防护阈值（独立于发码限流 —— 发码是「同标识 60 秒 1 次」，
+ * 拿来管密码登录会把正常用户的输错重试也挡死）。
+ *
+ * 两个维度都要有，缺一不可：
+ *   · 按标识：防「盯着某一个账户使劲猜」（定向爆破）
+ *   · 按 IP：防「一个 IP 拿字典扫一大批账户」（撞库/喷洒）
+ * 全局 limiterApi 默认 300 次/分钟，对密码登录来说等于没设防，故不复用。
+ */
+const PW_LIMIT_WINDOW_MS = 15 * 60_000
+const PW_LIMIT_PER_IDENT = 10
+const PW_LIMIT_PER_IP = 30
 
 /**
  * refresh_token 用不透明随机串（而非 JWT），存内存以便登出/续期时吊销。
@@ -80,6 +103,14 @@ class RefreshStore {
 export function createAuthHandlers(deps) {
   const { cfg, pool, otp, logger } = deps
   const refresh = deps.refresh ?? new RefreshStore({ ttlSec: cfg.refreshTtlSec })
+
+  // 密码登录限流（见文件头 PW_LIMIT_* 注释：为何不复用 limiterIdent/limiterApi）
+  const pwLimiterIdent = new RateLimiter({
+    windowMs: PW_LIMIT_WINDOW_MS, limit: PW_LIMIT_PER_IDENT, maxKeys: 200_000,
+  })
+  const pwLimiterIp = new RateLimiter({
+    windowMs: PW_LIMIT_WINDOW_MS, limit: PW_LIMIT_PER_IP, maxKeys: 200_000,
+  })
 
   /** 校验 publishableKey（access-key）。留空则跳过。 */
   function checkAccessKey(req) {
@@ -155,6 +186,67 @@ export function createAuthHandlers(deps) {
       name: user?.nickname ?? '',
       avatar_url: user?.avatar_url ?? '',
     }
+  }
+
+  /**
+   * 密码登录（「邮箱/手机号 + 密码」）。由 signIn 在 body 带 password 时分流过来。
+   *
+   * 安全要点（逐条都有对应代码，不是口号）：
+   *   ① 标识必须自己归一化：SDK 手机侧发的是 normalizePhone 过的 `+86 138…`
+   *      带空格形态，而库里 ident_hash 是按**裸 11 位**算的。不复用服务端自己的
+   *      normalizePhone 就会 100% 查不到人。邮箱则必须小写化（注册侧是 normalizeEmail 存的）。
+   *   ② 不区分「账户不存在」与「密码错误」：一律 401 invalid_credentials，
+   *      且查无此人时仍对 DUMMY_PASSWORD_HASH 跑一次 scrypt —— 否则响应耗时差
+   *      能被用来枚举注册邮箱/手机号。
+   *   ③ password_hash 为 NULL（纯验证码注册、从没设过密码）时同样返回
+   *      「邮箱或密码不正确」，不提示「该账户未设密码」，避免暴露账户属性；
+   *      verifyPassword 对非 scrypt$ 前缀直接 false，天然覆盖这种情况。
+   *   ④ 双维度限流（按标识 + 按 IP），阈值见文件头 PW_LIMIT_* 注释。
+   *   ⑤ 密码日志一律不落：只记掩码标识与成败，绝不记明文或哈希。
+   */
+  async function signInWithPassword(req, res, body) {
+    const rawUsername = typeof body.username === 'string' ? body.username.trim() : ''
+    const password = typeof body.password === 'string' ? body.password : ''
+    if (!rawUsername || !password) {
+      return cloudError(res, 400, '请输入账号与密码', 'invalid_request')
+    }
+    if (password.length < 6) {
+      // 注册侧就要求 ≥6 位，短于此必错；提前返回省一次 scrypt（但仍走限流计数）
+      return cloudError(res, 401, '邮箱或密码不正确', 'invalid_credentials')
+    }
+
+    // ① 标识归一化：按形态判类型，分别用服务端自己的归一化函数
+    const asPhone = normalizePhone(rawUsername)
+    const kind = asPhone ? 'phone' : 'email'
+    const value = asPhone ?? normalizeEmail(rawUsername)
+    if (!value) return cloudError(res, 400, '账号格式不正确', 'invalid_request')
+
+    const ip = clientIp(req, { trustedProxies: cfg.trustedProxyIps })
+
+    // ④ 限流：先判后做，锁定后即便密码对也拒（与 otp.verify 的 locked 语义一致）
+    const rlIdent = pwLimiterIdent.hit(`${kind}:${value}`)
+    const rlIp = pwLimiterIp.hit(ip)
+    if (!rlIdent.ok || !rlIp.ok) {
+      const retryAfter = Math.max(rlIdent.retryAfterSec, rlIp.retryAfterSec)
+      res.setHeader('retry-after', String(retryAfter))
+      logger.info(`[auth] 密码登录限流 ${kind}=${maskAny(kind, value)} ip=${ip} retryAfter=${retryAfter}s`)
+      return cloudError(res, 429, '尝试次数过多，请稍后再试', 'too_many_attempts')
+    }
+
+    const user = await findUserWithPasswordByIdent(pool, kind, value, cfg.identPepper)
+
+    // ② 恒定耗时 + 恒定文案：查无此人也要真跑一次 scrypt
+    const ok = await verifyPassword(password, user?.password_hash ?? DUMMY_PASSWORD_HASH)
+    if (!user || !ok) {
+      logger.info(`[auth] 密码登录失败 ${kind}=${maskAny(kind, value)} ip=${ip} reason=${user ? 'bad_password' : 'no_such_user'}`)
+      return cloudError(res, 401, '邮箱或密码不正确', 'invalid_credentials')
+    }
+
+    await touchLogin(pool, user.owner_id)
+    // 登录成功即清零该标识的失败计数，避免正常使用被之前的输错累积挡住
+    pwLimiterIdent.reset(`${kind}:${value}`)
+    logger.info(`[auth] 密码登录成功 ${kind}=${maskAny(kind, value)} owner=${user.owner_id} ip=${ip}`)
+    return { status: 200, body: await sessionPayload(user.owner_id, null, user.token_version) }
   }
 
   return {
@@ -260,9 +352,31 @@ export function createAuthHandlers(deps) {
       return { status: 200, body: { verification_token: r.verificationToken } }
     },
 
-    /** ── 老用户登录（username + verification_token）─────── */
+    /**
+     * ── 登录 ──────────────────────────────────────────────
+     *
+     * 一个端点承载两条路径（SDK 的 signInWithPassword 与 verifyOtp 都 POST 到这里，
+     * 见 @tencent-ai/workbuddy-cloud-sdk 的 AUTH_PATHS.signIn）：
+     *   ① 验证码登录：{ username, verification_token }  ← 原有路径，OTP 流程的第二跳
+     *   ② 密码登录：  { username, password }            ← 2026-10-29 补实现
+     *
+     * 🔴 为什么必须补②：主端切自建网关时只实现了①。前端 AuthScreen 的
+     * 「已有密码？点此用密码登录」入口一直在（注释还写着「SDK 的
+     * signInWithPassword 早已支持，这里只是把入口补上」），identity.mjs 的
+     * verifyPassword() 也早已写好，但 auth.mjs 连 import 都没有 —— 结果 web 端
+     * 所有设过密码的用户点密码登录都报「缺少 verification_token」400。
+     * 直接后果：App Store 审核演示账户（审核员拿不到我们邮箱的收信权限，只能用
+     * 密码登录）进不去 App → Guideline 2.1 拒审。
+     */
     async signIn(req, res, body) {
       if (!checkAccessKey(req)) return cloudError(res, 401, 'invalid access key', 'invalid_api_key')
+
+      // ── ② 密码登录路径（带 password 且无 verification_token）──────────
+      if (!body.verification_token && body.password) {
+        return signInWithPassword(req, res, body)
+      }
+
+      // ── ① 验证码登录路径（原有行为，逐字保留）─────────────────────────
       const vt = body.verification_token
       if (typeof vt !== 'string' || !vt) return cloudError(res, 400, '缺少 verification_token', 'invalid_request')
       const consumed = otp.consumeToken(vt)

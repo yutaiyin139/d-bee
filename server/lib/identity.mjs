@@ -153,6 +153,39 @@ export async function findUserByIdent(pool, kind, value, pepper) {
   return rows[0] ?? null
 }
 
+/**
+ * 按标识查用户**并带上 password_hash**（仅「邮箱/手机号 + 密码」登录路径用）。
+ *
+ * 为什么不直接在 findUserByIdent 里加这一列：那个函数有 3 处调用（发码判存在、
+ * OTP 登录、ensureUser），它们都不需要密码哈希，把敏感列带进那些路径只是扩大
+ * 泄露面（万一将来某处把 user 整体序列化进响应）。单独一个函数，影响面为零。
+ *
+ * @returns {Promise<{owner_id:string,ident_kind:string,ident_masked:string,token_version:number,password_hash:string|null}|null>}
+ */
+export async function findUserWithPasswordByIdent(pool, kind, value, pepper) {
+  const hash = identHash(kind, value, pepper)
+  const { rows } = await pool.query(
+    `SELECT owner_id, ident_kind, ident_masked, token_version, password_hash
+       FROM public.app_users
+      WHERE ident_kind = $1 AND ident_hash = $2`,
+    [kind, hash],
+  )
+  return rows[0] ?? null
+}
+
+/**
+ * 一个合法的 scrypt 哈希常量，用于「查无此人」时照样跑一次密码校验。
+ *
+ * 目的：抹平响应时间差。若用户不存在就直接返回，攻击者可用响应耗时区分
+ * 「账户存在但密码错」与「账户不存在」→ 枚举出全部注册邮箱/手机号。
+ * 拿一个真哈希去比对必然失败，但耗时与真实校验同量级。
+ * 由 hashPassword('…') 生成，对应明文不可能被猜到（且我们只用它比对失败）。
+ */
+export const DUMMY_PASSWORD_HASH =
+  'scrypt$16384$8$1$00000000000000000000000000000000' +
+  '$0000000000000000000000000000000000000000000000000000000000000000' +
+  '0000000000000000000000000000000000000000000000000000000000000000'
+
 /** 按 owner_id 查用户（/user/me 用） */
 export async function findUserByOwnerId(pool, ownerId) {
   const { rows } = await pool.query(

@@ -93,6 +93,8 @@
 - 建号方式：云端 `signUp` 必须带 OTP 验证令牌、云端用户管理接口只读 → 用 `tools/setup-review-account.mjs`（send / verify / check 三步）走一次真实邮箱验证码注册。
 - ⚠️ **备注必须写清登录路径**：邮箱通道默认显示「获取验证码」，密码登录是文字链入口，审核员若不知道点它会卡在发码环节 → 依然 2.1 被拒。
 - ❌ **原「固定测试手机号 + 演示码」方案对 iOS 无效**：`DEMO_PHONE`/`DEMO_CODE` 实现在**自建网关**（`server/lib/config.mjs`、`server/lib/app.mjs:42`），而 iOS 端目前仍连云端（`VITE_NATIVE_ENDPOINT` 从未注入 → 回退 `CLOUD_HOST`）。HTTPS + 域名切换完成、三端指向 `https://d-bee.cn` 之后，网关侧那套才具备实际意义；届时若仍想保留手机号演示通道，注意 `DEMO_CODE` 不得等于 `SMS_MASTER_CODE`（`888888`，`config.validate` 会拒启动）——**本次的演示密码正好是 888888，两者不可混用于同一套配置**。
+- 🔴 **两套数据面 = 两个互不相通的演示账户**（10-29 夜实测确认，极易踩坑）：账号密码同为 `dbeesupport@163.com` / `888888`，但 **web 端（自建网关 + 自建 PG，owner `1793280185303313979`）** 与 **iOS 端（WorkBuddy 云库，owner `2115454156301934592`）** 是两个独立账户，数据不同步。提审用的是 iOS 那条；将来 iOS 切自建网关后，**云库里这个账户的数据不会自动迁过来**，届时须在新库重建演示账户并预置演示数据（`profiles` / `honey_ledger` 等），否则审核员登录后是空账户，有 2.1「App Completeness」风险。
+- 🔴 **10-29 夜发现并修复：自建网关从未实现密码登录**。`server/lib/auth.mjs` 的 `signIn` 只认 `verification_token`，SDK `signInWithPassword` 发的 `{username, password}` 无分支可走 → **400「缺少 verification_token」**（用户在 web 端实测暴露；`identity.mjs` 的 `verifyPassword()` 早已写好却从未被 import）。影响面是 **web 端所有设过密码的用户**，不止演示账户。已补 `signInWithPassword` 分支（含标识归一化 / 防枚举 / 双维度限流 / 日志脱敏），手术式热修上线，线上实测 200 + access_token，`selftest-password-login.mjs` **35/35 通过**。⚠️ **部署红线：绝不可跑 `deploy-gateway.sh`**（本地 `.env` 缺 `IDENT_PEPPER`，模板覆盖 `/etc/dbee/gateway.env` 会致全站 `ident_hash` 无法重算、**永久锁死**），必须用 `deploy/apply-password-login-fix.sh`（只传代码文件 + 断言 env sha256 前后一致）。详见《苹果iOS端-发布梳理与清单.md》§八.3。
 
 ---
 
