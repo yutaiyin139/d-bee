@@ -133,8 +133,9 @@ export function loadConfig(env = process.env) {
     // AccessKey 建议用 RAM 子账号并只授 AliyunDysmsFullAccess（勿用主账号 AK）。
     smsAliyunAccessKeyId: env.SMS_ALIYUN_ACCESS_KEY_ID?.trim() || '',
     smsAliyunAccessKeySecret: env.SMS_ALIYUN_ACCESS_KEY_SECRET?.trim() || '',
-    // TemplateCode：控制台「模板管理」审核通过的模板 CODE（形如 SMS_5124xxxxx）；
-    // 模板正文变量名须为 code（验证码）与 ttl（有效分钟），见 sms.mjs aliyun 实现
+    // TemplateCode：控制台「模板管理」审核通过的模板 CODE（SMS_512482436，
+    // 正文「您的验证码：${code}，您正在进行身份验证，请勿泄露于他人！」——仅 code 一个变量，
+    // 2026-10-29 QuerySmsTemplate API 实测），变量约定见 sms.mjs aliyun 实现
     smsAliyunTemplateCode: env.SMS_ALIYUN_TEMPLATE_CODE?.trim() || '',
     // endpoint 默认国内中心（华北2）；国际短信才需改 dysmsapi.ap-southeast-1.aliyuncs.com
     smsAliyunEndpoint: env.SMS_ALIYUN_ENDPOINT?.trim() || 'dysmsapi.aliyuncs.com',

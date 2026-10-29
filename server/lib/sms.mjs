@@ -151,15 +151,13 @@ const PROVIDERS = {
    * 所需参数（由 auth.mjs 从 cfg 透传）：
    *   aliyun.accessKeyId / aliyun.accessKeySecret / aliyun.templateCode /
    *   aliyun.endpoint（默认 dysmsapi.aliyuncs.com）
-   * 模板约定：SMS_512482436 形如「您的验证码为${code}，该验证码${ttl}分钟内有效」——
-   *   TemplateParam 传 JSON 串 {"code":"...","ttl":"..."}。
-   *   ⚠️ 变量名（code/ttl）必须与控制台审核通过的模板正文**逐字一致**，
-   *      否则返回 isv.TEMPLATE_PARAMS_ILLEGAL；若模板变量名不同，改这里即可。
+   * 模板 SMS_512482436（2026-10-29 QuerySmsTemplate 实测审核通过，AuditStatus=1）：
+   *   正文「您的验证码：${code}，您正在进行身份验证，请勿泄露于他人！」
+   *   —— **只有 code 一个变量**，没有有效期变量（与腾讯云的 {1}{2} 双变量不同）。
+   *   ⚠️ 变量名必须与模板正文逐字一致；改模板后同步改这里。
    * 文档：https://help.aliyun.com/zh/sms/developer-reference/api-dysmsapi-2017-05-25-sendsms
-   *      签名：https://help.aliyun.com/zh/sdk/product-overview/v3-request-structure-and-signature
-   *      （RPC 签名算法：参数排序 → 百分号编码 → StringToSign → HMAC-SHA1）
    */
-  async aliyun({ to, masked, code, signName, logger, aliyun, otpTtlMin }) {
+  async aliyun({ to, masked, code, signName, logger, aliyun }) {
     const missing = ['accessKeyId', 'accessKeySecret', 'templateCode'].filter((k) => !aliyun?.[k])
     if (missing.length) {
       logger.error(`[SMS] aliyun 凭据缺失：${missing.map((k) => `SMS_ALIYUN_${k.toUpperCase()}`).join('、')}`)
@@ -167,11 +165,9 @@ const PROVIDERS = {
     }
     // 国内手机号：阿里云 PhoneNumbers 接受 11 位裸号；带 +86 前缀也兼容（剥掉）
     const phone = (to || '').replace(/^\+?86/, '')
-    // TemplateParam 是 JSON 串；变量名须与模板正文一致（见上方模板约定）
-    const templateParam = JSON.stringify({
-      code: String(code),
-      ttl: String(otpTtlMin ?? 5),
-    })
+    // TemplateParam 是 JSON 串；模板只有 ${code} 一个变量（实测多传会被容忍，
+    // 但按「只传模板声明的变量」原则保持最小集，模板改版时不易踩 PARAMETERS_ILLEGAL）
+    const templateParam = JSON.stringify({ code: String(code) })
 
     try {
       const body = await aliyunRpcRequest({
