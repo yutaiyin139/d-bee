@@ -4,10 +4,16 @@
  *   2) 三份文档页能否正常打开、标题与正文是否渲染
  *   3) 备案号未配置时**不得**出现任何「ICP备」字样
  *      （备案审核期间展示假备案号属违规，必须为空）
+ *   4) 首启隐私同意门四要素 + 排版（华为/小米/OPPO 硬性拒审项）
+ *   5) 法律深链免同意放行（审核员/爬虫直达 /legal/privacy 须能读全文）
+ *   6) 第三方 SDK 公示完整性（与真实链路涉及的每一方逐条比对）
+ *   7) 公示 URL 可达性（每条第三方链接真实可达，防死链/错误主体）
  *
  * 用法：
  *   node deploy/verify-legal.mjs http://150.158.51.106/
  *   node deploy/verify-legal.mjs https://d-bee.cn/
+ * 环境变量：
+ *   CHECK_URLS=0  跳过第 7 项联网校验（无外网的 CI 用）
  */
 import { createRequire } from 'node:module'
 import { mkdirSync, existsSync, readdirSync } from 'node:fs'
@@ -200,6 +206,40 @@ for (const p of REQUIRED_PARTIES) {
   console.log(`  ${p.name}: ${hit ? 'YES' : 'NO ← 缺失会被 OPPO 判「SDK 未明示」'}`)
 }
 
+/* 0.7) 公示 URL 可达性 —— 隐私政策里给出的每一条第三方隐私政策/协议链接都必须真实可达。
+   死链（404）或指向错误主体（如把国内小程序引到 English-only、适用境外主体的政策页）
+   会被审核判「公示链接无效/不合规」。此前网易 163 链接失效即因缺这道断言而漏网。
+   默认联网校验；CI 无外网或想跳过时设 CHECK_URLS=0。 */
+const CHECK_URLS = process.env.CHECK_URLS !== '0'
+let urlsOk = true
+if (CHECK_URLS) {
+  console.log('\n--- 0.7) 公示 URL 可达性 ---')
+  // 从渲染后的正文里抓全部 http(s) 链接（去重）。deepBody 为隐私政策全文 innerText。
+  const found = [...new Set((deepBody.match(/https?:\/\/[^\s，、；）)]+/g) || [])
+    .map((u) => u.replace(/[.,]+$/, '')))]
+  if (found.length === 0) {
+    urlsOk = false
+    console.log('  ⚠️ 正文未提取到任何 URL（隐私政策应公示第三方链接）')
+  }
+  const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36'
+  for (const u of found) {
+    let code = 0
+    try {
+      const r = await fetch(u, { method: 'GET', redirect: 'follow', headers: { 'User-Agent': UA } })
+      code = r.status
+    } catch (e) {
+      console.log(`  ERR  ${u}  ← ${String(e).slice(0, 80)}`)
+      urlsOk = false
+      continue
+    }
+    const ok = code >= 200 && code < 400
+    if (!ok) urlsOk = false
+    console.log(`  ${ok ? 'OK ' : 'BAD'} ${code}  ${u}`)
+  }
+} else {
+  console.log('\n--- 0.7) 公示 URL 可达性 ---（CHECK_URLS=0，跳过）')
+}
+
 // 同意门内点「同意并继续」后应放行进入应用（后续检查复用 gateCtx 的已同意状态）
 if (hasAgree) {
   await btnAgree.first().click()
@@ -297,7 +337,7 @@ const gatePass =
   hasExplicitStatement &&
   layoutOk &&
   gateErrors.length === 0
-const sdkPass = deepLinkOk && Object.values(sdkOk).every(Boolean)
+const sdkPass = deepLinkOk && Object.values(sdkOk).every(Boolean) && urlsOk
 
 const pass =
   gatePass &&
