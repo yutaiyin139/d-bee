@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -87,6 +88,49 @@ public class OriginProxyPlugin extends Plugin {
 
     /** 插件方法不得阻塞主线程（Capacitor 的插件调用跑在 WebView 线程上） */
     private static final ExecutorService EXECUTOR = Executors.newCachedThreadPool();
+
+    /**
+     * 在途流式请求注册表：streamId → 连接句柄（JS 侧 AbortSignal → cancel(streamId) 用）。
+     * 读循环每轮检查 cancelled 标记，配合 disconnect() 尽快中断阻塞的 read。
+     * ConcurrentHashMap：EXECUTOR 多线程并发注册/移除，无需额外锁。
+     */
+    private final Map<String, StreamHandle> activeStreams = new ConcurrentHashMap<>();
+
+    /** 一条在途流：连接句柄 + 取消标记（volatile 保证读循环立即可见） */
+    private static final class StreamHandle {
+        final HttpURLConnection conn;
+        volatile boolean cancelled;
+
+        StreamHandle(HttpURLConnection conn) {
+            this.conn = conn;
+        }
+    }
+
+    /**
+     * 取消在途流式请求（与 iOS 侧 cancel 逐条对齐；幂等：未知 streamId 也 resolve）。
+     */
+    @PluginMethod
+    public void cancel(final PluginCall call) {
+        final String streamId = call.getString("streamId");
+        if (streamId == null || streamId.trim().isEmpty()) {
+            call.reject("OriginProxy.cancel: streamId is required");
+            return;
+        }
+        StreamHandle handle = activeStreams.remove(streamId);
+        if (handle != null) {
+            handle.cancelled = true;
+            // disconnect 会令阻塞中的 read/getResponseCode 抛异常，读循环随之退出
+            try {
+                handle.conn.disconnect();
+            } catch (Exception ignored) {
+                // 已断开的连接重复 disconnect 无副作用
+            }
+        }
+        JSObject ret = new JSObject();
+        ret.put("streamId", streamId);
+        ret.put("cancelled", handle != null);
+        call.resolve(ret);
+    }
 
     @PluginMethod
     public void request(final PluginCall call) {
@@ -213,6 +257,7 @@ public class OriginProxyPlugin extends Plugin {
             public void run() {
                 HttpURLConnection conn = null;
                 boolean headResolved = false;
+                StreamHandle handle = null;
                 try {
                     conn = (HttpURLConnection) new URL(url).openConnection();
                     conn.setRequestMethod(method);
@@ -220,6 +265,11 @@ public class OriginProxyPlugin extends Plugin {
                     conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
                     conn.setReadTimeout(READ_TIMEOUT_MS);
                     conn.setUseCaches(false);
+
+                    // 注册取消句柄：必须在发起请求前登记，否则 JS 侧提前 abort 时
+                    // cancel(streamId) 找不到条目，请求会继续跑到超时
+                    handle = new StreamHandle(conn);
+                    activeStreams.put(streamId, handle);
 
                     if (headers != null) {
                         for (Iterator<String> it = headers.keys(); it.hasNext(); ) {
@@ -284,7 +334,9 @@ public class OriginProxyPlugin extends Plugin {
                         try {
                             byte[] chunk = new byte[8192];
                             int read;
-                            while ((read = stream.read(chunk)) != -1) {
+                            // 每轮检查取消标记：用户中断 LLM 回答时立即停止泵数据，
+                            // 否则会持续 notifyListeners 把已废弃的块塞进已关闭的流
+                            while (!handle.cancelled && (read = stream.read(chunk)) != -1) {
                                 JSObject ev = new JSObject();
                                 ev.put("streamId", streamId);
                                 ev.put("data", Base64.encodeToString(Arrays.copyOf(chunk, read), Base64.NO_WRAP));
@@ -294,21 +346,31 @@ public class OriginProxyPlugin extends Plugin {
                             stream.close();
                         }
                     }
+                    // 主动取消也走 End：对 JS 而言流是正常收尾（close），不是网络错误
                     JSObject end = new JSObject();
                     end.put("streamId", streamId);
                     notifyListeners("originProxyEnd", end);
                 } catch (Exception e) {
-                    String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-                    if (headResolved) {
-                        // 头已回给 JS：错误走事件通道，让 ReadableStream 以 error 收尾
-                        JSObject ev = new JSObject();
-                        ev.put("streamId", streamId);
-                        ev.put("message", message);
-                        notifyListeners("originProxyError", ev);
+                    if (handle != null && handle.cancelled) {
+                        // 取消触发的 disconnect 会让 read/getResponseCode 抛异常，属预期路径
+                        JSObject end = new JSObject();
+                        end.put("streamId", streamId);
+                        notifyListeners("originProxyEnd", end);
                     } else {
-                        call.reject("OriginProxy.requestStream failed: " + message);
+                        String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                        if (headResolved) {
+                            // 头已回给 JS：错误走事件通道，让 ReadableStream 以 error 收尾
+                            JSObject ev = new JSObject();
+                            ev.put("streamId", streamId);
+                            ev.put("message", message);
+                            notifyListeners("originProxyError", ev);
+                        } else {
+                            call.reject("OriginProxy.requestStream failed: " + message);
+                        }
                     }
                 } finally {
+                    // 必须移除注册表条目，否则 map 随请求次数无限增长
+                    activeStreams.remove(streamId);
                     if (conn != null) conn.disconnect();
                 }
             }

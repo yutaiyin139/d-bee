@@ -20,8 +20,30 @@ public class OriginProxyPlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "OriginProxy"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "request", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "requestStream", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "requestStream", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cancel", returnType: CAPPluginReturnPromise)
     ]
+
+    /// 在途流式请求注册表：streamId → 可取消句柄。
+    /// JS 侧 fetch 带 AbortSignal 时，signal.aborted 会调 cancel(streamId) 找到对应 task 终止。
+    /// 锁保护：Capacitor 的 JS 调用在主线程，URLSession 回调在其它线程，
+    /// 注册/移除可能并发，用 NSLock 而不是依赖单线程假设。
+    private var activeStreams: [String: URLSessionTask] = [:]
+    private let streamLock = NSLock()
+
+    /// 取消在途流式请求。已结束的 streamId 视为成功（幂等）。
+    @objc func cancel(_ call: CAPPluginCall) {
+        let streamId = call.getString("streamId") ?? ""
+        guard !streamId.isEmpty else {
+            call.reject("OriginProxy.cancel: streamId is required")
+            return
+        }
+        streamLock.lock()
+        let task = activeStreams.removeValue(forKey: streamId)
+        streamLock.unlock()
+        task?.cancel()
+        call.resolve(["streamId": streamId, "cancelled": task != nil])
+    }
 
     /// 应用创建时预留的发布域名 —— 必须与 Nginx 里那两行的值保持一致
     private static let defaultOrigin = "https://zilv-mifeng.app.workbuddy.host"
@@ -136,6 +158,13 @@ public class OriginProxyPlugin: CAPPlugin, CAPBridgedPlugin {
         return value
     }
 
+    /// 流式任务结束时由 delegate 回调，从注册表移除（避免 map 无限增长）
+    fileprivate func unregisterStream(_ streamId: String) {
+        streamLock.lock()
+        activeStreams.removeValue(forKey: streamId)
+        streamLock.unlock()
+    }
+
     // MARK: - requestStream（LLM SSE 流式转发，2026-10-26 新增）
 
     /// 与 Android 侧 requestStream 行为逐条对齐（见 OriginProxyPlugin.java 同名方法注释）：
@@ -194,7 +223,16 @@ public class OriginProxyPlugin: CAPPlugin, CAPBridgedPlugin {
         let session = URLSession(configuration: sessionConfig, delegate: delegate, delegateQueue: nil)
         // URLSession 对 delegate 持强引用直至 invalidate；外部再存一份防提前释放
         delegate.retain(session: session)
-        session.dataTask(with: request).resume()
+        let task = session.dataTask(with: request)
+
+        // 注册可取消句柄，供 JS 侧 AbortSignal → cancel(streamId) 终止长回答。
+        // 先注册再 resume：否则极端情况下 delegate 已回调完成、注册却还没发生，
+        // unregisterStream 找不到条目，map 里会留下一条永不释放的僵尸记录。
+        streamLock.lock()
+        activeStreams[streamId] = task
+        streamLock.unlock()
+
+        task.resume()
     }
 
     /// 流式转发的 delegate：头信息 → resolve；数据块 → 事件；结束/异常 → 事件。
@@ -262,10 +300,22 @@ public class OriginProxyPlugin: CAPPlugin, CAPBridgedPlugin {
 
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
             defer {
+                // 无论成功/失败/取消，都要从插件注册表移除，否则 activeStreams 会持续增长
+                self.plugin?.unregisterStream(streamId)
                 self.session?.finishTasksAndInvalidate()
                 self.session = nil
             }
             if let error = error {
+                // 主动取消（JS 侧 AbortSignal → cancel）：对 JS 而言是正常终止，
+                // 走 End 事件让 ReadableStream 自然 close，不要报成「网络错误」。
+                let nsError = error as NSError
+                if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
+                    if headResolved {
+                        plugin?.notifyListeners("originProxyEnd", data: ["streamId": streamId])
+                    }
+                    // 头还没 resolve 就取消：call 已被 JS 侧 abort 丢弃，这里不再 resolve/reject
+                    return
+                }
                 if headResolved {
                     plugin?.notifyListeners("originProxyError", data: [
                         "streamId": streamId,
