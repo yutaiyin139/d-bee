@@ -28,7 +28,7 @@ import type { CoachContext } from '../lib/ai'
 import { STREAK_BADGES } from '../lib/badge'
 import { categoryOf } from '../lib/foods'
 import { LEVEL_LABELS, levelOfScore, nextMealAdvice, summarizeEntries } from '../lib/foodInsight'
-import { ACTIVITY_EATBACK_RATIO, connectHealth, DEFAULT_STEP_GOAL, estimateActivityKcal, getHealthVendor, isHealthConnectable, isHealthConnected, syncFromHealth } from '../lib/health'
+import { ACTIVITY_EATBACK_RATIO, connectHealth, DEFAULT_STEP_GOAL, estimateActivityKcal, getHealthVendor, healthStatusHint, isHealthConnectable, isHealthConnected, isUsableHealthStatus, syncFromHealth } from '../lib/health'
 import { CHECKIN_EXERCISE, CHECKIN_MEAL, CHECKIN_WATER, dailyCheckinHoney, streakMilestoneHoney } from '../lib/invite'
 import { errText } from '../lib/errmsg'
 import { kvGet, kvSet } from '../lib/kv'
@@ -100,6 +100,9 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   const [healthSteps, setHealthSteps] = useState(0)
   const [healthActiveKcal, setHealthActiveKcal] = useState(0)
   const [healthTip, setHealthTip] = useState('')
+  // 同步异常提示（授权被拒/出错/资质未就绪等）；与 healthTip（连接动作反馈）分开，
+  // 避免自动轮询的异常提示把用户刚看到的连接结果顶掉
+  const [healthSyncHint, setHealthSyncHint] = useState('')
   // 步数目标：优先用户自定义（profile.step_goal），缺省用默认值
   const stepGoal = profile.step_goal && profile.step_goal > 0 ? profile.step_goal : DEFAULT_STEP_GOAL
   // 是否已有健康数据（步数或活动能量任一 > 0）：决定是否渲染健康数据块，避免空块观感差
@@ -117,6 +120,25 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
     let alive = true
     let timer: ReturnType<typeof setInterval> | undefined
 
+    /**
+     * 把同步结果落到状态。
+     * ⚠️ 只有 isUsableHealthStatus 才写回数值：授权被拒 / 查询报错 / 设备不支持时，
+     * 原生返回的 steps 是 0，直接写回会把用户已有的步数抹成 0（且看不出原因）。
+     * 这些情况改为显示 healthStatusHint 的引导文案，数值保持上一次成功读到的结果。
+     */
+    function applySync(data: Awaited<ReturnType<typeof syncFromHealth>>) {
+      if (!alive) return
+      if (isUsableHealthStatus(data.status)) {
+        setHealthSteps(data.steps)
+        setHealthActiveKcal(data.activeKcal)
+        setHealthSyncHint('')
+      } else {
+        // 'empty' 属可用状态（今天真的还没数据），不走到这里；
+        // no_plugin 也不该打扰用户（Web 端 / 旧版包），故此处只剩 denied/error/unavailable/not_ready
+        setHealthSyncHint(healthStatusHint(data.status, healthVendor.label))
+      }
+    }
+
     async function refreshHealth() {
       // Web 端不支持健康数据源，直接跳过（不读云端连接态，也不渲染同步提示）
       if (!healthConnectable) return
@@ -124,10 +146,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
       if (!alive) return
       setHealthConnected(connected)
       if (connected) {
-        const data = await syncFromHealth()
-        if (!alive) return
-        setHealthSteps(data.steps)
-        setHealthActiveKcal(data.activeKcal)
+        applySync(await syncFromHealth())
       }
     }
 
@@ -137,11 +156,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
       if (!healthConnectable) return
       void isHealthConnected().then((connected) => {
         if (!alive || !connected) return
-        void syncFromHealth().then((data) => {
-          if (!alive) return
-          setHealthSteps(data.steps)
-          setHealthActiveKcal(data.activeKcal)
-        })
+        void syncFromHealth().then(applySync)
       })
     }, HEALTH_SYNC_INTERVAL_MS)
 
@@ -474,8 +489,14 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
       if (res.ok) {
         setHealthConnected(true)
         const data = await syncFromHealth()
-        setHealthSteps(data.steps)
-        setHealthActiveKcal(data.activeKcal)
+        // 与自动同步同一套规则：读不到数据时不覆盖已有数值，转为显示引导
+        if (isUsableHealthStatus(data.status)) {
+          setHealthSteps(data.steps)
+          setHealthActiveKcal(data.activeKcal)
+          setHealthSyncHint('')
+        } else {
+          setHealthSyncHint(healthStatusHint(data.status, healthVendor.label))
+        }
       }
     } finally {
       setHealthConnecting(false)
@@ -829,6 +850,13 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
               <div className="notice" style={{ margin: '0 0 10px', fontSize: 13 }}>{healthTip}</div>
             )}
           </>
+        )}
+
+        {/* 同步异常引导：授权被拒 / 读取出错 / 厂商资质未就绪。
+            与「连接结果提示（healthTip）」独立展示——自动轮询发现的问题不该静默吞掉，
+            否则用户只看到步数不动，误以为「同步功能坏了」。 */}
+        {healthConnectable && healthSyncHint && (
+          <div className="notice" style={{ margin: '0 0 10px', fontSize: 13 }}>{healthSyncHint}</div>
         )}
 
         {healthConnectable && healthConnected && hasHealthData && (

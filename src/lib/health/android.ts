@@ -21,6 +21,7 @@
 
 import { isAndroid } from '../platform'
 import { detectHealthVendor, type HealthVendor } from './brand'
+import { normalizeHealthStatus, type HealthSyncData } from './types'
 
 /**
  * 支持真同步的 Android 厂商白名单（有官方健康数据开放 SDK 的品牌）。
@@ -36,8 +37,8 @@ interface HealthPlugin {
    * reason 为 Android 厂商特有的降级标记：资质未就绪时返回 'not_ready'。
    */
   requestAuthorization: (opts: { read: string[] }) => Promise<{ completed: boolean; reason?: string }>
-  /** 读当天步数 + 活动能量 */
-  fetchToday: () => Promise<{ steps: number; activeKcal: number }>
+  /** 读当天步数 + 活动能量（+ 数据来源状态，与 iOS 侧对齐） */
+  fetchToday: () => Promise<{ steps: number; activeKcal: number; status?: string; message?: string }>
 }
 
 /** Android 厂商授权的返回结果 */
@@ -86,17 +87,31 @@ export async function requestAndroidVendorAuthorization(): Promise<AndroidAuthRe
   }
 }
 
-/** 读当天步数 + 活动能量（kcal） */
-export async function fetchAndroidVendorToday(): Promise<{ steps: number; activeKcal: number }> {
+/**
+ * 读当天步数 + 活动能量（kcal），并如实返回数据来源状态。
+ *
+ * 当前厂商 SDK 未接资质，插件返回 status='not_ready'（区别于「今天真的 0 步」）；
+ * 资质就绪后插件返回真实值，本函数不需要再改。
+ */
+export async function fetchAndroidVendorToday(): Promise<HealthSyncData> {
   const plugin = getPlugin()
-  if (!plugin) return { steps: 0, activeKcal: 0 }
+  if (!plugin) return { steps: 0, activeKcal: 0, status: 'no_plugin' }
   try {
     const res = await plugin.fetchToday()
+    const steps = Math.max(0, Math.round(res.steps || 0))
+    const activeKcal = Math.max(0, Math.round(res.activeKcal || 0))
     return {
-      steps: Math.max(0, Math.round(res.steps || 0)),
-      activeKcal: Math.max(0, Math.round(res.activeKcal || 0)),
+      steps,
+      activeKcal,
+      status: normalizeHealthStatus(res.status, steps, activeKcal),
+      message: typeof res.message === 'string' && res.message.length > 0 ? res.message : undefined,
     }
-  } catch {
-    return { steps: 0, activeKcal: 0 }
+  } catch (e) {
+    return {
+      steps: 0,
+      activeKcal: 0,
+      status: 'error',
+      message: e instanceof Error ? e.message : String(e),
+    }
   }
 }

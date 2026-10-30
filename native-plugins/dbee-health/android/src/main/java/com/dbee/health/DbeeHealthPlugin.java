@@ -74,10 +74,13 @@ public class DbeeHealthPlugin extends Plugin {
 
     @PluginMethod
     public void fetchToday(PluginCall call) {
-        Log.d(TAG, "fetchToday: 华为 Health Kit 待资质接入，返回 0");
+        Log.d(TAG, "fetchToday: 华为 Health Kit 待资质接入，返回 not_ready");
         JSObject ret = new JSObject();
         ret.put("steps", 0);
         ret.put("activeKcal", 0);
+        // 与 iOS 侧 status 字段逐条对齐（前端只认 status，不再按「0 就是没数据」推断）。
+        // 厂商资质未就绪 → not_ready，前端据此提示「接入中」而非「今天 0 步」。
+        ret.put("status", "not_ready");
         call.resolve(ret);
     }
 }

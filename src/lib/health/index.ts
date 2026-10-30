@@ -24,10 +24,13 @@ import {
   requestAndroidVendorAuthorization,
   fetchAndroidVendorToday,
 } from './android'
-import { isIOS, isWechatMiniProgram } from '../platform'
+import { isWechatMiniProgram } from '../platform'
 import { getProfile, saveProfile } from '../api'
+import type { HealthSyncData } from './types'
 
 export type { HealthVendor, HealthVendorInfo } from './brand'
+export type { HealthSyncData, HealthSyncStatus, HealthAuthResult, HealthAuthReason } from './types'
+export { isUsableHealthStatus } from './types'
 
 export interface ConnectResult {
   ok: boolean
@@ -35,13 +38,6 @@ export interface ConnectResult {
   message: string
   /** 已连接的数据源标识 */
   vendor: HealthVendorInfo['vendor']
-}
-
-export interface HealthSyncData {
-  /** 当天步数 */
-  steps: number
-  /** 当天活动能量（kcal，HealthKit activeEnergyBurned 直接值） */
-  activeKcal: number
 }
 
 /** 品牌识别入口 */
@@ -101,8 +97,23 @@ export async function connectHealth(): Promise<ConnectResult> {
       return { ok: false, message: 'Apple 健康同步正在接入中，当前请先手动记录运动。', vendor: 'apple' }
     }
 
-    const completed = await requestHealthAuthorization()
-    if (!completed) {
+    const auth = await requestHealthAuthorization()
+    if (!auth.completed) {
+      // 按原生透传的 reason 精确提示，不再一律显示「授权未完成」
+      if (auth.reason === 'unavailable') {
+        return {
+          ok: false,
+          message: '当前设备不支持 Apple 健康数据，请手动记录运动。',
+          vendor: 'apple',
+        }
+      }
+      if (auth.reason === 'system_error') {
+        return {
+          ok: false,
+          message: `健康授权失败（${auth.message ?? '系统错误'}），请稍后重试。`,
+          vendor: 'apple',
+        }
+      }
       return {
         ok: false,
         message: '授权未完成，可稍后在「我的 > 健康数据源」里重新连接。',
@@ -171,23 +182,52 @@ export async function connectHealth(): Promise<ConnectResult> {
 }
 
 /**
- * 拉取当天步数 + 活动能量。
- * 按品牌分派：iOS → HealthKit；华为/小米 → 各自 Health Kit；否则返回 0。
+ * 拉取当天步数 + 活动能量，并返回数据来源状态。
+ * 按品牌分派：iOS → HealthKit；华为/小米 → 各自 Health Kit；否则 no_plugin。
  * 登录后（Dashboard 加载时）若已连接，调用本函数自动同步。
+ *
+ * status 用于区分「今天真的 0 步」与「读不到数据」：
+ * 调用方应仅在 isUsableHealthStatus(status) 时把数值写回 UI，
+ * 其余状态保留旧值并展示对应引导（授权被拒 → 去系统设置；出错 → 稍后重试）。
  */
 export async function syncFromHealth(): Promise<HealthSyncData> {
   const v = detectHealthVendor()
   if (v.vendor === 'apple') {
-    if (!isHealthKitAvailable()) return { steps: 0, activeKcal: 0 }
+    if (!isHealthKitAvailable()) return { steps: 0, activeKcal: 0, status: 'no_plugin' }
     return fetchTodayHealth()
   }
   if (v.vendor === 'huawei' || v.vendor === 'xiaomi') {
-    if (!isAndroidVendorHealthAvailable()) return { steps: 0, activeKcal: 0 }
+    if (!isAndroidVendorHealthAvailable()) return { steps: 0, activeKcal: 0, status: 'no_plugin' }
     return fetchAndroidVendorToday()
   }
-  // 微信小程序（wechat-miniprogram）：微信运动真同步规划中，当前返回 0 安全值，
+  // 微信小程序（wechat-miniprogram）：微信运动真同步规划中，当前返回 no_plugin，
   // 不影响任何现有端；接入后在此补 wx.getWeRunData 拉取。
-  return { steps: 0, activeKcal: 0 }
+  return { steps: 0, activeKcal: 0, status: 'no_plugin' }
+}
+
+/**
+ * 把同步状态翻译成给用户看的一句话（无可展示信息时返回空串）。
+ *
+ * 集中在此处而不是散在各页面：三处调用点（Dashboard 自动同步、Dashboard 手动连接、
+ * 「我的 > 健康数据源」）需要完全一致的措辞，否则用户会以为是两个不同问题。
+ */
+export function healthStatusHint(status: HealthSyncData['status'], vendorLabel: string): string {
+  switch (status) {
+    case 'denied':
+      return `${vendorLabel}读取权限未开启，步数不会同步。请到系统设置 > 健康 > 数据访问权限中勾选「自律蜜蜂」。`
+    case 'error':
+      return '读取健康数据时出错，请稍后重试；步数暂时保持上次结果。'
+    case 'unavailable':
+      return '当前设备不支持健康数据同步，请手动记录运动。'
+    case 'not_ready':
+      return `${vendorLabel}接入正在申请资质，当前请先手动记录运动。`
+    case 'empty':
+      return `今天还没有${vendorLabel}数据。确认设备已同步后，会自动读取。`
+    case 'no_plugin':
+    case 'ok':
+    default:
+      return ''
+  }
 }
 
 /**

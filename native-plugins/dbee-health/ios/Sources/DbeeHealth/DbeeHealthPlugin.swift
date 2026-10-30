@@ -47,19 +47,25 @@ public class DbeeHealthPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func requestAuthorization(_ call: CAPPluginCall) {
         guard isHealthAvailable() else {
-            call.resolve(["completed": false])
+            // 模拟器 / iPad 等无健康数据能力：给出明确 reason，前端不再显示「授权未完成」
+            call.resolve(["completed": false, "reason": "unavailable"])
             return
         }
 
         let types = readTypes
         guard !types.isEmpty else {
-            call.resolve(["completed": false])
+            call.resolve(["completed": false, "reason": "no_types"])
             return
         }
 
         healthStore.requestAuthorization(toShare: nil, read: types) { success, error in
             if let error = error {
-                call.reject("DbeeHealth.requestAuthorization failed: \(error.localizedDescription)")
+                // 系统层报错（如用户未设置密码）：如实透传给前端，不伪装成「用户拒绝」
+                call.resolve([
+                    "completed": false,
+                    "reason": "system_error",
+                    "message": error.localizedDescription
+                ])
                 return
             }
             // success 只表示「授权流程本身完成」（含用户在弹窗点了允许/取消/拒绝）。
@@ -70,7 +76,8 @@ public class DbeeHealthPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func fetchToday(_ call: CAPPluginCall) {
         guard isHealthAvailable() else {
-            call.resolve(["steps": 0, "activeKcal": 0])
+            // 模拟器 / 无健康能力的设备：明确告知「不可用」，前端不再当「今天 0 步」处理
+            call.resolve(["steps": 0, "activeKcal": 0, "status": "unavailable"])
             return
         }
 
@@ -81,7 +88,7 @@ public class DbeeHealthPlugin: CAPPlugin, CAPBridgedPlugin {
         // 步数
         guard let stepType = HKObjectType.quantityType(forIdentifier: .stepCount),
               let energyType = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) else {
-            call.resolve(["steps": 0, "activeKcal": 0])
+            call.resolve(["steps": 0, "activeKcal": 0, "status": "error", "message": "无法构造健康数据类型"])
             return
         }
 
@@ -91,14 +98,20 @@ public class DbeeHealthPlugin: CAPPlugin, CAPBridgedPlugin {
         let group = DispatchGroup()
         var totalSteps: Double = 0
         var totalKcal: Double = 0
+        // 分别记录两类查询的错误：只在其中一个类型被拒绝时也要如实上报，
+        // 而不是像旧实现那样把 error 丢掉、让前端看到「0 步」误以为用户没运动。
+        var stepError: Error?
+        var energyError: Error?
 
         group.enter()
         let stepQuery = HKStatisticsQuery(
             quantityType: stepType,
             quantitySamplePredicate: predicate,
             options: .cumulativeSum
-        ) { _, stats, _ in
-            if let sum = stats?.sumQuantity() {
+        ) { _, stats, error in
+            if let error = error {
+                stepError = error
+            } else if let sum = stats?.sumQuantity() {
                 totalSteps = sum.doubleValue(for: HKUnit.count())
             }
             group.leave()
@@ -110,8 +123,10 @@ public class DbeeHealthPlugin: CAPPlugin, CAPBridgedPlugin {
             quantityType: energyType,
             quantitySamplePredicate: predicate,
             options: .cumulativeSum
-        ) { _, stats, _ in
-            if let sum = stats?.sumQuantity() {
+        ) { _, stats, error in
+            if let error = error {
+                energyError = error
+            } else if let sum = stats?.sumQuantity() {
                 totalKcal = sum.doubleValue(for: HKUnit.kilocalorie())
             }
             group.leave()
@@ -119,10 +134,49 @@ public class DbeeHealthPlugin: CAPPlugin, CAPBridgedPlugin {
         healthStore.execute(energyQuery)
 
         group.notify(queue: .main) {
+            let steps = Int(totalSteps.rounded())
+            let kcal = Int(totalKcal.rounded())
+
+            // 状态判定（优先级从高到低）：
+            //   denied      任一查询报授权被拒 → 前端引导去「设置 > 健康 > 数据访问权限」
+            //   error       其它错误（数据库损坏 / 内部错误）→ 前端提示稍后重试，不显示为 0
+            //   ok          真的读到了数据（steps 或 kcal > 0）
+            //   empty       查询成功但今天没有样本。⚠️ 读授权不可探测，
+            //               「用户没戴表」与「用户在系统里关了读取但查询未报错」
+            //               在 HealthKit 层面无法区分，故用中性的 empty 而非 denied。
+            if let denied = [stepError, energyError].compactMap({ $0 }).first(where: { Self.isAuthorizationDenied($0) }) {
+                call.resolve([
+                    "steps": steps,
+                    "activeKcal": kcal,
+                    "status": "denied",
+                    "message": denied.localizedDescription
+                ])
+                return
+            }
+            if let err = stepError ?? energyError {
+                call.resolve([
+                    "steps": steps,
+                    "activeKcal": kcal,
+                    "status": "error",
+                    "message": err.localizedDescription
+                ])
+                return
+            }
             call.resolve([
-                "steps": Int(totalSteps.rounded()),
-                "activeKcal": Int(totalKcal.rounded())
+                "steps": steps,
+                "activeKcal": kcal,
+                "status": (steps > 0 || kcal > 0) ? "ok" : "empty"
             ])
         }
+    }
+
+    /// 是否为「读取授权被拒」类错误。
+    /// HKError.errorAuthorizationDenied / errorNotAuthorized 才是明确的拒绝信号；
+    /// errorAuthorizationNotDetermined 表示从未询问过，归为可引导重连而非拒绝。
+    private static func isAuthorizationDenied(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.domain == HKErrorDomain else { return false }
+        return nsError.code == HKError.Code.errorAuthorizationDenied.rawValue
+            || nsError.code == HKError.Code.errorAuthorizationNotDetermined.rawValue
     }
 }
