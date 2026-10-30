@@ -4,6 +4,7 @@ import { COACH_QUESTION_RULE } from '../lib/validate'
 import { errText } from '../lib/errmsg'
 import { getProfile } from '../lib/api'
 import { AiConsent } from '../components/AiConsent'
+import { useModalA11y } from '../components/useModalA11y'
 import { grantAiConsent, hasAiConsent } from '../lib/aiConsent'
 import { usePlan } from '../state/plan'
 import type { Profile } from '../types'
@@ -41,6 +42,7 @@ export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
   const bodyRef = useRef<HTMLDivElement>(null)
   // 记录最近一次提问的时间戳，用于限流（前端本地计数，防刷而非严格计费）
   const askTimesRef = useRef<number[]>([])
+  const { dialogRef, closeRef } = useModalA11y(onClose)
 
   useEffect(() => {
     let alive = true
@@ -136,11 +138,18 @@ export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
 
   return (
     <div className="sheet-mask" onClick={onClose} role="presentation">
-      <div className="sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="AI 饮食助手">
+      <div
+        className="sheet"
+        onClick={(e) => e.stopPropagation()}
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="AI 饮食助手"
+      >
         <div className="sheet-head">
           <h2>问问小蜜</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button className="sheet-close" onClick={onClose} aria-label="关闭">×</button>
+            <button className="sheet-close" onClick={onClose} ref={closeRef} aria-label="关闭">×</button>
           </div>
         </div>
 

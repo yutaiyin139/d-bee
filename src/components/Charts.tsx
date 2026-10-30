@@ -10,6 +10,35 @@
 
 const W = 340
 
+/**
+ * 生成图表的文字数据摘要（WCAG 1.1.1）。
+ *
+ * 图形本身对读屏软件不可读，`role="img"` 只会念一句「趋势折线图」。
+ * 这里把关键数据（点数、首末值、极值、目标）压成一句话写进 aria-label，
+ * VoiceOver / TalkBack 用户才能拿到等价信息。只取摘要而不逐点罗列：
+ * 折线可能有几十个采样点，全念出来既慢又淹没重点。
+ */
+function summarize(kind: string, items: { label: string; value: number }[], fmt: (v: number) => string, unit: string, target?: number | null) {
+  if (items.length === 0) return kind
+  const values = items.map((i) => i.value)
+  const first = items[0]
+  const last = items[items.length - 1]
+  const maxV = Math.max(...values)
+  const minV = Math.min(...values)
+  const maxAt = items[values.indexOf(maxV)]
+  const parts = [
+    kind,
+    `共 ${items.length} 个数据点`,
+    `${first.label} ${fmt(first.value)}${unit}`,
+    `最新 ${last.label} ${fmt(last.value)}${unit}`,
+    `最高 ${fmt(maxV)}${unit}（${maxAt.label}）`,
+  ]
+  // 只有一个点或全部相同时，「最低」是重复信息
+  if (minV !== maxV) parts.push(`最低 ${fmt(minV)}${unit}`)
+  if (target != null && Number.isFinite(target)) parts.push(`目标 ${fmt(target)}${unit}`)
+  return parts.join('，')
+}
+
 export interface LinePoint {
   label: string
   value: number
@@ -74,8 +103,10 @@ export function LineChart({
   // 标出首尾日期，中间点太多会糊成一片
   const labelIdx = points.length <= 3 ? points.map((_, i) => i) : [0, Math.floor((points.length - 1) / 2), points.length - 1]
 
+  const summary = summarize('趋势折线图', points, fmt, unit, target)
+
   return (
-    <svg className="chart" viewBox={`0 0 ${W} ${height}`} role="img" aria-label="趋势折线图">
+    <svg className="chart" viewBox={`0 0 ${W} ${height}`} role="img" aria-label={summary}>
       <defs>
         <linearGradient id="lineFill" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity="0.22" />
@@ -190,8 +221,10 @@ export function BarChart({
 
   const labelIdx = bars.length <= 4 ? bars.map((_, i) => i) : [0, Math.floor((bars.length - 1) / 2), bars.length - 1]
 
+  const summary = summarize('每日摄入柱状图', bars, fmt, '', target)
+
   return (
-    <svg className="chart" viewBox={`0 0 ${W} ${height}`} role="img" aria-label="每日摄入柱状图">
+    <svg className="chart" viewBox={`0 0 ${W} ${height}`} role="img" aria-label={summary}>
       {[hi, hi / 2].map((v, i) => (
         <g key={i}>
           <line x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke="var(--line)" strokeWidth="1" strokeDasharray={i ? '3 4' : '0'} />

@@ -38,6 +38,7 @@ import {
 import { FoodTagList } from '../components/FoodTags'
 import { Scanner } from '../components/Scanner'
 import { AiConsent } from '../components/AiConsent'
+import { useModalA11y } from '../components/useModalA11y'
 import { grantAiConsent, hasAiConsent } from '../lib/aiConsent'
 import type { Profile } from '../types'
 import { usePlan } from '../state/plan'
@@ -341,6 +342,8 @@ function MealCheckup({ items }: { items: DraftItem[] }) {
 
 export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budgetText, onOpenInviteCenter }: LogSheetProps) {
   const { claimAiQuota, refundAiQuota, aiRemaining, openPaywall, pro } = usePlan()
+  // 弹层无障碍（焦点圈定/Escape/焦点归还）；handleClose 为函数声明已提升，可在此引用
+  const { dialogRef, closeRef } = useModalA11y(handleClose)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [aiConsentOpen, setAiConsentOpen] = useState(false)
   const [mode, setMode] = useState<Mode>('photo')
@@ -891,14 +894,21 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
 
   return (
     <div className="sheet-mask" onClick={handleClose} role="presentation">
-      <div className="sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="记录饮食">
+      <div
+        className="sheet"
+        onClick={(e) => e.stopPropagation()}
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="记录饮食"
+      >
         <div className="sheet-head">
           <h2>记录饮食</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {mode !== 'manual' && aiRemaining !== null && (
               <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>今日免费识别还剩 {aiRemaining} 次</span>
             )}
-            <button className="sheet-close" onClick={handleClose} aria-label="关闭">×</button>
+            <button className="sheet-close" onClick={handleClose} ref={closeRef} aria-label="关闭">×</button>
           </div>
         </div>
 

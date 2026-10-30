@@ -7,6 +7,7 @@
  */
 
 import { useState } from 'react'
+import { useModalA11y } from './useModalA11y'
 
 interface AiConsentProps {
   /** 弹窗类型：photo=拍照识别，coach=AI 问答 */
@@ -31,13 +32,22 @@ const BODY: Record<AiConsentProps['kind'], { title: string; desc: string }> = {
 export function AiConsent({ kind, onAgree, onDecline }: AiConsentProps) {
   const [busy, setBusy] = useState(false)
   const body = BODY[kind]
+  // Escape / 遮罩点击 = 「不同意」，与关闭按钮语义一致
+  const { dialogRef, closeRef } = useModalA11y(onDecline)
 
   return (
     <div className="sheet-mask" onClick={onDecline} role="presentation">
-      <div className="sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={body.title}>
+      <div
+        className="sheet"
+        onClick={(e) => e.stopPropagation()}
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={body.title}
+      >
         <div className="sheet-head">
           <h2>{body.title}</h2>
-          <button className="sheet-close" onClick={onDecline} aria-label="关闭">
+          <button className="sheet-close" onClick={onDecline} ref={closeRef} aria-label="关闭">
             ×
           </button>
         </div>

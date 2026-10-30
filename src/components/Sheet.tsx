@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { useEffect } from 'react'
+import { useModalA11y } from './useModalA11y'
 
 interface SheetProps {
   title: string
@@ -9,20 +9,21 @@ interface SheetProps {
 
 /** 底部弹层，用于记餐等操作 */
 export function Sheet({ title, onClose, children }: SheetProps) {
-  useEffect(() => {
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = prev
-    }
-  }, [])
+  const { dialogRef, closeRef } = useModalA11y(onClose)
 
   return (
     <div className="sheet-mask" onClick={onClose} role="presentation">
-      <div className="sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={title}>
+      <div
+        className="sheet"
+        onClick={(e) => e.stopPropagation()}
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
         <div className="sheet-head">
           <h2>{title}</h2>
-          <button className="sheet-close" onClick={onClose} aria-label="关闭">
+          <button className="sheet-close" onClick={onClose} ref={closeRef} aria-label="关闭">
             ×
           </button>
         </div>
