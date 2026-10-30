@@ -88,6 +88,15 @@ npx cap sync ios
 **SPM 依赖**（`ios/App/CapApp-SPM/Package.swift`，由 cap 管理）：capacitor-swift-pm 8.5.3 + 上述 3 本地包 + @capacitor/share + @capacitor/camera。
 
 > 首次 Mac 构建命令：`npm ci && npm run native:ios`（dist 与 ios public 不入库，clone 后必须重建）。静态审查未发现阻断性错误；若仍出现 Swift 编译错误，把报错发回 Windows 侧即时修复推 GitHub。
+>
+> 🔴 **两个必须知道的构建陷阱（2026-10-30 实测）**：
+> ① `npm run native:ios` 走的是 **`native-release`** 模式（= `build:native`），须先
+> `export VITE_NATIVE_ENDPOINT=https://d-bee.cn`，否则整改 #1 的构建期护栏会直接报错拦下
+> （这是好事：构建期响亮失败 > 运行期无声白屏）。域名备案/HTTPS 未就绪前，今晚真机内测请改用
+> `VITE_ALLOW_CLOUD_NATIVE=true npm run native:sync:internal && npx cap open ios`（云库数据面，**禁止上架**）。
+> ② **绝不能用 `npm run build` 打原生包** —— 它是 Web 产物（MODE=production），`cloudConfig.ts` 的护栏会被
+> 死代码消除成无条件 `throw`，iOS 真机**纯白屏且无任何报错**。产物自检：
+> `grep -c "禁止直接复用 Web 产物" dist/assets/index-*.js` 必须为 `0`。详见《今晚-Mac编译执行手册》§三、§五-5。
 
 ---
 

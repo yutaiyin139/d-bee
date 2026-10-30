@@ -4,6 +4,16 @@
 > 目标：把「问问小蜜」超时+无思考链路的修复打进 iOS 包，真机安装验证。  
 > 前置：本手册是《今晚-Mac编译执行手册.md》（1.7.0 build 9）的增量续篇，环境准备（Xcode、CocoaPods/SPM、证书、StoreKit 本地环境）沿用原手册，不再重复。
 
+> 🔴 **【已作废警告 · 2026-10-30】本文档 §一 第 2 步的 `npm run build` 会导致 iPhone 真机纯白屏，切勿照抄。**
+> 本文档是 V1.7.1（`5f0a099`）时期的历史快照，当时 `cloudConfig.ts` 尚无整改 #1（`39a576b`）的构建期护栏；
+> 该护栏加上后，`npm run build`（Web 产物，MODE=production）会被死代码消除成**无条件 `throw`**，
+> 模块级 `publicConfig` 求值即炸 → React 挂不上 → 白屏无报错。
+> **请改用《今晚-Mac编译执行手册.md》§三 的现行命令**：
+> 内测 `VITE_ALLOW_CLOUD_NATIVE=true npm run build:native:internal`；
+> 上架 `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native`。
+> 装机前自检：`grep -c "禁止直接复用 Web 产物" dist/assets/index-*.js` 必须为 `0`。
+> 详见架构铁律 #10 与《各端逻辑梳理与iOS编译卡点排查》§卡点 6。历史正文按快照约定保留原样不改。
+
 ---
 
 ## 〇、为什么必须重打包（背景速览）

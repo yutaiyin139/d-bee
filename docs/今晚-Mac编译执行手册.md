@@ -127,18 +127,62 @@ node -v            # 必须 ≥22
 npm ci             # 2026-10-24 起自带 postinstall：装完依赖自动构建 packages/shared
                    # （若跳过 npm ci，shared 会报 sh: tsc: command not found）
 
+# 🔴🔴🔴 致命陷阱（2026-10-30 22:00 实测踩中，导致 iPhone 真机白屏）：
+#   **绝不能用 `npm run build` 打 iOS 包**。它是 Web 产物（MODE=production），
+#   而整改 #1（39a576b）在 src/cloudConfig.ts 的 resolveNativeEndpoint() 里加了
+#   fail-closed 护栏：PROD 且 mode 不是 native-release/native-internal → throw。
+#   该条件在 production 构建下恒真，被打包器死代码消除成**无条件 throw**：
+#       function b5(){throw new Error("原生 App 必须使用 build:native...")}
+#   publicConfig 是**模块级常量**（endpoint: E5() 在 import 时求值）→ JS 首行就炸，
+#   React 连 PrivacyGate 都没机会挂载 → **纯白屏、无任何报错弹窗**（CSS 已加载所以是米白色）。
+#   iOS 上 detectNative() 恒真 → 100% 白屏，不是偶发、不是资源没同步。
+
 # ⚠️ 关键：三步构建，顺序不能乱（dist/ 和 packages/shared/dist/ 都是 gitignore 的，
 #    clone 后不存在，必须先各自 build 出来。① 在 npm ci 的 postinstall 已自动做过，
 #    重复执行无害；若跳过 npm ci 则必须手动做①，否则②会因 tsc 缺失而失败）
 cd packages/shared && npm run build && cd ../..   # ① 先构建 @dbee/shared（生成 shared/dist/）
-npm run build                                     # ② 再构建 vite web（生成 dist/）
+
+# ② 构建 web —— 必须按数据面选对 mode，三选一：
+#
+#   【今晚真机内测用这条】云库内测包（d-bee.cn 尚未备案/解析，HTTPS 未就绪）
+VITE_ALLOW_CLOUD_NATIVE=true npm run build:native:internal
+#     → 产物 endpoint = https://zilv-mifeng.app.workbuddy.host（云库，与现状一致）
+#     → 编译期打印 [native-internal] 显式允许使用 WorkBuddy 云库；此产物禁止上架。
+#     → ⚠️ 此包**禁止提交 ASC**，仅供真机回归/IAP 客户端链路验证
+#
+#   【上架用这条】正式包（须等 ICP 备案 + DNS 解析 + HTTPS 证书三件套齐了才能用）
+#   VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native
+#     → 少写 VITE_NATIVE_ENDPOINT 会在**构建期**就报错拦下（比白屏好），照报错补即可
+#
+#   【❌ 永远不要】npm run build  → iOS 真机必白屏（见上方陷阱说明）
+
 npx cap sync ios                                  # ③ 同步 web 资源 + 插件进 iOS 工程
 #   成功标志：Found 5 Capacitor plugins for ios
 #   （origin-proxy / share / health / iap / camera —— 没有 wechat 是刻意的）
+#   ⚠️ ios/App/App/public 是 gitignore 的（ios/.gitignore:4），Mac 上的包内容
+#      完全由这一步决定 —— 所以②的 mode 选错，③会忠实把错误产物同步进去。
 #   然后手动打开 Xcode：open ios/App
 
-# （等价一步式：npm run native:ios = 上面②③ + open，但依赖 shared 已 build，见下行）
-#   即：cd packages/shared && npm run build && cd ../.. && npm run native:ios
+# （等价一步式：npm run native:ios = build:native + cap sync ios + open ios，
+#   ⚠️ 它默认走 **native-release**，须先 export VITE_NATIVE_ENDPOINT=https://d-bee.cn；
+#   今晚内测请改用：
+#   VITE_ALLOW_CLOUD_NATIVE=true npm run native:sync:internal && npx cap open ios）
+```
+
+### ②③ 之后自检（30 秒，能当场识破白屏包）
+
+```bash
+# 打出来的包里若含这句护栏字符串 = 白屏包，别装
+grep -c "禁止直接复用 Web 产物" dist/assets/index-*.js
+#   0    = ✅ 正常（护栏已被死代码消除，原生分支返回真实 endpoint）
+#   ≥1   = 🔴 白屏包（用 npm run build 打的），回到②换正确 mode 重打
+
+# 或直接看原生分支解析器编译成了什么：
+grep -oE 'endpoint:[a-zA-Z0-9_$]+\(\)' dist/assets/index-*.js   # 找到函数名（如 E5）
+#   function E5(){if(N5())return b5();...}  ← N5=detectNative，b5=原生分支
+grep -oE 'function b5\(\)\{.{0,120}' dist/assets/index-*.js
+#   function b5(){return ku}        ✅ 返回 endpoint 常量
+#   function b5(){throw new Error(  🔴 白屏包
 ```
 
 ```text
@@ -149,7 +193,10 @@ a) 顶栏 scheme 确认是 App（共享 scheme 已入库，Run 配置已挂 Dbee
    （若显示 None：手动下拉选中它——文件在工程导航器根级）
 b) 设备选你的 iPhone 真机
 c) TARGETS: App → Signing & Capabilities → Team: 选你的开发者账号
-   Bundle Identifier 确认 com.dbee.app（自动签名会在后台注册 App ID，正常）
+   Bundle Identifier 确认 **cn.com.dbee.app**（自动签名会在后台注册 App ID，正常）
+   🔴 不是 com.dbee.app —— 权威值见 capacitor.config.ts:25 appId /
+      android/app/build.gradle:16 applicationId / App.xcodeproj 的
+      PRODUCT_BUNDLE_IDENTIFIER，三处均为 cn.com.dbee.app（2026-10-30 真机截图实证一致）
 d) ⏺ Cmd+R —— 首次要解析 SPM 远程包，需联网，耐心等
 e) 编译成功 → 自动装机启动
 ```
@@ -195,7 +242,7 @@ e) 编译成功 → 自动装机启动
 | 3d | **（10-24 实测进展）`xcode-select -s` 已成功、`sudo xcodebuild` 不报错，但普通用户 `xcrun --find xcrun` 仍报 `Failed to locate 'xcrun'`** | 🔴 **sudo 下能跑、普通用户跑不了 = Xcode.app 包内权限问题**（xcrun 的 `access(X_OK)` 检查在用户身份下失败：某级目录缺 `+x` 穿越权，或 xcrun 无执行位，或属主异常）。**决定性测试（不加 sudo）**：`ls -l /Applications/Xcode.app/Contents/Developer/usr/bin/xcrun`（Permission denied 即实锤）+ `xcrun --version` + `xcodebuild -version`（不加 sudo）。修法：`sudo chmod -R a+rX /Applications/Xcode.app`（只加读/执行、从不减权，安全）→ 必要时 `sudo chown -R root:wheel /Applications/Xcode.app` → 重验。若 `file` 显示 empty/`du -sh` 仅几 GB → 才是 xip 解压损坏，须重装 |
 | 3e | **（10-24 09:39 实锤）`xcodebuild -version` 显示 Xcode 27.1 但 `/Applications/Xcode.app` 仅 3.8G 且缺 `Developer/usr/bin/xcrun`** | 🔴 **生效工具链是 Command Line Tools，不是 Xcode**——CLT 的 xcodebuild 也会报「Xcode 27.1」（版本号随 CLT 对齐），极具迷惑性；**CLT 无 iOS SDK，编不了 App**。判定铁律：`xcodebuild -showsdks \| grep -i ios`——列出 iphoneos SDK 才能编 iOS。修法 = 装完整 Xcode 27.1（App Store 流式装，35GB 勉强够但建议先删坏壳 + 旧模拟器 runtime + DerivedData 腾到 ≥50GB）→ `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` → `runFirstLaunch` → 重验 `-showsdks`。**教训：验证 Xcode 完好要看 `du -sh`（≥15GB）+ `-showsdks` 有 iphoneos，不能只看 `-version`** |
 | 4 | `no such module 'Capacitor'`                                      | Reset Package Caches；仍不行 `rm -rf ~/Library/Caches/org.swift.swiftpm` 重开       |
-| 5 | 真机白屏                                                              | public/ 没同步：终端重跑 `npm run build && npx cap sync ios` 再 Cmd+R                  |
+| 5 | **真机白屏（纯白/米白、无任何报错弹窗）** | 🔴 **头号原因 = 用 `npm run build` 打的包**（Web 产物，`cloudConfig.ts` 的 PROD 护栏被死代码消除成无条件 `throw`，模块级 `publicConfig` 求值即炸，React 没机会挂载）。**修法 = 换 mode 重打**：今晚内测用 `VITE_ALLOW_CLOUD_NATIVE=true npm run build:native:internal && npx cap sync ios`；上架包用 `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native && npx cap sync ios`。判定命令见 §三 自检（`grep -c "禁止直接复用 Web 产物" dist/assets/index-*.js`，≥1 即白屏包）。次因才是 public/ 没同步（`ios/App/App/public` 是 gitignore 的，完全由 `cap sync` 决定） |
 | 6 | 付费墙价格仍是硬编码文案（¥18 / 月 而非 ¥18.00）                                   | scheme 没挂上 .storekit（步骤 3a 验证）；或插件未注册（console 看 DbeeIap 探测日志）                 |
 | 7 | 购买后提示「支付校验失败」                                                     | **预期行为**（§一-1.2③），不是 bug，不要修                                                  |
 | 8 | HealthKit 模拟器不可用                                                  | 用真机（插件已防御不崩溃）                                                                 |
@@ -205,7 +252,10 @@ e) 编译成功 → 自动装机启动
 
 ## 六、今晚之后的衔接（按优先级）
 
-1. **服务端 A1**（Windows 侧 1 次 SSH，随时可做）：执行 0037 迁移 + 网关 env 配 `APPLE_BUNDLE_ID=com.dbee.app`、`APPLE_SHARED_SECRET`（ASC 生成后）、`APPLE_SANDBOX=1` + 重启网关。做完后自建端点的 verify/notifications 即活。
+1. **服务端 A1**（Windows 侧 1 次 SSH，随时可做）：执行 0037 迁移 + 网关 env 配 `APPLE_BUNDLE_ID=cn.com.dbee.app`、`APPLE_SHARED_SECRET`（ASC 生成后）、`APPLE_SANDBOX=1` + 重启网关。做完后自建端点的 verify/notifications 即活。
+   🔴 **`APPLE_BUNDLE_ID` 必须逐字等于 `cn.com.dbee.app`**（不是 `com.dbee.app`）。`server/lib/iap.mjs:19`
+   会校验 `receipt.bundle_id === APPLE_BUNDLE_ID`，配错则**所有真机购买验签恒失败**，且报错是
+   「收据 bundle_id 不匹配」——极难联想到是 env 写错。权威值：`capacitor.config.ts` appId。
 2. **ASC 建 App + 3 商品**（ID 必须与代码一致：`dbee_pro_monthly`/`dbee_pro_yearly`/`dbee_lifetime`）+ 接受《付费应用协议》（协议「有效」才能沙盒测试）→ 之后把 scheme 的 StoreKit Configuration 切回 None（走真沙盒）。
 3. **短信**：🟢 **审核已通过（10-27），短信可用**。一条命令切换（脚本自动摘除万能码 + 追加 `DBEE_PROD=1`）：
    `SMS_PROVIDER=tencent DBEE_PROD=1 SMS_TENCENT_SECRET_ID/SECRET_KEY/SDKAPPID/TEMPLATE_ID=... APPLE_ALLOWED_ENVS=Sandbox,Production bash deploy/deploy-gateway.sh`
@@ -223,12 +273,17 @@ git clone https://github.com/yutaiyin139/d-bee.git && cd d-bee
 git log --oneline -1          # ≥ dfa3191
 npm ci
 cd packages/shared && npm run build && cd ../..   # ① shared 构建（dist/ 是 gitignore 的，必做）
-npm run build                 # ② vite web 构建（生成 dist/）
+
+# ② vite 构建 —— 🔴 不能用 npm run build（= Web 产物 → iOS 必白屏），按数据面二选一：
+VITE_ALLOW_CLOUD_NATIVE=true npm run build:native:internal   # 今晚真机内测（云库，禁止上架）
+# VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native # 上架正式包（须备案+DNS+HTTPS 齐）
+
 npx cap sync ios              # ✔ Found 5 Capacitor plugins（无 wechat）
-#   或一步式：cd packages/shared && npm run build && cd ../.. && npm run native:ios
+grep -c "禁止直接复用 Web 产物" dist/assets/index-*.js   # 必须 0；≥1 = 白屏包，回②重打
 
 Xcode: Scheme Run→Options 确认挂 DbeeProducts.storekit
        Signing 选 Team → Cmd+R（首次拉 SPM 远程包，慢）
+       报 Missing package product 'CapApp-SPM' → §五 3b（Reset Package Caches + Resolve）
 
 回归: 登录(真短信)→记一餐→拍照→扫码→健康→分享
 IAP:  付费墙显示商店价(¥18.00/¥128.00/¥298.00)

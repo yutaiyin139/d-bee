@@ -1,6 +1,14 @@
 # D-Bee（自律蜜蜂）· 项目长期记忆（精简版；细节见当日日志与 docs/）
 
-## 进度快照（2026-10-30 上午，🎉 **iOS V1.7.3 已发布 + 上架就绪实证核查通过 + 自建网关密码登录生产缺陷已修复 + 合规 P0 多端一致性闭环 + 阿里云真短信已上线（万能码摘除）**；App Store 创意素材出图管线（含 art safe area 修正）+ 商店截图链路就绪；首启隐私同意门 + 第三方 SDK 公示 + 小程序按真实链路重写公示 + 公示 URL 逐条核验；软著 AI 条款红线查实待拍板；双域名定案 d-bee.cn=Web端 / d-bee.com.cn=官网；视觉双 provider（文本 DeepSeek `deepseek-flash` + 视觉 Qwen `qwen3.8-max-0902`）；Bundle ID 定案 `cn.com.dbee.app`）
+## 进度快照（2026-10-30 晚，🎉 **iOS V1.7.3 已发布 + 上架就绪实证核查通过 + iOS/四端代码审查整改 #1~#5 全部闭环（7 commit）**；自建网关密码登录生产缺陷已修复 + 合规 P0 多端一致性闭环 + 阿里云真短信已上线（万能码摘除）；App Store 创意素材出图管线（含 art safe area 修正）+ 商店截图链路就绪；首启隐私同意门 + 第三方 SDK 公示 + 小程序按真实链路重写公示 + 公示 URL 逐条核验；软著 AI 条款红线查实待拍板；双域名定案 d-bee.cn=Web端 / d-bee.com.cn=官网；视觉双 provider（文本 DeepSeek `deepseek-flash` + 视觉 Qwen `qwen3.8-max-0902`）；Bundle ID 定案 `cn.com.dbee.app`）
+
+> **📱 iOS/四端代码审查整改 #1~#5（10-30 全天，7 commit `39a576b..20ff00b`）**：针对 iOS/四端静态审查发现的 P0/P1 逐项闭环：
+> **#1 原生生产数据面统一**（`39a576b`）：新增 `native-release`/`native-internal` 构建，`VITE_NATIVE_ENDPOINT=https://d-bee.cn` 构建期强制、拒绝缺失/非 HTTPS/未授权云库回退；原生不再受 `VITE_CLOUD_ENDPOINT` 覆盖。切库仍等 ICP 备案+DNS+HTTPS。
+> **#2 iOS IAP 交易闭环重构**（`39a576b`）：购买不再立即 `finish`，服务端核销成功才 finish（StoreKit 2 铁律，提前 finish = 断网/杀 App 丢权益）；`Transaction.updates` 监听 + `unfinished` 启动恢复 + 订单/交易/收据/owner 经 Capacitor Preferences 持久化；新增 `@capacitor/preferences@8.0.1`；`iap-selftest` 47/47。
+> **#3 IAP 异常路径自动化回归**（`39a576b`）：新增 `tools/iap-checkout.test.ts` + `npm run test:iap`（客户端 9 场景 + 服务端 47 断言全过）；退款交易只 finish 不送核销。
+> **#4 无障碍集中整改**（`0a22c72`）：`useModalA11y` 焦点陷阱+Esc+焦点归还+滚动锁+`aria-modal` 接入 4 处弹窗；恢复双指缩放；对比度按 WCAG 相对亮度精算（`--ink-3` 2.57→4.64、`--honey-dark` 3.56→4.71）；伪按钮补 Enter/Space（`onActivateKey`）；tabbar `aria-current`；图表数据摘要 `summarize()`。
+> **#5 功能可靠性整改**（`b2ff630`+`465f46c`+`b1a8566`+`ad2f1e1`）：本地通知真正落地（`@capacitor/local-notifications@8.3.1`，固定 ID + 先取消再排程 + 静默重排，⚠️ 本项目 includePlugins 白名单对 npm 包插件同样生效，不加白名单 cap sync 静默跳过）；HealthKit 返回显式状态（`HealthSyncStatus`，不再把错误吞成 0 步抹掉真实步数）；OriginProxy 支持 AbortSignal 中途取消（三端，取消归一为 End、异常不回退重发）；iOS 付费墙商店价拉取失败禁用购买（不硬编码兜底，防价格欺诈 3.1.2）。
+> 新增 5 条架构铁律见「架构铁律」#5~#9。**Windows 无法编译 Swift，HealthKit status 分支 / OriginProxy cancel 双端 / LocalNotifications 真机推送 / StoreKit 沙盒仍需 Mac/Xcode 实证。**
 
 > 🔴 **七项安全修复（10-27）进展**：① JWT access TTL 7 天→30 分钟 + refresh 滚动 + `app_users.token_version` 强制下线（迁移 0042 已落库）
 > ② appleSandbox 生产默认关 + validate 拦截 ③ LLM 视觉 fail-closed 503 + 文本独立降额 50/日 ④ grant_honey 发分前查真实记录（functions.sql 同步 0039）
@@ -83,7 +91,15 @@
   无需重发 web/重打包**。⚠️ 部署线上 env 用「本地生成完整 env → SFTP 上传覆盖」最可靠（sed 对含特殊字符的
   key 转义易错、旧文件 ^M 回车符会漏匹配）。
 - **版本/git**：**iOS V1.7.3 已发布（10-29 `b7b6097`，上架就绪实证核查通过）**；Web **V1.7.2 已发布线上**（http://150.158.51.106/ ，`index-Dg2vPNPT.js` 实测含「邮箱密码登录」特征串 + 与本地 dist 逐字节一致）；**Android vc13 已重打并实证验证**（`release/D-Bee-1.7.2-vc13-release.apk` 8,148,639 字节，验签 exit 0，aapt2 = `cn.com.dbee.app`/vc13/1.7.2）。
-  最新 commit **`326865c`**（docs(ios): §十 补密码登录缺陷已修条目 + 切库时演示账户两套数据面的未来隐患）。
+  最新 commit **`20ff00b`**（docs(memory): 记录 iOS 审查整改 #4 无障碍 + #5 功能可靠性（含五条新架构铁律））。**工作区已干净**。
+  **10-30 全天（7 commit，`326865c..20ff00b`）**：iOS/四端代码审查整改 #1~#5 全部闭环
+  `39a576b` fix(native) 统一三端生产数据面 + iOS IAP 交易闭环重构 + 异常路径自动化回归；
+  `0a22c72` fix(a11y) 弹窗焦点陷阱/键盘激活/对比度/缩放/图表摘要（无障碍集中整改）；
+  `b2ff630` feat(notify) 本地通知真正落地（固定 ID + 先取消再排程 + 静默重排）；
+  `465f46c` fix(health) HealthKit/厂商健康读取返回显式状态，不再把错误吞成 0 步；
+  `b1a8566` feat(origin-proxy) 流式请求支持 AbortSignal 中途取消（iOS + Android + JS 三端）；
+  `ad2f1e1` fix(ios-iap) 商店价格拉取失败时禁用购买，不再回退硬编码价；
+  `20ff00b` docs(memory) 记录 iOS 审查整改 #4 无障碍 + #5 功能可靠性（含五条新架构铁律）。
   **10-29 全天（18 commit，`6be0f05..326865c`）**：三大块收敛
   1. **🔴 自建网关密码登录生产缺陷修复**（`8d4a0ef`）：主端切自建网关时只实现了验证码登录，web 端所有设密用户登录即 400。补 `signInWithPassword` 分流 + 标识归一化（`+86 138…` 带空格 → 裸 11 位）+ 防枚举恒定耗时 + 双维度限流；`tools/selftest-password-login.mjs` 35/35 断言全过、线上实测 200。**部署红线：绝不能跑 `deploy-gateway.sh`（会覆盖 env 致全站账户不可恢复），只走手术式 `deploy/apply-password-login-fix.sh`**。
   2. **合规 P0 多端一致性闭环**（`7fe86b1`+`46cb96b`+`033d096`）：首启隐私同意门（`PrivacyGate.tsx`，挂 main.tsx 包 App、法律深链免同意放行）+ 第三方 SDK 目录 7 项公示（主端）+ 小程序按真实链路重写（小程序走 WorkBuddy 云、与主端不同后端，删全部虚假能力公示）+ 公示 URL 逐条联网核验（修 3 个真实死链/错误主体，`verify-legal.mjs` 增 §0.7 URL 可达性断言）。
@@ -286,7 +302,7 @@
   ⚠️ iOS 的 `WechatOpenSDK` 来自第三方 SPM 镜像 `github.com/yanyin1986/WechatOpenSDK`（腾讯官方不经
   SPM 分发），上线前须核对 tag 或改官方 XCFramework。小程序 appid `wxb7c7122de9c3ab1f` 需做主体变更
   （趁未上线赶紧变，变更会使老用户 openid 失效需重新关联）。
-- **下一步（泳道 A 已闭环 ✅，Apple 验签已落地 ✅，iOS 首次真机编译已打通 ✅（10-24），V1.7.1/V1.7.2 Web 已发布 ✅（10-28），iOS V1.7.3 已发布 + 上架就绪核查 ✅（10-29），自建网关密码登录已修复 ✅（10-29），合规 P0 多端一致性已闭环 ✅（10-29），阿里云真短信已上线 ✅（10-29），七项安全修复①③④⑤⑦已落地 ✅（10-27）、①④已部署上线，版本已 bump V1.7.2 ✅，双域名代码侧落地 ✅（10-28），ASC 产品页填报包/商店截图链路已就绪 ✅（10-28），App Store 创意素材出图已就绪 ✅（10-29））**：
+- **下一步（泳道 A 已闭环 ✅，Apple 验签已落地 ✅，iOS 首次真机编译已打通 ✅（10-24），V1.7.1/V1.7.2 Web 已发布 ✅（10-28），iOS V1.7.3 已发布 + 上架就绪核查 ✅（10-29），自建网关密码登录已修复 ✅（10-29），合规 P0 多端一致性已闭环 ✅（10-29），阿里云真短信已上线 ✅（10-29），七项安全修复①③④⑤⑦已落地 ✅（10-27）、①④已部署上线，版本已 bump V1.7.2 ✅，双域名代码侧落地 ✅（10-28），ASC 产品页填报包/商店截图链路已就绪 ✅（10-28），App Store 创意素材出图已就绪 ✅（10-29），iOS/四端代码审查整改 #1~#5 已闭环 ✅（10-30，7 commit））**：
   ~~①服务器前置修复~~ ✅ ~~②部署 Node 网关~~ ✅ ~~③deploy-postgrest.sh~~ ✅ ~~④A4 切 nginx + 8 项回归~~ ✅
   ~~⑥Apple 验签落地网关 + 0037 核销~~ ✅（10-23 `9e1db43`，iap-selftest 41 断言全绿）；~~上架前安全体检 ①–⑥~~ ✅（10-26 全部生效）；
   ⑤**A5 Mac mini 首次构建 iOS** ✅（10-24 已编译通过并真机测试，三处 iOS 独有 bug 已修）；
@@ -295,7 +311,7 @@
   ③ LLM 视觉 fail-closed 503 + 文本独立降额 50/日 ✅ ⑤ functions.sql 同步 0039 事实验证版 ✅ ⑦ CORS Origin 白名单 ✅
   + email 验证码通道（163 SMTP provider，465/SSL）✅ —— **③⑤⑦+email 代码已就位 + 自测 300/0 全绿，待部署上线**（与①④同批或下次）；
   卡资质：⑥ 万能码切真短信 —— 🟢 **已上线（10-29，`SMS_PROVIDER=aliyun`，万能码已摘除，见「短信通道已上线」条）**。
-  随后主线（上架前）：**ASC 配 3 商品（`dbee_pro_monthly`/`yearly`/`dbee_lifetime`）+ 开 IAP capability + 填收款 +
+  随后主线（上架前）：**Mac/Xcode 真机实证 #1~#5 原生改动**（HealthKit status 分支 / OriginProxy cancel 双端 / LocalNotifications 真机推送 + iOS 开 Push Notifications capability / StoreKit 沙盒退款续订断网杀 App 七项矩阵）→ **ASC 配 3 商品（`dbee_pro_monthly`/`yearly`/`dbee_lifetime`）+ 开 IAP capability + 填收款 +
   App Store Server Notifications V2 webhook 配指向网关 + 配 APPLE_BUNDLE_ID/SHARED_SECRET/SANDBOX → iOS 提审**；
   资质到货后（公章 10-27 已到手、对公账户 10-28）→ 小程序主体变更 / 短信签约 / 商户号 / ASC 付费协议（iOS 沙盒前提）；
   🔴**上架前未决阻断（见「上架前生产安全体检」条）**：~~①SMS 真短信 provider~~ 🟢 **已上线（10-29 `SMS_PROVIDER=aliyun`，见「短信通道已上线」条）**
@@ -368,6 +384,18 @@ Node≥22 / JDK21 / Xcode≥26。健康数据源只读系统平台（iOS HealthK
    价格位显示「—」。商店价是唯一合法成交价，显示与实际扣款不符的静态价可能被审核认定为价格欺诈（3.1.2）。
 9. **OriginProxy 取消：主动中断一律归一为 End 而非 Error**（10-30 整改 #5），且取消异常**绝不回退缓冲重发**
    （会重复发请求、重复扣 LLM token）。在途流注册表必须在 finally/defer 里移除，否则随请求数无限增长。
+10. 🔴 **打原生包绝不能用 `npm run build`**（10-30 22:00 实测踩中 → iPhone 真机纯白屏、无任何报错）。
+    `npm run build` 是 Web 产物（MODE=production），而铁律 #1 的护栏
+    `if (import.meta.env.PROD && mode !== 'native-release' && mode !== 'native-internal') throw`
+    在 production 下**恒真 → 被死代码消除成无条件 `throw`**（产物里 `function b5(){throw new Error(...)}`）。
+    `publicConfig` 是**模块级常量**（`endpoint: resolveEndpoint()` 在 import 时求值），iOS 上 `detectNative()`
+    恒真 → **JS 首行即炸，React 连 PrivacyGate 都挂不上 → 白屏**。CSS 已加载故呈米白色（`#FBF8F1`），
+    极易被误判为「public/ 没同步」。**正确命令二选一**：内测 `VITE_ALLOW_CLOUD_NATIVE=true npm run build:native:internal`；
+    上架 `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native`。
+    **产物自检**（30 秒识破白屏包）：`grep -c "禁止直接复用 Web 产物" dist/assets/index-*.js` → 必须 `0`，≥1 即白屏包。
+    ⚠️ 教训：`ios/App/App/public` 是 gitignore 的（`ios/.gitignore:4`），Mac 上的包内容**完全由 `cap sync` 决定**，
+    构建 mode 选错会被忠实同步进去；而 `docs/今晚-Mac编译执行手册.md` 旧版（V1.7.0 时写）教的正是 `npm run build`，
+    与整改 #1 新增的护栏脱节 —— **代码侧加了构建期护栏，文档侧必须同步改，否则护栏只会变成「无声白屏」**。
 
 ## 云数据库安全铁律（最高优先级）
 
