@@ -135,6 +135,39 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
   本快照已覆盖 10-25 全部增量，无需补差）。10-25 当日新增：晚餐 4 条 + 夜宵砂糖橘 3 条 + 饮水 2 +
   散步 1 + ai_usage 2 + pro 权益 1。
 
+### 2026-10-29 08:52（第 14 次）
+- 结果：**失败**，未产出 `db/backups/2026-10-29.json`（未写空备份、未覆盖历史）。
+- 原因：与 10-19/10-20/10-25 同一故障面——genie-baas 工具未注册（ToolSearch 精确名 + 3 组关键词均无；
+  DeferExecuteTool 报 not found in deferred tools index）；`workbuddy_cloud_service(inspect)` → `applications:[]`；
+  `list_installed_plugins` → No connectors installed。
+- 本次**新增实测排除**：自托管 `dbee`（150.158.51.106:5432）从本机可连但不被 pg_hba 放行
+  （非 SSL 与 SSL 均 `no pg_hba.conf entry for host "114.246.237.57"`）→ 仅限服务器本机；`psql` 不存在；
+  `~/.ssh/id_*` 不存在。即彻底无第二通道，不必再重复排查这几项。
+- 已落 `db/backups/FAILED-2026-10-29.md`（含 SQL 原文、错误串、7 条通道探测表、备份链现状、建议）。
+- 清理：cutoff≈2026-09-28，现存 10 份 json（最早 10-13），无过期文件。
+- **断档扩大**：10-27 无备份无 FAILED；10-28 无备份但留下 `.parts/` 分片；最后完整快照仍为 **2026-10-26**（断 3 天）。
+- 「`.parts/` 可否拼成 2026-10-28.json」已在 FAILED 文件写明结论——结构完整（profiles17/meal100/water42/exercise26/
+  weight3/ent1/ai24，meal id 1–105 升序无重复），但缺 `generated_at` 且无法与线上交叉校验，
+  **按纪律不自动拼装**，需人工确认后以 `2026-10-28T12:36+08:00` 为 generated_at 并注明来源。
+
+- **同日 08:55 重复触发**：按既定规则只做复测（ToolSearch 精确名 + 直接 DeferExecuteTool），结果不变，
+  未生成新文件、未改动既有备份；已在同一份 `FAILED-2026-10-29.md` 追加「重复触发记录」表格，未新建文件。
+  保留策略复核：现存 10 份 json，过期 0 份。
+
+### 2026-10-30 07:24（第 15 次）
+- 结果：**成功（通道恢复）**。产出 `db/backups/2026-10-30.json`（约 128KB，历史最大，覆盖 10-27~10-29 三天断档）。
+- 行数：profiles=18 / meal_entries=135 / water_logs=46 / exercise_logs=28 / weight_logs=3 /
+  entitlements=1 / ai_usage=26（合计 257 行）。
+- 校验：合并脚本内含 id 严格升序校验 + `.verify-backup.cjs` PASS——JSON.parse OK、顶层字段完整、
+  7 表 row_counts 与 tables.<表>.length 及另发 count(*) 的线上实时行数三方一致。
+- 清理：cutoff=2026-09-30，现存最早 2026-10-13，无过期文件（目录 11 份每日 json）。
+- 观察：新用户 profiles id=19（10-28 注册，非邀请码）；entitlements 仍 1 条 pro；
+  meal_entries 断档期新增 10-27 晚餐 2 条 / 10-28 花生 / 10-29 花生；10-29 晚散步 2 + 饮水 4 + scan 1。
+- 流程说明：本次 dump 体量过大（~128KB），单次 Write 转录易截断——首次写入即为截断占位（已删除）。
+  改用**三部分片写入**（part1=ai_usage+entitlements+exercise_logs / part2=meal_entries /
+  part3=profiles+water_logs+weight_logs）→ 临时合并脚本（含 id 升序校验）拼装 → verify → 删临时文件。
+  **后续 dump 超过 ~60KB 时沿用分片方案。**
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。
