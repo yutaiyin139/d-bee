@@ -1,41 +1,68 @@
-/**
- * iOS App 内购（IAP）适配器 —— StoreKit 2 骨架。
- *
- * ⚠️ 当前状态（2026-10-17）：骨架，尚未在 Mac 上编译验证。
- *   - 原生侧还没有 StoreKit 插件（package.json 无 IAP 依赖）。
- *   - 本文件用「运行时鸭子类型探测」预留插件接口（沿用 wechat.ts / originProxy.ts 风格），
- *     真实原生插件（建议自研 dbee-iap 插件，StoreKit 2）后续在 Mac 上接入后，
- *     只需让插件的实现满足下面的 IapPlugin 接口，本文件其余代码无需改动。
- *
- * StoreKit 2 的关键点（实现原生插件时对照）：
- *   - 商品：Product.products(for: [String]) 拉取，displayPrice 本地化价格
- *   - 购买：Product.purchase(options:) → VerificationResult，需要 appStoreReceiptURL 拿收据
- *   - 恢复：Transaction.currentEntitlements 过滤未撤销交易
- *   - 凭证：purchase 返回的 transactionID + 收据（receipt base64），回传给服务端 verifyReceipt
- *
- * 本适配器只做「发起支付 + 回传凭证」，权益落库由服务端 verify_payment_order 完成。
- */
+/** iOS StoreKit 2 适配器：交易只有经服务端核销后才允许 finish。 */
 
 import { PRODUCT_IDS, type ProductId } from '../entitlement'
 import { isIOS } from '../platform'
 import type { PaymentAdapter, ProductInfo, PurchaseResult } from './types'
 
-/** 自研 dbee-iap 原生插件的最小接口（StoreKit 2 封装） */
+interface NativeTransaction {
+  status: 'purchased'
+  transactionId: string
+  receipt: string
+  productId: string
+}
+
+type NativePurchase = NativeTransaction | { status: 'pending'; productId: string }
+
+interface ListenerHandle {
+  remove: () => Promise<void>
+}
+
 interface IapPlugin {
-  /** 拉取商品（含本地化价格） */
   getProducts: (opts: { productIds: string[] }) => Promise<{
     products: Array<{ productId: string; title: string; description: string; price: string }>
   }>
-  /** 发起购买，返回交易号 + 收据 base64 */
-  purchase: (opts: { productId: string }) => Promise<{
-    transactionId: string
-    receipt: string
-    productId: string
-  }>
-  /** 恢复已购项目 */
-  restore: () => Promise<{
-    transactions: Array<{ transactionId: string; receipt: string; productId: string }>
-  }>
+  purchase: (opts: { productId: string }) => Promise<NativePurchase>
+  restore: () => Promise<{ transactions: NativeTransaction[] }>
+  getUnfinished: () => Promise<{ transactions: NativeTransaction[] }>
+  finishTransaction: (opts: { transactionId: string }) => Promise<{ finished: boolean }>
+  addListener: (
+    eventName: 'transactionUpdated',
+    listener: (transaction: NativeTransaction) => void,
+  ) => Promise<ListenerHandle>
+}
+
+/** 带稳定代码的错误，checkout 不再依赖系统错误文案猜测取消/待批准。 */
+export class IosIapError extends Error {
+  constructor(public readonly code: 'CANCELLED' | 'PENDING' | 'FAILED', message: string) {
+    super(message)
+    this.name = 'IosIapError'
+  }
+}
+
+function storeIdToProductId(storeId: string): ProductId | null {
+  for (const [key, id] of Object.entries(PRODUCT_IDS)) {
+    if (id === storeId) return key as ProductId
+  }
+  return null
+}
+
+function toPurchase(transaction: NativeTransaction): PurchaseResult | null {
+  const productId = storeIdToProductId(transaction.productId)
+  if (!productId || !transaction.transactionId || !transaction.receipt) return null
+  return {
+    providerTxnId: transaction.transactionId,
+    receipt: transaction.receipt,
+    productId,
+  }
+}
+
+function normalizeError(error: unknown): IosIapError {
+  const e = error as { code?: string; message?: string }
+  const message = e?.message || String(error)
+  if (e?.code === 'USER_CANCELLED' || /cancel|取消|denied/i.test(message)) {
+    return new IosIapError('CANCELLED', message)
+  }
+  return new IosIapError('FAILED', message || 'App Store 支付失败')
 }
 
 function getPlugin(): IapPlugin | null {
@@ -44,51 +71,94 @@ function getPlugin(): IapPlugin | null {
   const p = cap?.Plugins?.DbeeIap
   if (!p || typeof p !== 'object') return null
   const candidate = p as Partial<IapPlugin>
-  if (typeof candidate.getProducts !== 'function' || typeof candidate.purchase !== 'function') return null
+  if (
+    typeof candidate.getProducts !== 'function' ||
+    typeof candidate.purchase !== 'function' ||
+    typeof candidate.restore !== 'function' ||
+    typeof candidate.getUnfinished !== 'function' ||
+    typeof candidate.finishTransaction !== 'function' ||
+    typeof candidate.addListener !== 'function'
+  ) {
+    return null
+  }
   return candidate as IapPlugin
 }
 
-/** 创建 iOS IAP 适配器；非 iOS 环境或插件缺失时返回 null */
+let cachedAdapter: PaymentAdapter | null = null
+
+/** 非 iOS、旧版插件或插件缺失时返回 null；旧插件不允许继续走不安全的提前 finish。 */
 export function createIosIapAdapter(): PaymentAdapter | null {
   if (!isIOS()) return null
+  if (cachedAdapter) return cachedAdapter
   const plugin = getPlugin()
   if (!plugin) return null
 
-  return {
+  const toPurchases = (transactions: NativeTransaction[]): PurchaseResult[] =>
+    transactions.map(toPurchase).filter((p): p is PurchaseResult => p !== null)
+
+  cachedAdapter = {
     async fetchProducts(): Promise<ProductInfo[]> {
       const res = await plugin.getProducts({ productIds: Object.values(PRODUCT_IDS) })
-      // 插件返回的是商店商品 ID（如 'dbee_pro_monthly'），需映射回 ProductId 键
-      // （'proMonthly'）。此前直接 `as ProductId` 是类型谎言：调用方按键索引会全部 miss。
-      const storeIdToKey: Record<string, ProductId> = {}
-      for (const [key, storeId] of Object.entries(PRODUCT_IDS)) {
-        storeIdToKey[storeId] = key as ProductId
-      }
       return res.products
-        .filter((p) => storeIdToKey[p.productId])
-        .map((p) => ({
-          productId: storeIdToKey[p.productId],
-          price: p.price,
-          title: p.title,
-          description: p.description,
+        .map((p) => ({ productId: storeIdToProductId(p.productId), info: p }))
+        .filter((p): p is { productId: ProductId; info: (typeof res.products)[number] } => p.productId !== null)
+        .map(({ productId, info }) => ({
+          productId,
+          price: info.price,
+          title: info.title,
+          description: info.description,
         }))
     },
 
     async purchase(productId: ProductId): Promise<PurchaseResult> {
-      const res = await plugin.purchase({ productId: PRODUCT_IDS[productId] })
-      return {
-        providerTxnId: res.transactionId,
-        receipt: res.receipt,
-        productId,
+      try {
+        const res = await plugin.purchase({ productId: PRODUCT_IDS[productId] })
+        if (res.status === 'pending') {
+          throw new IosIapError('PENDING', '购买正在等待批准，批准后会自动恢复核销')
+        }
+        const purchase = toPurchase(res)
+        if (!purchase) throw new Error('App Store 返回了无效或不完整的交易')
+        return purchase
+      } catch (error) {
+        if (error instanceof IosIapError) throw error
+        throw normalizeError(error)
       }
     },
 
     async restore(): Promise<PurchaseResult[]> {
       const res = await plugin.restore()
-      return res.transactions.map((t) => ({
-        providerTxnId: t.transactionId,
-        receipt: t.receipt,
-        productId: t.productId as ProductId,
-      }))
+      return toPurchases(res.transactions)
+    },
+
+    async getUnfinishedPurchases(): Promise<PurchaseResult[]> {
+      const res = await plugin.getUnfinished()
+      return toPurchases(res.transactions)
+    },
+
+    async finishPurchase(providerTxnId: string): Promise<void> {
+      await plugin.finishTransaction({ transactionId: providerTxnId })
+    },
+
+    onPurchaseUpdated(listener: (purchase: PurchaseResult) => void): () => void {
+      let disposed = false
+      let handle: ListenerHandle | null = null
+      void plugin
+        .addListener('transactionUpdated', (transaction) => {
+          const purchase = toPurchase(transaction)
+          if (purchase) listener(purchase)
+        })
+        .then((h) => {
+          if (disposed) void h.remove()
+          else handle = h
+        })
+        .catch(() => {
+          // 启动时 getUnfinished 与手动 restore 仍是兜底，监听失败不阻断 App。
+        })
+      return () => {
+        disposed = true
+        if (handle) void handle.remove()
+      }
     },
   }
+  return cachedAdapter
 }

@@ -50,10 +50,20 @@ export interface PaymentAdapter {
   purchase(productId: ProductId): Promise<PurchaseResult>
   /** 恢复购买（iOS/Google 订阅必需；微信支付宝一次性支付无需实现，返回空数组） */
   restore(): Promise<PurchaseResult[]>
+  /** iOS：启动时取得已扣款但尚未 finish 的交易 */
+  getUnfinishedPurchases?(): Promise<PurchaseResult[]>
+  /** iOS：服务端核销成功后完成指定 StoreKit 交易 */
+  finishPurchase?(providerTxnId: string): Promise<void>
+  /** iOS：监听补单、Ask to Buy 批准、续订等后台交易 */
+  onPurchaseUpdated?(listener: (purchase: PurchaseResult) => void): () => void
 }
 
 /** checkout 统一流程的最终结果 */
 export type CheckoutResult =
   | { status: 'ok' }
   | { status: 'cancelled'; message?: string }
+  /** Ask to Buy / 家长批准中，此时还没有可核销交易 */
+  | { status: 'pending'; message: string }
+  /** Apple 已返回交易，但服务端尚未确认权益；记录已保留并可重试 */
+  | { status: 'pending_settlement'; message: string }
   | { status: 'error'; message: string }

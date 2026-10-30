@@ -6,12 +6,16 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
+    "build:native": "vite build --mode native-release",
+    "build:native:internal": "vite build --mode native-internal",
     "typecheck": "tsc --noEmit",
+    "test:iap": "vitest run tools/iap-checkout.test.ts && node tools/iap-selftest.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "start": "npm run build && vite preview --host 0.0.0.0 --port ${PORT:-3000} --strictPort",
-    "native:sync": "npm run build && cap sync",
+    "native:sync": "npm run build:native && cap sync",
+    "native:sync:internal": "npm run build:native:internal && cap sync",
     "native:android": "npm run native:sync && cap open android",
-    "native:ios": "npm run build && cap sync ios && cap open ios",
+    "native:ios": "npm run build:native && cap sync ios && cap open ios",
     "postinstall": "cd packages/shared && npm run build"
   },
   "dependencies": {
@@ -20,6 +24,8 @@
     "@capacitor/camera": "^8.2.6",
     "@capacitor/core": "^8.5.3",
     "@capacitor/ios": "^8.5.3",
+    "@capacitor/local-notifications": "^8.3.1",
+    "@capacitor/preferences": "^8.0.1",
     "@capacitor/share": "^8.0.3",
     "@capgo/capacitor-wechat": "^8.0.52",
     "@dbee/health": "file:native-plugins/dbee-health",
@@ -37,6 +43,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.6.3",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "vitest": "^2.1.9"
   }
 }

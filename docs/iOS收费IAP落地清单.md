@@ -1,8 +1,7 @@
 # iOS 收费（IAP）落地清单与当前状态
 
-> 更新：2026-10-23（V1.7.0，Apple 个人开发者账号已通过）
-> 状态：**服务端验签已在 Node 网关落地**（0029 pg_net 方案作废，10-22 决策 #6）；
-> 剩 Mac 侧硬步骤 + 0037 迁移执行 + 网关 env 配置。
+> 更新：2026-10-30（V1.7.3，Apple 个人开发者账号已通过）
+> 状态：**服务端验签 + 客户端延迟 finish/持久化恢复闭环已落地**；剩 Mac 编译与 StoreKit 沙盒异常路径实证。
 
 ---
 
@@ -10,14 +9,14 @@
 
 | 层 | 状态 | 说明 |
 |---|---|---|
-| 前端 payment 模块 | ✅ 就绪 | `src/lib/payment/`（types / checkout / iosIap）已写好，含 `restorePurchases` |
+| 前端 payment 模块 | ✅ 闭环已加固 | `checkout` 统一购买/续订/启动恢复；待核销记录绑定 owner，经 Capacitor Preferences 持久化；核销成功才允许 finish |
 | 前端核销通道 | ✅ 已切网关 | `api.ts verifyPaymentOrder`：iOS 优先 `POST /.cloud/payment/apple/verify`（Bearer），网关不可用回退 RPC |
-| 原生 StoreKit 2 插件 | ✅ 骨架就绪 | `native-plugins/dbee-iap/DbeeIapPlugin.swift`（未在 Mac 编译验证） |
+| 原生 StoreKit 2 插件 | ✅ 生命周期已实现，待 Mac 编译 | 购买后不提前 finish；支持 updates/unfinished/按 ID finish；区分取消与待批准；退款交易只 finish、不再核销 |
 | 服务端订单表/RPC | ✅ 已上云 | `payment_products` + `payment_orders` + 下单 RPC |
 | 付费墙 UI 接入 | ✅ 已接线（2026-10-20） | PaywallSheet 商品卡片可点击接 `checkout`，iOS 加「恢复购买」 |
 | 凭证验签 | ✅ **网关已实现** | `server/lib/iap.mjs`（verifyReceipt 沙盒/生产自动切换 + bundle_id 钉扎 + transaction_id 全服幂等）；落库走 0037 definer 函数 |
 | 订阅 webhook | ✅ **V2 端点已实现** | `/.cloud/payment/apple/notifications`（x5c 证书链钉扎；SUBSCRIBED/DID_RENEW 续订、REFUND/REVOKE 撤销、全量留痕） |
-| 自测 | ✅ 41 项全过 | `tools/iap-selftest.mjs`（mock pool + mock Apple + 注入式 JWS 验签，真 HTTP 报文断言） |
+| 自测 | ✅ 客户端 9 场景 + 服务端 47 项全过（10-30） | `npm run test:iap`；实际 StoreKit 行为仍须 Mac/Xcode/沙盒实证 |
 | **整体结论** | ⚠️ **代码链路完整，待部署** | 上线前置：服务器执行 0037 + 网关 env 配 `APPLE_BUNDLE_ID`/`APPLE_SHARED_SECRET` + Mac 侧硬步骤（见发布梳理文档 §九B） |
 
 **2026-10-23 进展**：Apple 验签从数据库迁到 Node 网关。0029（pg_net 外呼）因服务器
@@ -61,7 +60,9 @@ npx cap sync ios       # 同步 web 资源 + 插件到 iOS 工程
 
 ### 第 5 步：前端把 checkout 接到 PaywallSheet
 - 商品卡片从「纯展示」改为可点击，点击 → `checkout(productId, refresh)`
-- 走「下单 → StoreKit 购买 → 回传凭证核销 → 刷新权益」四步
+- 走「下单 → StoreKit 购买（不 finish）→ 本地持久化订单/交易/owner → 服务端核销 → finish → 刷新权益」
+- App 启动/登录恢复 `Transaction.unfinished`；`Transaction.updates` 处理补单、家长批准与续订；手动 restore 扫描当前有效权益
+- 核销失败/断网/杀 App 均保留记录并允许幂等重试；换 D-Bee 账号不自动核销旧账号记录
 - 订阅需处理「恢复购买 restore」入口
 
 ---
@@ -77,6 +78,31 @@ npx cap sync ios       # 同步 web 资源 + 插件到 iOS 工程
 | REFUND | 回收权益 |
 
 这是 `App Store Server Notifications V2`，需要一个新的 webhook 接收函数，是唯一不能靠统一核销覆盖的部分。
+
+### 自动化异常回归（2026-10-30）
+
+运行 `npm run test:iap`：
+- `tools/iap-checkout.test.ts` 直接执行真实 `checkout.ts`，mock StoreKit/会话/Preferences/网关，
+  覆盖：核销断网、购买后杀 App、finish 失败、重复回调、恢复购买、换 D-Bee 账号、
+  换 Apple ID 后跨账号恢复、后台续订、Ask to Buy 待批准（9 场景）。
+- `tools/iap-selftest.mjs` 通过真实 HTTP 覆盖服务端幂等、防跨账号重放、续订和退款（47 断言）。
+- 恢复流程只有服务端确认归属后才写待 finish 记录；新购仍在核销前持久化。
+  原生层遇到 `revocationDate` 只 finish，不再把退款交易送核销。
+
+### Mac / StoreKit 沙盒验收（自动化不能替代）
+
+| 场景 | 操作 | 必须满足 |
+|---|---|---|
+| 核销断网 | 购买返回后阻断网关，再恢复网络并重启 | 未核销前绝不 finish；恢复后权益到账、记录清除 |
+| 杀 App | 购买后核销前强杀；另测服务端已核销但 finish 前强杀 | unfinished 或本地记录可恢复，不丢权益、不重复顺延 |
+| 重复回调 | 同一交易连续触发更新/恢复 | 服务端 `duplicate:true`，权益不二次发放 |
+| 恢复购买 | 删除重装或换设备，用原 D-Bee 账号恢复 | 当前有效权益恢复；无有效记录有明确提示 |
+| 换账号 | 切换 D-Bee 账号及沙盒 Apple ID 后恢复 | 他人交易返回 409，不写入新 owner，不阻塞原账号恢复 |
+| 续订 | Xcode StoreKit Testing 加速续订，并观察服务端通知 | 新 transaction 核销/通知幂等，pro_until 只顺延一次 |
+| 退款 | Xcode 交易管理器退款，并验证 REFUND 通知 | 客户端不重新核销撤销交易；服务端回收权益并标记 revoked |
+
+每次同时核对：客户端待核销记录、StoreKit unfinished、服务端 `apple_transactions` 与
+`entitlements`。真实沙盒通过前不得把「模拟测试通过」写成「上架支付验收完成」。
 
 ---
 

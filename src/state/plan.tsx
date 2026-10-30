@@ -19,6 +19,7 @@ import {
   isPro,
 } from '../lib/entitlement'
 import type { Entitlement } from '../types'
+import { initializePaymentRecovery } from '../lib/payment/checkout'
 
 /**
  * 会员状态与配额的全局状态。
@@ -106,7 +107,11 @@ export function PlanProvider({ children }: { children: ReactNode }) {
         setReady(true)
         return
       }
-      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') void refresh()
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+        void refresh()
+        // iOS：登录后恢复已扣款但未核销的交易；其他平台内部直接返回。
+        void initializePaymentRecovery(refresh)
+      }
     })
     return off
   }, [refresh])

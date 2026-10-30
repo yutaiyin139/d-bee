@@ -63,7 +63,7 @@
 
 ```bash
 # 原生端构建时注入绝对 HTTPS 域名（指向 150.158.51.106 的 nginx）
-VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build
+VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run native:ios
 npx cap sync ios
 ```
 
