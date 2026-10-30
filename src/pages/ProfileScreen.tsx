@@ -24,7 +24,8 @@ import {
 import { usePlan } from '../state/plan'
 import { exportJSON, exportText } from '../lib/share'
 import { connectHealth, disconnectHealth, getHealthVendor, isHealthConnectable } from '../lib/health'
-import { getNotifyPrefs, setNotifyPrefs, syncLocalNotifications, cancelAllNotifications } from '../lib/notifications'
+import { onActivateKey } from '../lib/a11y'
+import { getNotifyPrefs, setNotifyPrefs, syncLocalNotifications, isNotificationsSupported, getNotificationPermission } from '../lib/notifications'
 import {
   AGE_LIMIT,
   HEIGHT_LIMIT,
@@ -77,21 +78,28 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
   // 通知提醒偏好（打卡提醒 / 饮水提醒，存本地 kv）
   const [notifCheckin, setNotifCheckin] = useState(true)
   const [notifWater, setNotifWater] = useState(true)
+  // 原生包未装 LocalNotifications 插件（或 Web 端）→ 隐藏整个区块，
+  // 不显示点了没反应的假开关
+  const notifSupported = useMemo(() => isNotificationsSupported(), [])
+  const [notifDenied, setNotifDenied] = useState(false)
   useEffect(() => {
     void getNotifyPrefs().then((p) => {
       setNotifCheckin(p.checkin)
       setNotifWater(p.water)
     })
-  }, [])
+    if (notifSupported) {
+      void getNotificationPermission().then((perm) => setNotifDenied(perm === 'denied'))
+    }
+  }, [notifSupported])
 
   async function toggleNotif(kind: 'checkin' | 'water', enabled: boolean) {
     if (kind === 'checkin') setNotifCheckin(enabled)
     else setNotifWater(enabled)
     await setNotifyPrefs(kind, enabled)
-    // 任一开关关闭 → 重新调度（本模块在非原生/未装插件环境静默降级）
-    const prefs = await getNotifyPrefs()
-    if (!prefs.checkin && !prefs.water) await cancelAllNotifications()
-    else await syncLocalNotifications()
+    // syncLocalNotifications 内部「先取消全部 → 再按开关排程」，
+    // 全关时只取消不排程，无需在这里单独调 cancel
+    const res = await syncLocalNotifications()
+    setNotifDenied(res.reason === 'denied')
   }
 
   // 步数为 0 时的排查引导，按机型给对应路径（苹果走系统设置，华为/小米走各自健康 App）
@@ -428,7 +436,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
       </div>
 
       {/* 蜜糖积分入口 */}
-      <div className="card" style={{ marginBottom: 14, cursor: 'pointer' }} onClick={() => setInviteOpen(true)} role="button" tabIndex={0}>
+      <div className="card" style={{ marginBottom: 14, cursor: 'pointer' }} onClick={() => setInviteOpen(true)} onKeyDown={onActivateKey(() => setInviteOpen(true))} role="button" tabIndex={0}>
         <div className="list-line">
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 16 }}>🍯</span> 蜜糖积分 · 邀请好友
@@ -462,7 +470,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
       </div>
 
       <div className="card">
-        <div className="list-line" onClick={() => setEditing(true)} role="button" tabIndex={0}>
+        <div className="list-line" onClick={() => setEditing(true)} onKeyDown={onActivateKey(() => setEditing(true))} role="button" tabIndex={0}>
           <span>身体数据与目标</span>
           <span className="val">
             {GOAL_LABELS[goal]}
@@ -568,7 +576,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
         <>
           <div className="section-title">健康数据源</div>
           <div className="card">
-            <div className="list-line" onClick={handleConnectHealth} role="button" tabIndex={0} aria-disabled={healthBusy}>
+            <div className="list-line" onClick={handleConnectHealth} onKeyDown={onActivateKey(() => void handleConnectHealth())} role="button" tabIndex={0} aria-disabled={healthBusy}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <IconRun color="var(--green)" size={16} />
                 {healthVendor.label}
@@ -582,7 +590,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
             </div>
             {healthTip && <div className="notice" style={{ margin: 10, fontSize: 13 }}>{healthTip}</div>}
             {profile.health_connected && (
-              <div className="list-line" onClick={handleDisconnectHealth} role="button" tabIndex={0} aria-disabled={healthBusy}>
+              <div className="list-line" onClick={handleDisconnectHealth} onKeyDown={onActivateKey(() => void handleDisconnectHealth())} role="button" tabIndex={0} aria-disabled={healthBusy}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 16 }}>解除连接</span>
                 </span>
@@ -599,35 +607,44 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
         </>
       )}
 
-      <div className="section-title">通知提醒</div>
-      <div className="card">
-        <label className="list-line" style={{ cursor: 'pointer' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            每日打卡提醒
-            <span className="sub" style={{ fontSize: 12, color: 'var(--ink-3)' }}>每天 20:00 提醒记录饮食</span>
-          </span>
-          <input
-            type="checkbox"
-            checked={notifCheckin}
-            onChange={(e) => void toggleNotif('checkin', e.target.checked)}
-          />
-        </label>
-        <label className="list-line" style={{ cursor: 'pointer' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            饮水提醒
-            <span className="sub" style={{ fontSize: 12, color: 'var(--ink-3)' }}>9:00~21:00 每 2 小时，未达标时提醒</span>
-          </span>
-          <input
-            type="checkbox"
-            checked={notifWater}
-            onChange={(e) => void toggleNotif('water', e.target.checked)}
-          />
-        </label>
-      </div>
+      {notifSupported && (
+        <>
+          <div className="section-title">通知提醒</div>
+          <div className="card">
+            {notifDenied && (
+              <div className="notice err" style={{ margin: '10px 10px 0' }}>
+                系统通知权限已关闭，提醒不会送达。请到系统设置 &gt; 通知 &gt; 自律蜜蜂 中开启。
+              </div>
+            )}
+            <label className="list-line" style={{ cursor: 'pointer' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                每日打卡提醒
+                <span className="sub" style={{ fontSize: 12, color: 'var(--ink-3)' }}>每天 20:00 提醒记录饮食</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={notifCheckin}
+                onChange={(e) => void toggleNotif('checkin', e.target.checked)}
+              />
+            </label>
+            <label className="list-line" style={{ cursor: 'pointer' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                饮水提醒
+                <span className="sub" style={{ fontSize: 12, color: 'var(--ink-3)' }}>9:00~21:00 每 2 小时，未达标时提醒</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={notifWater}
+                onChange={(e) => void toggleNotif('water', e.target.checked)}
+              />
+            </label>
+          </div>
+        </>
+      )}
 
       <div className="section-title">数据与隐私</div>
       <div className="card">
-        <div className="list-line" onClick={() => !pro && openPaywall('数据导出是 Pro 功能，升级后可随时打包带走全部记录。')} role="button" tabIndex={0}>
+        <div className="list-line" onClick={() => !pro && openPaywall('数据导出是 Pro 功能，升级后可随时打包带走全部记录。')} onKeyDown={onActivateKey(() => { if (!pro) openPaywall('数据导出是 Pro 功能，升级后可随时打包带走全部记录。') })} role="button" tabIndex={0}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <IconDownload size={16} />
             导出全部数据（JSON）
@@ -645,7 +662,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
             )}
           </span>
         </div>
-        <div className="list-line" onClick={() => !pro && openPaywall('数据导出是 Pro 功能，升级后可随时打包带走全部记录。')} role="button" tabIndex={0}>
+        <div className="list-line" onClick={() => !pro && openPaywall('数据导出是 Pro 功能，升级后可随时打包带走全部记录。')} onKeyDown={onActivateKey(() => { if (!pro) openPaywall('数据导出是 Pro 功能，升级后可随时打包带走全部记录。') })} role="button" tabIndex={0}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <IconDownload size={16} />
             导出饮食记录（CSV）
@@ -663,7 +680,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
             )}
           </span>
         </div>
-        <div className="list-line" onClick={() => !confirmClear && setConfirmClear(true)} role="button" tabIndex={0}>
+        <div className="list-line" onClick={() => !confirmClear && setConfirmClear(true)} onKeyDown={onActivateKey(() => { if (!confirmClear) setConfirmClear(true) })} role="button" tabIndex={0}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <IconTrash size={16} />
             清空全部记录
@@ -712,7 +729,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
 
       <div className="section-title" style={{ marginTop: 24 }}>账号管理</div>
       <div className="card">
-        <div className="list-line" onClick={() => setConfirmDeleteAcct(true)} role="button" tabIndex={0}>
+        <div className="list-line" onClick={() => setConfirmDeleteAcct(true)} onKeyDown={onActivateKey(() => setConfirmDeleteAcct(true))} role="button" tabIndex={0}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--red)' }}>
             <IconTrash size={16} />
             注销账号

@@ -14,6 +14,7 @@ import { ProfileScreen } from './pages/ProfileScreen'
 import { ReportScreen } from './pages/ReportScreen'
 import { PlanProvider } from './state/plan'
 import { errText } from './lib/errmsg'
+import { rescheduleIfPermitted, cancelAllNotifications } from './lib/notifications'
 
 type Stage = 'loading' | 'auth' | 'onboarding' | 'main'
 type Tab = 'today' | 'report' | 'me'
@@ -151,6 +152,9 @@ function AppInner({ onOpenLegal }: { onOpenLegal: (id: DocId) => void }) {
         setProfile(null)
         setTab('today')
         setStage('auth')
+        // 退出登录后清掉已排程的提醒：偏好（kv）保留，下次登录同账号自动恢复排程，
+        // 但绝不能让已经退出的会话继续收到「该记录饮食啦」推送
+        void cancelAllNotifications()
       }
     })
 
@@ -159,6 +163,27 @@ function AppInner({ onOpenLegal }: { onOpenLegal: (id: DocId) => void }) {
       off()
     }
   }, [checkSession])
+
+  // 本地通知的每日重排。
+  //
+  // 为什么必须在这里做：饮水提醒是「按天排当天剩余时段」的一次性通知（受 9:00~21:00
+  // 时间窗限制，无法用 every 表达跨天重复），昨天排的到今天已过期。
+  // 若只在「我的 > 通知提醒」切开关时排程，从不进该页的用户永远收不到提醒。
+  //
+  // 用 rescheduleIfPermitted 而非 syncLocalNotifications：后者会在未授权时弹系统
+  // 授权框，冷启动就弹违反 HIG（用户无上下文，只会直接拒绝并留下永久拒绝记录）。
+  // 这里只在已授权时静默补排；首次授权仍由用户在设置页主动切开关触发。
+  //
+  // 触发时机：进入主界面后一次 + 每次从后台回前台（跨天时补排当天时段）。
+  useEffect(() => {
+    if (stage !== 'main') return
+    void rescheduleIfPermitted()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void rescheduleIfPermitted()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [stage])
 
   async function handleSignOut() {
     try {
@@ -236,16 +261,16 @@ function AppInner({ onOpenLegal }: { onOpenLegal: (id: DocId) => void }) {
         />
       )}
 
-      <nav className="tabbar">
-        <button className={tab === 'today' ? 'active' : ''} onClick={() => setTab('today')}>
+      <nav className="tabbar" aria-label="主导航">
+        <button className={tab === 'today' ? 'active' : ''} aria-current={tab === 'today' ? 'page' : undefined} onClick={() => setTab('today')}>
           <IconToday active={tab === 'today'} />
           今日
         </button>
-        <button className={tab === 'report' ? 'active' : ''} onClick={() => setTab('report')}>
+        <button className={tab === 'report' ? 'active' : ''} aria-current={tab === 'report' ? 'page' : undefined} onClick={() => setTab('report')}>
           <IconChart active={tab === 'report'} />
           报告
         </button>
-        <button className={tab === 'me' ? 'active' : ''} onClick={() => setTab('me')}>
+        <button className={tab === 'me' ? 'active' : ''} aria-current={tab === 'me' ? 'page' : undefined} onClick={() => setTab('me')}>
           <IconMe active={tab === 'me'} />
           我的
         </button>

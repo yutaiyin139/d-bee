@@ -14,6 +14,9 @@ dependencies {
     implementation project(':capacitor-share')
     implementation project(':capgo-capacitor-wechat')
     implementation project(':capacitor-camera')
+    implementation project(':capacitor-app')
+    implementation project(':capacitor-preferences')
+    implementation project(':capacitor-local-notifications')
 
 }
 
