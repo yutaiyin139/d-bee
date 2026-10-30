@@ -55,6 +55,7 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [hint, setHint] = useState('')
   const [ok, setOk] = useState(false)
   // 正在支付的商品 id（null 表示无进行中支付）
   const [payingId, setPayingId] = useState<string | null>(null)
@@ -64,41 +65,72 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
   const [selectedId, setSelectedId] = useState<ProductId | null>(null)
   // 商店本地化价格（iOS 打开付费墙时经 DbeeIap.getProducts 拉取）；
   // key = ProductId（'proMonthly' 等），value = 本地化价格文案（如 "¥18.00"）。
-  // 拉取失败/非 iOS 时为空对象 → 回退硬编码 PRICE_TAG。
   const [storePrice, setStorePrice] = useState<Record<string, string>>({})
+  // iOS 商品价格状态（HIG / App Store 3.1.2）：
+  //   loading → 拉取中；ok → 用商店真实价格；error → 拉取失败。
+  // 拉取失败时**禁止购买**而不是回退硬编码价：商店价才是唯一合法成交价，
+  // 展示一个与实际扣款不一致的静态价既误导用户，也可能被审核认定为价格欺诈。
+  const [iosPriceState, setIosPriceState] = useState<'loading' | 'ok' | 'error'>('loading')
 
   // 付费墙每次打开时重置选中商品，避免上一次的选择残留高亮
   useEffect(() => {
-    if (paywall.open) setSelectedId(null)
+    if (paywall.open) {
+      setSelectedId(null)
+      setErr('')
+      setHint('')
+    }
   }, [paywall.open])
 
-  // iOS：付费墙每次打开时拉一次商店价格。失败静默回退，不打扰用户。
+  // iOS：付费墙每次打开时拉一次商店价格。失败则禁用购买（见 iosPriceState 注释）。
+  // priceNonce 变化即重新拉取，供「重试」按钮使用（网络抖动/商店短暂不可用时可自救）。
+  const [priceNonce, setPriceNonce] = useState(0)
   useEffect(() => {
     if (!paywall.open || !isIOS()) return
     let cancelled = false
+    setIosPriceState('loading')
+    setStorePrice({})
     void (async () => {
       try {
         const adapter = await getAdapter()
-        if (!adapter) return
+        // 插件不可用同样算失败：iOS 上没有内购通道，购买按钮必须禁用
+        if (!adapter) {
+          if (!cancelled) setIosPriceState('error')
+          return
+        }
         const products = await adapter.fetchProducts()
-        if (cancelled || products.length === 0) return
+        if (cancelled) return
+        if (products.length === 0) {
+          setIosPriceState('error')
+          return
+        }
         const map: Record<string, string> = {}
         for (const p of products) map[p.productId] = p.price
+        // 商店没返回全部在架商品时也视为失败，避免某个档位显示不出真实价格
+        const missing = PRODUCTS.filter((p) => !map[p.id])
+        if (missing.length > 0) {
+          setIosPriceState('error')
+          return
+        }
         setStorePrice(map)
+        setIosPriceState('ok')
       } catch {
-        /* 商品未配置 / 插件不可用：保持硬编码价，不影响购买流程 */
+        if (!cancelled) setIosPriceState('error')
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [paywall.open])
+  }, [paywall.open, priceNonce])
+
+  // iOS 上商店价格未就绪 = 不允许发起购买（避免按硬编码价误导用户后实际扣款不符）
+  const iosBlocked = isIOS() && iosPriceState !== 'ok'
 
   if (!paywall.open) return null
 
   /** 点击支付：iOS 走内购，Android/Web 走微信/支付宝，均由 checkout 统一分发 */
   async function buyProduct(id: ProductId, provider: PayProvider) {
     setErr('')
+    setHint('')
     setPayingId(id)
     setPayingProvider(provider)
     try {
@@ -109,6 +141,10 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
       }
       if (res.status === 'error') {
         setErr(res.message)
+        return
+      }
+      if (res.status === 'pending' || res.status === 'pending_settlement') {
+        setHint(res.message)
         return
       }
       // 购买成功：刷新后关闭付费墙
@@ -128,11 +164,16 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
   /** 恢复购买（仅 iOS 订阅） */
   async function restore() {
     setErr('')
+    setHint('')
     setBusy(true)
     try {
       const res = await restorePurchases(refresh)
       if (res.status === 'error') {
         setErr(res.message)
+        return
+      }
+      if (res.status === 'pending_settlement') {
+        setHint(res.message)
         return
       }
       setOk(true)
@@ -179,6 +220,7 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
   return (
     <Sheet title={title} onClose={closePaywall}>
       {paywall.reason && <div className="notice info">{paywall.reason}</div>}
+      {hint && <div className="notice info">{hint}</div>}
       {pro && (
         <div className="notice ok">
           {lifetime
@@ -215,6 +257,15 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
 
       {!pro && (
         <>
+          {/* iOS 商店价格未就绪：明确告知并提供重试，禁止以硬编码价发起购买 */}
+          {isIOS() && iosPriceState === 'error' && (
+            <div className="notice err" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ flex: 1 }}>暂时无法获取 App Store 商品价格，请检查网络后重试。</span>
+              <button type="button" className="btn-text" style={{ flexShrink: 0 }} onClick={() => setPriceNonce((n) => n + 1)}>
+                重试
+              </button>
+            </div>
+          )}
           {/* 商品选择：iOS 点商品直接内购；Android/Web 先选中商品，再在下方选微信/支付宝 */}
           <div className="pay-grid" style={{ marginTop: 18 }}>
             {PRODUCTS.map((p) => (
@@ -222,8 +273,10 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
                 key={p.id}
                 type="button"
                 className={`pay-option ${p.highlight ? 'is-hl' : ''} ${!isIOS() && selectedId === p.id ? 'is-sel' : ''}`}
-                disabled={payingId !== null || busy}
+                disabled={payingId !== null || busy || iosBlocked}
+                aria-disabled={payingId !== null || busy || iosBlocked}
                 onClick={() => {
+                  if (iosBlocked) return
                   if (isIOS()) {
                     void buyProduct(p.id, 'apple')
                   } else {
@@ -234,7 +287,14 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
               >
                 <div className="pay-option-name">{p.name}</div>
                 <div className="pay-option-price">
-                  {isIOS() && payingId === p.id ? <span className="spinner" /> : (storePrice[p.id] ?? PRICE_TAG[p.id])}
+                  {isIOS() && payingId === p.id ? (
+                    <span className="spinner" />
+                  ) : isIOS() ? (
+                    // iOS 只显示商店真实价：加载中显示占位，失败显示「—」，绝不回退硬编码价
+                    iosPriceState === 'ok' ? storePrice[p.id] : iosPriceState === 'loading' ? '获取中…' : '—'
+                  ) : (
+                    PRICE_TAG[p.id]
+                  )}
                 </div>
                 {p.highlight && <div className="pay-option-tag">最划算</div>}
               </button>
