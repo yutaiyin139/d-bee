@@ -1,7 +1,19 @@
-# D-Bee（自律蜜蜂）— 腾讯云轻量服务器 Nginx 配置【模板·唯一来源】
+# D-Bee（自律蜜蜂）— 腾讯云轻量服务器 Nginx 配置【云端反代版·⚠️已废弃·仅存档】
+#
+# 🔴🔴🔴 本模板已废弃（2026-10-31）——请勿再用它部署生产！🔴🔴🔴
+#   本模板把 /.cloud/ 反代到 WorkBuddy 云端（zilv-mifeng.app.workbuddy.host）。
+#   走云端的流量【吃不到 0039 权益闸门】：grant_honey 不验库内事实、
+#   consume_ai/photo_quota 限额可被传参绕过、redeem_honey 无 advisory 锁。
+#   生产已切自托管网关（本机 127.0.0.1:8080 → 自建 PG，闸门全在库内）。
+#
+#   ✅ 正确模板 = deploy/nginx.selfhost.conf.example（上游 dbee_gateway 127.0.0.1:8080）
+#   ✅ 正确入口 = deploy.sh 的 APPLY_NGINX_CONF=1（已强制渲染自托管版 + 守卫校验）
+#                或 deploy/switch-nginx-selfhost.sh
+#   ❌ 本文件不被任何脚本自动渲染，仅作历史存档/回滚参考；
+#      如确需临时回云端（重大架构决策），必须人工评估 0039 闸门缺失风险后再手动安装。
 #
 # ⚠️ 本文件是**模板**，不要手工复制到服务器上改。
-#    由 deploy/deploy.sh 渲染（把 __SERVER_NAME__ 等占位符替换掉）后推送安装。
+#    （历史上由 deploy/deploy.sh 渲染后推送；现已改渲染自托管版，见上方红字。）
 #
 # 用法：
 #   纯前端更新（不动 nginx）：

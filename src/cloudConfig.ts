@@ -8,6 +8,13 @@
 // - native-internal：可使用 HTTPS 测试网关，或显式允许 WorkBuddy 云库内测；
 // - development：保留云库回退，方便本地开发。
 // 原生分支刻意优先于 VITE_CLOUD_ENDPOINT，避免 Web 的临时覆盖污染 App 数据面。
+//
+// 🔒 双后端口径（2026-10-31 核查确认）：
+//   CLOUD_HOST 回退只存在于 DEV 与 native-internal+VITE_ALLOW_CLOUD_NATIVE
+//   两个【显式内测口子】；Web 生产走 window.location.origin（自托管 nginx），
+//   native-release 走硬断言的 d-bee.cn。云库侧 7 个权益函数已于 2026-10-31
+//   通过 MCP 补齐 0039 闸门（db/cloud-patch-0039/，攻击路径全拦、正常放行），
+//   即使内测走云库也吃得到库内权益校验 —— 双后端不再是「闸门旁路」。
 const CLOUD_HOST = 'https://zilv-mifeng.app.workbuddy.host'
 const PRODUCTION_NATIVE_ENDPOINT = 'https://d-bee.cn'
 

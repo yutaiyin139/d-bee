@@ -46,6 +46,16 @@ import { isNative } from './platform'
  * 云端按它做精确匹配，**换域名等于登录失效**，不要随手改。
  * 若将来启用自有域名 d-bee.cn（双域名规划中 Web 端的正式域名），
  * 这里要与云端预留来源、Nginx 三处同步变更。
+ *
+ * 🔒 职责边界（2026-10-31 澄清，防误读为「生产走云」）：
+ *   本常量只是**注入给云端白名单校验的 Origin 头**，它【不决定流量去向】。
+ *   真正决定 endpoint 的是 src/cloudConfig.ts：
+ *     - native-release（正式包）：endpoint 被硬断言钉死 = https://d-bee.cn（自托管），
+ *       请求根本不打云端，此 Origin 头被自托管网关忽略（网关只校验 access-key、不校验来源）；
+ *     - Web 生产：endpoint = window.location.origin（自托管 nginx），createNativeFetch()
+ *       在 Web 端返回 undefined，压根不注入本 Origin。
+ *   因此本值只在【显式走云库的内测场景】（DEV / native-internal + VITE_ALLOW_CLOUD_NATIVE）
+ *   才真正生效。叠加云库已补 0039 闸门，即便内测走云也吃得到权益校验（纵深防御）。
  */
 const CLOUD_ORIGIN = 'https://zilv-mifeng.app.workbuddy.host'
 

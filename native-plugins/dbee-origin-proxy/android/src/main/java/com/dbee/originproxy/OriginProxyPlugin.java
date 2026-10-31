@@ -57,7 +57,11 @@ import java.util.concurrent.Executors;
 @CapacitorPlugin(name = "OriginProxy")
 public class OriginProxyPlugin extends Plugin {
 
-    /** 应用创建时预留的发布域名 —— 必须与 Nginx 里那两行的值保持一致 */
+    /** 应用创建时预留的发布域名 —— 必须与 Nginx 里那两行的值保持一致。
+     * 🔒 仅作 JS 层未显式传 origin 时的兜底（src/lib/originProxy.ts 恒传
+     *    CLOUD_ORIGIN，正常链路不走此默认值）。它只是过云端白名单的 header，
+     *    不决定流量去向：endpoint 由 cloudConfig.ts 钉死（native-release =
+     *    https://d-bee.cn 自托管，网关不校验来源，此头被忽略）。 */
     private static final String DEFAULT_ORIGIN = "https://zilv-mifeng.app.workbuddy.host";
 
     private static final int CONNECT_TIMEOUT_MS = 15_000;

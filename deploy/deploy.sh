@@ -26,9 +26,13 @@
 #   DBEE_CERT_EMAIL    Let's Encrypt 通知邮箱（https 模式用，留空则不注册邮箱）
 #   SITE_ORIGIN        强制指定前端内写死的站点来源（覆盖上面的自动推导）
 #   SERVER_NAME        强制指定 nginx server_name（默认「域名 服务器IP _」）
-#   APPLY_NGINX_CONF=1 顺带渲染并推送 deploy/nginx.conf.example
+#   APPLY_NGINX_CONF=1 顺带渲染并推送 deploy/nginx.selfhost.conf.example（自托管版）
 #                      ⚠️ 已用 certbot 上过 HTTPS 时不要开 —— 模板只有 80 端口，
 #                         覆盖会冲掉 443 配置（push-nginx.sh 会先备份成 .bak）
+#                      🔒 2026-10-31 起本分支只渲染【自托管模板】（上游 = 本机网关
+#                         127.0.0.1:8080），不再渲染云端版 nginx.conf.example ——
+#                         避免一键把生产 nginx 退回 WorkBuddy 云、绕过 0039 闸门。
+#                         渲染后会守卫校验：有效指令含 dbee_gateway 且无 workbuddy.host。
 #   FIX_ENDPOINT=1     把前端 endpoint 钉死成 $SITE_ORIGIN（仅排查问题用）。
 #                      默认不钉死：src/cloudConfig.ts 运行时取 window.location.origin，
 #                      同一份产物在 IP / 自建域名 / 官方域名下都可用
@@ -117,8 +121,21 @@ export MSYS2_ARG_CONV_EXCL='*'
 "$PY" "$DIR/deploy/dbee-ssh.py" putdir "$DIR/dist" "/var/www/d-bee"
 
 if [ "${APPLY_NGINX_CONF:-0}" = "1" ]; then
-  echo "==> 3/$STEP_TOTAL 渲染并推送 Nginx 配置"
-  "$PY" "$DIR/deploy/dbee-ssh.py" render "$DIR/deploy/nginx.conf.example" "$RENDERED"
+  echo "==> 3/$STEP_TOTAL 渲染并推送 Nginx 配置（自托管版）"
+  # 🔒 只渲染自托管模板（上游 = 本机网关 dbee_gateway 127.0.0.1:8080）。
+  #    绝不渲染 nginx.conf.example（云端反代版）：那会把生产 nginx 退回
+  #    WorkBuddy 云，/.cloud/ 流量绕开 0039 权益闸门（grant_honey 不验事实、
+  #    consume_* 限额可传参绕过）。需要回云端属重大架构决策，不走本脚本。
+  "$PY" "$DIR/deploy/dbee-ssh.py" render "$DIR/deploy/nginx.selfhost.conf.example" "$RENDERED"
+  # 守卫 1：渲染结果必须指向本机网关
+  grep -q 'proxy_pass http://dbee_gateway' "$RENDERED" \
+    || { echo "!! 渲染结果未指向 dbee_gateway，拒绝推送"; rm -f "$RENDERED"; exit 1; }
+  # 守卫 2：有效指令（非注释行）里不得残留云端域名 —— 注释里解释性地提到
+  #    workbuddy.host 不算生效指令，不能误判（与 switch-nginx-selfhost.sh 同款判据）
+  if grep -vE '^\s*#' "$RENDERED" | grep -qE 'workbuddy\.host'; then
+    echo "!! 渲染结果的有效指令仍含云端域名，拒绝推送"; rm -f "$RENDERED"; exit 1
+  fi
+  echo "    ✓ 上游 = dbee_gateway(127.0.0.1:8080)，有效指令无云端残留"
   "$PY" "$DIR/deploy/dbee-ssh.py" putfile "$RENDERED" "/tmp/dbee-nginx.conf"
   "$PY" "$DIR/deploy/dbee-ssh.py" run "$DIR/deploy/push-nginx.sh"
   rm -f "$RENDERED"
