@@ -10,6 +10,7 @@ Capacitor 的 debug 包会开启 WebView 调试，因此无需额外配置。
     python tools/android-cdp.py eval "1+1"              # 执行 JS 并打印结果(JSON)
     python tools/android-cdp.py eval-file path.js       # 执行 JS 文件
     python tools/android-cdp.py snippet                 # 打印常用片段
+    python tools/android-cdp.py targets --pkg com.other.app   # 指定包名（默认见 PKG）
 
 前置：adb 已在 PATH，且 App 处于前台运行。
 """
@@ -29,6 +30,13 @@ except ImportError:  # pragma: no cover
     sys.exit("缺少依赖：请先 pip install websocket-client")
 
 ADB: str | None = None
+
+# 🔴 权威包名 = capacitor.config.ts 的 appId / android/app/build.gradle 的 applicationId。
+#    两者均为 cn.com.dbee.app（2026-10-30 全仓核验一致）。
+#    历史弃用值勿再写回：com.dbee.app（被 Apple 抢注）、cn.dbeehealth.app（不可用）、
+#    com.d-bee.app（Android 禁连字符）——本文件此前默认值误写 cn.dbeehealth.app，
+#    导致 targets/eval 恒报「未在运行」。可用 DBEE_PKG 环境变量或 --pkg 覆盖。
+PKG: str = os.environ.get("DBEE_PKG", "cn.com.dbee.app")
 
 
 def _adb_path() -> str:
@@ -54,7 +62,7 @@ def adb(*args: str, timeout: int = 60) -> str:
     return out.stdout.decode("utf-8", "replace").strip()
 
 
-def find_app_pid(pkg: str = "cn.dbeehealth.app") -> int:
+def find_app_pid(pkg: str = PKG) -> int:
     pid = adb("shell", "pidof", pkg)
     if not pid:
         sys.exit(f"{pkg} 未在运行，请先启动 App")
@@ -146,6 +154,8 @@ def main() -> None:
     ap.add_argument("action", choices=["targets", "eval", "eval-file", "snippet"])
     ap.add_argument("arg", nargs="?")
     ap.add_argument("--port", type=int, default=9222)
+    ap.add_argument("--pkg", default=PKG,
+                    help=f"目标 App 包名（默认 {PKG}，可用 DBEE_PKG 环境变量覆盖）")
     args = ap.parse_args()
 
     if args.action == "snippet":
@@ -153,7 +163,7 @@ def main() -> None:
         return
 
     if args.action == "targets":
-        pid = find_app_pid()
+        pid = find_app_pid(args.pkg)
         ensure_forward(pid, args.port)
         for t in list_targets(args.port):
             print(json.dumps({k: t.get(k) for k in ("id", "type", "title", "url")}, ensure_ascii=False))
@@ -164,7 +174,7 @@ def main() -> None:
         with open(args.arg, encoding="utf-8") as f:
             expr = f.read()
 
-    pid = find_app_pid()
+    pid = find_app_pid(args.pkg)
     ensure_forward(pid, args.port)
     ws, target = connect(args.port)
     try:

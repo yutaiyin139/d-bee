@@ -1,351 +1,42 @@
 # D-Bee（自律蜜蜂）· 项目长期记忆（精简版；细节见当日日志与 docs/）
 
-## 进度快照（2026-10-30 晚，🎉 **iOS V1.7.3 已发布 + 上架就绪实证核查通过 + iOS/四端代码审查整改 #1~#5 全部闭环（7 commit）**；自建网关密码登录生产缺陷已修复 + 合规 P0 多端一致性闭环 + 阿里云真短信已上线（万能码摘除）；App Store 创意素材出图管线（含 art safe area 修正）+ 商店截图链路就绪；首启隐私同意门 + 第三方 SDK 公示 + 小程序按真实链路重写公示 + 公示 URL 逐条核验；软著 AI 条款红线查实待拍板；双域名定案 d-bee.cn=Web端 / d-bee.com.cn=官网；视觉双 provider（文本 DeepSeek `deepseek-flash` + 视觉 Qwen `qwen3.8-max-0902`）；Bundle ID 定案 `cn.com.dbee.app`）
+> 🔖 **权威口径（勿再改动，代码/文档/填报一律以此为准）**
+> · **Bundle ID / appId = `cn.com.dbee.app`**（iOS + Android 同值。弃用史：`com.dbee.app` 被 Apple 抢注 → `cn.dbeehealth.app` 不可用 → `com.d-bee.app` 因 Android 禁连字符弃用 → **10-25 定案 `cn.com.dbee.app`**）
+> · **域名：`d-bee.cn` = 自律蜜蜂 Web 端**（隐私政策 URL / Apple webhook / Universal Link / 原生端 endpoint 全用它）；**`d-bee.com.cn` = 公司官网**（纯静态，不调网关）。两域名同在公司名下，打包同一企业备案订单（一单两站，京ICP备XXXX号-1/-2）。域名与 Bundle ID 是两个独立体系，互不影响。
+> · **版本号：1.7.3**（Android versionCode 14 / iOS CURRENT_PROJECT_VERSION 12 / mini 0.1.0）
+> · **打原生包绝不能用 `npm run build`**（会白屏，见架构铁律 #10）：内测 `VITE_ALLOW_CLOUD_NATIVE=true npm run build:native:internal`；上架 `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native`。
 
-> **📱 iOS/四端代码审查整改 #1~#5（10-30 全天，7 commit `39a576b..20ff00b`）**：针对 iOS/四端静态审查发现的 P0/P1 逐项闭环：
-> **#1 原生生产数据面统一**（`39a576b`）：新增 `native-release`/`native-internal` 构建，`VITE_NATIVE_ENDPOINT=https://d-bee.cn` 构建期强制、拒绝缺失/非 HTTPS/未授权云库回退；原生不再受 `VITE_CLOUD_ENDPOINT` 覆盖。切库仍等 ICP 备案+DNS+HTTPS。
-> **#2 iOS IAP 交易闭环重构**（`39a576b`）：购买不再立即 `finish`，服务端核销成功才 finish（StoreKit 2 铁律，提前 finish = 断网/杀 App 丢权益）；`Transaction.updates` 监听 + `unfinished` 启动恢复 + 订单/交易/收据/owner 经 Capacitor Preferences 持久化；新增 `@capacitor/preferences@8.0.1`；`iap-selftest` 47/47。
-> **#3 IAP 异常路径自动化回归**（`39a576b`）：新增 `tools/iap-checkout.test.ts` + `npm run test:iap`（客户端 9 场景 + 服务端 47 断言全过）；退款交易只 finish 不送核销。
-> **#4 无障碍集中整改**（`0a22c72`）：`useModalA11y` 焦点陷阱+Esc+焦点归还+滚动锁+`aria-modal` 接入 4 处弹窗；恢复双指缩放；对比度按 WCAG 相对亮度精算（`--ink-3` 2.57→4.64、`--honey-dark` 3.56→4.71）；伪按钮补 Enter/Space（`onActivateKey`）；tabbar `aria-current`；图表数据摘要 `summarize()`。
-> **#5 功能可靠性整改**（`b2ff630`+`465f46c`+`b1a8566`+`ad2f1e1`）：本地通知真正落地（`@capacitor/local-notifications@8.3.1`，固定 ID + 先取消再排程 + 静默重排，⚠️ 本项目 includePlugins 白名单对 npm 包插件同样生效，不加白名单 cap sync 静默跳过）；HealthKit 返回显式状态（`HealthSyncStatus`，不再把错误吞成 0 步抹掉真实步数）；OriginProxy 支持 AbortSignal 中途取消（三端，取消归一为 End、异常不回退重发）；iOS 付费墙商店价拉取失败禁用购买（不硬编码兜底，防价格欺诈 3.1.2）。
-> 新增 5 条架构铁律见「架构铁律」#5~#9。**Windows 无法编译 Swift，HealthKit status 分支 / OriginProxy cancel 双端 / LocalNotifications 真机推送 / StoreKit 沙盒仍需 Mac/Xcode 实证。**
+## 进度快照（2026-10-31 早）
 
-> 🔴 **七项安全修复（10-27）进展**：① JWT access TTL 7 天→30 分钟 + refresh 滚动 + `app_users.token_version` 强制下线（迁移 0042 已落库）
-> ② appleSandbox 生产默认关 + validate 拦截 ③ LLM 视觉 fail-closed 503 + 文本独立降额 50/日 ④ grant_honey 发分前查真实记录（functions.sql 同步 0039）
-> ⑤ CORS Origin 白名单 `isOriginAllowed` ⑦ email 验证码通道（163 SMTP provider，465/SSL）。**①④ 已部署上线 + 端到端验证全过**（access token `ver=1`/TTL 1800s、登出后旧 token 立即 401）；③⑤⑦ 代码已就位待部署。
-> 卡资质：⑥ 万能码切真短信 —— 🟢 **已上线（10-29：`SMS_PROVIDER=aliyun` 真短信部署完成、万能码已摘除、用户 Web 端实收短信端到端验证通过）**。签名口径=「北京迪蜂科技有限公司」（阿里云账号下唯一可用签名，非腾讯云的「自律蜜蜂」），详见「短信通道已上线」条。
-> **今日资质到货**：公章（10-27）已到手，已梳理 18 项盖章清单 `docs/公章使用清单-2026-10-27.md`；对公账户（10-28）**已开立完毕** → 小程序主体变更 / 短信签约 / 商户号 / ASC 付费协议可启动（执行步骤见 `docs/对公账户到手-后续执行步骤-2026-10-28.md`）。
-> **📌 双域名规划定案（10-28）**：`d-bee.cn` = 自律蜜蜂 Web 端（隐私政策 URL / Apple webhook / Universal Link / 原生端 endpoint 全用它）；`d-bee.com.cn` = 公司官网（纯静态，不调网关）。两域名均在公司名下，**打包同一企业备案订单**（一单两站，京ICP备XXXX号-1/-2）。**Bundle ID `cn.com.dbee.app` 继续使用**（Apple/Google 不校验域名归属，改动成本极大）。代码侧改造已完成（nginx 双 server 块 / setup-https 多域名 SAN / CORS / 全仓域名口径，详见 10-28 日志），服务器侧执行等备案+解析生效。
-> **🔴 软著 AI 条款红线（10-28 查实，最重要）**：2026-03-15 版权中心新规要求经办人**亲笔手抄**承诺「未使用 AI 开发编写代码、撰写文档或生成登记申请材料」，违者列入**版权登记失信名单 + 个人征信记录**；申报文档**不得由 AI 代写**。D-Bee 是 AI 深度协作开发的（git 历史即证据）→ **软著不可盲目提交，须先致电版权中心问清「AI 辅助编程」口径**。另：`docs/公章使用清单-2026-10-27.md` 原称「鉴别材料已备好」**是错的**（全仓检索确认不存在，已纠正）。素材与三条处置路径见 `docs/软著登记-事实素材包与合规红线-2026-10-28.md`。
-> **✅ ICP 备案两项阻断已排除（10-28）**：①**法人是京籍** → 无需北京居住证/连续 6 个月社保；另核实北京**不在**「主体负责人必须为法人」强制省份名单（名单含新疆/河北/广西/山西/宁夏/西藏/山东/广东/云南/浙江/贵州/黑龙江/陕西/内蒙古/上海/江西/湖南/天津/湖北/河南/福建/重庆）。②**腾讯云账号仍是个人实名亦不阻断**——官方《备案限制说明》原文「企业或单位备案：**如果个人账号实名为企业法定代表人，可以为法定代表人所在的企业进行备案**」；⚠️ 腾讯云营销页口径相反（"个人账号只能选个人主体"），以官方文档为准 + 控制台实际可选性为最终验证，卡住则走个人→企业实名变更（1–3 工作日）。短信属**自用资质**，**不需要**授权委托书。→ **注销个人备案可立即发起**（工信部短信核验 24h 内必做）。
-> **✅ 小程序「先发后变」（10-28）**：修复版**未发布** → 今天先发布修复版，再提交主体变更（变更后到新备案完成前不能发新版本，备案期 1–20 工作日）。
+**当前进度**
+- 🎉 **iOS V1.7.3 已发布**（10-29）+ 上架就绪实证核查通过；Web V1.7.2 已发布线上（http://150.158.51.106/）；Android vc13 已重打并实证验签通过。
+- **iOS/四端代码审查整改 #1~#5 全部闭环**（10-30，7 commit `326865c..20ff00b`）：①原生生产数据面统一（`native-release`/`native-internal` 构建 + 构建期强制校验）②IAP 交易闭环重构 ③IAP 异常路径回归（`npm run test:iap`）④无障碍集中整改 ⑤功能可靠性（本地通知/HealthKit 状态/OriginProxy 取消/付费墙禁兜底价）。成果已沉淀为架构铁律 #5~#9。⚠️ **Windows 无法编译 Swift，原生分支仍需 Mac/Xcode 真机实证**。
+- **自建网关密码登录生产缺陷已修复**（10-29 `8d4a0ef`）：`signInWithPassword` 分流 + 标识归一化 + 防枚举恒定耗时 + 双维度限流，35/35 断言全过、线上实测 200。
+- **合规 P0 多端一致性闭环**（10-29）：首启隐私同意门 `PrivacyGate.tsx` + 第三方 SDK 目录 7 项公示 + 小程序按真实链路重写公示 + 公示 URL 逐条联网核验（`verify-legal.mjs` §0.7 自动校验可达性）。
+- **阿里云真短信已上线**（10-29，`SMS_PROVIDER=aliyun`，万能码已摘除，用户实收验证通过）。
+- **App Store 素材链路就绪**（10-28/29）：商店截图（iPhone 6.3" + iPad 13"）+ 创意素材出图管线（16:9 按 Apple art safe area 设计成 brand 布局，安全区外零文字；`deploy/shot-creative.mjs` + `verify-creative.mjs` 126 项 DOM 断言）。
+- **10-31 全仓口径核查通过**：代码侧（src / server / deploy / mini / ios / android / tools / capacitor.config）Bundle ID 与域名**全部正确**；唯一代码缺陷 `tools/android-cdp.py` 默认包名写死弃用值 `cn.dbeehealth.app`（致 CDP 验收恒报「未在运行」）**已修**（新增 `DBEE_PKG` 环境变量 + `--pkg` 参数，默认 `cn.com.dbee.app`）；12 份 docs 过期口径已更正（可执行文档直接改，历史快照只加作废横幅不改正文）。
 
-- **✅ 6 项决策已拍板（10-22 晚）**：①主体=**有限责任公司** ②未提交产物**入库**（已提交 `b6b1725`+`43a5729`
-  并推 origin/main）③LLM=**DeepSeek** ④短信=**先日志+万能码**（`SMS_PROVIDER=log`/`SMS_MASTER_CODE=888888`）
-  ⑤网关语言=**Node**（`server/index.mjs`）⑥Apple 验签=**放 Node 网关**（**弃 `0029` 的 pg_net 方案，不再执行**）。
-  决策原则：**便捷、技术可控、价格低廉、完全对比竞品**。全部凭据只存本地 `.env`（gitignore 覆盖），**未进 git**。
-  完整后续计划见 **`docs/主体注册后-实施计划.md`**（§一 社保查证 / §七 竞品对比 / §A3 DeepSeek 坑 / §八 排期）。
-- **⚠️ 两个安全待办（用户处理）**：①**重置 DeepSeek API key**（本次对话中明文出现过）；
-  ②**轮换 SSH 密码与 dbee_app 数据库密码**——二者此前已提交进 GitHub 历史（`f99a2c5` 起），
-  本次已全部脱敏 + 停止扩散，但**历史提交仍可检出**；`0002` 早期含 3 份用户档案同理。
-  **轮换密码优先于重写历史**（`git filter-repo`+force push 属破坏性操作，未擅自执行）。
-- **🔓 主体注册已办结（10-22）**：解锁微信生态（开放平台企业认证/商户号/公众号/小程序主体变更）、
-  华为/小米企业入驻（Health Kit 硬门槛）、ICP 经营许可证可申请。
-- **🔴 「3 人社保」查证结论：ICP 经营许可证的硬性条件，无法合规绕过**（2026 多省口径一致且核查趋严）：
-  ≥3 名全职、**必须三个不同人**（许可/客服/安全负责人）、法人可算一人、**必须由本公司缴**（代缴/挂靠直接驳回，
-  虚假材料处罚且一年内不得再申）、近 1 个月（部分省连续 3 个月）、管局做跨部门数据比对 + 可能上门核验场地。
-  成本 ≈ ¥4000/月起（法人算 1 人则实际再招 2 人）+ 记账报税 ¥2000–5000/年 + 代办 ¥5000–15000（可压到约 47 工作日）。
-  **已定策略 = 方案 A：暂不办 ICP 证，先靠 iOS IAP 验证付费意愿**（零固定成本，Apple 个人账号已通过、平台代收），
-  有真实付费数据再决定是否背这个固定成本。**4 件确认项已全部答复（10-22 晚）**：经营范围**已含**
-  「第二类增值电信业务」✅ / 注册资本 **≥100 万认缴** ✅ / 对公账户**在办、下周完成** 🟡 /
-  小程序 `wxb7c7122de9c3ab1f` 仍是**个人主体、需变更** 🟡。→ **ICP 证的执照类前提已全部就位**，
-  将来办证仅剩「3 人社保」一个缺口（~~域名过户到公司~~ **✅ 已完成 10-27**）。
-- **📱 小程序主体变更流程（查证腾讯客服官方口径，10-22）**：入口后台→设置→主体信息→小程序主体变更；
-  四步 + **¥300 审核费（不退）** + 审核 1–7 工作日。🎯 **本项目可免公证**（官方免公证第 1 条 =
-  个人主体→企业、且个人即目标企业**法人**）：公证材料处再传申请函 + 法人身份证正反面 +
-  **手持申请函照** + 申请函原主体处**签名 + 按手印**（个人主体签名手印、非盖章）；个人主体**不可委托代办**。
-  申请函用**后台官方最新模板**、两页**骑缝章**。⏰ **审核通过后 7 天内**须管理员确认+重登+签协议，
-  **超时作废、钱不退**。🔴 **变更后两个强制后续**：①**重做小程序备案**（信用代码变了→先注销原备案+新主体
-  新增备案，**不支持直接变更**；平台初审 1–2 + 管局 1–20 工作日；✅ 备案期小程序可用，但新备案前
-  不能发新版本）；②**类目资质重交**（盖新章，腾讯明确**变更后 14 天内**完成、逾期功能封禁）。
-  ⚠️ **类目红线**：**避开「医疗-其他医学健康服务」**（须四选一提供医疗机构执业许可/器械生产许可/
-  合作机构协议/器械备案凭证，本项目一个都没有）→ 选工具/生活服务类；**文案严禁诊疗/治病/筛查表述**
-  （`legal.ts` disclaimer 已有「非医疗建议」，上架前全量复核）。支付限制（未绑非目标主体商户号）本项目不涉及。
-- **🌐 `d-bee.com.cn` 备案（10-22）**：**个人备案已完成、正在走企业变更**。🔴 **各省管局规则不一，
-  部分省不允许个人→企业直接变更**：允许则不中断、约 1–2 周；不允许须「注销原备案+企业重备」，
-  **注销后域名停解析直到新备案通过**（注销 3–5 + 初审 1–2 + 管局 1–20）。行动：先在腾讯云控制台查本省是否
-  允许；**域名必须先过户到公司再提交**（管局核对 WHOIS 持有者=备案主体，没过户必驳）；
-  **关 WHOIS 隐私保护**；变更前后**须同省**、目标企业名下**不能已有成功备案**；若被迫注销重备，
-  **先把 A4 切换做完并验证 IP 直连可用**再注销，停站期业务不断；部分省卡「原个人=现企业法人」——本项目同一人天然满足。
-- **📊 竞品对比结论（§七，已完全对比）**：⚠️ **D-Bee 的 ¥18/月、¥128/年与 1 亿用户的薄荷健康完全同价**
-  （薄荷包月续订仅 ¥15 更便宜），食物库 1,175 vs **100 万+**（差 850 倍）→ **绝不能拼「食物库广度」或
-  「AI 识别准」**。✅ 但按年付 **D-Bee ¥128 是国际 12 款竞品中最便宜**（Cal AI ¥144 起 / MyFitnessPal ¥576 /
-  Noom ¥1505），价格低廉已达标、**不需改价**（¥18/¥128/¥328 已锁定）。
-  🔴 **关键风险**：悉尼大学 2024 研究——AI 食物识别对**混合亚洲菜肴高估达 49%、低估达 76%**，
-  而中式炒菜/盖饭/汤全是混合菜肴 = D-Bee 核心场景；Cal AI 的 ±14.6% 还是西式食物测的。
-  → **定位必须是「不卖 AI 神奇，卖能坚持下来」**：厚免费 + 蜜糖积分/邀请/打卡/徽章/榜单游戏化 +
-  终身买断 ¥328（薄荷无此项）+ **本地规则引擎 `foodInsight.ts`（1,175 条零兜底、零幻觉、零边际成本）优先、
-  AI 仅兜底** + 无广告 + 数据自托管 + 多端一致（三端小程序）。对标「自律茄子」的买断心智，不对标薄荷的库规模。
-  **待办：实测 D-Bee 自己的 MAPE**（现完全空白，是竞品分析最后缺口，也是文案能否说「准」的依据）。
-- **⚙️ AI 成本测算（§A3，按 DeepSeek V4 Flash 峰值价）**：输入 $0.30/输出 $1.20 每 1M token；
-  **峰值 = 北京时间工作日 9–12、14–18 点，价格 2 倍**，恰是三餐记录高峰，**必须按峰值估**。
-  拍照识别单次 ≈ ¥0.0047、教练问答 ≈ ¥0.0069（每图 token **恒上限 384**，2000² 与 5000² 同价；
-  前端 `compressImage(maxSide=1024,quality=0.82)` 已压过一道，**无需 Files API**）。
-  按额度上限 5 次/日：**100 DAU ≈ ¥42/月、1,000 ≈ ¥423、10,000 ≈ ¥4,230** → **万级 DAU 前 AI 成本
-  远低于 3 人社保 ¥4000/月**，反证方案 A 正确。降本手段：系统提示走缓存命中（输入价降 ~98%）、
-  本地引擎先命中再调 LLM。
-- **🔴 DeepSeek 接线三个坑（查官方文档实测，会直接导致功能不可用）**：
-  ① **`deepseek-chat` / `deepseek-reasoner` 已于 2026-07-24 退役**，官方只剩 `deepseek-flash` 与
-  `deepseek-v4-pro` 两个 ID，**配置写旧 ID 会调用失败**；② **只有 flash 系列接受图片**，传图给其他模型返
-  `400 "This model does not support image"`（旧名 `deepseek-v4-flash-vision-exp` 已退役并入 flash；
-  **`deepseek-v4-pro` 明确 "Vision: Not supported"**）→ **文本统一用 `deepseek-flash`**；③ 网关 `/llm/models`
-  **必须给 flash 标 `supportsImages: true`**，否则前端 `pickModel(needVision)` 的 `filter(m=>m.supportsImages===true)`
-  选空 → 拍照识别报错（另需过滤 `disabled!==true && enabled!==false`，见 `ai.ts:31`）。
-  **模型 ID 必须放服务端配置**（`.env` 的 `LLM_MODEL_VISION`）而非散落代码，DeepSeek 改名时只改一行。
-- **🎯 视觉识别已切双 provider 路由（10-24 落地，`63c0a71`+`cc96b65`）**：DeepSeek 视觉偏弱（官方定位
-  「快速便宜、细粒度图像细节偏弱」），无法胜任「一盘菜精准识别多道菜」→ **文本（AI 教练/周报/计划）走
-  DeepSeek `deepseek-flash`，图片识别走阿里云百炼 `qwen3.8-max-0902`**（视觉最强、用户 Workspace 有权限；
-  旧名 qwen-vl-max/qwen3-vl-plus 无权限 403）。`server/lib/config.mjs` 新增 `LLM_VISION_BASE_URL/KEY/MODEL` +
-  `LLM_IMAGE_DETAIL=high`（未配时回落原 llm 键，向后兼容）；`llm.mjs` wantVision 时走独立视觉 provider。
-  线上已部署验证：文本返回 `deepseek-flash`、视觉返回 `qwen3.8-max-0902` 均 200。**服务端切模型对三端即时生效，
-  无需重发 web/重打包**。⚠️ 部署线上 env 用「本地生成完整 env → SFTP 上传覆盖」最可靠（sed 对含特殊字符的
-  key 转义易错、旧文件 ^M 回车符会漏匹配）。
-- **版本/git**：**iOS V1.7.3 已发布（10-29 `b7b6097`，上架就绪实证核查通过）**；Web **V1.7.2 已发布线上**（http://150.158.51.106/ ，`index-Dg2vPNPT.js` 实测含「邮箱密码登录」特征串 + 与本地 dist 逐字节一致）；**Android vc13 已重打并实证验证**（`release/D-Bee-1.7.2-vc13-release.apk` 8,148,639 字节，验签 exit 0，aapt2 = `cn.com.dbee.app`/vc13/1.7.2）。
-  最新 commit **`20ff00b`**（docs(memory): 记录 iOS 审查整改 #4 无障碍 + #5 功能可靠性（含五条新架构铁律））。**工作区已干净**。
-  **10-30 全天（7 commit，`326865c..20ff00b`）**：iOS/四端代码审查整改 #1~#5 全部闭环
-  `39a576b` fix(native) 统一三端生产数据面 + iOS IAP 交易闭环重构 + 异常路径自动化回归；
-  `0a22c72` fix(a11y) 弹窗焦点陷阱/键盘激活/对比度/缩放/图表摘要（无障碍集中整改）；
-  `b2ff630` feat(notify) 本地通知真正落地（固定 ID + 先取消再排程 + 静默重排）；
-  `465f46c` fix(health) HealthKit/厂商健康读取返回显式状态，不再把错误吞成 0 步；
-  `b1a8566` feat(origin-proxy) 流式请求支持 AbortSignal 中途取消（iOS + Android + JS 三端）；
-  `ad2f1e1` fix(ios-iap) 商店价格拉取失败时禁用购买，不再回退硬编码价；
-  `20ff00b` docs(memory) 记录 iOS 审查整改 #4 无障碍 + #5 功能可靠性（含五条新架构铁律）。
-  **10-29 全天（18 commit，`6be0f05..326865c`）**：三大块收敛
-  1. **🔴 自建网关密码登录生产缺陷修复**（`8d4a0ef`）：主端切自建网关时只实现了验证码登录，web 端所有设密用户登录即 400。补 `signInWithPassword` 分流 + 标识归一化（`+86 138…` 带空格 → 裸 11 位）+ 防枚举恒定耗时 + 双维度限流；`tools/selftest-password-login.mjs` 35/35 断言全过、线上实测 200。**部署红线：绝不能跑 `deploy-gateway.sh`（会覆盖 env 致全站账户不可恢复），只走手术式 `deploy/apply-password-login-fix.sh`**。
-  2. **合规 P0 多端一致性闭环**（`7fe86b1`+`46cb96b`+`033d096`）：首启隐私同意门（`PrivacyGate.tsx`，挂 main.tsx 包 App、法律深链免同意放行）+ 第三方 SDK 目录 7 项公示（主端）+ 小程序按真实链路重写（小程序走 WorkBuddy 云、与主端不同后端，删全部虚假能力公示）+ 公示 URL 逐条联网核验（修 3 个真实死链/错误主体，`verify-legal.mjs` 增 §0.7 URL 可达性断言）。
-  3. **App Store 创意素材出图管线**（`847872e`+`ed8a8b2`+`76e9439`）：5244×2950(16:9 universal)/3840×2560/1920×1280 三尺寸，`deploy/shot-creative.mjs` + `creative-assets.html` + `deploy/verify-creative.mjs`（126 项 DOM 断言）。🔴 16:9 按 Apple art safe area（1402×962，仅 8.7%）设计成 brand 布局（安全区外零文字），3:2 恒 showcase。
-  另：阿里云真短信上线（`60fdeb9`+`2a1fab1`+`2c4a871`，`SMS_PROVIDER=aliyun`，万能码已摘除，签名=「北京迪蜂科技有限公司」）；`34a8216` 修 deploy-gateway.sh 两处 set -e 陷阱；`4b98e4c` 短信口径更新入库。
-  **工作区未提交** = 记忆文件（本盘点的 memory.md）。
-  **10-28 全天（9 commit，`4f69214..6be0f05`）**：
-  `1c780af` feat(deploy) 双域名规划代码侧落地（16 文件：nginx 双 server 块 / setup-https 多域名 SAN / CORS / 全仓域名口径，服务器侧执行待备案+解析生效）；
-  `c214273` docs(资质) 软著 AI 条款红线告知 + 事实素材包（`gen-softcopyright-source.py` 机械排版工具，源程序 27,751 行/135 文件）；
-  `2eebd21` docs(iOS) 发布清单口径更新（Bundle ID / d-bee.cn / 对公已到 / 提审需备案号）；
-  `9e20883` docs(ASC) 修正银行/税务口径（个人主体只能 W-8BEN+本人账户，对公换绑依赖 1.12 组织迁移；中国佣金 25%/12% 新规）；
-  `261f04b` docs(ASC) App Store 产品页填报包（字数实测通过）+ 截图槽位缺口实测；
-  `9fc3e0b` feat(deploy) App Store 商店截图生成链路（iPhone 6.3" 1179x2556）；
-  `4a36998` feat(deploy) shot-store 支持 iPad 13" 槽位，商店截图缺口全部补齐；
-  `3345140` feat(auth) 新增邮箱密码登录入口 + 审核演示账户注册脚本（ASC 2.1）；
-  `6be0f05` docs(memory) 10-28 收口。
-  **工作区未提交** = 记忆文件 + `db/.tmp-backup.sql`（临时备份，勿提交，gitignore 未覆盖但约定不入库）。
-  **10-27 全天（6 commit，`4f5ff2c..4f69214`）**：
-  `ab516a2` fix(security) 七项安全修复之①④——JWT 强化（TTL 30min + token_version 强制下线，迁移 0042）+ appleSandbox 生产默认关；
-  `5821dbe` feat(gateway) email 验证码通道上线（163 SMTP，465/SSL 零依赖 node:tls 手写）+ 安全审计③⑤⑦修复（LLM fail-closed + 文本降额 50/日 + CORS Origin 白名单）；
-  `be2267f` docs(legal+备案) 主体过户后法律文本公司化 + 联系邮箱统一 163 + 备案路径改注销重备（+ 公章使用清单 443 行）；
-  `e6234e4` chore(release) 版本 bump V1.7.2；
-  `e00387b` feat(deploy) 短信通道「一条命令切换」链路补齐（腾讯云审核通过，12 文件 +559/-311）；
-  `4f69214` docs(memory) 短信切换链路入库记录 + 待办勾选。
-  **工作区已干净**（无未提交改动）。
-  **10-25 晚～10-26 全天密集收敛（上架前安全/性能主线 + 资质到货）**：
-  `3186680` fix(security) 35 文件 +2539/-85（0039/0040 迁移 + 网关 8 文件 + 前端配套 + 部署链路 + 7 个服务器实测脚本）；
-  `de9a3cc` fix(security) dbee-ssh.py 渲染泄露守卫 + V1.7.1 生产安全体检；
-  `c8d86a0` chore(release) 版本 bump 至 V1.7.1（Web/Android/iOS 三端，versionCode 12 / CURRENT_PROJECT 10）；
-  `195ca13` fix(log) LogSheet 保存按钮冲突态 UX 修复（自动定位到覆盖/追加横幅 + 闪烁提示）。
-  10-25 收敛：`dc0110d`+`8cba299`（0037 落地 + 综合报告 + mini 文案修复 + 日志去噪）、`1bc27a7`（微信支付 adapter）、
-  视觉双 provider `63c0a71`+`cc96b65`、postinstall 自动构建 shared `d3fb8cc`、Bundle ID 定案 `23b295d`。
-  10-26 全天（16 commit，`7460c90..4f5ff2c`）：`50cb9cc` fix(native) 教练问答超时+流式（四端，origin-proxy read timeout 60s→180s）、
-  `b54675b` feat(sms) 腾讯云短信 provider（零依赖 TC3-HMAC-SHA256，签名与官方 demo 逐字一致）、
-  `e34250b` feat(legal) 隐私政策等法律文档 URL 直达（商店/备案/ASC 填报必需）、
-  `d1cb82e` docs 对外填报信息速查表（包名/合规URL/签名指纹/主体资质集中）、
-  `9e809b7` docs 数据库切换详细规划（四端云库依赖/分叉量化/分阶段切换）、
-  `3049375`+`1a53e47` pgAdmin 空表根因诊断（RLS+auth.uid() 机制闭环）+ 0041 dbee_admin 只读排查角色、
-  `4f5ff2c` 七项安全审计结论存档。**工作区已干净**（origin-proxy 180s 超时已随 `50cb9cc` 提交）。
-- **🎉 泳道 A 部署闭环（10-23 10:08）**：服务器 `150.158.51.106` 上 **nginx（自托管配置）+ dbee-gateway
-  （Node 22.22.2 / :8080）+ PostgREST（16.4 / :3001）+ PG 17.11（dbee 库，0033 已应用）** 四件套均 active；
-  `/.cloud/**` 全部走本机自托管栈，**不再依赖 WorkBuddy 云端**。8 项 E2E 全 ✓（含正常 OTP 路径：
-  从 journald 读到真实验证码，非万能码兜底；带 JWT 读 profiles=200/`[]`，匿名=401，RLS 按 sub 过滤生效）。
-  云端回滚点保留在 `/etc/nginx/sites-available/d-bee.cloud.bak`。切换脚本 `deploy/switch-nginx-selfhost.sh`
-  （本机编排）+ `deploy/gateway/switch-nginx-selfhost.remote.sh`（远端）+ `deploy/nginx.selfhost.conf.example`。
-- **📦 数据/结构分离（PIPL 最小必要，10-22 已落地）**：
-  `0030-full-selfhost-mirror.sql` 含 17 表**全量真实用户健康档案**（年龄/性别/身高体重/饮食记录/减重障碍，
-  **含 10 岁、17 岁未成年人记录**）→ **不入库**。改为：
-  `db/migrations/0030-schema.sql`（**新增已入库**，`--schema-only` 产物，60KB，17 表 + 27 函数 + 24 策略 +
-  GRANT，**0 行数据**）；`db/gen-full-mirror-sql.py` **新增 `--schema-only` 开关**（结构入库、数据本地重生成）；
-  `0030-full-*` 与 `0002-mirror-to-local-pg.sql` 均已 **gitignore**（`0002` 原已跟踪，本次 `git rm --cached`
-  移出，本地文件保留）。`db/functions.sql`（27 个 SECURITY DEFINER 函数 DDL，0 处真实 owner_id）已入库。
-- **【主线·10-20 20:18 拍板】云库 → 自托管 PostgreSQL**：云库已恢复，从云库实时抓取生成完整镜像 `0030`
-  （123KB，17 表 + 27 函数 + 24 策略 + GRANT + 全量数据，补齐旧 0002 缺的 10 表与 21 个业务函数），
-  经 `deploy/sync-mirror.sh` 在服务器 dbee（PG 17.11）执行成功、自检全过（17 表行数与云库一致）。
-  远程已打通（先 SSH 隧道后改直连：`listen_addresses='*'` + pg_hba 白名单 + 放行 5432），
-  SQL 级 CRUD + 26 函数自测全过。
-  🔴 **`dbee_app` 原为 BYPASSRLS（越权，未注入身份也能读到全部 17 份 profiles），已由 `0033` 收回**
-  → 现为 `NOBYPASSRLS` + `app_users` 上 `TO dbee_app` 的精确 policy（网关身份面需要读写它，
-  否则 0031 的 FORCE RLS + 无 policy 会把网关自己锁死，这正是当初只能靠 BYPASSRLS 硬闯的根因）。
-  ✅ **前端已切**（10-23）：①自建 auth/JWT 网关（同时注入 `app.user_id`(RLS) 与
-  `request.jwt.claim.sub`）②LLM 代理（SSE）③`/.cloud/database/rest/*` PostgREST 语义端点
-  ④nginx 上游已切自托管 —— **四项全部落地并 E2E 验证通过**，见上方「泳道 A 部署闭环」。
-  **不需要存储代理**——拍照识别走 base64 dataUrl 直塞 LLM `image_url`（`ai.ts:152/226`），全仓无 `cloud.storage` 调用。
-  ⚠️ `0030` **已含 0025~0028 业务变更**（grep `AI_REDEEM_DAILY_LIMIT`/`streak7`/`newbie`/`invite_attempts`/
-  `leaderboard` 命中 20 处），**勿盲跑 0025~0029 迁移**（会重复/冲突）；`0029` 已决定弃用。
-- **📊 数据库切换详细规划（10-26 `9e809b7`，核心判断）**：不是「要不要切」而是「HTTPS 何时就绪」的资质问题。
-  四端数据面现状：**Web 已切自建 PG**；**Android/iOS/小程序仍走云库**（原生 `detectNative()` 从未注入
-  `VITE_NATIVE_ENDPOINT` 回退 CLOUD_HOST + iOS 受 ATS 强制 HTTPS；小程序 `mini/src/lib/cloud.ts` 硬编码 endpoint 无同源反代）。
-  自建网关唯一缺口 = 无 `/v1/login-wechat`（code2session 在云侧）。**数据双向分叉每天扩大**（云库领先 meal_entries 128/97 等；
-  自建独有 app_users/profiles#19/apple_*/schema_migrations）。**账号分裂事故**：186****4728 云库=2110364580268998656（真实）
-  vs 10-24 Web 登录生成的 1792845025064566575（空壳），根因两套发号（平台 210/211 vs 自建时间戳 179）。切换时机=
-  备案变更→域名过户→A 记录→80 公网→签 HTTPS→三端指 https://d-bee.cn（10-28 双域名定案：Web 端 = d-bee.cn；乐观 2 周/保守 4 周）；过渡期云库唯一真相源，
-  切换日一次性收口（0042-data-sync-final.sql，原 0041 编号已被 dbee_admin 只读角色占用）。分阶段：0 安全整改（5432 收口+ufw 最优先）→
-  1 账号映射+合并（HTTPS 前演练）→ 2 T-0 切换（HTTPS 就绪日）→ 3 观察期 T+30（云库只读保活）。详见 `docs/数据库切换详细规划-2026-10-26.md`。
-- **🟢 短信通道已上线（10-29：`SMS_PROVIDER=aliyun` 真短信，万能码已摘除）**：阿里云签名/模板审核通过后接入。
-  **关键事实（与腾讯云口径不同，勿混淆）**：
-  · provider=`aliyun`（RPC 风格，`dysmsapi.aliyuncs.com`，Version=2017-05-25，**HMAC-SHA1** 签名手写零依赖；
-    与腾讯云的 TC3-HMAC-SHA256 是两套算法，见 `sms.mjs` 的 `aliyunRpcRequest`/`aliyunEncode`）
-  · 模板 `SMS_512482436` 正文=「您的验证码：${code}，您正在进行身份验证，请勿泄露于他人！」
-    —— **只有 `code` 一个变量**（腾讯云是 `{1}{2}` 双变量按位传）。`TemplateParam` 传 JSON 串 `{"code":"..."}`。
-  · 🔴 **签名口径=「北京迪蜂科技有限公司」**，不是「自律蜜蜂」！该阿里云账号下 `QuerySmsSignList` 实测
-    **只有 1 条签名**（企业实名默认签名），「自律蜜蜂」不存在于阿里云（那是**腾讯云**侧的审核记录）→
-    用它会报 `isv.SMS_SIGNATURE_ILLEGAL`。想要品牌签名须先在阿里云重新申请（App 名称类需资质，1–2 工作日），
-    过审后**改一行 `SMS_SIGN_NAME` env 即可切换，无需改代码**。邮箱通道的「自律蜜蜂」（SMTP 发件名/邮件主题）不受影响。
-  · 凭据在 `deploy/gateway/.secrets.local`（`SMS_ALIYUN_ACCESS_KEY_ID/SECRET/TEMPLATE_CODE`，gitignore 覆盖）。
-    RAM 子账号最小权限（BSS 余量查询被拒=`NotAuthorized`，符合预期）。**已购短信包**。
-  · 部署时**只切短信、不开 `DBEE_PROD=1`**（避免连带触发 CORS 白名单硬要求与 Apple 收据只认 Production，
-    那是另一个变更面）。`SMS_PROVIDER=aliyun` 在非生产模式下完全合法（validate 只拦「生产+log」）。
-  · 端到端实证：`14:04:42 [SMS] aliyun 已发送 186****4728 BizId=116503693253882315^0` + 用户 Web 端实收短信 ✅
-  · 🔴 **`deploy-gateway.sh` 两处 `set -e` 静默退出陷阱已修**（`34a8216`）：①`[ -z "${SEC[$k]}" ] && MISS+=(...)`
-    凭据**齐全时**`[ -z ]` 返回 1 → 短路 → set -e 退出（「配置正确」反而是失败条件）②模板里注释态键的
-    `grep | head | cut` 管道触发 pipefail 返回 1。症状=**exit 1 且零输出**，`bash -x` 才能定位。
-    ⚠️ 排查此类脚本时**不要用 `bash -x > file`**（会把明文密钥写进追踪文件）。
-  · 相关 commit：`60fdeb9`（provider 实现）`2a1fab1`（按 API 实测修正变量/签名）`2c4a871`（口径统一）
-    `548a0dc`（gitignore 加固 `*.local.bak*`）`34a8216`（set -e 陷阱修复），均已推 origin/main。
-- **📱 短信通道切换链路（10-27 腾讯云侧补齐，aliyun 沿用同一套机制）**：`server/lib/sms.mjs` 的 tencent provider
-  （TC3-HMAC-SHA256 手写、零依赖）+ `config.validate` 门禁早已就绪，但**部署链路曾是缺口**——`deploy-gateway.sh`
-  只渲染 `SMS_MASTER_CODE`，腾讯云四项凭据在模板里是注释，**拿到凭据也传不进去**。10-27 已补齐：
-  ①模板四项凭据改占位符 `__SMS_TENCENT_*__` ②脚本注入 + 持久化到 `.secrets.local`（空值不落行，避免误判已配置）
-  ③环境变量覆盖 `SMS_PROVIDER`/`DBEE_PROD`/`CORS_ALLOWED_ORIGINS`/`APPLE_ALLOWED_ENVS`/`APPLE_SANDBOX`
-  ④tencent 模式**自动摘除 `SMS_MASTER_CODE`**（validate 规则「tencent+万能码=拒启」由脚本代劳）
-  ⑤缺凭据 fail-fast 前置校验 ⑥所有 sed 注入值经 `esc_sed` 转义（`#`/`&`/`\` 会静默写坏 env）。
-  🔴 **`DBEE_PROD=1` 的两个连带效应（最易踩）**：
-  · **Apple 收据自动收紧为只收 Production**（`appleAllowedEnvs` 默认值依赖 `cfgProd`，`appleSandbox` 同步变 false）
-    → iOS 未提审、沙盒验签没测完时**必须显式带 `APPLE_ALLOWED_ENVS=Sandbox,Production`**，否则 StoreKit 沙盒购买全失败；
-  · **CORS 未配白名单则拒绝所有跨域**（同源不受影响，当前 Web 走 nginx 同源反代故能跑；脚本已加提前拦截提示）。
-  切换命令与验收清单见 `docs/公章与对公账户到手-行动清单-2026-10-26.md` §一 P1。
-  模板正文约定：`您的验证码是{1}，{2}分钟内有效`（`TemplateParamSet` 按位传 `[code, otpTtlMin]`）。
-  ✅ **已入库 `e00387b`**（10-27 22:39，12 文件 +559/-311：部署脚本 + env 模板 + 5 份文档 + 记忆）。
-- **🔴 上架前生产安全体检与加固（10-26，`3186680`+`de9a3cc`，六项 ①–⑥ 已全部生效）**：10-26 凌晨服务器只读探查发现
-  **网关层完全未部署**（运行 10-23 骨架版，18/18 特征串探针全 OLD、`lib/iap.mjs` 缺失致 Apple 端点 404、LLM Pro 门控/
-  XFF 限流/dbproxy 资源管理均未上线）——数据库 0039/0040 已在库生效，但代码未部署。04:07 用户确认后按序完成部署：
-  密钥回收（`deploy/fetch-llm-secrets.py`）+ 模板固化（gateway.env.template 写死 Qwen 视觉键、API key 走占位符）+
-  提交 `3186680` + `deploy-gateway.sh` 一次成功 → **复验全绿**（18/18 探针 NEW、Apple verify/notifications 404→503
-  iap_not_configured 路由已注册、LLM 无 token 401、healthz 200）。六项状态：①RPC 信任边界✅②原子性✅③LLM 服务端授权✅
-  ④Apple 环境白名单（代码上线，生效前提=上架前配 APPLE_BUNDLE_ID/SHARED_SECRET）✅⑤XFF 信任边界+资源管理✅⑥honey_balance/
-  榜单缓存（DB 生效，前端待随下次发版触达）。
-  **新发现发布阻断项（V1.7.1 报告 `docs/V1.7.1-安全验证报告与发布实施计划-2026-10-26.md`）**：①SMS 万能码生产启用
-  （SMS_PROVIDER=log+24 位万能码，最高优先级，需实现 tencent()/aliyun() 真短信 provider）②5432 公网可连
-  （listen_addresses='*'+pg_hba 家庭宽带 IP 会漂移，生产只走回环应收回）③凭据泄露多处（探查脚本/临时文件/git 历史，
-  已加 `assert_no_leaked_secret()` 守卫 + 修 5 个脚本同类缺陷）④无 HTTPS+域名未解析（443 未监听，四端上架硬阻断）
-  ⑤服务器侧无备份定时器（日备靠本机自动化单点驱动）⑥P3：schema_migrations 0020/0030 重复登记、/tmp 无 noexec。
-  **V1.7.1 版本号现状**：package.json 1.7.1 / Android versionName 1.7.1 + versionCode 12 / iOS MARKETING_VERSION 1.7.1（2 处）+
-  CURRENT_PROJECT_VERSION 10 / mini 0.1.0。
-- **🔴 支付链路（已落地，10-23 `9e1db43`）**：Apple 验签**已从 pg_net 空壳改为 Node 网关**（`server/lib/iap.mjs` 479 行）：
-  verifyReceipt 验签（21007/21008 沙盒自动切换、bundle_id 钉扎、transaction_id 全服幂等、恢复购买）+
-  App Store Server Notifications V2 webhook（x5c 证书链钉扎验签、SUBSCRIBED/DID_RENEW 续订、REFUND/REVOKE 撤销、
-  全量落库留痕）+ 根证书 `AppleRootCA-G3.cer` 入库钉扎（指纹与官方一致）。`0037-apple-iap-settlement.sql`：
-  apple_transactions 幂等表 + apple_notifications 留痕表 + settle/revoke/log 三个 SECURITY DEFINER 函数
-  （EXECUTE 仅 dbee_app，authenticated/anon/dbee_web 三层全堵）。`app.mjs` 注册 `/.cloud/payment/apple/{verify,notifications}`
-  （webhook 豁免 IP 限流防 Apple 429 重试风暴）；`api.ts` verifyPaymentOrder iOS 优先走网关、404/503 回退 RPC。
-  自测：`tools/iap-selftest.mjs` 41 项端到端断言全过、gateway-selftest 219 项无回归。**旧缺口（伪造凭证白拿权益）已封**。
-- **🔴 数据库迁移全面审计（10-23，`ef12b95`+`9cfa31c`）→ P0 越权漏洞已修复闭环**：33 个编号 = ✅28 生效 +
-  🔴3 失效（0015 部分失效可白嫖终身会员 / 0016 CHECK 全缺 / 0026 newbie 未生效 / 0027 邀请无日上限）+
-  🗑️1 弃用（0029 pg_net 不可用）。根因四：①生成器只输出 GRANT 从不 REVOKE（追加语义，0002 遗留写权限没撤）
-  ②不抓 pg_constraint（CHECK/外键必丢）③覆盖式迁移无法用存在性判版本 ④无迁移追踪表。
-  **修复**：`0034-schema-migrations.sql`（追踪表）+ `0035-security-and-integrity.sql`（收 2 表写权限 + 补 10 CHECK +
-  grant_honey newbie + 作废存量 bonus + bind_invite daily_limit）+ `0036-data-sync-from-cloud.sql`；
-  前端配套 `consumeAiQuota` fail-closed（`e1795f4`，弃静默 catch{} 直写 ai_usage 的 fail-open 漏洞）+
-  三端 UI token 化（`cbf0077`）。工具 `tools/migration-audit.sh` 固化三类探针（存在性/版本性/可利用性）。
-  **执行顺序铁律：先修工具再修数据（P0-3/P0-4 → P0-1 → P0-2），否则镜像重建会冲掉成果**。
-  ⚠️ 存量 7 行 `source='newbie'` bonus 处置待拍板（A 作废推荐 / B 补偿保留 / C 连数据清）。
-- **合规现状（已核查，优于旧文档记载）**：用户协议/隐私政策/免责声明**三篇已存在且已挂路由**
-  （`src/content/legal.ts` 230 行 + `pages/LegalPage.tsx` + `components/SiteFooter.tsx`，备案号走
-  `VITE_ICP_BEIAN` 环境变量渲染，未设置时该行不渲染）→ **合规页面工作量 ≈ 0**，只等备案号下来填变量；
-  `REDEEM_CODES` 硬编码兑换码**已从 src/ 删除**（Apple 3.1.1 硬伤已消）；`restorePurchases()` 已接（3.1.2 合规）。
-  服务端 `redeem_by_code` RPC 仍在，不影响 Apple 审核，Web/Android 端可继续用兑换码运营。
-- **额度规则（已定，权威值在 `packages/shared/src/constants/index.ts`）**：`FREE_DAILY_AI=3` +
-  `AI_REDEEM_DAILY_LIMIT=2`（每日 3 次免费识别 + 2 次积分兑换 50 分/次，用尽只能 Pro）。新手 150 积分
-  （grantHoney 'newbie'）；连续打卡每满 7 天送 2 次识别（grantPhotoBonus 'streak7'，7/14/21 循环）。
-  迁移 0025（兑换上限 5→2）+ 0026（newbie 发积分、作废存量 newbie 识别 bonus）。
-  ⚠️ `docs/AI成本与配额.md:101`「每天 10 次」**已过时**，按 3+2 重算。
-- **识别自动保存（已收敛）**：识别成功即 settleDraft 自动落库；该餐已有记录弹「覆盖/追加/取消」，
-  无记录直接落库关闭，另有切页兜底；不做撤销等过度设计。
-- **多端小程序**：Taro 4.3.0（React+TS）双工程 + `packages/shared`，微信/支付宝/抖音三端编译通过；
-  已一比一复刻主工程 11 页（含 coach / paywall / legal），tsc 0 错。受限能力（支付/健康步数/分享卡 canvas）
-  诚实引导占位。`file:` 依赖路径：主工程 `file:packages/shared`、mini `file:../packages/shared`；
-  mini tsconfig 需 `moduleResolution:"bundler"`（否则 `@dbee/shared/cloud-sdk` 子路径导不出）。
-- **原生 App**：Capacitor 8.5.3；阶段 0 解耦 ✅、Android 全过 ✅；**iOS 首次编译已打通（10-24）并真机测试**
-  （origin-proxy / health / iap 三自研 Swift 插件 + @capacitor/camera 均编译通过；三处 iOS 独有 bug 已修，见「iOS 首次真机编译」条）。
-  iOS 侧 StoreKit 测试环境已备好（`DbeeProducts.storekit` + 共享 scheme），`cap sync ios` 已重跑 5 插件识别正常。
-- **iOS 首次真机编译已打通（10-24）**：根因层层拨开——「权限问题」→「xcrun 路径损坏」→ **真凶 = Xcode 只装了 3.8G 坏壳**
-  （完整 Xcode 27 应 ≥15GB，且 `usr/bin/xcrun` 根本不存在；`xcodebuild -version` 报「Xcode 27.1」实为 CLT 随版本号对齐，
-  极具迷惑性）。**判定铁律：验证 Xcode 完好 = `du -sh` ≥15GB + `xcodebuild -showsdks` 列出 iphoneos**，不能只看 `-version`。
-  删坏壳重装完整 Xcode 后：`cap sync ios`（5 插件）→ SPM 解析 → 编译通过 → 真机功能测试。**三处 iOS 独有 bug 已修**：
-  ①拍照无反应（缺 `NSPhotoLibraryAddUsageDescription`，前端 catch 静默吞 reject 掩盖了根因）②拍照后没进识别
-  （`resultType:'DataUrl'` 大小写 bug，iOS 精确匹配失败回退 base64，Android 因 toUpperCase 幸免）③Bundle ID 冲突
-  （`com.dbee.app` 被抢注 → `cn.dbeehealth.app` 不可用 → 定案 `cn.com.dbee.app`）。**postinstall 自动构建 shared 已落地**（`d3fb8cc`），
-  新 clone 一条 `npm ci` 直达，不再漏步。剩余：ASC 配 3 商品 + IAP capability + webhook → iOS 提审。
-  正确顺序（已固化入手册）：`npm ci`（含 postinstall 构建 shared）→ `npm run build`（vite）→ `npx cap sync ios` → Cmd+R。
-- **健康数据源**：只读系统健康平台，不直连手环；HealthKit 读授权不可探测→插件只报 completed，连接真源=
-  云端 health_connected，重连入口常驻「我的>健康数据源」；`effectiveBurnKcal=max(burnKcal,activityKcal)` 不叠加。
-  华为 Health Kit 阶段 3a 已落地（前端同构 + DbeeHealth 插件 Android 反射骨架，零 HMS 编译依赖）；
-  小米官方数据服务 SDK 已纳入，`src/lib/health/android.ts` 白名单 `{huawei, xiaomi}`（新增 vivo/OPPO 只改白名单）。
-  UI 三机型一套（仅 label 与排查路径切换），品牌识别覆盖 HUAWEI/HONOR/HarmonyOS、Xiaomi/Redmi/MI/MIUI/HyperOS。
-  资质未就绪时插件返回 `reason=not_ready`，前端提示「接入正在申请资质」。**主体已注册（10-22），
-  Android 端企业开发者注册已完成（用户 10-23 告知）**——华为/小米企业入驻可启动。
-  ⚠️ 注意区分：**「企业开发者账号已注册」≠「应用已上架华为应用市场」**，而华为 Health Kit 的硬门槛是
-  **后者（上架）**，另需软著 + App 备案。所以 Health Kit 数据通道尚未解锁，仍需走上架流程。
-- **会员/IAP**：三档 free/pro/lifetime（¥18/¥128/¥328）；Apple 个人开发者账号已通过（10-20）；
-  **Android 企业开发者账号已注册（10-23）→ Google Play 支付线解锁**（`payment_orders.provider` 是 text
-  且**无 CHECK 约束**，加 `'google'` 无需改表结构，只需补网关验签分支）。
-  前端 `checkout()` + `restorePurchases()`（3.1.2 合规）已接；服务端 `0029-iap-verify-receipt.sql`
-  **已实测永久作废**（服务器 `pg_available_extensions` 里 `pg_net` 不可用=0，库内外呼方案走不通）→
-  Apple 验签**已在网关落地**（`server/lib/iap.mjs` + `0037` 核销迁移，见上方「支付链路」条，10-23 `9e1db43`）。
-  **iOS 本地 StoreKit 测试环境已就绪**（`DbeeProducts.storekit` 3 商品 zh_CN 本地化 + 共享 scheme，
-  免 ASC 建商品即可测 getProducts/purchase/restore 客户端链路；付费墙已接商店价格拉取 `dfa3191`）。
-  剩余步骤：Mac 编译插件 → ASC 配商品（dbee_pro_monthly/yearly/lifetime）→ Xcode 开 IAP capability →
-  App Store Server Notifications V2 webhook 指向网关 → iOS 提审。
-  ⚠️ **Apple/Google 验签须排在 0034/0035 收权之后**（已满足，0035 已落地收紧写 entitlements 唯一通道=服务端函数）。
-- **微信相关**：主体已注册，**暂缓状态可解除**（`src/lib/wechat.ts` 的 `WECHAT_LOGIN_ENABLED=false`
-  改回 true 即恢复，10-15 已按「零代码改造」设计）。前置链：微信开放平台企业认证（需营业执照，
-  数天–2 周）→ 移动应用 AppID + UnionID → 注入 `VITE_WECHAT_APPID`（iOS 另需
-  `VITE_WECHAT_UNIVERSAL_LINK` = 已备案域名 + Associated Domains + apple-app-site-association）→
-  改 `NATIVE_CODE_EXCHANGE_SUPPORTED=true`。⚠️ App 内微信登录还有**云端能力缺口**：SDK 的
-  `signInWithWechat(code,appid)` 只走小程序 `jscode2session`，移动应用 code 需 `sns/oauth2/access_token`，
-  两接口不可混用——自建网关后此缺口可自行补齐（不再受制于云方）。快速兜底 = 路线 B
-  （系统浏览器 + 云 Relay 扫码 + Universal Link 回跳，不需移动应用资质，前置仅备案+HTTPS）。
-  ⚠️ iOS 的 `WechatOpenSDK` 来自第三方 SPM 镜像 `github.com/yanyin1986/WechatOpenSDK`（腾讯官方不经
-  SPM 分发），上线前须核对 tag 或改官方 XCFramework。小程序 appid `wxb7c7122de9c3ab1f` 需做主体变更
-  （趁未上线赶紧变，变更会使老用户 openid 失效需重新关联）。
-- **下一步（泳道 A 已闭环 ✅，Apple 验签已落地 ✅，iOS 首次真机编译已打通 ✅（10-24），V1.7.1/V1.7.2 Web 已发布 ✅（10-28），iOS V1.7.3 已发布 + 上架就绪核查 ✅（10-29），自建网关密码登录已修复 ✅（10-29），合规 P0 多端一致性已闭环 ✅（10-29），阿里云真短信已上线 ✅（10-29），七项安全修复①③④⑤⑦已落地 ✅（10-27）、①④已部署上线，版本已 bump V1.7.2 ✅，双域名代码侧落地 ✅（10-28），ASC 产品页填报包/商店截图链路已就绪 ✅（10-28），App Store 创意素材出图已就绪 ✅（10-29），iOS/四端代码审查整改 #1~#5 已闭环 ✅（10-30，7 commit））**：
-  ~~①服务器前置修复~~ ✅ ~~②部署 Node 网关~~ ✅ ~~③deploy-postgrest.sh~~ ✅ ~~④A4 切 nginx + 8 项回归~~ ✅
-  ~~⑥Apple 验签落地网关 + 0037 核销~~ ✅（10-23 `9e1db43`，iap-selftest 41 断言全绿）；~~上架前安全体检 ①–⑥~~ ✅（10-26 全部生效）；
-  ⑤**A5 Mac mini 首次构建 iOS** ✅（10-24 已编译通过并真机测试，三处 iOS 独有 bug 已修）；
-  🔴**七项安全修复（10-27）**：① JWT 强化 ✅（迁移 0042 已落库，access TTL 30min + token_version 强制下线）
-  ④ appleSandbox 生产默认关 ✅ —— **①④ 已部署上线 + 端到端验证通过**（线上 access token `ver=1`/`TTL=1800s`、登出后旧 token 立即 401）；
-  ③ LLM 视觉 fail-closed 503 + 文本独立降额 50/日 ✅ ⑤ functions.sql 同步 0039 事实验证版 ✅ ⑦ CORS Origin 白名单 ✅
-  + email 验证码通道（163 SMTP provider，465/SSL）✅ —— **③⑤⑦+email 代码已就位 + 自测 300/0 全绿，待部署上线**（与①④同批或下次）；
-  卡资质：⑥ 万能码切真短信 —— 🟢 **已上线（10-29，`SMS_PROVIDER=aliyun`，万能码已摘除，见「短信通道已上线」条）**。
-  随后主线（上架前）：**Mac/Xcode 真机实证 #1~#5 原生改动**（HealthKit status 分支 / OriginProxy cancel 双端 / LocalNotifications 真机推送 + iOS 开 Push Notifications capability / StoreKit 沙盒退款续订断网杀 App 七项矩阵）→ **ASC 配 3 商品（`dbee_pro_monthly`/`yearly`/`dbee_lifetime`）+ 开 IAP capability + 填收款 +
-  App Store Server Notifications V2 webhook 配指向网关 + 配 APPLE_BUNDLE_ID/SHARED_SECRET/SANDBOX → iOS 提审**；
-  资质到货后（公章 10-27 已到手、对公账户 10-28）→ 小程序主体变更 / 短信签约 / 商户号 / ASC 付费协议（iOS 沙盒前提）；
-  🔴**上架前未决阻断（见「上架前生产安全体检」条）**：~~①SMS 真短信 provider~~ 🟢 **已上线（10-29 `SMS_PROVIDER=aliyun`，见「短信通道已上线」条）**
-  ②5432 收回回环 ③凭据轮换 ④HTTPS+域名解析（四端上架硬阻断，iOS ATS/webhook/微信支付宝抖音合法域名）；
-  ⑦~~域名过户个人→企业~~ **✅ 已完成（10-27，WHOIS Registrant = 北京迪蜂科技有限公司）**；ICP 备案主体变更
-  （**备案路径已定 = 注销重备**（10-27 `be2267f`；🔴 **备案省份 = 北京**，不在「个人→企业」直接变更白名单；
-  ⚠️ 北京管局新规：法人非京籍须**北京居住证或连续 6 个月北京社保**，主体负责人必须为法定代表人
-  → **先确认法人户籍材料再提交注销**）；注销后域名停解析、备案期不可加解析，工信部短信核验 **24h 内必做**；
-  A4 已做完且 IP 直连验证通过，可随时注销不停业务）；
-  ⑧**软著登记**（30–60 工作日，周期最长）—— 🔴 **10-28 结论翻转：不可盲目提交**，卡在「AI 条款口径判断」
-  （新规须手抄承诺未用 AI 编写代码/文档/申报材料，违者入失信名单+个人征信；本项目为 AI 深度协作开发）；
-  且**鉴别材料此前并不存在**（旧文档称已备好有误，已纠正）→ 先致电版权中心问清口径，再决定提交；
-  说明书须用户亲自撰写（禁止 AI 代写）。素材包 + 机械排版工具已就绪，见「软著 AI 条款红线」条 +
-  `docs/软著登记-事实素材包与合规红线-2026-10-28.md` + `tools/gen-softcopyright-source.py`。
-  后接 App 备案（7–20 工作日，需软著）+ 算法备案；
-  ⑨小程序主体变更（**流程已查证、可免公证**，详见上方专条；趁未上线尽早做）；
-  ⑩华为/小米企业入驻后替换 dbee-health 插件方法体并真机验收（小米入驻审核已完成 10-26，下一步=运动健康数据服务申请）；⑪分享卡片 O-3 落地（零资质依赖传播抓手）；
-  ⑫**实测 D-Bee 自己的 MAPE**（竞品分析最后缺口，文案能否说「准」的依据）；⑬彩页按新定位重写（现基于 V1.4 已落后）；
-  ⑭Android 真机复测 V1.7.0 APK（已重打 V1.7.1 vc12 待真机验收，V1.7.2 vc13 已 bump 待重打）；⑮小程序三端真机联调；
-  ⑯**可选安全加固**：PG `listen_addresses` 收回回环 / 腾讯云安全组关 5432 入站
-  （现状 PG 监听 0.0.0.0，仅靠 pg_hba 白名单兜底，ufw inactive）。
-  ⚠️ **老用户迁移三路径待拍板**（推荐 A：判定为开发数据不迁移，小程序与 App 均未上线）。
-- **待拍板（原 6 项已全部落定，剩余不阻塞开发）**：①**是否申请 ICP 经营许可证 = 是否现在背 3 人社保**
-  （已建议**方案 A：暂不办，先 iOS IAP 验证付费**，等有付费数据再决定）；②Apple 账号先用**个人**上架抢时间
-  还是等企业账号（建议**先申请 D-U-N-S 占位**、个人账号推进构建，证下来再决定切不切主体）；
-  ③**云库长期去留**（自托管彻底替代 / 回迁 / 双写）；④**老用户迁移三路径**（推荐 A：判定为开发数据不迁移）；
-  ⑤**存量 7 行 `source='newbie'` bonus 处置**（A 作废推荐 / B 补偿保留 / C 连数据清，涉及删数据等确认）。
-  🔴**新增（10-26 体检，上架前须拍板）**：~~⑥**SMS 真短信通道**~~ 🟢 **已上线（10-29，`SMS_PROVIDER=aliyun`，万能码已摘除）**：
-  详见「短信通道已上线」条；⑦**5432 是否收回回环**（生产链路走回环，无需对外）
-  ⑧**凭据轮换**（DeepSeek key / SSH 密码 / dbee_app 密码曾入 git 历史或明文出现）。
-  ~~⑨邮箱登录去留~~ → **已落定（10-27）**：接 email 通道（163 SMTP provider `5821dbe`，零依赖 node:tls 手写，465/SSL + 授权码），联系邮箱统一 163（`be2267f`）。
-  🔴**新增（10-29）**：⑩**小程序是否回迁自托管统一后端**——现在小程序走 WorkBuddy 云、主端走自建 PG，两库数据不互通；一旦回迁须同步改 `mini/src/lib/cloud.ts` 与 `mini/src/content/legal.ts`（否则又变虚假公示）。⑪**演示账户两套数据面**——iOS 提审用云库账户、web 用自建账户，iOS 切自建库后须在新库重建演示账户并预置演示数据（否则审核员登录空账户，Guideline 2.1 风险）。
-  ~~④经营范围 ⑤注册资本 ⑥对公账户 ⑦小程序主体~~ → **已全部答复**（④⑤✅ 满足、⑥在办下周完成、⑦需变更且流程已查证）。
-  长期待办：华为应用市场上架（~~企业认证~~已完成✅ + 软著 + App备案）、营业执照已办结✅。
+**下一步（上架前主线）**
+1. **Mac/Xcode 真机实证整改 #1~#5 的原生改动**：HealthKit status 分支 / OriginProxy cancel 双端 / LocalNotifications 真机推送（+ iOS 开 Push Notifications capability）/ StoreKit 沙盒七项矩阵（退款、续订、断网、杀 App）。
+2. **ASC 配 3 商品**（`dbee_pro_monthly` / `dbee_pro_yearly` / `dbee_lifetime`）+ 开 IAP capability + 填收款 + App Store Server Notifications V2 webhook 指向 `https://d-bee.cn` + 配 `APPLE_BUNDLE_ID=cn.com.dbee.app` / `SHARED_SECRET` / `APPLE_ALLOWED_ENVS` → **iOS 提审**（提审需备案号）。
+3. **ICP 备案**：路径已定 = 注销重备（北京不在「个人→企业」直接变更白名单）；法人是京籍 → 无需居住证/社保；腾讯云个人实名不阻断（官方《备案限制说明》允许法人为企业备案，营销页口径相反，以官方文档 + 控制台实际可选性为准）。**A4 已做完且 IP 直连验证通过，可随时注销不停业务**；工信部短信核验 24h 内必做。
+4. 资质到货后（公章 10-27 已到手、对公账户 10-28 已开立）→ 小程序主体变更 / 短信签约 / 商户号 / ASC 付费协议。
+5. 上架前未决阻断：**5432 收回回环** / **凭据轮换** / **HTTPS + 域名解析**（四端上架硬阻断：iOS ATS、webhook、微信支付宝抖音合法域名）。
+6. 其余：软著（见待拍板）→ App 备案（7–20 工作日，需软著）→ 算法备案；小程序主体变更（可免公证，趁未上线尽早做）；华为/小米企业入驻后替换 dbee-health 插件方法体并真机验收（小米入驻审核已完成，下一步=运动健康数据服务申请）；分享卡片 O-3；**实测 D-Bee 自己的 MAPE**（竞品分析最后缺口，文案能否说「准」的依据）；彩页按新定位重写；Android 真机复测；小程序三端真机联调。
+
+**待拍板（不阻塞开发）**
+- 🔴 **软著 AI 条款红线（10-28 查实，最重要）**：2026-03-15 版权中心新规要求经办人**亲笔手抄**承诺「未使用 AI 开发编写代码、撰写文档或生成登记申请材料」，违者列入**版权登记失信名单 + 个人征信记录**；申报文档**不得由 AI 代写**。D-Bee 是 AI 深度协作开发的（git 历史即证据）→ **不可盲目提交，须先致电版权中心问清「AI 辅助编程」口径**；说明书须用户亲自撰写。另：旧文档称「鉴别材料已备好」**是错的**（全仓检索确认不存在，已纠正）。素材包 + 机械排版工具已就绪：`docs/软著登记-事实素材包与合规红线-2026-10-28.md` + `tools/gen-softcopyright-source.py`（源程序 27,751 行/135 文件）。
+- ①是否申请 ICP 经营许可证 = 是否现在背「3 人社保」（已建议**方案 A：暂不办，先靠 iOS IAP 验证付费意愿**，零固定成本，有真实付费数据再决定）。
+- ②Apple 账号先用**个人**上架抢时间还是等企业账号（建议先申请 D-U-N-S 占位、个人账号推进构建）。
+- ③云库长期去留（自托管彻底替代 / 回迁 / 双写）。
+- ④老用户迁移三路径（推荐 A：判定为开发数据不迁移，小程序与 App 均未上线）。
+- ⑤存量 7 行 `source='newbie'` bonus 处置（A 作废推荐 / B 补偿保留 / C 连数据清）。
+- ⑥小程序是否回迁自托管统一后端（现小程序走 WorkBuddy 云、主端走自建 PG，两库数据不互通；回迁须同步改 `mini/src/lib/cloud.ts` 与 `mini/src/content/legal.ts`，否则又变虚假公示）。
+- ⑦演示账户两套数据面（iOS 提审用云库账户、web 用自建账户；iOS 切自建库后须在新库重建演示账户并预置演示数据，否则审核员登录空账户 → Guideline 2.1 风险）。
+- ⚠️ **两个安全待办（用户处理）**：①重置 DeepSeek API key（本次对话中明文出现过）②轮换 SSH 密码与 dbee_app 数据库密码（二者此前已提交进 GitHub 历史，已脱敏 + 停止扩散，但历史提交仍可检出）。**轮换密码优先于重写历史**（`git filter-repo` + force push 属破坏性操作，未擅自执行）。
+
+**版本/git**：最新 commit `a14bd39`（docs(ios): 修复「真机白屏」误导诊断 + 更正 Bundle ID 口径）；**`a14bd39` 及本轮口径核查改动（`tools/android-cdp.py` + 12 份 docs + 记忆精简）待推送 origin/main**（10-30 晚两次 push 遇网络错误 `schannel handshake` / `CONNECT 502`，未盲目重试）。历史 commit 流水一律以 `git log` 为准，不在记忆中重复记录。
 
 ## 三条主线
 
@@ -355,156 +46,110 @@
 
 ## 已定技术路线（勿再讨论）
 
-Capacitor 8.5.3 混合壳；React18 + Vite5 + TS；appId `cn.com.dbee.app`（**2026-10-24 定案，原 `com.dbee.app` 被 Apple 抢注、
-`com.d-bee.app` 因 Android 禁连字符弃用**；域名与 Bundle ID 是两个独立体系互不影响——10-28 双域名定案后 Web 端域名 = `d-bee.cn`，Bundle ID 不变）；Windows 出 Android、Mac mini M4 出 iOS；
-Node≥22 / JDK21 / Xcode≥26。健康数据源只读系统平台（iOS HealthKit / Android Health Connect / 华为 Health Kit
-需先上架华为市场 / 小米官方 SDK），详见 `docs/健康数据源方案.md`。
+Capacitor 8.5.3 混合壳；React18 + Vite5 + TS；appId `cn.com.dbee.app`；Windows 出 Android、Mac mini M4 出 iOS；Node≥22 / JDK21 / Xcode≥26。健康数据源只读系统平台（iOS HealthKit / Android Health Connect / 华为 Health Kit 需先上架华为市场 / 小米官方 SDK），详见 `docs/健康数据源方案.md`。
+**6 项决策已拍板（10-22）**：①主体=有限责任公司 ②未提交产物入库 ③LLM=DeepSeek ④短信=先日志+万能码（已升级为 aliyun 真短信）⑤网关语言=Node（`server/index.mjs`）⑥Apple 验签=放 Node 网关（**弃 `0029` 的 pg_net 方案**）。决策原则：便捷、技术可控、价格低廉、完全对比竞品。全部凭据只存本地 `.env`（gitignore 覆盖），未进 git。完整计划见 `docs/主体注册后-实施计划.md`。
 
 ## 架构铁律
 
-1. 平台差异只走 `src/lib/` 抽象层（platform/kv/capture/scan/share）；抽象层运行时探测 `window.Capacitor`，
-   **不 import Capacitor 包**（Web 零新增依赖）。
+1. 平台差异只走 `src/lib/` 抽象层（platform/kv/capture/scan/share）；抽象层运行时探测 `window.Capacitor`，**不 import Capacitor 包**（Web 零新增依赖）。
 2. `cloudConfig.ts` 零项目内依赖（最早求值），勿引入循环引用。
-3. 云端请求走 `OriginProxy` 原生插件（注入 Origin），注入点 = 云 SDK `options.fetch`（`src/cloud.ts`），
-   **勿 patch window.fetch**。Origin 钉死三处：lib/originProxy.ts、Java/Swift、Nginx，换域名三处同步。
+3. 云端请求走 `OriginProxy` 原生插件（注入 Origin），注入点 = 云 SDK `options.fetch`（`src/cloud.ts`），**勿 patch window.fetch**。Origin 钉死三处：lib/originProxy.ts、Java/Swift、Nginx，换域名三处同步。
 4. 输入校验走 `src/lib/validate.ts`（过滤→夹回→门禁）；错误文案统一 `src/lib/errmsg.ts`（`zh()`/`errText()`）。
-5. **StoreKit 2 铁律：服务端核销成功才 `finish()`**（10-30 整改 #2）。提前 finish = 核销断网/杀 App 时
-   交易被 StoreKit 清除、权益永久丢失且不可恢复（用户已付款）。待核销记录必须绑定 owner 并经
-   `@capacitor/preferences` 持久化；带 `revocationDate` 的退款交易只 finish、绝不送核销（否则重发已退款权益）。
-   回归入口 `npm run test:iap`（客户端 9 场景 + 服务端 47 断言）。
-6. **原生能力必须返回显式状态，禁止把失败吞成「0/空」**（10-30 整改 #5）。HealthKit `fetchToday` 现返回
-   `status`（ok/empty/denied/error/unavailable/not_ready/no_plugin，见 `src/lib/health/types.ts`），
-   调用方只在 `isUsableHealthStatus(status)` 时写回数值——否则「授权被拒返回的 0」会把用户已有步数抹掉。
-   新增原生方法一律照此办：状态枚举 + 旧版插件的 `normalize*` 兼容（Web 包常先发、原生包后发）。
-7. **弹窗无障碍统一走 `useModalA11y(onClose)`**（10-30 整改 #4）：焦点陷阱 + Esc + 关闭后焦点归还 +
-   body 滚动锁 + `aria-modal`。新弹窗不要再各写一套 useEffect。`role="button"` 的 div 用
-   `src/lib/a11y.ts` 的 `onActivateKey` 补 Enter/Space，**不要改成原生 `<button>`**（行内嵌着导出/取消
-   等原生按钮，会造成按钮套按钮的非法嵌套）。对比度改动须按 WCAG 相对亮度精算，不要目测调色。
-8. **iOS 付费墙禁止用硬编码价兜底**（10-30 整改 #5）：商店价拉取失败必须禁用购买按钮 + 给重试，
-   价格位显示「—」。商店价是唯一合法成交价，显示与实际扣款不符的静态价可能被审核认定为价格欺诈（3.1.2）。
-9. **OriginProxy 取消：主动中断一律归一为 End 而非 Error**（10-30 整改 #5），且取消异常**绝不回退缓冲重发**
-   （会重复发请求、重复扣 LLM token）。在途流注册表必须在 finally/defer 里移除，否则随请求数无限增长。
-10. 🔴 **打原生包绝不能用 `npm run build`**（10-30 22:00 实测踩中 → iPhone 真机纯白屏、无任何报错）。
-    `npm run build` 是 Web 产物（MODE=production），而铁律 #1 的护栏
-    `if (import.meta.env.PROD && mode !== 'native-release' && mode !== 'native-internal') throw`
-    在 production 下**恒真 → 被死代码消除成无条件 `throw`**（产物里 `function b5(){throw new Error(...)}`）。
-    `publicConfig` 是**模块级常量**（`endpoint: resolveEndpoint()` 在 import 时求值），iOS 上 `detectNative()`
-    恒真 → **JS 首行即炸，React 连 PrivacyGate 都挂不上 → 白屏**。CSS 已加载故呈米白色（`#FBF8F1`），
-    极易被误判为「public/ 没同步」。**正确命令二选一**：内测 `VITE_ALLOW_CLOUD_NATIVE=true npm run build:native:internal`；
-    上架 `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native`。
-    **产物自检**（30 秒识破白屏包）：`grep -c "禁止直接复用 Web 产物" dist/assets/index-*.js` → 必须 `0`，≥1 即白屏包。
-    ⚠️ 教训：`ios/App/App/public` 是 gitignore 的（`ios/.gitignore:4`），Mac 上的包内容**完全由 `cap sync` 决定**，
-    构建 mode 选错会被忠实同步进去；而 `docs/今晚-Mac编译执行手册.md` 旧版（V1.7.0 时写）教的正是 `npm run build`，
-    与整改 #1 新增的护栏脱节 —— **代码侧加了构建期护栏，文档侧必须同步改，否则护栏只会变成「无声白屏」**。
+5. **StoreKit 2 铁律：服务端核销成功才 `finish()`**（10-30 整改 #2）。提前 finish = 核销断网/杀 App 时交易被 StoreKit 清除、权益永久丢失且不可恢复（用户已付款）。待核销记录必须绑定 owner 并经 `@capacitor/preferences` 持久化；带 `revocationDate` 的退款交易只 finish、绝不送核销（否则重发已退款权益）。回归入口 `npm run test:iap`。
+6. **原生能力必须返回显式状态，禁止把失败吞成「0/空」**（10-30 整改 #5）。HealthKit `fetchToday` 返回 `status`（ok/empty/denied/error/unavailable/not_ready/no_plugin，见 `src/lib/health/types.ts`），调用方只在 `isUsableHealthStatus(status)` 时写回数值——否则「授权被拒返回的 0」会把用户已有步数抹掉。新增原生方法一律照此办：状态枚举 + 旧版插件的 `normalize*` 兼容（Web 包常先发、原生包后发）。
+7. **弹窗无障碍统一走 `useModalA11y(onClose)`**（10-30 整改 #4）：焦点陷阱 + Esc + 关闭后焦点归还 + body 滚动锁 + `aria-modal`。新弹窗不要再各写一套 useEffect。`role="button"` 的 div 用 `src/lib/a11y.ts` 的 `onActivateKey` 补 Enter/Space，**不要改成原生 `<button>`**（行内嵌着导出/取消等原生按钮，会造成按钮套按钮的非法嵌套）。对比度改动须按 WCAG 相对亮度精算，不要目测调色。
+8. **iOS 付费墙禁止用硬编码价兜底**（10-30 整改 #5）：商店价拉取失败必须禁用购买按钮 + 给重试，价格位显示「—」。商店价是唯一合法成交价，显示与实际扣款不符的静态价可能被审核认定为价格欺诈（3.1.2）。
+9. **OriginProxy 取消：主动中断一律归一为 End 而非 Error**（10-30 整改 #5），且取消异常**绝不回退缓冲重发**（会重复发请求、重复扣 LLM token）。在途流注册表必须在 finally/defer 里移除，否则随请求数无限增长。
+10. 🔴 **打原生包绝不能用 `npm run build`**（10-30 实测踩中 → iPhone 真机纯白屏、无任何报错）。
+    `npm run build` 是 Web 产物（MODE=production），铁律 #1 的护栏 `if (import.meta.env.PROD && mode !== 'native-release' && mode !== 'native-internal') throw` 在 production 下**恒真 → 被死代码消除成无条件 `throw`**；`publicConfig` 是**模块级常量**（import 时求值），iOS 上 `detectNative()` 恒真 → **JS 首行即炸，React 连 PrivacyGate 都挂不上 → 白屏**。CSS 已加载故呈米白色（`#FBF8F1`），极易被误判为「public/ 没同步」。**正确命令二选一**：内测 `VITE_ALLOW_CLOUD_NATIVE=true npm run build:native:internal`；上架 `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native`。**产物自检**（30 秒识破白屏包）：`grep -c "禁止直接复用 Web 产物" dist/assets/index-*.js` → 必须 `0`，≥1 即白屏包。
+    ⚠️ 教训一：`ios/App/App/public` 是 gitignore 的，Mac 上的包内容**完全由 `cap sync` 决定**，构建 mode 选错会被忠实同步进去——**代码侧加了构建期护栏，文档侧必须同步改，否则护栏只会变成「无声白屏」**。
+    ⚠️ 教训二（10-31）：**误诊会自我强化**——首轮依据过期手册建议「重跑 `npm run build && cap sync`」，照做必然复现同一白屏。诊断构建类问题必须**真实构建两种产物做对照**（看护栏函数是被消除成 `throw` 还是 `return <endpoint>`），不能只读文档下结论。
 
 ## 云数据库安全铁律（最高优先级）
 
 - 发权益/积分/额度的函数必须 SECURITY DEFINER + 入参白名单；审计用 `pg_get_functiondef` 看真实 DDL。
-- 光有函数白名单不够：**涉权益/积分/额度表必须 REVOKE authenticated 的 INSERT/UPDATE/DELETE**（RLS 只限
-  「自己的行」，挡不住直写）。已封堵：honey_ledger / entitlements / ai_usage / badges 仅 SELECT；
-  拍照额度走预占 token（consume/release）。`isPro`：pro 档缺 `pro_until` 判已过期（防永久会员）。
+- 光有函数白名单不够：**涉权益/积分/额度表必须 REVOKE authenticated 的 INSERT/UPDATE/DELETE**（RLS 只限「自己的行」，挡不住直写）。已封堵：honey_ledger / entitlements / ai_usage / badges 仅 SELECT；拍照额度走预占 token（consume/release）。`isPro`：pro 档缺 `pro_until` 判已过期（防永久会员）。
 - 0016 已加 10 条 CHECK 约束（profiles/meal_entries/water_logs/exercise_logs 数值边界）。
+- **数据库迁移审计结论（10-23）**：33 个编号 = 28 生效 + 3 失效（0015 部分失效可白嫖终身会员 / 0016 CHECK 全缺 / 0026 newbie 未生效 / 0027 邀请无日上限）+ 1 弃用（0029 pg_net 不可用）。根因：生成器只输出 GRANT 从不 REVOKE（追加语义）/ 不抓 pg_constraint / 覆盖式迁移无法用存在性判版本 / 无迁移追踪表。已修：`0034-schema-migrations.sql`（追踪表）+ `0035-security-and-integrity.sql`（收 2 表写权限 + 补 10 CHECK + grant_honey newbie + bind_invite daily_limit）+ `0036-data-sync-from-cloud.sql`；前端 `consumeAiQuota` fail-closed（弃静默 `catch{}` 直写 ai_usage 的 fail-open 漏洞）+ 三端 UI token 化。工具 `tools/migration-audit.sh` 固化三类探针。**执行顺序铁律：先修工具再修数据（P0-3/P0-4 → P0-1 → P0-2），否则镜像重建会冲掉成果**。
 
 ## 关键坑（一行版）
 
 endpoint 同源/绝对 HTTPS；`CapacitorHttp.enabled=true` 必开；云 SDK 独占 localStorage（登录态真源，勿用 kv 接管）；
 iOS 需 HTTPS；iOS 无 BarcodeDetector→原生 MLKit；SW 在 capacitor:// 不注册；cap sync 撞 safe-delete 守卫→只改
 web 资源用 `npx cap copy android`；微信回调 Activity 随 applicationId 改名；图标改后跑 `tools/gen-app-icons.py`；
-模拟器网络需沙箱外启动 + captive_portal_mode 0；验收用 `tools/android-cdp.py` + logcat（d-bee-diag / d-bee-origin）；
+模拟器网络需沙箱外启动 + captive_portal_mode 0；验收用 `tools/android-cdp.py`（默认包名 `cn.com.dbee.app`，可用 `DBEE_PKG` 或 `--pkg` 覆盖）+ logcat（d-bee-diag / d-bee-origin）；
 安全区写 `var(--safe-area-inset-*, env(...))`。
-- **cap sync 新插件必踩**：update 阶段撞 safe-delete 守卫（genie-trash ETIMEDOUT）会误删
-  `android/capacitor-cordova-android-plugins/` 的 build.gradle + cordova.variables.gradle。首选绕过：先 shell
-  `rm -rf android/capacitor-cordova-android-plugins`（shell 删不触发 genie-trash）再 `cap sync`，
-  extractTemplate 会重建。兜底三步：解压 `node_modules/@capacitor/cli/assets/capacitor-cordova-android-plugins.tar.gz`
-  的 build.gradle、手写 cordova.variables.gradle（模板见 `cli/dist/android/update.js:224`）、在 build.gradle
-  的 PLUGIN GRADLE EXTENSIONS 补 `apply from: "cordova.variables.gradle"`。
-- **本地插件（file:）两步缺一不可**：①`capacitor.config.ts` 的 `android.includePlugins` 必须列插件名
-  ②`npm install` 建 symlink。否则编译过但运行时 `window.Capacitor.Plugins.X` 为 undefined，UI 入口不显示。
-  口诀：Gradle 编译过 ≠ 运行时注册（`android/app/src/main/assets/capacitor.plugins.json` 才是真源）。
-- **⚠️ 本项目 `includePlugins` 白名单对 npm 包插件同样生效（10-30 实测）**：`npm i @capacitor/local-notifications`
-  后跑 `cap sync`，插件被**静默跳过**（无警告、无报错），`cap ls ios` 仍是 7 个；
-  把包名加进 `capacitor.config.ts` 的 `android.includePlugins` + `ios.includePlugins` 后才变 8 个。
-  排查口诀：装完官方插件先 `npx cap ls ios` 数一遍，少了就是白名单没加（CLI 的 `getPlugins` 见
-  `node_modules/@capacitor/cli/dist/plugin.js`：有 `includePlugins` 就只用它，不看 package.json dependencies）。
-  iOS 还需在 Xcode 单独开 Push Notifications capability，Manifest/capability 都不会由 sync 自动配。
-- **原生拍照/扫码点了没反应**：①`file_paths.xml` 缺 `<external-files-path>` → FileProvider 找不到 root 抛
-  IllegalArgumentException；②Manifest 缺 `CAMERA` → getUserMedia 兜底失败、onShowFileChooser 不走授权流程。
-- **兑换的拍照额度用不了**：`guardAiQuota()` 不能按「当日拍照次数阶梯」拦截（quota_bonus 不计入次数）；
-  唯一依据 `get_photo_quota.total_remaining`（基础+奖励），有额度直接 `consume_photo_quota`；
-  photoLadderHint 只用于额度用尽时的引导文案。
-- **华为 EMUI/HarmonyOS WebView 忽略 `<input capture>`**：原生端拍照统一走 `@capacitor/camera`
-  （鸭子类型探测，不 import 包），web 端保留 `<input capture>`。
-- **honey_ledger 唯一索引 `(owner_id, reason, ref_id)` 会把「每日多次」卡成「每日一次」**：ref_id 必须带唯一
-  后缀（如 `to_char(clock_timestamp(),'HH24MISSMS')`），单日计数用 `ref_id LIKE 前缀%`；排查「该记录已经存在」
-  先查 `pg_indexes` 唯一索引。
+- **cap sync 新插件必踩**：update 阶段撞 safe-delete 守卫（genie-trash ETIMEDOUT）会误删 `android/capacitor-cordova-android-plugins/` 的两个 gradle 文件。首选绕过：先 shell `rm -rf android/capacitor-cordova-android-plugins`（shell 删不触发 genie-trash）再 `cap sync`，extractTemplate 会重建。兜底：解压 `node_modules/@capacitor/cli/assets/capacitor-cordova-android-plugins.tar.gz` + 手写 cordova.variables.gradle（模板见 `cli/dist/android/update.js:224`）+ build.gradle 补 `apply from`。
+- **本地插件（file:）两步缺一不可**：①`capacitor.config.ts` 的 `includePlugins` 必须列插件名 ②`npm install` 建 symlink。口诀：Gradle 编译过 ≠ 运行时注册（`capacitor.plugins.json` 才是真源）。
+- **⚠️ `includePlugins` 白名单对 npm 包插件同样生效（10-30 实测）**：装 `@capacitor/local-notifications` 后 `cap sync` **静默跳过**（无警告无报错）；加进 `android.includePlugins` + `ios.includePlugins` 才生效。排查口诀：装完插件先 `npx cap ls ios` 数一遍（CLI 有 `includePlugins` 就只用它，不看 package.json）。iOS 还需在 Xcode 单独开 Push Notifications capability，sync 不会自动配。
+- **原生拍照/扫码点了没反应**：①`file_paths.xml` 缺 `<external-files-path>` → FileProvider 抛 IllegalArgumentException；②Manifest 缺 `CAMERA` → 授权流程不走。
+- **兑换的拍照额度用不了**：`guardAiQuota()` 不能按「当日拍照次数阶梯」拦截（quota_bonus 不计入次数）；唯一依据 `get_photo_quota.total_remaining`，有额度直接 `consume_photo_quota`。
+- **华为 EMUI/HarmonyOS WebView 忽略 `<input capture>`**：原生端拍照统一走 `@capacitor/camera`（鸭子类型探测），web 端保留 `<input capture>`。
+- **honey_ledger 唯一索引 `(owner_id, reason, ref_id)` 会把「每日多次」卡成「每日一次」**：ref_id 必须带唯一后缀（如 `to_char(clock_timestamp(),'HH24MISSMS')`）；排查「该记录已经存在」先查 `pg_indexes`。
+- **Xcode 完好性判定铁律**（10-24 踩坑）：`xcodebuild -version` 报「Xcode 27.1」实为 CLT 版本号对齐，极具迷惑性；真凶曾是 3.8G 坏壳（完整 Xcode ≥15GB）。判定 = `du -sh` ≥15GB + `xcodebuild -showsdks` 列出 iphoneos，**不能只看 `-version`**。
+- **iOS 首次真机编译三处独有 bug（已修）**：①拍照无反应（缺 `NSPhotoLibraryAddUsageDescription`，前端 catch 静默吞 reject 掩盖根因）②拍照后没进识别（`resultType:'DataUrl'` 大小写 bug，iOS 精确匹配失败）③Bundle ID 冲突（见权威口径）。正确顺序：`npm ci`（含 postinstall 自动构建 shared）→ 三选一构建命令 → `npx cap sync ios` → Cmd+R。
 
-### 部署侧坑（10-23 实测，一行版；完整推演见 `2026-10-23.md`）
+### 部署侧坑（一行版；完整推演见 `2026-10-23.md`）
 
-`CREATE POLICY` 子句顺序硬规定 `AS→FOR→TO→USING→WITH CHECK`（写成 TO…FOR… 语法错）；`GRANT` 是**追加**语义
-（要清历史 DELETE 必须先 `REVOKE ALL` 再精确 GRANT）；`BYPASSRLS` = **全库** RLS 失效（`auth.uid()` 为 NULL
-时策略完全不参与过滤，未注入身份也能读全部数据；修法是给网关要用的表建 `TO <role>` 专用 policy 后 `NOBYPASSRLS`）；
-systemd `StartLimitIntervalSec/Burst` 属 **`[Unit]`** 段（放 `[Service]` 被忽略 + Unknown key 告警，刹车失效）；
-V8 服务**勿设** `MemoryDenyWriteExecute`（JIT 要可写可执行内存）；`pg_dump` 必须 `sudo -u postgres`
-（`sudo bash -c` 以 root 跑撞 peer 认证），且失败时 gzip **仍留 20 字节空壳** → 加体积守卫 + `gunzip -t`；
-**Git Bash ↔ Windows 原生 Python 路径**：设了 `MSYS_NO_PATHCONV=1`+`MSYS2_ARG_CONV_EXCL='*'` 后 `mktemp` 的
-`/tmp/…` 被 Python 当成 `C:\tmp` 而 FileNotFoundError，反斜杠 `C:\…` 又被 safe-delete 判 "embedded drive prefix"
-拒绝 → 统一 `cygpath -m "$(mktemp)"`；**模板「不得残留」守卫要排除注释行**（`grep -vE '^\s*#'`，否则注释里的
-解释性文字被误杀）；paramiko 长任务必设 `set_keepalive(30)`，且 `run_script` **先输出结果再清理远端临时文件**
-（顺序反了则清理时的 `open_sftp()` 撞上断连会把已拿到的输出全吞）；`JWT_SECRET`/`IDENT_PEPPER`/`SMS_MASTER_CODE`
-存 `deploy/gateway/.secrets.local` 跨部署复用（**改 JWT_SECRET=全员登出，改 IDENT_PEPPER=老用户身份失配**）；
-网关与 PostgREST **必须共用同一 HS256 jwt-secret**（否则数据面全 401）；`DBEE_PROD=1` + `SMS_PROVIDER=log`
-会被 `config.validate()` 拒启动（短信未采购前只能不设 DBEE_PROD）；🔴 **`DBEE_PROD=1` 会连带把 Apple 收据
-收紧为只收 Production**（`appleAllowedEnvs` 默认值依赖 `cfgProd`）→ iOS 沙盒测试期须显式
-`APPLE_ALLOWED_ENVS=Sandbox,Production`，否则 StoreKit 沙盒购买验签全失败；配置项要两头对齐（`cfg.dbSsl` 曾在
-config.mjs 未定义 → `DBEE_SSL=1` 静默失效）；**env 模板加新占位符必须同步改 `deploy-gateway.sh` 的 sed 注入表**
-（否则 `install-gateway.sh` 的 `grep -q '__'` 门禁直接拦下部署；且所有注入值都要过 `esc_sed`，
-`#`/`&`/`\` 不转义会**静默**写坏 env）；服务器 PG 17.11 监听 `0.0.0.0:5432`（**公网可达**，非旧记忆的
-「仅回环」，靠 pg_hba 白名单兜底、ufw inactive），Node 未预装（apt 仅 v18，项目要 ≥22）→ 官方 tarball +
-sha256 钉死 + npmmirror 镜像优先。
-- 🔴 **`deploy-gateway.sh` 是「全站永久锁死」级地雷（10-29 实测确认）**：它用本地模板**覆盖**
-  `/etc/dbee/gateway.env`，而本地 `.env` 缺 `IDENT_PEPPER`/`JWT_SECRET`/SMTP → 覆盖后全站
-  `ident_hash` **无法重算、所有账户再也认不出来，不可恢复**。改网关代码一律走**手术式脚本**
-  （参照 `deploy/apply-password-login-fix.sh`）：只传代码文件 → 语法校验 → env 指纹记录 → 备份 →
-  `install` → 重启 → healthz 探活失败自动回滚 → **断言 env sha256 前后一致**。
-  SSH 账号 = `.env` 的 `USER=ubuntu` + `SSH_PWD`（**不是** `DBEE_USER=dbee_app`，那是应用/DB 账号）。
-- **网关鉴权头是 `x-wb-webapp-access-key`（不是 `apikey`）**，且云端按 **Origin 精确匹配**校验 →
-  Node 侧脚本必须注入 `Origin`/`Referer`，否则报「the session is invalid, expired or issued for
-  another client」（极易误判成凭证失效）。库内真实表名见 `db/migrations/`（`profiles`/`meal_entries`/
-  `honey_ledger`…，**没有 `habit`/`habits`**，猜表名探测数据面必 404）。
-- **`signIn` 端点承载两条路径**：`{username, verification_token}`（验证码）与 `{username, password}`
-  （密码）。改鉴权时务必两条都回归；密码路径的标识必须自己归一化（SDK 手机侧发 `+86 138…` **带空格**，
-  库内 `ident_hash` 按**裸 11 位**算）。回归用 `tools/selftest-password-login.mjs`（35 项断言）。
-- **审核演示账户是两套互不相通的账户**（同邮箱同密码）：iOS = WorkBuddy 云库（owner
-  `2115454156301934592`）、web = 自建 PG（owner `1793280185303313979`）。iOS 切自建库后必须**在新库
-  重建账户并预置演示数据**，否则审核员登录进空账户 → Guideline 2.1 风险。
+`CREATE POLICY` 子句顺序硬规定 `AS→FOR→TO→USING→WITH CHECK`；`GRANT` 是**追加**语义（清历史 DELETE 必须先 `REVOKE ALL`）；`BYPASSRLS` = **全库** RLS 失效（修法：给网关要用的表建 `TO <role>` 专用 policy 后 `NOBYPASSRLS`，`0033` 已收回）；systemd `StartLimitIntervalSec/Burst` 属 **`[Unit]`** 段（放 `[Service]` 被忽略）；V8 服务**勿设** `MemoryDenyWriteExecute`；`pg_dump` 必须 `sudo -u postgres`，失败时 gzip **仍留 20 字节空壳** → 加体积守卫 + `gunzip -t`；Git Bash ↔ Windows Python 路径统一 `cygpath -m "$(mktemp)"`；模板「不得残留」守卫要排除注释行（`grep -vE '^\s*#'`）；paramiko 长任务必设 `set_keepalive(30)` 且**先输出结果再清理远端临时文件**；`JWT_SECRET`/`IDENT_PEPPER` 存 `deploy/gateway/.secrets.local` 跨部署复用（**改 JWT_SECRET=全员登出，改 IDENT_PEPPER=老用户身份失配**）；网关与 PostgREST **必须共用同一 HS256 jwt-secret**（否则数据面全 401）；`DBEE_PROD=1`+`SMS_PROVIDER=log` 拒启动；🔴 **`DBEE_PROD=1` 连带把 Apple 收据收紧为只收 Production** → iOS 沙盒期须显式 `APPLE_ALLOWED_ENVS=Sandbox,Production`；**env 模板加新占位符必须同步改 `deploy-gateway.sh` 的 sed 注入表**（注入值都要过 `esc_sed`，`#`/`&`/`\` 不转义会**静默**写坏 env）；服务器 PG 监听 `0.0.0.0:5432`（公网可达，靠 pg_hba 兜底、ufw inactive）；部署线上 env 用「本地生成完整 env → SFTP 上传覆盖」最可靠。
+- 🔴 **`deploy-gateway.sh` 是「全站永久锁死」级地雷（10-29 实测）**：它用本地模板**覆盖** `/etc/dbee/gateway.env`，本地 `.env` 缺 `IDENT_PEPPER`/`JWT_SECRET` → 覆盖后全站 `ident_hash` 无法重算、**所有账户再也认不出来，不可恢复**。改网关代码一律走**手术式脚本**（参照 `deploy/apply-password-login-fix.sh`）：只传代码文件 → 语法校验 → env 指纹 → 备份 → install → 重启 → healthz 失败自动回滚 → **断言 env sha256 前后一致**。SSH 账号 = `.env` 的 `USER=ubuntu`+`SSH_PWD`（**不是** `DBEE_USER=dbee_app`）。
+- **`deploy-gateway.sh` 两处 `set -e` 静默退出陷阱已修**（`34a8216`）：①`[ -z "${SEC[$k]}" ] && MISS+=(...)` 凭据齐全时反而短路退出 ②注释态键的 `grep|head|cut` 管道触发 pipefail。症状=**exit 1 零输出**，`bash -x` 定位；⚠️ **不要用 `bash -x > file`**（明文密钥会写进追踪文件）。
+- **网关鉴权头是 `x-wb-webapp-access-key`（不是 `apikey`）**，云端按 **Origin 精确匹配**校验 → Node 侧脚本必须注入 `Origin`/`Referer`，否则报 session invalid（极易误判成凭证失效）。真实表名见 `db/migrations/`（**没有 `habit`/`habits`**，猜表名必 404）。
+- **`signIn` 端点两条路径**：验证码 `{username, verification_token}` 与密码 `{username, password}`，改鉴权务必双回归；密码路径标识必须归一化（SDK 发 `+86 138…` 带空格，库内 `ident_hash` 按裸 11 位算）。回归 `tools/selftest-password-login.mjs`（35 断言）。
+- **审核演示账户两套互不相通**（同邮箱同密码）：iOS=云库（owner `2115454156301934592`）、web=自建 PG（owner `1793280185303313979`）。iOS 切自建库后必须在新库重建账户并预置演示数据。
+
+## 数据面与部署现状
+
+- **🎉 泳道 A 部署闭环（10-23）**：服务器 `150.158.51.106` 上 **nginx（自托管配置）+ dbee-gateway（Node 22.22.2 / :8080）+ PostgREST（16.4 / :3001）+ PG 17.11（dbee 库）** 四件套均 active；`/.cloud/**` 全部走本机自托管栈，**不再依赖 WorkBuddy 云端**。8 项 E2E 全 ✓（含正常 OTP 路径：从 journald 读真实验证码；带 JWT 读 profiles=200、匿名=401，RLS 按 sub 过滤生效）。云端回滚点 `/etc/nginx/sites-available/d-bee.cloud.bak`。切换脚本 `deploy/switch-nginx-selfhost.sh` + `deploy/gateway/switch-nginx-selfhost.remote.sh` + `deploy/nginx.selfhost.conf.example`。
+- **数据库切换核心判断（10-26，详见 `docs/数据库切换详细规划-2026-10-26.md`）**：不是「要不要切」而是「HTTPS 何时就绪」的资质问题。切换时机 = 备案→域名过户（✅）→A 记录→80 公网→签 HTTPS→三端指 `https://d-bee.cn`；过渡期云库唯一真相源，切换日一次性收口（`0042-data-sync-final.sql`，0041 编号已被 dbee_admin 只读角色占用）。分阶段：0 安全整改（5432 收口+ufw 最优先）→ 1 账号映射合并（HTTPS 前演练）→ 2 T-0 切换（**必须用 `npm run build:native`**）→ 3 观察期 T+30（云库只读保活）。**数据双向分叉每天扩大**；**账号分裂事故**：186****4728 云库=2110364580268998656（真实）vs Web 自建库 1792845025064566575（空壳），根因两套发号机制。
+- **数据面现状**：**Web 已切自建 PG**；**Android/iOS/小程序仍走云库**（原生未注入 `VITE_NATIVE_ENDPOINT` 时回退 CLOUD_HOST；小程序 `mini/src/lib/cloud.ts` 硬编码 endpoint）。自建网关唯一缺口 = 无 `/v1/login-wechat`（code2session 在云侧）。
+- **数据/结构分离（PIPL 最小必要，10-22）**：`0030-full-selfhost-mirror.sql` 含 17 表**全量真实用户健康档案**（含未成年人记录）→ **不入库**（已 gitignore + `git rm --cached`，本地保留）。入库的是 `db/migrations/0030-schema.sql`（`--schema-only` 产物，0 行数据）+ `db/functions.sql`（27 个 SECURITY DEFINER 函数 DDL，0 处真实 owner_id）。⚠️ `0030` **已含 0025~0028 业务变更**，勿盲跑 0025~0029 迁移；`0029` 已弃用。**不需要存储代理**——拍照识别走 base64 dataUrl 直塞 LLM `image_url`，全仓无 `cloud.storage` 调用。
+- **🔴 支付链路（已落地，10-23）**：Apple 验签在 Node 网关（`server/lib/iap.mjs` 479 行）：verifyReceipt（21007/21008 沙盒自动切换、**bundle_id 钉扎 `APPLE_BUNDLE_ID`**（配错则所有购买验签恒失败）、transaction_id 全服幂等、恢复购买）+ Notifications V2 webhook（x5c 证书链钉扎、续订/退款、全量落库）+ 根证书 `AppleRootCA-G3.cer` 钉扎。`0037`：幂等表 + 留痕表 + 3 个 SECURITY DEFINER 函数（EXECUTE 仅 dbee_app）。webhook 豁免 IP 限流（防 Apple 429 重试风暴）；`api.ts` iOS 优先走网关、404/503 回退 RPC。自测 `tools/iap-selftest.mjs` 47 项全过。**伪造凭证白拿权益的旧缺口已封**。
+- **🟢 短信通道已上线（10-29，`SMS_PROVIDER=aliyun`，万能码已摘除，用户实收验证通过）**。关键事实（与腾讯云口径不同，勿混淆）：
+  · aliyun 是 RPC 风格 + **HMAC-SHA1** 手写签名（腾讯云是 TC3-HMAC-SHA256，两套算法，见 `sms.mjs`）。
+  · 模板 `SMS_512482436` **只有 `code` 一个变量**（腾讯云是 `{1}{2}` 双变量按位传），`TemplateParam` 传 JSON 串 `{"code":"..."}`。
+  · 🔴 **签名口径=「北京迪蜂科技有限公司」**，不是「自律蜜蜂」！该阿里云账号下实测只有这 1 条企业实名默认签名（「自律蜜蜂」是**腾讯云**侧的记录，在阿里云用它会报 `isv.SMS_SIGNATURE_ILLEGAL`）。要品牌签名须在阿里云重新申请（1–2 工作日），过审后改一行 `SMS_SIGN_NAME` env 即可，无需改代码。邮箱通道的「自律蜜蜂」（SMTP 发件名）不受影响。
+  · 凭据在 `deploy/gateway/.secrets.local`（gitignore 覆盖），RAM 子账号最小权限，已购短信包。
+  · 部署时**只切短信、不开 `DBEE_PROD=1`**（避免连带触发 CORS 白名单硬要求与 Apple 收据只认 Production）。
+- **🔴 上架前生产安全体检与加固（10-26，六项 ①–⑥ 已全部生效，报告 `docs/V1.7.1-安全验证报告与发布实施计划-2026-10-26.md`）**：曾发现**网关层完全未部署**（跑的是 10-23 骨架版，数据库迁移已生效但代码没上）→ 已补齐并复验全绿（18/18 探针 NEW、Apple 路由已注册、LLM 无 token 401）。六项 = ①RPC 信任边界 ②原子性 ③LLM 服务端授权 ④Apple 环境白名单（生效前提=上架前配 `APPLE_BUNDLE_ID=cn.com.dbee.app`/`SHARED_SECRET`）⑤XFF 信任边界 ⑥honey_balance/榜单缓存（前端待随下次发版触达）。
+- **🔴 七项安全修复（10-27）**：① JWT TTL 30 分钟 + refresh 滚动 + `app_users.token_version` 强制下线（迁移 0042，**已部署 + 端到端验证全过**）② appleSandbox 生产默认关（**已部署**）③ LLM 视觉 fail-closed 503 + 文本独立降额 50/日 ④ grant_honey 发分前查真实记录 ⑤ CORS Origin 白名单 ⑦ email 验证码通道（163 SMTP，465/SSL 零依赖手写）—— **③⑤⑦ 代码就位 + 自测 300/0 全绿，待部署**。⑥ 万能码切真短信 🟢 **已上线**。
+
+## 业务与资质要点
+
+- **🔓 主体注册已办结（10-22）**：解锁微信生态（开放平台企业认证/商户号/公众号/小程序主体变更）、华为/小米企业入驻（Health Kit 硬门槛）、ICP 经营许可证可申请。公章 10-27 到手（18 项盖章清单 `docs/公章使用清单-2026-10-27.md`）；对公账户 10-28 已开立（后续步骤 `docs/对公账户到手-后续执行步骤-2026-10-28.md`）。域名已过户到公司（10-27，WHOIS Registrant = 北京迪蜂科技有限公司）。
+- **🔴 「3 人社保」= ICP 经营许可证硬性条件，无法合规绕过**（多省口径一致且核查趋严）：≥3 名全职、**三个不同人**（许可/客服/安全负责人）、法人可算一人、**必须由本公司缴**（代缴/挂靠直接驳回且一年内不得再申）、管局跨部门比对 + 可能上门核验。成本 ≈ ¥4000/月起 + 记账报税 + 代办（约 47 工作日）。**已定策略 = 方案 A：暂不办，先靠 iOS IAP 验证付费意愿**。执照类前提已全部就位（经营范围含「第二类增值电信业务」✅ / 注册资本 ≥100 万认缴 ✅ / 对公账户 ✅ / 域名过户 ✅），将来办证仅剩这一个缺口。
+- **📱 小程序主体变更（官方口径已查证，appid `wxb7c7122de9c3ab1f`）**：¥300 审核费（不退）+ 审核 1–7 工作日；**本项目可免公证**（个人主体→企业且个人即法人）：传申请函（官方最新模板、两页骑缝章）+ 法人身份证 + 手持照，原主体处**签名+按手印**，**不可委托代办**。⏰ **审核通过后 7 天内**须管理员确认+重登+签协议，超时作废钱不退。🔴 变更后两个强制后续：①**重做小程序备案**（注销原备案+新主体新增，不支持直接变更；备案期可用但不能发新版本）②**类目资质重交**（盖新章，14 天内，逾期功能封禁）。⚠️ **类目红线**：避开「医疗-其他医学健康服务」（四项资质一个都没有）→ 选工具/生活服务类；**文案严禁诊疗/治病/筛查表述**。**「先发后变」（10-28）**：先发布修复版，再提交主体变更（变更后到新备案完成前不能发新版本）。
+- **🌐 ICP 备案**：路径已定 = **注销重备**（北京不在「个人→企业」直接变更白名单）。域名已过户公司（管局核对 WHOIS=备案主体）；**关 WHOIS 隐私保护**；A4 已做完且 IP 直连验证通过 → 可随时注销不停业务；注销后域名停解析、备案期不可加解析；**工信部短信核验 24h 内必做**；「原个人=现企业法人」本项目同一人天然满足。两域名打包同一企业备案订单（一单两站）。
+- **📊 竞品对比结论（详见 `docs/主体注册后-实施计划.md` §七）**：D-Bee ¥18/月、¥128/年与 1 亿用户的薄荷健康完全同价，食物库 1,175 vs 100 万+ → **绝不能拼「食物库广度」或「AI 识别准」**；按年付 ¥128 是国际 12 款竞品中最便宜，**不需改价**（¥18/¥128/¥328 已锁定）。🔴 悉尼大学 2024 研究：AI 食物识别对**混合亚洲菜肴高估达 49%、低估达 76%** = D-Bee 核心场景。→ **定位「不卖 AI 神奇，卖能坚持下来」**：厚免费 + 游戏化 + 终身买断 ¥328 + **本地规则引擎 `foodInsight.ts`（1,175 条零兜底零幻觉）优先、AI 仅兜底** + 无广告 + 数据自托管。对标「自律茄子」买断心智。**待办：实测 D-Bee 自己的 MAPE**（竞品分析最后缺口）。
+- **⚙️ AI 成本测算（详见 §A3）**：DeepSeek flash 峰值价（工作日 9–12/14–18 点 2 倍，恰是三餐高峰，**必须按峰值估**）：拍照单次 ≈ ¥0.0047、教练问答 ≈ ¥0.0069（每图 token 恒上限 384；前端已 `compressImage(1024, 0.82)`，无需 Files API）。按 5 次/日：**100 DAU ≈ ¥42/月、10,000 ≈ ¥4,230** → 万级 DAU 前远低于 3 人社保 ¥4000/月，反证方案 A 正确。降本：系统提示缓存命中（输入价降 ~98%）、本地引擎先命中再调 LLM。
+- **🔴 DeepSeek 接线三个坑（查官方文档实测，会直接导致功能不可用）**：① **`deepseek-chat` / `deepseek-reasoner` 已于 2026-07-24 退役**，官方只剩 `deepseek-flash` 与 `deepseek-v4-pro`，**配置写旧 ID 会调用失败**；② **只有 flash 系列接受图片**，传图给其他模型返 `400 "This model does not support image"`（**`deepseek-v4-pro` 明确 "Vision: Not supported"**）→ **文本统一用 `deepseek-flash`**；③ 网关 `/llm/models` **必须给 flash 标 `supportsImages: true`**，否则前端 `pickModel(needVision)` 的 `filter(m=>m.supportsImages===true)` 选空 → 拍照识别报错（另需过滤 `disabled!==true && enabled!==false`，见 `ai.ts:31`）。**模型 ID 必须放服务端配置**（`.env` 的 `LLM_MODEL_VISION`）而非散落代码。
+- **🎯 视觉识别已切双 provider 路由（10-24）**：DeepSeek 视觉偏弱（官方定位「快速便宜、细粒度图像细节偏弱」），无法胜任「一盘菜精准识别多道菜」→ **文本（AI 教练/周报/计划）走 DeepSeek `deepseek-flash`，图片识别走阿里云百炼 `qwen3.8-max-0902`**（视觉最强、用户 Workspace 有权限；旧名 qwen-vl-max/qwen3-vl-plus 无权限 403）。`server/lib/config.mjs` 新增 `LLM_VISION_BASE_URL/KEY/MODEL` + `LLM_IMAGE_DETAIL=high`（未配时回落原 llm 键，向后兼容）；`llm.mjs` wantVision 时走独立视觉 provider。**服务端切模型对三端即时生效，无需重发 web/重打包**。
+- **合规现状（已核查）**：用户协议/隐私政策/免责声明**三篇已存在且已挂路由**（`src/content/legal.ts` 230 行 + `pages/LegalPage.tsx` + `components/SiteFooter.tsx`，备案号走 `VITE_ICP_BEIAN` 环境变量渲染，未设置时该行不渲染）→ **合规页面工作量 ≈ 0**，只等备案号下来填变量。`REDEEM_CODES` 硬编码兑换码**已从 src/ 删除**（Apple 3.1.1 硬伤已消）；`restorePurchases()` 已接（3.1.2 合规）。服务端 `redeem_by_code` RPC 仍在，不影响 Apple 审核，Web/Android 端可继续用兑换码运营。**法律文本 URL 一律用 `https://d-bee.cn/legal/...`**（公示/备案/ASC 填报同口径）。
+- **额度规则（权威值在 `packages/shared/src/constants/index.ts`）**：`FREE_DAILY_AI=3` + `AI_REDEEM_DAILY_LIMIT=2`（每日 3 次免费识别 + 2 次积分兑换 50 分/次，用尽只能 Pro）。新手 150 积分（grantHoney 'newbie'）；连续打卡每满 7 天送 2 次识别（grantPhotoBonus 'streak7'，7/14/21 循环）。迁移 0025（兑换上限 5→2）+ 0026（newbie 发积分、作废存量 newbie 识别 bonus）。⚠️ `docs/AI成本与配额.md:101`「每天 10 次」**已过时**，按 3+2 重算。
+- **识别自动保存（已收敛）**：识别成功即 settleDraft 自动落库；该餐已有记录弹「覆盖/追加/取消」，无记录直接落库关闭，另有切页兜底；不做撤销等过度设计。
+- **会员/IAP**：三档 free/pro/lifetime（¥18/¥128/¥328）；Apple 个人开发者账号已通过（10-20）；**Android 企业开发者账号已注册（10-23）→ Google Play 支付线解锁**（`payment_orders.provider` 是 text 且**无 CHECK 约束**，加 `'google'` 无需改表结构，只需补网关验签分支）。**iOS 本地 StoreKit 测试环境已就绪**（`DbeeProducts.storekit` 3 商品 zh_CN 本地化 + 共享 scheme，免 ASC 建商品即可测 getProducts/purchase/restore 客户端链路；付费墙已接商店价格拉取）。⚠️ **Apple/Google 验签须排在 0034/0035 收权之后**（已满足，0035 已收紧写 entitlements 唯一通道=服务端函数）。
+- **多端小程序**：Taro 4.3.0（React+TS）双工程 + `packages/shared`，微信/支付宝/抖音三端编译通过；一比一复刻主工程 11 页，tsc 0 错。受限能力（支付/健康步数/分享卡 canvas）诚实引导占位。mini tsconfig 需 `moduleResolution:"bundler"`。小程序 request 合法域名须配 `https://d-bee.cn`。
+- **原生 App**：Capacitor 8.5.3；阶段 0 解耦 ✅、Android 全过 ✅、iOS 编译已打通（10-24）并真机测试（origin-proxy / health / iap 三自研 Swift 插件 + @capacitor/camera）。`postinstall` 自动构建 shared，新 clone 一条 `npm ci` 直达。
+- **健康数据源**：只读系统健康平台，不直连手环；HealthKit 读授权不可探测→插件只报 completed，连接真源=云端 health_connected；`effectiveBurnKcal=max(burnKcal,activityKcal)` 不叠加。华为 Health Kit 阶段 3a 已落地（Android 反射骨架，零 HMS 编译依赖）；小米官方 SDK 已纳入，白名单 `{huawei, xiaomi}`。资质未就绪时插件返回 `reason=not_ready`。⚠️ **「企业开发者账号已注册」≠「应用已上架华为应用市场」**，而 Health Kit 硬门槛是**后者**，另需软著 + App 备案 → 数据通道尚未解锁。
+- **微信相关**：主体已注册，**暂缓状态可解除**（`src/lib/wechat.ts` 的 `WECHAT_LOGIN_ENABLED=false` 改回 true，已按「零代码改造」设计）。前置链：开放平台企业认证 → 移动应用 AppID + UnionID → 注入 `VITE_WECHAT_APPID`（iOS 另需 `VITE_WECHAT_UNIVERSAL_LINK` = `https://d-bee.cn/...` + Associated Domains + AASA）→ `NATIVE_CODE_EXCHANGE_SUPPORTED=true`。⚠️ **云端能力缺口**：SDK 的 `signInWithWechat` 只走小程序 `jscode2session`，移动应用 code 需 `sns/oauth2/access_token`，两接口不可混用——自建网关后可自行补齐。快速兜底 = 路线 B（系统浏览器 + 云 Relay 扫码 + Universal Link 回跳，不需移动应用资质）。⚠️ iOS `WechatOpenSDK` 来自第三方 SPM 镜像 `github.com/yanyin1986/WechatOpenSDK`（官方不经 SPM 分发），上线前须核对 tag 或改官方 XCFramework。
 
 ## 过审合规
 
-Apple 4.2 / 3.1.1（阶段 3 删 REDEEM_CODES）/ 5.1.1(v) 账号删除 / AI 告知同意；
-中国：ICP 备案、App 备案、软著、算法备案、大模型登记、PIPL。
+Apple 4.2 / 3.1.1（阶段 3 删 REDEEM_CODES）/ 5.1.1(v) 账号删除 / AI 告知同意；中国：ICP 备案、App 备案、软著、算法备案、大模型登记、PIPL。
 
-> 🔴 **隐私政策公示禁止跨端照抄**（10-29 实证，见当日日志「提交 2」）：小程序与 Web/iOS/Android
-> **不是同一后端**——小程序走 WorkBuddy 云（AI 由平台代理动态匹配模型，我方不持有厂商密钥），
-> 主端走自托管 PG + 自建网关直连 DeepSeek/Qwen，两库**数据不互通**。公示主体因此不同。
-> 写任一端 legal.ts 前先核对该端 `cloud.ts`/`ai.ts` 真实链路，并只写**代码里确实存在**的能力
-> （小程序无 Open Food Facts / 无邮箱登录 / 导出为占位 / 无离线 / 订阅消息模板未配）。
-> **公示了 ≠ 合规**：每条第三方链接必须 curl 验 200 + 核对语言/主体/适用辖区，
-> 且要引「与我方关系匹配」的文件（我方=委托方就引面向客户的**数据处理协议**，
-> 不引面向该平台自己终端用户的隐私政策、更不引其境外英文版）。
-> `deploy/verify-legal.mjs` §0.7 已自动校验 URL 可达性，死链会 FAIL。
+> 🔴 **隐私政策公示禁止跨端照抄**（10-29 实证）：小程序与 Web/iOS/Android **不是同一后端**——小程序走 WorkBuddy 云（AI 由平台代理动态匹配模型，我方不持有厂商密钥），主端走自托管 PG + 自建网关直连 DeepSeek/Qwen，两库**数据不互通**。公示主体因此不同。写任一端 legal.ts 前先核对该端 `cloud.ts`/`ai.ts` 真实链路，并只写**代码里确实存在**的能力（小程序无 Open Food Facts / 无邮箱登录 / 导出为占位 / 无离线 / 订阅消息模板未配）。**公示了 ≠ 合规**：每条第三方链接必须 curl 验 200 + 核对语言/主体/适用辖区，且要引「与我方关系匹配」的文件（我方=委托方就引面向客户的**数据处理协议**，不引面向该平台自己终端用户的隐私政策、更不引其境外英文版）。`deploy/verify-legal.mjs` §0.7 已自动校验 URL 可达性，死链会 FAIL。
 
 ## 工作方式
 
-需求驱动、多轮递进、「写→验→报」小步验证；缺陷/进度类文档用 .docx；跨机同步只走 Git 私有仓库
-（`github.com/yutaiyin139/d-bee`，main），两台机器 `core.autocrlf false`；推送失败是常态波动，**for 循环重试 5 次**
-勿改方案；收工把进度快照 + 明日待办 + 待拍板写入当日日志。自测脚本 `tools/*-selftest.mjs`
-（运行器 `node tools/v15-selftest.run.mjs`）。
+需求驱动、多轮递进、「写→验→报」小步验证；缺陷/进度类文档用 .docx；跨机同步只走 Git 私有仓库（`github.com/yutaiyin139/d-bee`，main），两台机器 `core.autocrlf false`；推送失败是常态波动，**for 循环重试 5 次**勿改方案；收工把进度快照 + 明日待办 + 待拍板写入当日日志。自测脚本 `tools/*-selftest.mjs`（运行器 `node tools/v15-selftest.run.mjs`）。
+**文档维护约定（10-31 确立）**：口径变更时，**可执行文档直接更正**；**历史快照文档（写于定案前、记录当时过程）只加「历史快照·口径已变更」横幅、不改正文**（横幅内声明旧值应读作何值）。代码侧加构建期护栏时，**文档侧必须同步改**，否则护栏只会变成「无声白屏」（铁律 #10 教训）。
+**记忆维护约定**：git commit 流水账**不入 MEMORY.md**（`git log` 即权威来源）；本文件只存结论、铁律、决策、坑与权威口径；体积超 40KB 即需精简（曾达 66KB 超注入上限被截断）。
 
 ## 环境备忘
 
-- SSH 发布：`150.158.51.106` / `ubuntu` / 密码见本地 `.env`（`SSH_PWD`，**勿写入记忆或文档**，
-  memory/ 会进 git）；发布脚本 `deploy/deploy.sh`。
+- SSH 发布：`150.158.51.106` / `ubuntu` / 密码见本地 `.env`（`SSH_PWD`，**勿写入记忆或文档**，memory/ 会进 git）；发布脚本 `deploy/deploy.sh`。
 - APK 归档 `dist-release/`（gitignore）；Web 归档 `backups/`。
-- 云库应用 ID `wbapp_w6iIU6TqTyHvJxESPTxBTy`（genie-baas db_exec_sql，只在已绑定应用的会话可用）。
+- 云库应用 ID `wbapp_w6iIU6TqTyHvJxESPTxBTy`（genie-baas db_exec_sql，只在已绑定应用的会话可用）；云库地址 `https://zilv-mifeng.app.workbuddy.host`（`build:native:internal` 内测用，需 `VITE_ALLOW_CLOUD_NATIVE=true` 显式授权）。
 - curl 本机 dev server 需 `--noproxy '*'`；`package.json` 无测试框架/lint。
 - 微营养素：foodsData*.ts 已 10 列化（钠/纤维/添加糖，/100g），1175 条零兜底。
+- `db/.tmp-backup.sql` 是临时备份，**约定不入库**（gitignore 未覆盖）。

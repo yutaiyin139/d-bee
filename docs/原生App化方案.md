@@ -1,5 +1,10 @@
 # D-Bee 原生 App 化方案（iOS / Android）
 
+> 🔴 **【历史快照 · 口径已变更】** 本文写于 2026-10-13（基准 V1.0.1），当时 Bundle ID/appId 用的是
+> `com.dbee.app`，数据面示例域名写作 `d-bee.com.cn`。**现口径：Bundle ID = `cn.com.dbee.app`
+> （2026-10-25 定案）；Web 端域名 = `d-bee.cn`，`d-bee.com.cn` 仅作公司官网**（2026-10-28 双域名定案）。
+> 正文按历史快照约定**保留原样不改**，阅读时按上述现行口径替换。
+
 > 目标：把现有 Web 版 D-Bee（React 18 + Vite 5 + TypeScript，PWA）打包为上架 App Store 与国内安卓商店的原生 App。
 > 基准版本：V1.0.1（主包 `index-HKJ5Fec4.js`，2026-10-13）
 > 编写日期：2026-10-13

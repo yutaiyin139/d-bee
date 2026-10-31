@@ -1,5 +1,11 @@
 # 阶段 1：Capacitor 骨架跑通
 
+> 🔴 **【历史快照 · 口径已变更】** 本文写于 2026-10-14，当时 Bundle ID 用的是 `com.dbee.app`。
+> **2026-10-25 已定案改为 `cn.com.dbee.app`**（`com.dbee.app` 被 Apple 抢注、`cn.dbeehealth.app` 不可用、
+> `com.d-bee.app` 因 Android 禁连字符弃用）。本文正文按历史快照约定**保留原样不改**，
+> 文中所有 `com.dbee.app` 一律读作 `cn.com.dbee.app`。权威值见 `capacitor.config.ts` appId /
+> `android/app/build.gradle` applicationId / `ios/App/App.xcodeproj` PRODUCT_BUNDLE_IDENTIFIER（三处一致）。
+
 - 日期：2026-10-14
 - 前置：阶段 0 代码解耦已完成（见 `docs/阶段0-代码解耦-验收报告.md`）
 - 当前状态：**Windows 侧构建链路已打通、debug APK 已产出、模拟器验收通过（登录页渲染）**；剩余仅「验证码登录 + 云端数据读取」需真人输入验证码完成

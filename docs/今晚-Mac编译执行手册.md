@@ -78,7 +78,7 @@ iOS App (WebView, origin=capacitor://localhost)
 ### 1.3 订阅续期权威链路（上线后）
 
 ```
-Apple → POST https://d-bee.com.cn/.cloud/payment/apple/notifications
+Apple → POST https://d-bee.cn/.cloud/payment/apple/notifications
      → 网关 JWS x5c 证书链验签（钉扎 AppleRootCA-G3）
      → DID_RENEW：按 original_transaction_id 反查 owner → 顺延 pro_until
        （客户端不在线也能续；GREATEST 防乱序回拉）
@@ -86,6 +86,8 @@ Apple → POST https://d-bee.com.cn/.cloud/payment/apple/notifications
 ```
 
 依赖：备案域名 + HTTPS + ASC 配 webhook URL + 服务端 A1（0037 + APPLE\_* env）。
+📌 webhook 域名 = **d-bee.cn**（Web 端），非 d-bee.com.cn（公司官网，纯静态不反代网关）；
+双域名定案见《对公账户到手-后续执行步骤-2026-10-28.md》§域名口径对照表。
 
 ### 1.4 插件注册链（编译产物怎么进 App）
 

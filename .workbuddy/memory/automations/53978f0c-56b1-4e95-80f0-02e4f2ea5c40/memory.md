@@ -168,6 +168,17 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
   part3=profiles+water_logs+weight_logs）→ 临时合并脚本（含 id 升序校验）拼装 → verify → 删临时文件。
   **后续 dump 超过 ~60KB 时沿用分片方案。**
 
+### 2026-10-31 07:27（第 16 次）
+- 结果：**成功**。产出 `db/backups/2026-10-31.json`（127,994 字节，历史最大，覆盖 10-31 当日数据；与 10-30 快照间隔 1 日，链上无断档）。
+- 行数：profiles=18 / meal_entries=138 / water_logs=46 / exercise_logs=28 / weight_logs=3 /
+  entitlements=1 / ai_usage=27（合计 261 行）。
+- 校验：分片合并脚本内含 7 表 id 严格升序校验 + `.verify-backup.cjs` PASS——JSON.parse OK、顶层字段完整、
+  7 表 row_counts 与 tables.<表>.length 及另发 count(*) 的线上实时行数三方一致。
+- 清理：cutoff=2026-10-01，现存最早 2026-10-13，无过期文件（目录 12 份每日 json）。临时分片已删除。
+- 观察：meal_entries 新增 10-30 早餐 3 条（牛奶/面包/橘子，id 143-145）；ai_usage 新增 10-30 scan 1 条（id 80）；
+  10-30 全天无其他新记录；entitlements 仍 1 条 pro（已于 10-26 19:38 过期）。
+- 流程：genie-baas 工具本会话已注册（连续第 2 次成功）；dump ~128KB，沿用三部分片方案一次通过。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。
