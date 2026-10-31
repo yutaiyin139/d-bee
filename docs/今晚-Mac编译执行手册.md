@@ -244,11 +244,94 @@ e) 编译成功 → 自动装机启动
 | 3d | **（10-24 实测进展）`xcode-select -s` 已成功、`sudo xcodebuild` 不报错，但普通用户 `xcrun --find xcrun` 仍报 `Failed to locate 'xcrun'`** | 🔴 **sudo 下能跑、普通用户跑不了 = Xcode.app 包内权限问题**（xcrun 的 `access(X_OK)` 检查在用户身份下失败：某级目录缺 `+x` 穿越权，或 xcrun 无执行位，或属主异常）。**决定性测试（不加 sudo）**：`ls -l /Applications/Xcode.app/Contents/Developer/usr/bin/xcrun`（Permission denied 即实锤）+ `xcrun --version` + `xcodebuild -version`（不加 sudo）。修法：`sudo chmod -R a+rX /Applications/Xcode.app`（只加读/执行、从不减权，安全）→ 必要时 `sudo chown -R root:wheel /Applications/Xcode.app` → 重验。若 `file` 显示 empty/`du -sh` 仅几 GB → 才是 xip 解压损坏，须重装 |
 | 3e | **（10-24 09:39 实锤）`xcodebuild -version` 显示 Xcode 27.1 但 `/Applications/Xcode.app` 仅 3.8G 且缺 `Developer/usr/bin/xcrun`** | 🔴 **生效工具链是 Command Line Tools，不是 Xcode**——CLT 的 xcodebuild 也会报「Xcode 27.1」（版本号随 CLT 对齐），极具迷惑性；**CLT 无 iOS SDK，编不了 App**。判定铁律：`xcodebuild -showsdks \| grep -i ios`——列出 iphoneos SDK 才能编 iOS。修法 = 装完整 Xcode 27.1（App Store 流式装，35GB 勉强够但建议先删坏壳 + 旧模拟器 runtime + DerivedData 腾到 ≥50GB）→ `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` → `runFirstLaunch` → 重验 `-showsdks`。**教训：验证 Xcode 完好要看 `du -sh`（≥15GB）+ `-showsdks` 有 iphoneos，不能只看 `-version`** |
 | 4 | `no such module 'Capacitor'`                                      | Reset Package Caches；仍不行 `rm -rf ~/Library/Caches/org.swift.swiftpm` 重开       |
-| 5 | **真机白屏（纯白/米白、无任何报错弹窗）** | 🔴 **头号原因 = 用 `npm run build` 打的包**（Web 产物，`cloudConfig.ts` 的 PROD 护栏被死代码消除成无条件 `throw`，模块级 `publicConfig` 求值即炸，React 没机会挂载）。**修法 = 换 mode 重打**：今晚内测用 `VITE_ALLOW_CLOUD_NATIVE=true npm run build:native:internal && npx cap sync ios`；上架包用 `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native && npx cap sync ios`。判定命令见 §三 自检（`grep -c "禁止直接复用 Web 产物" dist/assets/index-*.js`，≥1 即白屏包）。次因才是 public/ 没同步（`ios/App/App/public` 是 gitignore 的，完全由 `cap sync` 决定） |
+| 5 | **真机白屏（纯白/米白、无任何报错弹窗）** | 🔴 **先看是不是「红屏自报」再动手**：2026-10-31 起 `index.html` 内置启动失败自报面板（见下方「白屏排障」），**任何启动期异常都会在 iPhone 上画成红底文字**，拍照即得根因，不必再猜。<br>**若仍是纯白屏（连红色面板都没有）→ 决定性结论：Mac 上装的包里根本没有自报面板**，即 ① 没 `git pull` 到含该修复的提交，或 ② 没跑 `npx cap sync ios`（`ios/App/App/public` 是 gitignore 的，内容完全由 cap sync 决定）。先补这两步再谈其他。<br>红屏若显示「原生 App 必须使用 build:native…禁止直接复用 Web 产物」→ **头号原因 = 用 `npm run build` 打的包**（Web 产物，`cloudConfig.ts` 的 PROD 护栏被死代码消除成无条件 `throw`，模块级 `publicConfig` 求值即炸）。修法 = 换 mode 重打：内测 `VITE_ALLOW_CLOUD_NATIVE=true npm run build:native:internal && npx cap sync ios`；上架 `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native && npx cap sync ios`。判定命令见 §三 自检（`grep -c "禁止直接复用 Web 产物" dist/assets/index-*.js`，≥1 即白屏包）。<br>红屏若显示「React 未挂载（5 秒内 #root 仍为空，且无任何 JS 报错）」→ public/ 没同步或产物 hash 与 index.html 引用不一致 |
 | 6 | 付费墙价格仍是硬编码文案（¥18 / 月 而非 ¥18.00）                                   | scheme 没挂上 .storekit（步骤 3a 验证）；或插件未注册（console 看 DbeeIap 探测日志）                 |
 | 7 | 购买后提示「支付校验失败」                                                     | **预期行为**（§一-1.2③），不是 bug，不要修                                                  |
 | 8 | HealthKit 模拟器不可用                                                  | 用真机（插件已防御不崩溃）                                                                 |
 | 9 | 清单外 Swift 编译错误                                                    | 完整报错发回 Windows 侧，即时修源码推 GitHub，Mac `git pull`                                 |
+
+---
+
+### 白屏排障（2026-10-31 新增：启动失败自报面板）
+
+**问题背景**：10-30 那次真机白屏花了 45 分钟才定位，靠的是在 Windows 侧反复
+`npm run build` + `grep` 产物字符串做对照实验——**因为真机侧不会说话**：
+原生包里所有 web 资源都是本地文件（`capacitor://localhost`），JS 首行 throw
+既没有网络报错、也没有弹窗、也没有 console 可看（Mac 侧 Safari 远程调试虽可行，
+但要连线、要在 Xcode 开 Web Inspector，装机后现场排障很笨重）。
+表现只有「纯白/米白屏 + 状态栏正常」，与「资源没同步」「CSS 挂了」等外观完全一致。
+
+**修法**：`index.html` 里内置了一段**零依赖、ES5、在任何业务 JS 之前执行**的
+内联脚本，把启动期异常直接画成红底文字面板，用户拍张照就能拿到根因。四道捕获：
+
+| 捕获 | 覆盖的失败类型 | 红屏标题 |
+|---|---|---|
+| `window.onerror` | 模块求值期 / 运行期未捕获异常（含完整 stack） | `脚本未捕获异常: …` |
+| `unhandledrejection` | 异步链里的静默失败 | `未处理的 Promise 拒绝` |
+| `error`（capture=true） | `script`/`css`/`img` 等资源 404 或加载失败 | `资源加载失败` |
+| 5 秒兜底定时器 | 无报错但 React 没挂载（`#root` 仍为空） | `React 未挂载（5 秒内 #root 仍为空…）` |
+
+另配 `src/components/BootErrorBoundary.tsx`（挂在 `main.tsx` 最外层、`PrivacyGate` 之外）
+兜住**渲染期**抛错，复用同一面板：红屏标题为 `React 渲染期抛错`。
+两者共用 `window.__dbeeShowBootError`，面板挂到 `documentElement` + `z-index` 顶格，
+React 重渲染/卸载都冲不掉它。
+
+面板底部固定打印**环境快照**（这是排障最值钱的部分）：
+
+```text
+──── 环境快照 ────
+href: capacitor://localhost          ← 区分原生与 Web
+root 子节点: 0                        ← 0 = React 没挂载
+script: /assets/index-BW1eZKqy.js    ← 带 hash，可反查装的是哪次产物
+ua: …
+```
+
+**排障决策树（照这个顺序判断，不要跳）**：
+
+1. **纯白屏、连红屏都没有** → Mac 上的包**没有自报面板**，说明它来自含此修复之前的
+   产物。`git pull` → `npm ci` → 按 §三 ②③ 重打 → `npx cap sync ios`。
+   （这一步能解释绝大多数「修了还是白屏」。）
+2. **红屏 = 「原生 App 必须使用 build:native…」/「禁止直接复用 Web 产物」**
+   → 用了 `npm run build`（Web 产物）。换 `build:native:internal`（内测）或
+   `build:native`（上架）重打。见 §三 致命陷阱。
+3. **红屏 = 「原生生产构建缺少 VITE_NATIVE_ENDPOINT」**
+   → `build:native` 没带 `VITE_NATIVE_ENDPOINT=https://d-bee.cn`。
+   ⚠️ 注意：此 throw 在**构建期**就会被 `vite.config.ts` 的 `validateNativeBuild`
+   拦下（响亮报错、exit 1），正常情况走不到运行期；若真在运行期看到它，
+   说明装的是绕过护栏的旧产物 → 回到 1 重打。
+4. **红屏 = 「React 未挂载（5 秒内 #root 仍为空，且无任何 JS 报错）」**
+   → `cap sync` 没跑，或 `index.html` 引用的 assets hash 与实际文件不一致。
+   比对：`grep -oE 'assets/index-[A-Za-z0-9_-]+\.js' ios/App/App/public/index.html`
+   与 `ls ios/App/App/public/assets/`。
+5. **红屏 = 「资源加载失败」** → 照红屏给出的文件名查 `public/assets/` 是否存在该文件。
+6. **App 正常起来了** → 面板零副作用（不创建 DOM、不改样式），无需理会。
+
+**装机前 30 秒自检（Windows/Mac 通用，比装到手机再看快得多）**：
+
+```bash
+# ① 白屏包判定：≥1 = 用了 npm run build，别装
+grep -c "禁止直接复用 Web 产物" dist/assets/index-*.js        # 必须 0
+
+# ② 自报面板已进产物：必须 ≥1（为 0 说明 index.html 是旧版，白屏时将无提示）
+grep -c "dbee-boot-error" dist/index.html
+
+# ③ cap sync 确实搬运了：与 ② 同号，且 ios public 引用的 hash 与 dist 一致
+grep -c "dbee-boot-error" ios/App/App/public/index.html
+grep -oE 'assets/index-[A-Za-z0-9_-]+\.js' dist/index.html ios/App/App/public/index.html
+
+# ④ 数据面正确（内测=云库 / 上架=d-bee.cn）
+grep -oh "https://\(zilv-mifeng.app.workbuddy.host\|d-bee.cn\)" dist/assets/index-*.js | sort -u
+```
+
+2026-10-31 实测基线：`build:native:internal` 产物 ①=0、②=2、③两侧 hash 均为
+`index-BW1eZKqy.js`、④=`https://zilv-mifeng.app.workbuddy.host`；故意跑 `npm run build`
+复现误用时 ①=1 但②仍=2 —— 即**误打的白屏包也会自报**，这正是本机制的价值。
+
+**长期教训**：构建期护栏的失败方式必须是「响亮失败」。
+`vite.config.ts` 的 `validateNativeBuild` 做到了（exit 1 + 明确文案），
+`cloudConfig.ts` 的运行期兜底只是第二道防线——一旦落到运行期，用户看到的就是白屏。
+**任何 fail-closed 护栏都要配一个「可视化失败面」**，否则护栏从「防止错误配置」
+退化成「无声故障」，排障成本远高于它省下的成本。
 
 ---
 

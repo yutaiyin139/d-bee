@@ -3,6 +3,7 @@ import App from './App'
 import './styles.css'
 import { isNative } from './lib/platform'
 import { PrivacyGate } from './components/PrivacyGate'
+import { BootErrorBoundary } from './components/BootErrorBoundary'
 
 const el = document.getElementById('root')
 if (!el) throw new Error('root element not found')
@@ -13,11 +14,16 @@ if (!el) throw new Error('root element not found')
 // （工信部「未同意前不得收集个人信息」专项整治的直接靶心）。放在这里，未同意时
 // <App /> 根本不挂载，零请求。详见 components/PrivacyGate.tsx 文件头注释。
 //
+// BootErrorBoundary 在 PrivacyGate 之外：渲染期任何抛错都会把错误画到屏幕上，
+// 而不是留下「纯白屏 + 无报错」这种无法排障的状态（见该文件头注释）。
+//
 // 不使用 StrictMode：避免开发模式下 effect 双次执行导致 AI 调用与写入重复
 createRoot(el).render(
-  <PrivacyGate>
-    <App />
-  </PrivacyGate>,
+  <BootErrorBoundary>
+    <PrivacyGate>
+      <App />
+    </PrivacyGate>
+  </BootErrorBoundary>,
 )
 
 // PWA 可安装性：仅注册一个透传 fetch 的最小 SW，不做离线缓存。

@@ -19,6 +19,120 @@
     <title>D-Bee · 自律蜜蜂</title>
   </head>
   <body>
+    <!--
+      启动失败自报面板（2026-10-31 加，iOS 真机白屏排障的血泪教训）。
+
+      为什么必须有它：
+        本项目所有 web 资源在原生包里是**本地文件**（capacitor://localhost），
+        任何模块级 throw 都不会有网络报错、不会有弹窗，只会让 React 挂载不上去
+        —— 表现就是「纯白/米白屏，状态栏正常，无任何提示」（CSS 已加载所以偏米白）。
+        10-30 那次白屏（npm run build 被 cloudConfig fail-closed 护栏击中）
+        花了 45 分钟才用「构建产物 grep 对照」倒推出根因；而真机侧无法挂调试器，
+        Windows 开发机也编不了 Swift —— 排障只能靠猜。
+
+      它做什么：
+        在任何业务 JS 之前，用零依赖的内联脚本挂上四类捕获，把错误**直接画在屏幕上**，
+        用户拍张照就能拿到确切根因：
+          ① window.onerror            模块求值期 / 运行期未捕获异常（含 stack）
+          ② unhandledrejection         异步链里的静默失败
+          ③ error(capture=true)        script/css/img 等资源 404 或加载失败
+          ④ 5 秒兜底                   无任何报错但 #root 仍为空 = React 没挂载
+        另外打印 href（区分 capacitor://localhost 与 https://localhost）、
+        UA、#root 子节点数、以及实际加载的 JS 文件名（带 hash，可判断装的是哪次产物）。
+
+      约束：
+        · 必须用 ES5 语法 + 内联，不能 import 任何模块 —— 它要在业务 JS 之前就能跑，
+          且业务 JS 本身可能就是出错源。
+        · 面板挂到 documentElement 而非 body，z-index 顶格：React 重渲染/卸载都冲不掉它。
+        · 正常启动时零副作用（不创建任何 DOM、不改样式）。
+      详见 docs/今晚-Mac编译执行手册.md §五-5「白屏排障」。
+    -->
+    <script>
+      (function () {
+        var fired = false
+
+        function panel() {
+          var p = document.getElementById('dbee-boot-error')
+          if (p) return p
+          p = document.createElement('div')
+          p.id = 'dbee-boot-error'
+          p.setAttribute(
+            'style',
+            'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;overflow:auto;' +
+              'background:#FCEBEB;color:#791F1F;padding:16px 14px 48px;' +
+              'font:12px/1.6 -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;' +
+              'white-space:pre-wrap;word-break:break-all;text-align:left;-webkit-text-size-adjust:100%'
+          )
+          document.documentElement.appendChild(p)
+          return p
+        }
+
+        function env() {
+          var srcs = []
+          var tags = document.getElementsByTagName('script')
+          for (var i = 0; i < tags.length; i++) {
+            if (tags[i].src) srcs.push(tags[i].src.replace(location.origin, ''))
+          }
+          var root = document.getElementById('root')
+          return (
+            '\n\n──── 环境快照 ────\n' +
+            'href: ' + location.href + '\n' +
+            'root 子节点: ' + (root ? root.childElementCount : '(无 #root)') + '\n' +
+            'script: ' + (srcs.join(', ') || '(无)') + '\n' +
+            'ua: ' + navigator.userAgent
+          )
+        }
+
+        function show(kind, detail) {
+          fired = true
+          panel().textContent =
+            '【D-Bee 启动自报】请把本页截图发给开发者\n\n' +
+            '▸ ' + kind + '\n\n' + (detail || '(无详情)') + env()
+        }
+
+        // 供 React 错误边界（src/components/BootErrorBoundary.tsx）复用同一面板
+        window.__dbeeShowBootError = function (msg) {
+          show('React 渲染期抛错', msg)
+        }
+
+        window.onerror = function (msg, src, line, col, err) {
+          show('脚本未捕获异常: ' + msg, (err && err.stack) || '位置: ' + src + ':' + line + ':' + col)
+          return false
+        }
+
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e && e.reason
+          show('未处理的 Promise 拒绝', (r && (r.stack || r.message)) || String(r))
+        })
+
+        // capture 阶段才能收到资源加载错误（资源错误不冒泡）
+        window.addEventListener(
+          'error',
+          function (e) {
+            var t = e && e.target
+            if (t && t !== window && (t.src || t.href)) {
+              show('资源加载失败', (t.tagName || '?') + ' → ' + (t.src || t.href))
+            }
+          },
+          true
+        )
+
+        // 兜底：没有报错，但 React 就是没挂上去（例如入口路径不对、CSS 遮挡、
+        // 模块被死代码消除成空）。这类白屏最隐蔽，只能靠超时探测。
+        setTimeout(function () {
+          if (fired) return
+          var root = document.getElementById('root')
+          if (!root || root.childElementCount === 0) {
+            show(
+              'React 未挂载（5 秒内 #root 仍为空，且无任何 JS 报错）',
+              '排查方向：① 产物是否用 build:native / build:native:internal 打的\n' +
+                '② cap sync 是否把 dist 同步进了 ios/App/App/public\n' +
+                '③ 入口 index.html 引用的 assets 文件名是否与实际产物一致'
+            )
+          }
+        }, 5000)
+      })()
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
