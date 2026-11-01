@@ -208,6 +208,17 @@ export function loadConfig(env = process.env) {
     // 食物识别需要看清细节，默认 high；低配/高并发场景可改 low。
     llmImageDetail: (env.LLM_IMAGE_DETAIL?.trim() || 'high').toLowerCase(),
     llmTimeoutMs: int(env.LLM_TIMEOUT_MS, 120000),
+    // 🔴 视觉请求是否开启上游「深度思考」（仅对阿里云百炼 Qwen3.x 系生效）。
+    //   为什么默认关：qwen3.8-max 等混合思考模型**默认开启思考**，2026-11-01 生产实测
+    //   一单午餐识别 completion_tokens=3221，其中 reasoning_tokens=3105（96%），
+    //   真正输出仅 241 token —— 思考链路对「看图报菜名」这种任务毫无收益，
+    //   却把单次识别拖到 30–60s+（用户实测「超过 1 分钟」），且按 token 计费白烧钱。
+    //   官方口径：enable_thinking 非 OpenAI 标准参数，OpenAI 兼容模式下作为 body 顶层参数传入
+    //   （SDK 的 extra_body 即 raw JSON 顶层），false=直接回复。
+    //   https://help.aliyun.com/zh/model-studio/deep-thinking
+    //   需要更强推理时可设 LLM_VISION_ENABLE_THINKING=true 打开。
+    //   注意：DeepSeek 上游会忽略该未知参数，不会报错。
+    llmVisionEnableThinking: bool(env.LLM_VISION_ENABLE_THINKING, false),
     // 每用户每日 AI 调用上限的兜底闸（数据库里另有 consume_ai_quota，这是防打穿的第二层）
     llmDailyCapPerUser: int(env.LLM_DAILY_CAP, 200),
     // 🔴 安全审计③：文本请求独立降额。

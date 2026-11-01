@@ -356,7 +356,18 @@ export function createLlmHandlers(deps) {
         upstreamBody.messages = withDetail
       }
 
+      // 🔴 视觉请求关闭上游「深度思考」（2026-11-01 生产实测修复「识别超 1 分钟」）。
+      //   qwen3.8-max 默认开思考：实测 completion 3221 token 里 reasoning 占 3105（96%），
+      //   单张餐食识别被拖到 30–60s+。看图报菜名不需要推理链，关思考后延迟与成本双降。
+      //   enable_thinking 是百炼 OpenAI 兼容模式的 body 顶层参数；DeepSeek 上游会忽略它。
+      //   仅视觉请求注入：文本走 DeepSeek，没有该参数概念，保持请求体最小集。
+      if (wantVision) {
+        upstreamBody.enable_thinking = cfg.llmVisionEnableThinking === true
+      }
+
       const ac = new AbortController()
+      // 耗时观测：识别慢的定性依据（2026-11-01「超 1 分钟」即缺此字段，只能靠 usage 反推）
+      const startedAt = Date.now()
       // 客户端断开（用户切页/取消）→ 立刻取消上游请求，否则白烧 token
       const onClose = () => ac.abort()
       res.on('close', onClose)
@@ -456,7 +467,8 @@ export function createLlmHandlers(deps) {
 
       logger.info(
         `[llm] owner=${ownerId} model=${model} 图=${est.images} 入≈${est.input}tok ` +
-        `块=${chunks} 出≈${completionText}tok${usage ? ` usage=${JSON.stringify(usage)}` : ''}`,
+        `块=${chunks} 出≈${completionText}tok 耗时=${Date.now() - startedAt}ms` +
+        `${usage ? ` usage=${JSON.stringify(usage)}` : ''}`,
       )
 
       /**
