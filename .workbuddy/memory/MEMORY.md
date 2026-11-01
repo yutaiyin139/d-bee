@@ -17,9 +17,11 @@
 - **10-31 全仓口径核查**（`e8b7ffd`）：Bundle ID / 域名代码侧全对；唯一缺陷 `tools/android-cdp.py` 硬编码弃用包名已修（`DBEE_PKG`/`--pkg`）；12 份 docs 过期口径已更正。
 - **10-31 四项安全问题核查**：①万能码=不属实（真发短信+三层拒启动防护）②**5432 公网暴露=属实已修**（`listen_addresses=localhost`，远程管理改 `ssh -L 15432:127.0.0.1:5432`）③历史密钥未轮换=属实，/tmp 明文已 shred，**SSH/sudo 密码仍未轮换待拍板**④双后端走云吃不到 0039=属实已修（云库 7 权益函数补齐闸门，攻击 4 路径全拦）。
 - **10-31 晚**：ICP 企业备案已提交进管局审核（6–25 工作日）；iOS 真机白屏加「启动失败自报面板」（`c99f98f`：index.html 内联 ES5 四道捕获 + `BootErrorBoundary.tsx` 包在 PrivacyGate 外），误用 `npm run build` 现会红屏自报。
+- **11-01 白屏闭环 + 四问题根因全部锁定**：Mac 侧按正确指令跑通 `npm ci`+`build:native:internal`+`cap sync ios`，自报面板首次实战生效并**直接给出根因**（红屏文案逐字等于 `cloudConfig.ts:87` 护栏 = 误用 `npm run build`，非代码缺陷）。用户报的 4 个问题经两个只读探针实证：①iOS 登录后红屏=IAP 恢复链路未捕获异常（已修 `177ec7d`）②③13911111170 收不到验证码=`PORT_NOT_REGISTERED` **移动侧实名报备未完成**（`QuerySendDetails` 实证 5 条全失败，联通号全 `DELIVERED`；我方链路 0 失败 0 限流，**需用户在阿里云控制台补报备**）④识别一单午餐超 1 分钟=qwen3.8-max **默认深度思考空转**（reasoning 3105/3221=96%，已修 `dc217da` 待部署）。⚠️ 前一轮「iOS 获取验证码 TLS 失败」结论**作废**——用户本轮能在 iOS 登录成功，证明 TLS 当时已通。
 
 **下一步（上架前主线）**
-1. Mac/Xcode 真机实证整改 #1~#5 原生改动：HealthKit status 分支 / OriginProxy cancel 双端 / LocalNotifications 真机推送（+iOS 开 Push capability）/ StoreKit 沙盒七项矩阵（退款/续订/断网/杀 App）。⚠️ Windows 编不了 Swift。
+0. 🔴 **11-01 新增两项待拍板**：①**移动号段收不到验证码**=签名子端口号移动侧实名报备未完成 → 用户须在阿里云短信控制台「签名管理」查**运营商报备结果**并补报备（官方称 5–7 工作日，部分 7–10；期间移动用户只能走**密码登录**）。②**识别提速修复待部署**：`deploy/apply-llm-thinking-fix.py` 已备好（只搬 `lib/config.mjs`+`lib/llm.mjs`，**绝不动 gateway.env**；双重语法校验+时间戳备份+healthz 失败自动回滚+env sha256 前后断言），涉及生产重启**未执行**，等拍板。
+1. Mac/Xcode 真机实证整改 #1~#5 原生改动：HealthKit status 分支 / OriginProxy cancel 双端 / LocalNotifications 真机推送（+iOS 开 Push capability）/ StoreKit 沙盒七项矩阵（退款/续订/断网/杀 App）。⚠️ Windows 编不了 Swift。iOS 红屏修复（`177ec7d`）也须 Mac 侧重打 `build:native:internal` + `cap sync ios` 才能在真机生效。
 2. ASC 配 3 商品（`dbee_pro_monthly`/`dbee_pro_yearly`/`dbee_lifetime`）+ IAP capability + 收款 + Notifications V2 webhook 指 `https://d-bee.cn` + `APPLE_BUNDLE_ID`/`SHARED_SECRET`/`APPLE_ALLOWED_ENVS` → iOS 提审（需备案号）。
 3. ICP 备案：注销重备（详见「业务与资质」）；A4 已做完可随时注销不停业务；工信部短信核验 24h 内必做。
 4. 资质到货后（公章 10-27 到手、对公账户 10-28 开立）→ 小程序主体变更 / 短信签约 / 商户号 / ASC 付费协议。
@@ -37,7 +39,7 @@
 - ⑦演示账户两套数据面（iOS 云库 owner `2115454156301934592` / web 自建 owner `1793280185303313979`，同邮箱同密码但互不相通；iOS 切自建库后须重建账户+预置数据，否则审核员登录空账户 → Guideline 2.1）。
 - ⚠️ 安全待办（用户处理）：①重置 DeepSeek API key（曾明文出现）②轮换 SSH/dbee_app 密码。**轮换优先于重写历史**（`git filter-repo`+force push 属破坏性操作，未擅自执行）。
 
-**版本/git**：commit 流水不入本记忆，一律 `git log`。最新 HEAD `c99f98f`。
+**版本/git**：commit 流水不入本记忆，一律 `git log`（截至 11-01 15:41 本地 HEAD `f4b4e8e`；`dc217da` 起 3 个提交因 GitHub 502 尚未推上远端，提交已安全落本地，网络恢复后 `git push origin main` 即可）。
 
 ## 三条主线
 
@@ -87,6 +89,11 @@ endpoint 同源/绝对 HTTPS；`CapacitorHttp.enabled=true` 必开；云 SDK 独
 - **honey_ledger 唯一索引 `(owner_id, reason, ref_id)`** 会把「每日多次」卡成「每日一次」：ref_id 需带唯一后缀（`to_char(clock_timestamp(),'HH24MISSMS')`）；排查「记录已存在」先查 `pg_indexes`。
 - **Xcode 完好性判定**：`xcodebuild -version` 报「Xcode 27.1」实为 CLT 版本号对齐，极具迷惑性。判定 = `du -sh` ≥15GB + `-showsdks` 列出 iphoneos，**不能只看 -version**。
 - **iOS 首次真机编译三处 bug（已修）**：①拍照无反应（缺 `NSPhotoLibraryAddUsageDescription`，前端 catch 静默吞 reject）②`resultType:'DataUrl'` 大小写 bug ③Bundle ID 冲突。顺序：`npm ci` → 三选一构建 → `npx cap sync ios` → Cmd+R。
+- 🔴 **`SendSms` 返回 `Code=OK` ≠ 送达**：它只代表阿里云**受理**成功。排查「某号收不到验证码」时若网关日志全部 `Code=OK`，**下一步必须调 `QuerySendDetails`**（`PhoneNumber` + `SendDate`(yyyyMMdd) + 分页）看 `SendStatus`(1 等回执/2 失败/3 成功) 与 `ErrCode`。只看自家日志会把运营商侧问题误判成「我方正常，让用户重试」——11-01 就差点这么误判。
+- 🔴 **`ErrCode=PORT_NOT_REGISTERED` = 签名子端口号未完成运营商实名制报备**（11-01 实证：移动号 139\*\*\*\*1170 五条全失败，联通号 186\*\*\*\*4399/4728 全部 `DELIVERED`）。一个签名会生成多个子端口号分发到不同运营商，**部分运营商未报备通过 → 该运营商用户收不到**，故「换号能收」不是玄学而是号段差异。签名审核通过 ≠ 报备完成（官方称平均 5–7 工作日，部分 7–10）；处理入口=阿里云短信控制台 → 签名管理 → 查看**运营商报备结果**。生产 `SMS_PROVIDER=aliyun` 且**无腾讯云凭据**（`SMS_TENCENT_*` 除 REGION 外全未设置）→ 无法靠切 provider 即时绕开。
+- 🔴 **qwen3.8/3.7/3.6/3.5 系默认开启「深度思考」**，简单视觉任务上是纯空转：11-01 实测一单午餐识别 `completion_tokens=3221` 里 **`reasoning_tokens=3105`（96%）**，真正输出仅 241 token，耗时 30–60s+（用户报「识别超过 1 分钟」）且按 token 白烧钱。关闭方式：OpenAI 兼容模式下把 **`enable_thinking:false` 作为 body 顶层参数**传入（Python SDK 才放 `extra_body`）。已在 `llm.mjs` 仅对**视觉请求**注入（DeepSeek 上游忽略未知参数），开关 `LLM_VISION_ENABLE_THINKING`（默认 false）。
+- **Capacitor 原生事件回调里同步抛错不会被 Promise `.catch()` 接住**：`addListener(name, cb)` 的外层 `.catch()` 只覆盖「注册」这个 Promise，`cb` 是在原生派发器里**同步**调用的 → 抛错直接冒成 `window.onerror`。回调体内必须自带 try。同理，`void (async()=>{...})()` 若无 `.catch()`，try **之外**的 await（如 `currentOwnerId()`/`readPending()`）抛错即成 unhandledrejection。11-01 iOS 登录后红屏即此二因叠加。
+- **错误面板必须分「致命/非致命」两形态**：整屏接管只适用于启动期/渲染期（App 已不可用）；运行期非致命异常（如 IAP 后台恢复失败）应改**顶部横幅 + 关闭按钮**，否则「App 完全可用却被自己的错误面板盖成不可用」。且 `padding-top` 必须叠加 `env(safe-area-inset-top)` —— 刘海机上标题行会被状态栏压住，截图连错误类型都读不出来。
 
 ### 部署侧坑
 
