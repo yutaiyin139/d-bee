@@ -20,8 +20,8 @@
 - **11-01 白屏闭环 + 四问题根因全部锁定**：Mac 侧跑通 `npm ci`+`build:native:internal`+`cap sync ios`，自报面板首次实战生效并**直接给出根因**（红屏文案逐字等于 `cloudConfig.ts:87` 护栏 = 误用 `npm run build`，非代码缺陷）。四个报障经三个只读探针（`deploy/probe-sms-fail.py` 查网关日志 / `probe-sms-delivery.py` 调 `QuerySendDetails` / `probe-restart-window.py` 量化重启影响面+低峰窗口+LLM 耗时基线）实证：①iOS 登录后红屏=IAP 恢复链路未捕获异常（`177ec7d` 只把面板降级为可关闭横幅、**未堵住异常源**；16:20 真机复现 → `5d9de96` 三层纵深防护才是真修，**两轮都须 Mac 重打才在真机生效**）②③139\*\*\*\*1170（移动号段）收不到验证码=`PORT_NOT_REGISTERED` 移动侧报备未完成（我方 0 失败 0 限流，**需用户在控制台补报备**）④识别超 1 分钟=qwen 深度思考空转（已修 `dc217da`，**待部署**）。⚠️ 前一轮「iOS 获取验证码 TLS 失败」结论**作废**——用户本轮能在 iOS 登录成功即证明 TLS 当时已通。
 
 **下一步（上架前主线）**
-0. 🔴 **11-01 两项待拍板**：①**移动号段收不到验证码**=签名子端口号移动侧报备未完成 → 须在阿里云短信控制台「签名管理」查**运营商报备结果**补报备（5–7 工作日，部分 7–10；期间移动用户走**密码登录**）。②**识别提速修复待部署**：`deploy/apply-llm-thinking-fix.py` 已备好（只搬 2 个 lib 文件、**绝不动 gateway.env**、双重语法校验+备份+healthz 失败自动回滚+env sha256 断言），**未执行**等拍板。
-   **重启影响面已实测**（`deploy/probe-restart-window.py`，只读）：48h 日志仅 **29 行**、活动只在 11-01 14:00–15:24（=用户自测时段）、独立 owner **3 个**（波及上界）、`otp.challenges/tokens` 6 次采样**全 0**、`NRestarts=0`、access/refresh TTL 走默认 **30min/30d**。→ **重启代价当前极低，反而是最佳窗口**；重启只清内存态（OTP + refresh_token），access token 是无状态 JWT（`lib/jwt.mjs` 手写 HS256）+ env 不动 → 旧 token 仍有效，**只有超 30min 未活跃者需重登**。🔑 交叉验证：⑤ 无 `耗时=` 样本但 ⑥ 有 `reasoning_tokens`（该字段旧版即有、`耗时=` 是 `dc217da` 新加）→ 独立证明 **`dc217da` 尚未部署**。
+0. 🔴 **11-01 剩一项待拍板**：**移动号段收不到验证码**=签名子端口号移动侧报备未完成 → 须在阿里云短信控制台「签名管理」查**运营商报备结果**补报备（5–7 工作日，部分 7–10；期间移动用户走**密码登录**）。✅ 识别提速修复**已于 11-01 19:11 部署生产并端到端实证**（详见当日日志）。
+   **重启影响面已实测**（`deploy/probe-restart-window.py`，只读）：48h 日志仅 **29 行**、活动只在 11-01 14:00–15:24（=用户自测时段）、独立 owner **3 个**（波及上界）、`otp.challenges/tokens` 6 次采样**全 0**、`NRestarts=0`、access/refresh TTL 走默认 **30min/30d**。→ **重启代价当前极低**；重启只清内存态（OTP + refresh_token），access token 是无状态 JWT（`lib/jwt.mjs` 手写 HS256）+ env 不动 → 旧 token 仍有效，**只有超 30min 未活跃者需重登**。实际重启窗口 19:09–19:13 业务日志 **0 行**，印证无用户被波及。
 1. Mac/Xcode 真机实证整改 #1~#5 原生改动：HealthKit status 分支 / OriginProxy cancel 双端 / LocalNotifications 真机推送（+iOS 开 Push capability）/ StoreKit 沙盒七项矩阵（退款/续订/断网/杀 App）。⚠️ Windows 编不了 Swift。iOS 红屏修复（`5d9de96`，第二轮三层防护）也须 Mac 侧重打 `build:native:internal` + `cap sync ios` 才能在真机生效。
 2. ASC 配 3 商品（`dbee_pro_monthly`/`dbee_pro_yearly`/`dbee_lifetime`）+ IAP capability + 收款 + Notifications V2 webhook 指 `https://d-bee.cn` + `APPLE_BUNDLE_ID`/`SHARED_SECRET`/`APPLE_ALLOWED_ENVS` → iOS 提审（需备案号）。
 3. ICP 备案：注销重备（详见「业务与资质」）；A4 已做完可随时注销不停业务；工信部短信核验 24h 内必做。
@@ -40,7 +40,7 @@
 - ⑦演示账户两套数据面（iOS 云库 owner `2115454156301934592` / web 自建 owner `1793280185303313979`，同邮箱同密码但互不相通；iOS 切自建库后须重建账户+预置数据，否则审核员登录空账户 → Guideline 2.1）。
 - ⚠️ 安全待办（用户处理）：①重置 DeepSeek API key（曾明文出现）②轮换 SSH/dbee_app 密码。**轮换优先于重写历史**（`git filter-repo`+force push 属破坏性操作，未擅自执行）。
 
-**版本/git**：commit 流水不入本记忆，一律 `git log`（截至 11-01 15:41 本地 HEAD `f4b4e8e`；`dc217da` 起 3 个提交因 GitHub 502 尚未推上远端，提交已安全落本地，网络恢复后 `git push origin main` 即可）。
+**版本/git**：commit 流水不入本记忆，一律 `git log`（截至 11-01 19:15 本地与远端**已同步**，HEAD `6ca42a9`；此前因 GitHub 502 积压的提交已全部推送）。
 
 ## 三条主线
 
@@ -92,7 +92,8 @@ endpoint 同源/绝对 HTTPS；`CapacitorHttp.enabled=true` 必开；云 SDK 独
 - **iOS 首次真机编译三处 bug（已修）**：①拍照无反应（缺 `NSPhotoLibraryAddUsageDescription`，前端 catch 静默吞 reject）②`resultType:'DataUrl'` 大小写 bug ③Bundle ID 冲突。顺序：`npm ci` → 三选一构建 → `npx cap sync ios` → Cmd+R。
 - 🔴 **`SendSms` 返回 `Code=OK` ≠ 送达**（只代表阿里云**受理**）。查「某号收不到验证码」而网关日志全 `Code=OK` 时，**下一步必须调 `QuerySendDetails`**（`PhoneNumber`+`SendDate`(yyyyMMdd)+分页）看 `SendStatus`(1 等回执/2 失败/3 成功) 与 `ErrCode`；只看自家日志会误判成「我方正常，让用户重试」。
 - 🔴 **`ErrCode=PORT_NOT_REGISTERED` = 签名子端口号未完成运营商实名制报备**（11-01 实证：移动 139\*\*\*\*1170 五条全失败，联通 186\*\*\*\*4399/4728 全 `DELIVERED`）。一个签名生成多个子端口号分发到不同运营商 → **部分未报备通过则该运营商用户收不到**，「换号能收」不是玄学是号段差异。签名审核通过 ≠ 报备完成（5–7 工作日，部分 7–10）；入口=短信控制台 → 签名管理 → **运营商报备结果**。生产 `SMS_PROVIDER=aliyun` 且**无腾讯云凭据**（`SMS_TENCENT_*` 除 REGION 外全未设置）→ 不能靠切 provider 绕开，期间移动用户只能走密码登录。
-- 🔴 **qwen3.8/3.7/3.6/3.5 系默认开「深度思考」**，简单视觉任务上是纯空转：11-01 实测一单午餐 `completion_tokens=3221` 里 `reasoning_tokens=3105`（**96%**），真输出仅 241 token，耗时 30–60s+ 且白烧钱。关闭=OpenAI 兼容模式把 **`enable_thinking:false` 放 body 顶层**（Python SDK 才放 `extra_body`）。已在 `llm.mjs` 仅对视觉请求注入（DeepSeek 忽略未知参数），开关 `LLM_VISION_ENABLE_THINKING`（默认 false）。
+- 🔴 **qwen3.8/3.7/3.6/3.5 系默认开「深度思考」**，简单视觉任务上是纯空转：11-01 实测一单午餐 `completion_tokens=3221` 里 `reasoning_tokens=3105`（**96%**），真输出仅 241 token，耗时 30–60s+ 且白烧钱。关闭=OpenAI 兼容模式把 **`enable_thinking:false` 放 body 顶层**（Python SDK 才放 `extra_body`）。已在 `llm.mjs` 仅对视觉请求注入（DeepSeek 忽略未知参数），开关 `LLM_VISION_ENABLE_THINKING`（默认 false）。**11-01 19:11 已部署生产 + A/B 实证上游确实尊重该参数**：同图同 prompt，`false` → 1085ms/completion=3/思考流 0 字；不传 → 7321ms/completion=122/思考流 149 字（**6.7 倍提速**）。质量若退化可把 `LLM_VISION_ENABLE_THINKING=true` 写进 gateway.env 单独回退，**无需改代码/再部署**。
+- 🔴 **`reasoning_tokens` 嵌在 `usage.completion_tokens_details.reasoning_tokens`，不在 `usage` 顶层**：11-01 A/B 探针只读顶层 → 两边都显示「无字段」，而生产日志明明有 3105（日志侧用正则 `reasoning_tokens[":]+[0-9]+` 扫整个 JSON 串，不管嵌套深度都命中）。读该字段务必按嵌套路径取，或直接用正则扫串。
 - 🔴 **链尾 `.catch()` ≠ 所有失败都被兜住**（Capacitor 8.5.3 `addListenerNative` 结构性缺陷，11-01 iOS 红屏两轮的真根因）：其实现为 `const call = addListener(ev,cb); new Promise(res => call.then(() => res({remove})))`。两条致命路径 ①`cap.toNative` 对回调型调用返回的是 **`callbackId` 字符串**（`native-bridge.js:913`）而非 Promise，对其 `.then` = **同步 TypeError**，`.catch()` 根本没机会挂上；②原生 `addListener:`（`CAPPlugin.m:105-109`）只 `setKeepAlive:TRUE` **从不 resolve** → 该 Promise **永久 pending**，链尾 `.catch()` 即使挂上也**永不触发**。另 `cb` 在原生派发器里**同步**调用，抛错直冒 `window.onerror`。故须对「同步抛错」「返回非 Promise（`typeof p.then==='function'` 判空）」「Promise 自身 reject」**三路分别设防**，并在编排层立「保证不 reject」契约。
 - 🔴 **跨引擎错误上报必须 message 与 stack 分开取**：iOS JSC 的 `error.stack` **不含** message（V8 才把 message 放 stack 首行）→ `r.stack || r.message` 在 iOS 上 message **永远丢失**（连续两轮截图读不出错误文本的根因）。正解：分别取，`stack.indexOf(message) === -1` 时拼接。错误面板还须分**致命/非致命**两形态：整屏接管只适用于启动期/渲染期，运行期非致命改**顶部横幅+关闭按钮**，否则「App 可用却被自己的面板盖成不可用」；`padding-top` 必叠 `env(safe-area-inset-top)`（刘海机上标题被状态栏压住）；React 渲染期抛错须显式传 fatal（此时 `#root` 已有子节点，按 `childElementCount` 自动判断会误判）。
 

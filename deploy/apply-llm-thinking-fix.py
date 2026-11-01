@@ -163,13 +163,27 @@ def main() -> int:
         tr.set_keepalive(30)
 
     # 上传（SFTP，文本文件 LF 归一）
-    print("\n═══ 上传两个文件到 ~/dbee-llmfix/ ═══")
-    _, so, _ = cli.exec_command("mkdir -p ~/dbee-llmfix/lib && rm -f ~/dbee-llmfix/lib/*.mjs")
+    # 🔴 SFTP **不展开 `~`**：exec_command 走 shell 能展开，但 sftp.open("~/x") 是字面路径，
+    #    会去找真名叫 `~` 的目录 → FileNotFoundError(ENOENT)（11-01 实测踩中）。
+    #    故先用 `echo $HOME` 取绝对路径再拼；不硬编码 /home/ubuntu（换机换用户仍可用）。
+    print("\n═══ 取远端 HOME 绝对路径 ═══")
+    _, so, _ = cli.exec_command("echo $HOME", timeout=30)
+    home = so.read().decode("utf-8", "replace").strip()
+    so.channel.recv_exit_status()
+    if not home.startswith("/"):
+        print(f"[x] 取 HOME 失败，得到: {home!r} —— 中止，不碰任何生产文件")
+        cli.close()
+        return 3
+    stage = f"{home}/dbee-llmfix"
+    print(f"  HOME={home}  暂存目录={stage}/")
+
+    print(f"\n═══ 上传两个文件到 {stage}/ ═══")
+    _, so, _ = cli.exec_command(f"mkdir -p '{stage}/lib' && rm -f '{stage}'/lib/*.mjs")
     so.channel.recv_exit_status()
     sftp = cli.open_sftp()
     for f in FILES:
         local = os.path.join(LOCAL_DIR, *f.split("/"))
-        remote = f"~/dbee-llmfix/{f}"
+        remote = f"{stage}/{f}"   # 绝对路径，SFTP 可直接写
         with open(local, encoding="utf-8") as fh:
             data = fh.read().replace("\r\n", "\n")
         with sftp.open(remote, "w") as out:
@@ -177,9 +191,30 @@ def main() -> int:
         print(f"  OK {f} ({len(data)} chars)")
     sftp.close()
 
+    # 上传后立即核验：服务器侧确实存在且非空（避免「以为传上去了，其实写空文件」）
+    # 🔴 引号坑：`'{stage}/$f'` 用 bash **单引号**会阻止 `$f` 展开 → 去找字面量文件 `$f`
+    #    → 误报 MISSING（11-01 实测踩中，上传其实已成功）。必须用双引号让变量展开。
+    print("\n═══ 核验暂存文件（存在 + 非空 + 字节数）═══")
+    _, so, _ = cli.exec_command(
+        f"for f in {' '.join(FILES)}; do "
+        f"printf '%s  ' \"$f\"; stat -c 'size=%s' \"{stage}/$f\" 2>&1 || echo MISSING; done",
+        timeout=30,
+    )
+    staged = so.read().decode("utf-8", "replace").strip()
+    so.channel.recv_exit_status()
+    print("  " + staged.replace("\n", "\n  "))
+    if "MISSING" in staged or "size=0" in staged:
+        print("[x] 暂存文件缺失或为空 —— 中止，未触碰生产代码")
+        cli.close()
+        return 3
+
     # 执行远端安装脚本（stdin 喂给 bash，不落盘）
+    # ⚠️ timeout 必须给足余量：最坏路径 = 优雅退出 20s(TimeoutStopSec) + 应用内兜底 10s
+    #    + sleep 3 + curl 10s；若 healthz 失败**触发回滚还要再重启一次**（又一轮 20s+）≈ 90s。
+    #    paramiko 超时会让 Python 端断开而**远端脚本仍在跑** —— 等于在回滚执行到一半时失联，
+    #    是本脚本最坏的情形。故给 300s（原 120s 余量偏小）。
     print("\n═══ 执行远端部署 ═══")
-    _, so, se = cli.exec_command("bash -s", timeout=120)
+    _, so, se = cli.exec_command("bash -s", timeout=300)
     so.channel.sendall(REMOTE_SCRIPT.encode())
     so.channel.shutdown_write()
     out = so.read().decode("utf-8", "replace")
