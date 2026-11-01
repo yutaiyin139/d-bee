@@ -121,8 +121,8 @@ capacitor.config.ts ios.includePlugins（5 个，微信刻意排除）
 git clone https://github.com/yutaiyin139/d-bee.git
 cd d-bee
 git log --oneline -1
-#   期望 ≥ dfa3191 feat(ios): 付费墙接入商店价格拉取 + 本地 StoreKit 测试环境
-#   （若显示 47ff2ae fix(ios): storekit internalID... 更好，两者功能等价）
+#   期望 ≥ e6ec273（2026-11-01 main HEAD；含 iOS 红屏三层防护修复 5d9de96）
+#   历史里程碑：dfa3191 付费墙接商店价 → 39a576b 构建期护栏 → 5d9de96 iOS 红屏真修 → e6ec273
 
 # 2. 装依赖 + 构建 web + 同步 iOS + 打开 Xcode
 node -v            # 必须 ≥22
@@ -159,8 +159,10 @@ VITE_ALLOW_CLOUD_NATIVE=true npm run build:native:internal
 #   【❌ 永远不要】npm run build  → iOS 真机必白屏（见上方陷阱说明）
 
 npx cap sync ios                                  # ③ 同步 web 资源 + 插件进 iOS 工程
-#   成功标志：Found 5 Capacitor plugins for ios
-#   （origin-proxy / share / health / iap / camera —— 没有 wechat 是刻意的）
+#   成功标志：**Found 8 Capacitor plugins for ios**（2026-11-01 核对 capacitor.config.ts:47）
+#   origin-proxy / share / health / iap / camera / app / preferences / local-notifications
+#   （没有 wechat 是刻意的：其 SPM 包名带连字符与 CapApp-SPM 模板冲突，见 capacitor.config.ts:33-42）
+#   ⚠️ 若仍显示 5 个 = 你的 capacitor.config.ts 是旧版，先确认 git pull 到 e6ec273
 #   ⚠️ ios/App/App/public 是 gitignore 的（ios/.gitignore:4），Mac 上的包内容
 #      完全由这一步决定 —— 所以②的 mode 选错，③会忠实把错误产物同步进去。
 #   然后手动打开 Xcode：open ios/App
@@ -186,6 +188,52 @@ grep -oE 'function b5\(\)\{.{0,120}' dist/assets/index-*.js
 #   function b5(){return ku}        ✅ 返回 endpoint 常量
 #   function b5(){throw new Error(  🔴 白屏包
 ```
+
+### ②③ 之后自检（2026-11-01 新增：iOS 红屏修复是否进了包）
+
+本次重打的核心目标是把 **`5d9de96`（IAP 监听三层纵深防护）** 装上真机 ——
+上一轮 `177ec7d` 只把错误面板降级为可关闭横幅，**没有堵住异常源**，16:20 真机复现证实仍在。
+
+```bash
+# 5d9de96 是纯 web 侧改动（index.html + checkout.ts + iosIap.ts + plan.tsx），
+# 不含 Swift，故 cap sync 后即生效，无需重编原生插件。
+
+# 🔴 先确认 dist/ 里只有**一份**产物（2026-11-01 实测踩中：dist/assets/ 同时存在
+#    index-ClpColle.js 与 index-aKGgE7sY.js = 两次构建残留，会让下面所有基于
+#    index-*.js 的自检**读到旧包而误判**）。
+#    若列出 >1 个 index-*.js → 先 `rm -rf dist` 再重跑②
+#    （⚠️ 用 shell 的 rm，别用 IDE/资源管理器删：会撞 safe-delete 守卫 genie-trash ETIMEDOUT）
+ls dist/assets/index-*.js
+
+# ① 三层防护是否编译进产物。iosIap 在**动态 import 的独立 chunk** 里，不在 index-*.js；
+#    用 -l 只列命中文件（-c 会为每个文件打一行，混入大量 :0 噪音，易误读）
+grep -l "d-bee-diag" dist/assets/*.js
+#   期望命中：dist/assets/iosIap-*.js（三层防护的诊断留痕）
+#            dist/assets/NativeDiagnostics-*.js（登录页「连接自检」面板）
+#   一个都没有 = 🔴 产物是旧的，回② 重打
+
+# ② 错误面板是否已补 message（iOS JSC 的 error.stack 不含 message，
+#    旧写法 r.stack || r.message 在 iOS 上永远丢失错误文本 → 连续两轮截图读不出错误类型）
+grep -c "describe" index.html          # 期望 ≥1（源码实测 3 处）
+grep -oE "function describe\([^)]*\)" dist/assets/index-*.js | head -1
+#   有输出 = ✅ describe() 已进产物；下次真机再出异常，横幅会直接显示错误内容
+```
+
+> ✅ 以上三条命令已在 Windows 侧对 `5d9de96` 的真实构建产物**实跑验证**（非纸上推断）：
+> `grep -l` 命中 `iosIap-C3SCmQEv.js` + `NativeDiagnostics-BgP3Mfya.js`，`index.html` 含 `describe` 3 处。
+
+> 🔴 **本次重打的预期边界（务必先读，否则会误判「修复无效」）**
+>
+> | 问题 | 重打包后是否解决 | 原因 |
+> |---|---|---|
+> | ① iOS 登录后红屏/横幅 | ✅ **会** | `5d9de96` 是纯 web 改动，cap sync 即进包 |
+> | ④ 识别一单超 1 分钟 | ❌ **不会** | 提速修复（`dc217da`，A/B 实测 6.7 倍）部署在**自建网关** `150.158.51.106:8080`；而 internal 包 endpoint = **云库** `zilv-mifeng.app.workbuddy.host`（`src/cloudConfig.ts:18`），前端全部走 `cloud.llm`（`src/lib/ai.ts:6,63`）→ **两条链路不相交** |
+> | ②③ 移动号段收不到验证码 | ❌ **不会** | 根因是阿里云签名移动侧报备未完成（`PORT_NOT_REGISTERED`），与客户端包无关 |
+>
+> 要让 iOS 也吃到识别提速，只有两条路：**(a)** 云库侧同样关闭视觉思考（需云库配置权限，我方无）；
+> **(b)** 等 ICP 备案 + DNS + HTTPS 三件套齐了，改用
+> `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native` 把数据面切到自建网关。
+> 在此之前，**iOS 上识别仍然慢是预期行为，不是本次重打失败**。
 
 ```text
 3. Xcode GUI 操作：
@@ -353,24 +401,34 @@ grep -oh "https://\(zilv-mifeng.app.workbuddy.host\|d-bee.cn\)" dist/assets/inde
 
 ```text
 Xcode 26+ ｜ Node 22+ ｜ iPhone 真机 ｜ 开发者账号已登录
+版本 1.7.3 / build 12（pbxproj 已提交，无需手改）
 
 git clone https://github.com/yutaiyin139/d-bee.git && cd d-bee
-git log --oneline -1          # ≥ dfa3191
-npm ci
+git log --oneline -1          # 期望 e6ec273（含 iOS 红屏真修 5d9de96）
+npm ci                        # postinstall 自动构建 packages/shared
 cd packages/shared && npm run build && cd ../..   # ① shared 构建（dist/ 是 gitignore 的，必做）
 
 # ② vite 构建 —— 🔴 不能用 npm run build（= Web 产物 → iOS 必白屏），按数据面二选一：
-VITE_ALLOW_CLOUD_NATIVE=true npm run build:native:internal   # 今晚真机内测（云库，禁止上架）
+VITE_ALLOW_CLOUD_NATIVE=true npm run build:native:internal   # 真机内测（云库，禁止上架）
 # VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native # 上架正式包（须备案+DNS+HTTPS 齐）
 
-npx cap sync ios              # ✔ Found 5 Capacitor plugins（无 wechat）
+npx cap sync ios              # ✔ Found **8** Capacitor plugins（无 wechat；显示 5 = 代码没 pull 到最新）
+ls dist/assets/index-*.js     # 必须只有 1 个；>1 = 构建残留，rm -rf dist 重跑②
 grep -c "禁止直接复用 Web 产物" dist/assets/index-*.js   # 必须 0；≥1 = 白屏包，回②重打
+grep -l "d-bee-diag" dist/assets/*.js                   # 应命中 iosIap-*.js（5d9de96 三层防护进包）
 
-Xcode: Scheme Run→Options 确认挂 DbeeProducts.storekit
-       Signing 选 Team → Cmd+R（首次拉 SPM 远程包，慢）
+Xcode: Scheme Run→Options 确认挂 DbeeProducts.storekit（3 商品 monthly/yearly/lifetime）
+       Signing 选 Team → Bundle ID 必须 cn.com.dbee.app（三处一致，非 com.dbee.app）
+       Cmd+R（首次拉 SPM 远程包，慢）
        报 Missing package product 'CapApp-SPM' → §五 3b（Reset Package Caches + Resolve）
 
-回归: 登录(真短信)→记一餐→拍照→扫码→健康→分享
+🔴 本次重打的预期边界（详见 §三「②③ 之后自检」末的表格）：
+   ✅ 会解决：① iOS 登录后红屏/横幅（5d9de96 纯 web 改动，cap sync 即进包）
+   ❌ 不会解决：④ 识别慢 —— 提速修复在自建网关，internal 包走云库，两条链路不相交
+   ❌ 不会解决：②③ 移动号段验证码 —— 根因是阿里云签名报备，与客户端包无关
+
+回归: 登录→记一餐→拍照→扫码→健康→分享；重点验 ① 登录后**不再出现红色横幅**
+     若仍出现 → 横幅现在会**直接显示错误内容**（describe() 已补 message），把它抄回来即可定位
 IAP:  付费墙显示商店价(¥18.00/¥128.00/¥298.00)
       → 购买拉起本地支付面板 → 「支付校验失败」= 预期(服务端未部署)
       Debug→StoreKit→Manage Transactions 可查本地交易
