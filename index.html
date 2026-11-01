@@ -45,26 +45,56 @@
           且业务 JS 本身可能就是出错源。
         · 面板挂到 documentElement 而非 body，z-index 顶格：React 重渲染/卸载都冲不掉它。
         · 正常启动时零副作用（不创建任何 DOM、不改样式）。
+        · 2026-11-01 起分两种形态（实战教训：登录后 IAP 异步异常曾把**可用** App
+          整屏盖成红屏）：
+            - 启动期/渲染期（fatal）→ 整屏接管，此时 App 本来就不可用；
+            - 运行期非致命（#root 已有子节点）→ 顶部横幅 + 关闭按钮，
+              错误照样可截图上报，但不阻断使用。
+        · padding-top 叠加 env(safe-area-inset-top)：刘海机上标题行曾被状态栏压住，
+          截图 OCR 读不出最关键的错误类型。
       详见 docs/今晚-Mac编译执行手册.md §五-5「白屏排障」。
     -->
     <script>
       (function () {
         var fired = false
 
+        // 公共样式。🔴 padding-top 必须叠加 env(safe-area-inset-top)：
+        //   2026-11-01 实战踩坑 —— 原为固定 top:0 + padding 16px，iPhone 刘海机上
+        //   标题行「【D-Bee 启动自报】」正好压在状态栏底下，截图 OCR 怎么都读不出
+        //   最关键的一行（错误类型），只能靠栈帧反推。viewport-fit=cover 已在 head 设置。
+        var BASE_STYLE =
+          'position:fixed;top:0;left:0;right:0;z-index:2147483647;overflow:auto;' +
+          'box-sizing:border-box;background:#FCEBEB;color:#791F1F;' +
+          'font:12px/1.6 -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;' +
+          'white-space:pre-wrap;word-break:break-all;text-align:left;-webkit-text-size-adjust:100%;' +
+          'padding:calc(14px + env(safe-area-inset-top,0px)) 14px ' +
+          'calc(20px + env(safe-area-inset-bottom,0px));'
+        // 启动期（React 没挂上）：整屏接管 —— 此时 App 本来就不可用。
+        var FULL_STYLE = BASE_STYLE + 'bottom:0;'
+        // 🔴 运行期（React 已挂载）：只压顶部横幅，不整屏盖死。
+        //   2026-11-01 实战踩坑 —— 用户登录后 App 完全可用，仅 IAP 后台恢复链路
+        //   抛了个异步异常，旧逻辑却把整个界面盖成红屏，等于「非致命错误把可用
+        //   App 变成不可用」。横幅模式保留错误信息（照样能截图），同时让用户
+        //   能关掉继续用。
+        var BANNER_STYLE =
+          BASE_STYLE +
+          'bottom:auto;max-height:52vh;border-bottom:2px solid #791F1F;' +
+          'box-shadow:0 2px 14px rgba(121,31,31,.28);'
+
         function panel() {
           var p = document.getElementById('dbee-boot-error')
           if (p) return p
           p = document.createElement('div')
           p.id = 'dbee-boot-error'
-          p.setAttribute(
-            'style',
-            'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;overflow:auto;' +
-              'background:#FCEBEB;color:#791F1F;padding:16px 14px 48px;' +
-              'font:12px/1.6 -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;' +
-              'white-space:pre-wrap;word-break:break-all;text-align:left;-webkit-text-size-adjust:100%'
-          )
+          p.setAttribute('style', FULL_STYLE)
           document.documentElement.appendChild(p)
           return p
+        }
+
+        /** React 是否已挂载（= App 本身可用，错误属运行期非致命） */
+        function appAlive() {
+          var root = document.getElementById('root')
+          return !!(root && root.childElementCount > 0)
         }
 
         function env() {
@@ -83,16 +113,52 @@
           )
         }
 
-        function show(kind, detail) {
+        /**
+         * @param {string} kind  错误类型（显示在 ▸ 之后）
+         * @param {string} detail 详情/栈
+         * @param {boolean} [fatal] 显式指定致命性。
+         *   不传则按「React 是否已挂载」自动判断：已挂载 = App 可用 = 非致命横幅。
+         *   🔴 React 渲染期抛错必须显式传 true：此时 #root 里仍有子节点
+         *     （错误边界渲染了兜底 UI），自动判断会误判成「App 可用」，
+         *     而实际上整个界面已经废了。
+         */
+        function show(kind, detail, fatal) {
           fired = true
-          panel().textContent =
-            '【D-Bee 启动自报】请把本页截图发给开发者\n\n' +
-            '▸ ' + kind + '\n\n' + (detail || '(无详情)') + env()
+          var isFatal = typeof fatal === 'boolean' ? fatal : !appAlive()
+          var p = panel()
+          p.setAttribute('style', isFatal ? FULL_STYLE : BANNER_STYLE)
+
+          var head = isFatal
+            ? '【D-Bee 启动自报】请把本页截图发给开发者\n'
+            : '【D-Bee 运行期异常】App 仍可继续使用，请把本页截图发给开发者\n'
+          var box = document.createElement('div')
+          box.textContent = head + '\n▸ ' + kind + '\n\n' + (detail || '(无详情)') + env()
+
+          p.textContent = ''
+          p.appendChild(box)
+
+          // 横幅模式给一个关闭按钮：非致命错误不该把用户锁在红屏上。
+          // 关闭后 fired 仍为 true，5 秒兜底不会重复弹出。
+          if (!isFatal) {
+            var btn = document.createElement('button')
+            btn.type = 'button'
+            btn.textContent = '✕ 我知道了，继续使用 App'
+            btn.setAttribute(
+              'style',
+              'display:block;margin-top:14px;padding:11px 16px;border:0;border-radius:9px;' +
+                'background:#791F1F;color:#FCEBEB;font:14px/1.2 -apple-system,sans-serif;'
+            )
+            btn.onclick = function () {
+              p.style.display = 'none'
+            }
+            p.appendChild(btn)
+          }
         }
 
-        // 供 React 错误边界（src/components/BootErrorBoundary.tsx）复用同一面板
+        // 供 React 错误边界（src/components/BootErrorBoundary.tsx）复用同一面板。
+        // 第三参 true = 致命（整屏接管）：渲染期抛错意味着界面已不可用。
         window.__dbeeShowBootError = function (msg) {
-          show('React 渲染期抛错', msg)
+          show('React 渲染期抛错', msg, true)
         }
 
         window.onerror = function (msg, src, line, col, err) {

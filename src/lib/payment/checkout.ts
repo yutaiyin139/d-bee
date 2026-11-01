@@ -239,6 +239,10 @@ export async function initializePaymentRecovery(
 
   if (!removeUpdateListener && adapter.onPurchaseUpdated) {
     removeUpdateListener = adapter.onPurchaseUpdated((purchase) => {
+      // 🔴 2026-11-01 修复：整个 IIFE 必须自带 .catch —— currentOwnerId/readPending
+      //   原先在 try 之外，任一抛错即成 unhandledrejection，被 index.html 自报面板
+      //   整屏接管（登录后红屏，栈帧 onPurchaseUpdated）。IAP 后台核销失败绝不
+      //   应打断 App：记录保留，下次启动/登录/手动恢复会继续。
       void (async () => {
         const ownerId = await currentOwnerId()
         if (!ownerId) return
@@ -256,7 +260,9 @@ export async function initializePaymentRecovery(
         } catch {
           // 记录保留；下次启动、登录或手动恢复会继续。
         }
-      })()
+      })().catch(() => {
+        // 兜底：任何未预期异常都不冒泡为 unhandledrejection。
+      })
     })
   }
 

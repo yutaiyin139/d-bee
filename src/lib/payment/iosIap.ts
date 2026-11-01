@@ -144,8 +144,15 @@ export function createIosIapAdapter(): PaymentAdapter | null {
       let handle: ListenerHandle | null = null
       void plugin
         .addListener('transactionUpdated', (transaction) => {
-          const purchase = toPurchase(transaction)
-          if (purchase) listener(purchase)
+          // 🔴 listener() 是在 Capacitor 原生事件派发器里**同步**调用的：它抛错不会被
+          //   外层 .catch() 接住（那只覆盖 addListener 这个 Promise），会冒成
+          //   window.onerror → index.html 自报面板整屏接管。故在此就地吞掉。
+          try {
+            const purchase = toPurchase(transaction)
+            if (purchase) listener(purchase)
+          } catch {
+            // 监听回调失败不影响 App：getUnfinished 与手动 restore 仍是兜底。
+          }
         })
         .then((h) => {
           if (disposed) void h.remove()
