@@ -179,6 +179,19 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
   10-30 全天无其他新记录；entitlements 仍 1 条 pro（已于 10-26 19:38 过期）。
 - 流程：genie-baas 工具本会话已注册（连续第 2 次成功）；dump ~128KB，沿用三部分片方案一次通过。
 
+### 2026-11-01 09:44（第 17 次）
+- 结果：**成功**。产出 `db/backups/2026-11-01.json`（128,210 字节）。
+- 行数：profiles=18 / meal_entries=138 / water_logs=46 / exercise_logs=28 / weight_logs=3 /
+  entitlements=1 / ai_usage=28（合计 262 行）。
+- 校验：分片合并脚本内含 7 表 id 严格升序校验 + `.verify-backup.cjs` PASS——JSON.parse OK、顶层字段完整、
+  7 表 row_counts 与 tables.<表>.length 及另发 count(*) 的线上实时行数三方一致。
+- 清理：cutoff=2026-10-02，现存 13 份每日 json（最早 10-13），过期 0 份。
+- 观察：与 10-31 快照相比**仅 ai_usage 增 1 行**（id=81，owner `probe-normal-user`，10-31 10:37，扫描 1 次
+  ——疑为 0039 闸门探针留下的测试行，非真实用户）；其余 6 表零新增，10-31 全天无饮食/饮水/运动记录。
+- 流程：genie-baas 本会话已注册（连续第 3 次成功）。dump ~128KB，沿用分片方案，本次新增**可复用合并脚本**
+  `db/backups/.merge-backup.cjs`（读 `.parts/*.json` → 按 schema 顺序重排 + row_counts + id 升序校验 → 落盘），
+  后续直接复用，不必每次重写合并逻辑。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。
