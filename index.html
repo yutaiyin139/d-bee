@@ -161,14 +161,41 @@
           show('React 渲染期抛错', msg, true)
         }
 
+        // 🔴 2026-11-01 修复：message 与 stack 必须**分开取**，不能 `stack || message`。
+        //   V8（Android/Chrome）的 error.stack 首行含 message，短路没问题；
+        //   但 iOS 用 JSC，error.stack **只有调用帧、不含 message** → stack 存在即短路，
+        //   错误文本永远丢失。后果实证：连续两轮（14:5x 与 16:20）都只拿到
+        //   `onPurchaseUpdated@iosIap-*.js:1:1945`，拿不到具体错误内容，
+        //   只能靠列号做本地重建映射反推 —— 排障成本翻好几倍。
+        function describe(r) {
+          if (!r) return '(空)'
+          if (typeof r === 'string') return r
+          var name = r.name || ''
+          var msg = r.message || ''
+          var stack = r.stack || ''
+          var head = name ? name + (msg ? ': ' + msg : '') : msg
+          if (!head) {
+            try {
+              head = '非 Error 值: ' + JSON.stringify(r)
+            } catch (_) {
+              head = '非 Error 值: ' + String(r)
+            }
+          }
+          // stack 已含 head 时（V8）不重复；不含时（JSC）head 是唯一线索，必须补
+          var body = stack && stack.indexOf(head) === -1 ? head + '\n\n' + stack : stack || head
+          return body || head
+        }
+
         window.onerror = function (msg, src, line, col, err) {
-          show('脚本未捕获异常: ' + msg, (err && err.stack) || '位置: ' + src + ':' + line + ':' + col)
+          show(
+            '脚本未捕获异常: ' + msg,
+            err ? describe(err) : '位置: ' + src + ':' + line + ':' + col
+          )
           return false
         }
 
         window.addEventListener('unhandledrejection', function (e) {
-          var r = e && e.reason
-          show('未处理的 Promise 拒绝', (r && (r.stack || r.message)) || String(r))
+          show('未处理的 Promise 拒绝', describe(e && e.reason))
         })
 
         // capture 阶段才能收到资源加载错误（资源错误不冒泡）

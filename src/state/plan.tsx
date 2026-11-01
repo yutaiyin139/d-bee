@@ -108,9 +108,15 @@ export function PlanProvider({ children }: { children: ReactNode }) {
         return
       }
       if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
-        void refresh()
+        // 🔴 2026-11-01 修复：`void <async 调用>` 必须自带 .catch()。
+        //   initializePaymentRecovery 内部任一环节抛错（真机实证：注册 IAP 监听时
+        //   Capacitor addListener 失败），返回的 Promise 即 reject，而这里只有 void
+        //   没有 catch → 直接成为 unhandledrejection → 触发 index.html 自报面板，
+        //   在登录成功、App 本可正常使用时弹出红色横幅。
+        //   权益刷新与 IAP 恢复都属「尽力而为」：失败不该打断 App，下次启动/登录会重试。
+        void refresh().catch(() => {})
         // iOS：登录后恢复已扣款但未核销的交易；其他平台内部直接返回。
-        void initializePaymentRecovery(refresh)
+        void initializePaymentRecovery(refresh).catch(() => {})
       }
     })
     return off

@@ -142,11 +142,22 @@ export function createIosIapAdapter(): PaymentAdapter | null {
     onPurchaseUpdated(listener: (purchase: PurchaseResult) => void): () => void {
       let disposed = false
       let handle: ListenerHandle | null = null
-      void plugin
-        .addListener('transactionUpdated', (transaction) => {
-          // 🔴 listener() 是在 Capacitor 原生事件派发器里**同步**调用的：它抛错不会被
-          //   外层 .catch() 接住（那只覆盖 addListener 这个 Promise），会冒成
-          //   window.onerror → index.html 自报面板整屏接管。故在此就地吞掉。
+      // 🔴 2026-11-01 二次修复：`plugin.addListener(...)` **这个调用本身**也要 try 包住。
+      //   上一版只在回调体内加了 try，但真机截图（16:20）显示 unhandledrejection 仍在，
+      //   栈帧 `onPurchaseUpdated@iosIap-*.js:1:1945` 精确落在 `.then(...)` 这一段 ——
+      //   即异常来自「注册监听」这个动作，不是监听回调。
+      //
+      //   为什么上一版挂在链尾的 `.catch()` 没接住：Capacitor core 8.5.3 的
+      //   `addListenerNative` 内部是
+      //     const p = new Promise((resolve) => call.then(() => resolve({ remove })))
+      //   —— `call.then()` **没有 rejection handler**。native 侧 addListener 失败时：
+      //     ① 内部产生一条无人处理的 rejection（业务侧无法消除）；
+      //     ② 返回的 `p` **永久 pending**，故挂在 `p` 链上的 `.catch()` 永不触发。
+      //   结论：只能对「同步抛错」+「p 自身 reject」双保险，不能只靠链尾 `.catch()`。
+      try {
+        const pending = plugin.addListener('transactionUpdated', (transaction) => {
+          // listener() 在 Capacitor 原生事件派发器里**同步**调用，抛错不被外层
+          // Promise 的 .catch() 接住（那只覆盖「注册」），会冒成 window.onerror。
           try {
             const purchase = toPurchase(transaction)
             if (purchase) listener(purchase)
@@ -154,16 +165,30 @@ export function createIosIapAdapter(): PaymentAdapter | null {
             // 监听回调失败不影响 App：getUnfinished 与手动 restore 仍是兜底。
           }
         })
-        .then((h) => {
-          if (disposed) void h.remove()
-          else handle = h
-        })
-        .catch(() => {
-          // 启动时 getUnfinished 与手动 restore 仍是兜底，监听失败不阻断 App。
-        })
+        if (pending && typeof (pending as Promise<ListenerHandle>).then === 'function') {
+          void (pending as Promise<ListenerHandle>)
+            .then((h) => {
+              // h.remove 在 Capacitor 的 deprecated 分支里可能是 undefined，
+              // 调用前必须判空 —— 否则又是一条 unhandledrejection。
+              if (disposed) void Promise.resolve(h?.remove?.()).catch(() => {})
+              else handle = h
+            })
+            .catch((err) => {
+              // 监听注册失败不阻断 App：启动时 getUnfinished 与手动 restore 仍是兜底。
+              // 留痕便于在 Xcode Console / NativeDiagnostics 里定位（勿静默）。
+              console.warn('[d-bee-diag] IAP transactionUpdated 监听注册失败', err?.message || err)
+            })
+        } else {
+          console.warn('[d-bee-diag] IAP addListener 未返回 Promise，跳过后台交易监听')
+        }
+      } catch (err) {
+        // 桥未就绪 / 插件缺失 / 同步抛错：静默降级，恢复能力靠 getUnfinished + 手动 restore。
+        console.warn('[d-bee-diag] IAP 注册监听时同步抛错', (err as Error)?.message || err)
+      }
       return () => {
         disposed = true
-        if (handle) void handle.remove()
+        // 🔴 remove() 返回 Promise，`void handle.remove()` 若 reject 同样成 unhandledrejection。
+        if (handle) void Promise.resolve(handle.remove()).catch(() => {})
       }
     },
   }

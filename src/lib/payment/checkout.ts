@@ -228,46 +228,66 @@ function queueRecovery(adapter: PaymentAdapter, includeEntitlements: boolean): P
 /**
  * App 启动/登录后调用：监听后台交易并恢复 unfinished + 本地待核销记录。
  * 监听只注册一次，后续登录会更新权益刷新回调并重新执行恢复。
+ *
+ * 🔴 2026-11-01 契约：**本函数保证不 reject**。IAP 恢复属「尽力而为」的后台补偿，
+ *   任何失败都不应打断登录后的正常使用（真机实证：注册监听失败曾冒成
+ *   unhandledrejection，在 App 完全可用时弹出自报面板）。恢复未完成时记录保留，
+ *   下次启动/登录或用户手动「恢复购买」会继续。
  */
 export async function initializePaymentRecovery(
   onEntitlementGranted?: () => Promise<void>,
 ): Promise<void> {
   refreshEntitlement = onEntitlementGranted ?? refreshEntitlement
   if (platformName() !== 'ios') return
-  const adapter = await getAdapter('apple')
-  if (!adapter) return
 
-  if (!removeUpdateListener && adapter.onPurchaseUpdated) {
-    removeUpdateListener = adapter.onPurchaseUpdated((purchase) => {
-      // 🔴 2026-11-01 修复：整个 IIFE 必须自带 .catch —— currentOwnerId/readPending
-      //   原先在 try 之外，任一抛错即成 unhandledrejection，被 index.html 自报面板
-      //   整屏接管（登录后红屏，栈帧 onPurchaseUpdated）。IAP 后台核销失败绝不
-      //   应打断 App：记录保留，下次启动/登录/手动恢复会继续。
-      void (async () => {
-        const ownerId = await currentOwnerId()
-        if (!ownerId) return
-        const saved = (await readPending()).find((p) => p.providerTxnId === purchase.providerTxnId)
-        if (saved && saved.ownerId !== ownerId) return
-        try {
-          const ok = await settlePurchase(
-            adapter,
-            purchase,
-            saved?.orderNo ?? `restore-${purchase.providerTxnId}`,
-            ownerId,
-            false,
-          )
-          if (ok) await refreshAfterGrant()
-        } catch {
-          // 记录保留；下次启动、登录或手动恢复会继续。
-        }
-      })().catch(() => {
-        // 兜底：任何未预期异常都不冒泡为 unhandledrejection。
-      })
-    })
+  // 兜底外壳：即使内部出现未预料的抛错，也只降级、绝不向调用方 reject。
+  try {
+    const adapter = await getAdapter('apple')
+    if (!adapter) return
+
+    if (!removeUpdateListener && adapter.onPurchaseUpdated) {
+      // 🔴 2026-11-01 二次修复：连 `adapter.onPurchaseUpdated(...)` **这个调用本身**也要 try。
+      //   真机截图（16:20）栈帧 `T3@index-*.js:1263:19486` 经本地产物列号映射，
+      //   逐字对应 `zf=t.onPurchaseUpdated(r=>{...` —— 异常发生在「注册监听」这一步，
+      //   而非回调内部，故上一版只给回调体加 try 完全没覆盖到。
+      try {
+        removeUpdateListener = adapter.onPurchaseUpdated((purchase) => {
+          void (async () => {
+            const ownerId = await currentOwnerId()
+            if (!ownerId) return
+            const saved = (await readPending()).find(
+              (p) => p.providerTxnId === purchase.providerTxnId,
+            )
+            if (saved && saved.ownerId !== ownerId) return
+            try {
+              const ok = await settlePurchase(
+                adapter,
+                purchase,
+                saved?.orderNo ?? `restore-${purchase.providerTxnId}`,
+                ownerId,
+                false,
+              )
+              if (ok) await refreshAfterGrant()
+            } catch {
+              // 记录保留；下次启动、登录或手动恢复会继续。
+            }
+          })().catch(() => {
+            // 兜底：任何未预期异常都不冒泡为 unhandledrejection。
+          })
+        })
+      } catch {
+        // 插件桥未就绪/缺失：跳过后台监听，恢复能力靠下方 queueRecovery 与手动 restore。
+        removeUpdateListener = null
+      }
+    }
+
+    // queueRecovery → processRecovery 内部 currentOwnerId()/readPending() 同样无 try 保护，
+    // 由外层这个 catch 统一兜住（恢复失败不阻断登录后的正常使用）。
+    const summary = await queueRecovery(adapter, false)
+    if (summary.succeeded > 0) await refreshAfterGrant()
+  } catch {
+    // 后台恢复整体失败：静默降级。待核销记录仍在本地，下次启动/登录/手动恢复会继续。
   }
-
-  const summary = await queueRecovery(adapter, false)
-  if (summary.succeeded > 0) await refreshAfterGrant()
 }
 
 /** 用户主动恢复购买：除 unfinished 外，也扫描当前有效权益。 */
