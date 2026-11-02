@@ -179,11 +179,30 @@ const deepPage = await deepCtx.newPage()
 const deepUrl = new URL('/legal/privacy', target).toString()
 await deepPage.goto(deepUrl, { waitUntil: 'networkidle', timeout: 45000 })
 await deepPage.waitForTimeout(900)
-const deepTitle = await deepPage.locator('.legal-head h1').innerText().catch(() => '')
-const deepBody = await deepPage.locator('.legal-body').innerText().catch(() => '')
+// 🔴 深链命中的可能是**两种不同结构**，选择器必须都兼容：
+//   ① SPA 路由页（React 渲染）：.legal-head h1 + .legal-body（见 src/pages/LegalPage.tsx）
+//   ② 静态预渲染页（tools/gen-legal-static.mjs 产出，nginx 直接命中
+//      /legal/privacy/index.html）：<h1> 直挂 + .intro/.meta/.nav，**没有** legal-body
+//   只认 ① 会让 ② 读到 0 字 → 误报「深链被同意门拦住」+ 连带 0.6 SDK 公示全 NO。
+//   而 OPPO 审核抓的恰恰是静态页（爬虫不跑 JS），② 才是真实审核路径，
+//   所以这里优先取 ①、取不到退回 ②（body 全文），而不是反过来。
+const deepTitle = await deepPage.evaluate(() => {
+  const h = document.querySelector('.legal-head h1') || document.querySelector('h1')
+  return (h?.textContent || '').trim()
+}).catch(() => '')
+const deepBody = await deepPage.evaluate(() => {
+  const spa = document.querySelector('.legal-body')
+  if (spa && spa.innerText.trim().length > 200) return spa.innerText
+  // 静态页：取 body 全文（剔除导航/页脚噪声后仍以全文为准，宁多勿漏）
+  return document.body ? document.body.innerText : ''
+}).catch(() => '')
+// 结构标识：便于输出里看清命中的是哪一种（排查时不用再猜）
+const deepKind = await deepPage.evaluate(() =>
+  document.querySelector('.legal-body') ? 'SPA 路由页' : '静态预渲染页').catch(() => '?')
 const deepGateBlocked = (await deepPage.locator('.privacy-gate').count()) > 0
 const deepLinkOk = deepTitle.includes('隐私政策') && deepBody.length > 400 && !deepGateBlocked
 console.log(`  ${deepUrl}`)
+console.log(`  命中结构: ${deepKind}（爬虫不跑 JS → 静态页才是 OPPO 实际审核路径）`)
 console.log(`  未同意即读到全文: ${deepLinkOk ? 'YES' : 'NO'}（标题「${deepTitle}」正文 ${deepBody.length} 字，同意门遮挡 ${deepGateBlocked ? 'YES ← 会被驳回' : 'NO'}）`)
 
 /* 0.6) SDK 公示完整性 —— OPPO 要求公示信息与全国 SDK 管理服务平台登记一致。
