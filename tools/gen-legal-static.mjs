@@ -44,16 +44,43 @@ function esc(s) {
   )
 }
 
+/**
+ * 正文渲染 = 先转义，再把 `**强调**` 转成 <strong>。
+ *
+ * 为什么需要它：`src/content/legal.ts` 的法律文案用 markdown 星号标注关键限定语
+ * （如「集成但**未调用**」「**不会上传**到我们的服务器」），而本生成器与
+ * `src/pages/LegalPage.tsx` 都是直出纯文本 —— 不转换的话，OPPO 自动化审核爬到的
+ * 静态页会出现裸星号 `**尚未开放**`，既难看也可能被判定为文案质量问题。
+ *
+ * 🔴 顺序不可颠倒：必须先 esc() 再 bold()。反之 `<strong>` 标签自身会被 esc()
+ * 打成字面量 `&lt;strong&gt;`。
+ *
+ * 成对性守卫：`**` 数量为奇数（切分后段数为偶数）说明文案漏写了一半标记。
+ * 此时**剥掉星号、按纯文本返回** —— 三种可能里选最安全的一种：
+ *   ① 照原样保留 `**` → 用户看到裸星号（正是本函数要消除的缺陷）；
+ *   ② 按奇偶分段加粗 → 漏标记之后的全部正文被误加粗（法律文案观感严重失真）；
+ *   ③ 剥星号降级为纯文本 ✅ → 只丢失一次强调，正文完整、无裸标记、无误加粗。
+ */
+function rich(s) {
+  const safe = esc(s)
+  const parts = safe.split('**')
+  // 奇数个标记（偶数段）= 文案写漏，走降级 ③
+  if (parts.length % 2 === 0) return parts.join('')
+  return parts
+    .map((seg, i) => (i % 2 === 1 ? `<strong>${seg}</strong>` : seg))
+    .join('')
+}
+
 /** 段落数组 → <p>...</p>；空数组返回 ''（避免产出空标签） */
 function paragraphs(list) {
   if (!Array.isArray(list) || list.length === 0) return ''
-  return list.map((t) => `<p>${esc(t)}</p>`).join('\n')
+  return list.map((t) => `<p>${rich(t)}</p>`).join('\n')
 }
 
 /** 条目数组 → <ul><li>；空数组返回 '' */
 function bulletList(list) {
   if (!Array.isArray(list) || list.length === 0) return ''
-  return `<ul>\n${list.map((t) => `        <li>${esc(t)}</li>`).join('\n')}\n      </ul>`
+  return `<ul>\n${list.map((t) => `        <li>${rich(t)}</li>`).join('\n')}\n      </ul>`
 }
 
 /**

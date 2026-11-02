@@ -51,6 +51,15 @@ iOS App (WebView, origin=capacitor://localhost)
 
 **关键约束**：ATS 禁止 http 明文 + IP 证书不可信 + 备案未完成 → 今晚**不切**数据面，iOS 继续连云库。这是既定决策，不是缺陷。
 
+> ⚠️ **上图 endpoint 解析一行已过时（2026-11-02 校正）**：「`VITE_NATIVE_ENDPOINT` 未注入
+> → 回退 `CLOUD_HOST`」是 10-23 的旧行为。现在**未注入不会再回退，而是直接阻断**：
+> · 构建期 `vite.config.ts:14-25` `validateNativeBuild`：`native-release` 未注入 → **throw 构建失败**；
+> · 运行时 `cloudConfig.ts:109-112` → **throw「已阻止静默回退云库」**。
+> 云库只在两种显式情况下可用：DEV（`:101`），或 `native-internal` + `VITE_ALLOW_CLOUD_NATIVE=true`（`:102-107`）。
+> **本手册下方 §二 的命令无需改动**——它们本来就带对了环境变量（内测 `VITE_ALLOW_CLOUD_NATIVE=true
+> npm run build:native:internal`，上架 `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native`），
+> 且 :157 已注明「少写 VITE_NATIVE_ENDPOINT 会在构建期就报错拦下」。上图仅作历史留档。
+
 ### 1.2 IAP 购买链路（四步，每步落点）
 
 ```
