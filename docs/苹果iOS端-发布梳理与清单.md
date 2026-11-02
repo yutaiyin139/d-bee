@@ -150,7 +150,7 @@ npx cap sync ios
 ## 八、审核红线（提审前必看）
 
 1. **Apple 3.1.1**：iOS 数字商品（会员）必须走 IAP，**兑换码方案提审前要删除**（禁止绕过 IAP）。→ ✅ **已确认**：`PaywallSheet.tsx` 的兑换码输入用 `!isIOS()` 包裹，iOS 下完全不渲染；付费墙 iOS 点商品直接 `buyProduct(id, 'apple')` 走内购。蜂蜜兑换（邀请中心）是 earned 积分，属 3.1.1 允许的虚拟货币，不受影响。
-2. 订阅必须提供「恢复购买」+「管理订阅」入口（否则 2.1 / 3.1.2 被拒）。→ **恢复购买 ✅**：iOS 下 `isIOS()` 分支渲染「恢复购买」按钮，`restorePurchases` 已接线。**法律链接 ✅**：付费墙内含《使用条款》《隐私政策》按钮（3.1.2 硬要求）。⚠️ **「管理订阅」入口 ❌ 未实现**：全仓 `grep` 无 `管理订阅`/`itms-apps`/`showManageSubscriptions`，`@dbee/iap` 插件也未暴露该能力。**建议**：付费墙/我的页加一个「管理订阅」按钮跳 `itms-apps://apps.apple.com/account/subscriptions`（Apple 官方深链，无需新插件），成本极低、直接消掉一个 3.1.2 风险点。**注**：Apple 对「仅恢复购买、无管理订阅入口」通常按 3.1.2 打回而非硬拒，首发免费+订阅未开时可暂缓，但补上更稳。
+2. 订阅必须提供「恢复购买」+「管理订阅」入口（否则 2.1 / 3.1.2 被拒）。→ **恢复购买 ✅**：iOS 下 `isIOS()` 分支渲染「恢复购买」按钮，`restorePurchases` 已接线。**法律链接 ✅**：付费墙内含《使用条款》《隐私政策》按钮（3.1.2 硬要求）。**「管理订阅」入口 ✅ 已实现（2026-11-02）**：新增 `src/lib/manageSubscription.ts`，`openManageSubscriptions()` 跳 Apple 官方深链 `itms-apps://apps.apple.com/account/subscriptions`（系统页可查/取消全部订阅，**无需新插件、无需改 Swift**）；`PaywallSheet.tsx` 加「管理订阅」按钮，**刻意放在 `{!pro && ...}` 之外** → iOS 端无论是否会员都渲染（审核员用演示账户是非订阅态，入口只对会员可见等于没做）。打开方式沿用项目既有约定：**鸭子类型探测 `window.Capacitor.Plugins.App.openUrl`，不 import @capacitor/app**（与 `privacyConsent.ts` 的 `exitApp`、`iosIap.ts` 的插件探测一致，Web 产物不增包体积）；`@capacitor/app` 已在 `capacitor.config.ts:47` 的 ios 白名单内。原生容器里 `itms-apps:` 属非 http 协议，WKWebView 不会自行跳转，必须经原生 `openUrl`；插件缺失时降级 `location.href`，仍失败则提示「设置 → 头像 → 订阅」。
 3. **审核演示账户（5.1.1）**：✅ **两套数据面均已实证可用**——账号密码同为 `dbeesupport@163.com` / `888888`，但它们是**互不相通的两个账户**，务必按端对号入座：
 
    | 端 | 数据面 | 账户 owner | 验证方式与结果（10-29 夜实测） |
@@ -214,7 +214,7 @@ npx cap sync ios
 - [x] ✅ **商店展示截图（10-28 已补齐）**：Apple 2026-10 起 iPhone 必填槽位为 **6.3" 中型屏 1179×2556 或 1206×2622**；已用 `deploy/shot-store.mjs`（store-preview.html 假 iOS 环境 + Playwright 精确像素）生成 5 张 **1179×2556**（`deploy/screenshots/store/iphone-*.png`），付费墙 iOS 形态 7 项断言全过（有恢复购买、无微信/支付宝/兑换码、价格 ¥18/¥128/¥298），详见《AppStore产品页-填报包-2026-10-28.md》§五。⚠️ 上传前人工过目画面；最终以 ASC 上传页实际标红槽位为准（若提示 6.9" 按 1320×2868 重出）。⚠️ 10-29 提示：截图出自 1.7.2 产物，**新增了首启隐私同意门**——若截图里含首屏画面，建议重出一张避免与实际不符（2.3.3 风险）
 - [x] ✅ **iPad 截图同为必填（10-28 已补齐）**：`TARGETED_DEVICE_FAMILY = "1,2"`（iPhone+iPad）→ 已生成 5 张 **2048×2732**（`deploy/screenshots/store/ipad-*.png`，`node deploy/shot-store.mjs --ipad`，`?full=1` 解除 480px 宽限铺满屏宽），无需再改 Device Family
 - [x] 产品页元数据文案（名称/副标题/关键词/推广文本/描述/版权 + 3 商品显示名与描述）已备齐并通过字数实测，见《AppStore产品页-填报包-2026-10-28.md》
-- [ ] ⚠️ **「管理订阅」入口未实现**（见 §八.2）：建议加 `itms-apps://apps.apple.com/account/subscriptions` 跳转按钮，低成本消掉 3.1.2 风险
+- [x] **「管理订阅」入口已实现**（2026-11-02，见 §八.2）：`src/lib/manageSubscription.ts` + 付费墙按钮，跳 `itms-apps://apps.apple.com/account/subscriptions`。⚠️ **需 Mac 重打包后才进 iOS 包**（纯 web 改动，`cap sync` 即生效）
 - [ ] 数据面决策（见第三节，受备案阻塞；**当前维持云库，已实证可用，V1.7.3 可正常上架**）
 - [x] ✅ **创意素材（Creative Assets，10-29 已出图）**：与设备截图是**两套独立资产**（横版营销图 vs 竖屏界面，比例不同不可互相缩放），用于产品页面标题 / 搜索结果版位，**选填**（iOS/iPadOS 27 起）；走 ASC **Asset Library** 上传（非截屏区），首个版本未获批前须随 App 版本一起提交。已按官方三个尺寸精确出图：`creative-16x9-5244x2950-v0.png`（仅 PNG，**brand 布局**——核心内容收敛进 Apple 模板 art safe area 1402×962/8.7%，因 16:9 是 universal 素材会被 21:9 与 3:2 两版位裁切）、`creative-3x2-3840x2560-v0.png` 与 `creative-3x2-1920x1280-v0.png`（showcase 满幅 UI 布局，版位原始尺寸不被裁），均在 `deploy/screenshots/creative/`；另有 16:9 满幅备选 `-showcase.png`（须先过 ASC 预览工具才可用）。PIL 复核尺寸精确 + **RGB 无 alpha 通道**（Apple 硬约束）+ 无 transparency；DOM 断言 **126 项全过**（3 尺寸 × 3 文案变体，含 art safe area 与安全区外无文字检查）；对 16:9 产物做 21:9/3:2/交集三种裁切实证均无内容切断。复现 `node deploy/verify-creative.mjs && node deploy/shot-creative.mjs`，详见《AppStore产品页-填报包-2026-10-28.md》§五·补
 
@@ -242,7 +242,7 @@ npx cap sync ios
 | 2 | 🔴 **无 DEVELOPMENT_TEAM** | **是（硬阻塞）** | 无法签名/Archive/Upload，连 TestFlight 都发不出 | Mac 上 Xcode 登录开发者账号 → Signing & Capabilities 选 Team |
 | 3 | 🟠 Swift 插件从未编译 | 可能 | 3 个本地插件（iap/health/origin-proxy）首次编译可能报错，需现场修 | ✅ 10-23 静态审查通过（API 签名逐一对照官方 SDK），风险已降为「低」；仍需 Mac 首次构建确认。报错发回 Windows 侧即修即推 |
 | 4 | 🟠 **ASC 隐私政策 URL 若填 `d-bee.cn` = 死链** | 是（若填错） | 审核员点开死链 → 2.1 拒审 | ✅ 已有解：**改填 `http://150.158.51.106/legal/privacy`**（10-29 实测 200，内容为 1.7.3 新版政策）。备案通过后再换域名 |
-| 5 | 🟡 「管理订阅」入口未实现 | 否（风险） | 3.1.2 可能被打回（非硬拒） | 加 `itms-apps://apps.apple.com/account/subscriptions` 跳转按钮 |
+| 5 | ✅ 「管理订阅」入口**已实现**（2026-11-02） | 否 | 3.1.2 风险已消除 | 已加 `src/lib/manageSubscription.ts` + 付费墙按钮（跳 `itms-apps://apps.apple.com/account/subscriptions`）。⚠️ **须 Mac 重打包后才进 iOS 包** |
 | 6 | 🟡 0037 迁移未执行 + 网关 `APPLE_*` env 未配 | 否（若首发不开付费） | IAP 核销落库无入口（端点 503），沙盒购买后权益不生效 → 审核员若测购买会看到失败 | 服务器执行 `0037-apple-iap-settlement.sql` + 配 `APPLE_BUNDLE_ID`/`APPLE_SHARED_SECRET` + 重启网关（**代码已就绪**）。⚠️ 若 ASC 未配商品，iOS 付费墙走 `PRICE_TAG` 兜底展示 ¥18/¥128/¥298，点击购买会报错提示（不崩溃） |
 | 7 | 🟡 备案域名 + HTTPS 未就绪 | 否 | 数据面无法切服务器（**但云库已实证可用，不挡上架**）；微信 Universal Link、IAP webhook URL 不可填 | `d-bee.cn` 备案完成 + 签证书 + 加 A 记录 |
 | 8 | 🟡 微信 AppID 仍是占位 `wx0000000000000000` | 否 | 未配 AppID 时原生端微信入口本身隐藏，占位值无副作用 | 替换真实「移动应用」AppID（Universal Link 另需备案域名） |

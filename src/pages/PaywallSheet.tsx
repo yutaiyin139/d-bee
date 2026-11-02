@@ -14,6 +14,7 @@ import { REDEEM_CODE_RULE } from '../lib/validate'
 import { usePlan } from '../state/plan'
 import { errText } from '../lib/errmsg'
 import { checkout, getAdapter, restorePurchases, type PayProvider } from '../lib/payment/checkout'
+import { openManageSubscriptions } from '../lib/manageSubscription'
 import { isIOS } from '../lib/platform'
 
 /**
@@ -188,6 +189,16 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
     }
   }
 
+  /** 管理订阅（仅 iOS，3.1.2）：跳系统订阅管理页，可查看/取消全部订阅 */
+  async function manageSubscriptions() {
+    setErr('')
+    setHint('')
+    const done = await openManageSubscriptions()
+    if (!done) {
+      setErr('无法打开订阅管理页，请在 iPhone「设置 → 你的头像 → 订阅」中管理。')
+    }
+  }
+
   async function submitCode() {
     if (!code.trim()) return
     setBusy(true)
@@ -254,6 +265,21 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
           </div>
         ))}
       </div>
+
+      {/* 「管理订阅」入口（iOS 3.1.2 硬要求）。
+          🔴 刻意放在 {!pro && ...} 之外 = iOS 端**无论是否会员都渲染**：
+          审核员用的是演示账户（非订阅态），入口若只对会员可见，审核员看不到 = 仍判缺失。 */}
+      {isIOS() && (
+        <button
+          type="button"
+          className="btn btn-ghost"
+          style={{ width: '100%', marginTop: 12, fontSize: 13 }}
+          disabled={busy}
+          onClick={() => void manageSubscriptions()}
+        >
+          管理订阅
+        </button>
+      )}
 
       {!pro && (
         <>

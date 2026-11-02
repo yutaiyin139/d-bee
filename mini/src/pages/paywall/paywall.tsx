@@ -8,7 +8,6 @@ import {
   FREE_DAILY_AI,
   FREE_REPORT_DAYS,
   PRO_REPORT_DAYS,
-  PRODUCTS,
   isPro,
   isLifetime,
   type Entitlement,
@@ -18,10 +17,18 @@ import { errText } from '../../lib/errmsg'
 import './paywall.scss'
 
 /**
- * 付费墙（对齐主工程 src/pages/PaywallSheet.tsx）。
- * 三档：免费 / Pro（月·年订阅）/ 终身买断。
- * 真实支付（微信 / 支付宝 / App 内购）待企业资质就绪后接入；当前用兑换码解锁，
- * 权益写入云端 entitlements，换设备同样生效。
+ * 会员权益页（结构对齐主工程 src/pages/PaywallSheet.tsx，**口径按小程序合规要求独立收敛**）。
+ *
+ * 🔴 本端刻意**不展示任何价格、不提供任何支付入口**（2026-11-02 整改）：
+ *   `mini/src/content/legal.ts` §一 已向用户声明「本服务由北京迪蜂科技有限公司开发并
+ *   运营，当前在本小程序内免费提供，不销售任何商品或服务，不涉及在线支付」。此前本页
+ *   仍展示三档定价（¥18/¥128/¥298）与「在线支付正在接入中」提示，与该声明直接冲突 ——
+ *   微信小程序审核会核「页面展示内容与隐私政策/用户协议是否一致」，属可判驳回项，
+ *   且展示不可购买的价格本身也构成「功能不完整」风险。
+ *   真实支付待企业资质（商户号）就绪后，须**同步改 legal.ts 口径 + 走小程序虚拟支付
+ *   合规要求**再上线，不能只把价格加回来。
+ *
+ * 解锁方式：兑换码（邀请/活动免费获得，非售卖）；权益写入云端 entitlements，换设备同样生效。
  * 差异：小程序端无全局 usePlan，页内自拉取 entitlement 判断 pro/lifetime。
  */
 
@@ -43,14 +50,11 @@ const PRO_ITEMS = [
   '长文本 AI 复盘（本期解读）无限次',
   '个性化完整膳食计划、长期 AI 膳食规划',
   '宏量营养素深度分析',
-  `饮食报告扩展到 ${PRO_REPORT_DAYS} 天 + 数据导出`,
+  `饮食报告扩展到 ${PRO_REPORT_DAYS} 天`,
 ]
-
-const PRICE_TAG: Record<string, string> = {
-  proMonthly: '¥18 / 月',
-  proYearly: '¥128 / 年（约 ¥10.7/月）',
-  lifetime: '¥298 永久',
-}
+// 注：与主工程 PaywallSheet 相比，本端刻意去掉「数据导出」——mini/src/content/legal.ts
+// §五 已声明「数据导出功能正在接入小程序端，当前版本暂不可用」，此处宣传即为不符
+// （与去掉「扫条码」「文字描述识别」同一处置原则，2026-11-02 补齐）。
 
 export default function Paywall() {
   const [entitlement, setEntitlement] = useState<Entitlement | null>(null)
@@ -151,17 +155,8 @@ export default function Paywall() {
 
       {!pro ? (
         <>
-          {/* 商品选择（真实支付接入前为展示） */}
-          <View className='pay-grid'>
-            {PRODUCTS.map((p) => (
-              <View key={p.id} className={`pay-option ${p.highlight ? 'is-hl' : ''}`}>
-                <Text className='pay-option-name'>{p.name}</Text>
-                <Text className='pay-option-price'>{PRICE_TAG[p.id]}</Text>
-                {p.highlight ? <Text className='pay-option-tag'>最划算</Text> : null}
-              </View>
-            ))}
-          </View>
-
+          {/* 🔴 刻意不渲染价格档位（PRODUCTS + PRICE_TAG）：与 legal.ts「免费提供、
+              不销售任何商品或服务、不涉及在线支付」保持一致。见文件头注释。 */}
           <View className='field'>
             <Text className='field-label'>兑换码</Text>
             <View className='field-row'>
@@ -188,16 +183,18 @@ export default function Paywall() {
           </View>
 
           <View className='helper'>
-            <Text>在线支付（微信 / 支付宝 / 应用商店内购）正在接入中，上线前可先用兑换码体验完整功能。</Text>
+            <Text>本小程序当前免费提供，不销售任何商品或服务，不涉及在线支付。会员权益可通过兑换码解锁（兑换码由邀请、活动等渠道免费获得）。</Text>
           </View>
 
-          {/* 透明定价承诺 */}
+          {/* 透明定价承诺：去掉「订阅可随时取消/无自动续费」表述——本端无订阅售卖，
+              保留即与「不涉及在线支付」自相矛盾 */}
           <View className='card promise-card'>
             <Text className='promise-title'>我们的承诺</Text>
+            {/* 🔴 用 {'\n'} 显式换行：JSX 多行文本在编译期会被折叠成单个空格，
+                直接写在标签里的换行不生效，.promise-body 的 white-space: pre-line
+                也就拿不到换行符（原实现即有此缺陷，本次一并修正） */}
             <Text className='promise-body'>
-              统一定价，对所有人一样，永不杀熟
-              订阅可随时取消，无隐藏扣费、无自动续费陷阱
-              免费版永久可用，不逼你付费
+              {'本小程序内免费提供完整记录能力\n不含广告、不诱导付费、无隐藏扣费\n免费版永久可用，不逼你付费'}
             </Text>
           </View>
         </>

@@ -198,12 +198,15 @@ grep -oE 'function b5\(\)\{.{0,120}' dist/assets/index-*.js
 # 5d9de96 是纯 web 侧改动（index.html + checkout.ts + iosIap.ts + plan.tsx），
 # 不含 Swift，故 cap sync 后即生效，无需重编原生插件。
 
-# 🔴 先确认 dist/ 里只有**一份**产物（2026-11-01 实测踩中：dist/assets/ 同时存在
-#    index-ClpColle.js 与 index-aKGgE7sY.js = 两次构建残留，会让下面所有基于
-#    index-*.js 的自检**读到旧包而误判**）。
-#    若列出 >1 个 index-*.js → 先 `rm -rf dist` 再重跑②
-#    （⚠️ 用 shell 的 rm，别用 IDE/资源管理器删：会撞 safe-delete 守卫 genie-trash ETIMEDOUT）
-ls dist/assets/index-*.js
+# 🔴 自检必须以 **index.html 引用的那个入口 js** 为准（2026-11-02 更正）：
+#    上一版写「index-*.js 必须只有 1 个，>1 = 构建残留」是**错的**，会误判合法构建 ——
+#    实测干净构建（`npm run build`，dist 已 rm -rf）就产出 2 个 index-*.js：
+#      index-OZL5R3d6.js（入口，被 index.html 引用）
+#      index-aKGgE7sY.js（被入口**动态 import** 的 chunk，不在 index.html 里）
+#    且 11-01 被当成「残留」的那个 hash 与本次完全相同（hash 由内容决定 → 它一直是合法 chunk）。
+#    正确做法：先取入口，只查入口。此判据天然免疫残留（残留文件不会被 index.html 引用）。
+ENTRY=$(grep -oE 'assets/index-[A-Za-z0-9_-]+\.js' dist/index.html | head -1) && echo "入口=$ENTRY"
+#    真要找残留，看 mtime 是否与入口同批：ls -la --time-style=+%H:%M:%S dist/assets/*.js
 
 # ① 三层防护是否编译进产物。iosIap 在**动态 import 的独立 chunk** 里，不在 index-*.js；
 #    用 -l 只列命中文件（-c 会为每个文件打一行，混入大量 :0 噪音，易误读）
@@ -214,8 +217,10 @@ grep -l "d-bee-diag" dist/assets/*.js
 
 # ② 错误面板是否已补 message（iOS JSC 的 error.stack 不含 message，
 #    旧写法 r.stack || r.message 在 iOS 上永远丢失错误文本 → 连续两轮截图读不出错误类型）
-grep -c "describe" index.html          # 期望 ≥1（源码实测 3 处）
-grep -oE "function describe\([^)]*\)" dist/assets/index-*.js | head -1
+#    🔴 describe() 是 index.html 里的**内联脚本**，不在 dist/assets/*.js（2026-11-02 实测：
+#    assets 全目录 grep "function describe" 零命中）。查错文件会永远得到空输出而误判。
+grep -c "describe" dist/index.html                    # 期望 ≥1（实测 3）
+grep -oE "function describe\([^)]*\)" dist/index.html # 期望输出 function describe(r)
 #   有输出 = ✅ describe() 已进产物；下次真机再出异常，横幅会直接显示错误内容
 ```
 
@@ -357,8 +362,11 @@ ua: …
 **装机前 30 秒自检（Windows/Mac 通用，比装到手机再看快得多）**：
 
 ```bash
+# ⓪ 入口唯一真源（下面各项都查它；干净构建本就有 2 个 index-*.js，见 §三）
+ENTRY=$(grep -oE 'assets/index-[A-Za-z0-9_-]+\.js' dist/index.html | head -1) && echo "入口=$ENTRY"
+
 # ① 白屏包判定：≥1 = 用了 npm run build，别装
-grep -c "禁止直接复用 Web 产物" dist/assets/index-*.js        # 必须 0
+grep -c "禁止直接复用 Web 产物" "dist/$ENTRY"                 # 必须 0
 
 # ② 自报面板已进产物：必须 ≥1（为 0 说明 index.html 是旧版，白屏时将无提示）
 grep -c "dbee-boot-error" dist/index.html
@@ -368,7 +376,7 @@ grep -c "dbee-boot-error" ios/App/App/public/index.html
 grep -oE 'assets/index-[A-Za-z0-9_-]+\.js' dist/index.html ios/App/App/public/index.html
 
 # ④ 数据面正确（内测=云库 / 上架=d-bee.cn）
-grep -oh "https://\(zilv-mifeng.app.workbuddy.host\|d-bee.cn\)" dist/assets/index-*.js | sort -u
+grep -oh "https://\(zilv-mifeng.app.workbuddy.host\|d-bee.cn\)" "dist/$ENTRY" | sort -u
 ```
 
 2026-10-31 实测基线：`build:native:internal` 产物 ①=0、②=2、③两侧 hash 均为
@@ -413,8 +421,9 @@ VITE_ALLOW_CLOUD_NATIVE=true npm run build:native:internal   # 真机内测（�
 # VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native # 上架正式包（须备案+DNS+HTTPS 齐）
 
 npx cap sync ios              # ✔ Found **8** Capacitor plugins（无 wechat；显示 5 = 代码没 pull 到最新）
-ls dist/assets/index-*.js     # 必须只有 1 个；>1 = 构建残留，rm -rf dist 重跑②
-grep -c "禁止直接复用 Web 产物" dist/assets/index-*.js   # 必须 0；≥1 = 白屏包，回②重打
+ENTRY=$(grep -oE 'assets/index-[A-Za-z0-9_-]+\.js' dist/index.html | head -1)  # 入口唯一真源
+grep -c "禁止直接复用 Web 产物" "dist/$ENTRY"        # 必须 0；≥1 = 白屏包，回②重打
+#   ⚠️ 别用 index-*.js 通配：干净构建本就有 2 个 index-*.js（另一个是动态 chunk），详见 §三
 grep -l "d-bee-diag" dist/assets/*.js                   # 应命中 iosIap-*.js（5d9de96 三层防护进包）
 
 Xcode: Scheme Run→Options 确认挂 DbeeProducts.storekit（3 商品 monthly/yearly/lifetime）

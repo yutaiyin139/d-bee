@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
+    "build": "vite build && node tools/gen-legal-static.mjs",
+    "build:web": "vite build",
+    "build:legal-static": "node tools/gen-legal-static.mjs",
     "build:native": "vite build --mode native-release",
     "build:native:internal": "vite build --mode native-internal",
     "typecheck": "tsc --noEmit",
