@@ -11,10 +11,10 @@
 
 ## 进度快照（截至 2026-11-02 下午）
 
-**已完成**：iOS V1.7.3 已发布+上架就绪核查通过；Web V1.7.2 线上（http://150.158.51.106/）；Android vc13 重打验签通过；四端审查整改 #1~#5（→铁律 #5~#9）；密码登录缺陷修复（`8d4a0ef`）；合规 P0 多端一致性；阿里云真短信上线；App Store 截图链路就绪；10-31 全仓口径核查+安全四项（5432 已修 localhost、云库 0039 闸门补齐；SSH/sudo 密码未轮换）；ICP 企业备案已进管局（10-31）；11-01 白屏闭环（根因=误用 `npm run build`，真修 `5d9de96` 须 Mac 重打）；识别提速 `dc217da` 已部署实证（6.7 倍）。重启影响面实测极低（JWT 30min TTL，重启只清内存态）。
+**已完成**：iOS V1.7.3 已发布+上架就绪核查通过；Web **V1.7.3 线上**（http://150.158.51.106/，11-02 重发，`verify-live`+`verify-legal` 双 PASS）；Android vc13 重打验签通过 + **vc14 内测包已交付待实测**；四端审查整改 #1~#5（→铁律 #5~#9）；密码登录缺陷修复（`8d4a0ef`）；合规 P0 多端一致性；阿里云真短信上线；App Store 截图链路就绪；10-31 全仓口径核查+安全四项（5432 已修 localhost、云库 0039 闸门补齐；SSH/sudo 密码未轮换）；ICP 企业备案已进管局（10-31）；11-01 白屏闭环（根因=误用 `npm run build`，真修 `5d9de96` 须 Mac 重打）；识别提速 `dc217da` 已部署实证（6.7 倍）；**11-02 视觉链路迁新工作空间+新模型已进生产并验证生效**（`b528988`）。重启影响面实测极低（JWT 30min TTL，重启只清内存态）。
 **11-02 三项零资质整改全部闭环**：①小程序付费墙口径收敛 ②隐私政策静态 HTML 直出 ③iOS 管理订阅深链（`b3aab66`+`630ccd3`，已推）；④**§4.2 公示按包内实际能力补全**（`99a1c52`：健康数据/系统权限/原生本地存储三处真缺口 + 修 markdown 加粗裸星号，**法律文案待用户过目**）。§4.3 AI 显式标识 = 现为唯一未解代码合规 P0。
 
-> ✅ **Git 已同步**：本地与远端均 `99a1c52`，无待推提交（11-02 14:2x 推送成功；此前三次因 schannel SSL 握手 + CONNECT tunnel 502 失败，属代理间歇波动，重试即通 —— 勿因单次失败改方案）。
+> ✅ **Git 已同步**：本地与远端均 `b528988`，无待推提交（11-02 16:1x；`f2acebf..b528988` 一次推成。历史经验：推送失败多为代理间歇波动〔schannel SSL / CONNECT tunnel 502〕，重试即通 —— 勿因单次失败改方案）。
 
 **下一步（上架前主线）**
 0. 🔴 移动号段收不到验证码=`PORT_NOT_REGISTERED` → 用户在阿里云控制台「签名管理→运营商报备结果」补报备（5–7 工作日）；期间移动用户走密码登录。
@@ -82,7 +82,7 @@ Capacitor 8.5.3 混合壳；React18+Vite5+TS；Windows 出 Android、Mac mini M4
 ### 部署侧坑
 
 - `CREATE POLICY` 顺序 `AS→FOR→TO→USING→WITH CHECK`；GRANT 追加语义；BYPASSRLS 已收回（0033）；`pg_dump` 必须 `sudo -u postgres` + 体积守卫；`JWT_SECRET`/`IDENT_PEPPER` 存 `deploy/gateway/.secrets.local`（改 JWT_SECRET=全员登出，改 IDENT_PEPPER=身份失配）；网关与 PostgREST 共用同一 HS256 secret；`DBEE_PROD=1` 拒 `SMS_PROVIDER=log` 且收紧 Apple 收据（沙盒期须 `APPLE_ALLOWED_ENVS=Sandbox,Production`）。
-- 🔴 **`deploy-gateway.sh` 是全站永久锁死级地雷**（覆盖 gateway.env，缺 IDENT_PEPPER 则账户不可恢复）→ 改网关一律走手术式脚本（参照 `deploy/apply-password-login-fix.sh`，断言 env sha256 前后一致）。SSH 账号=`.env` 的 `USER=ubuntu`+`SSH_PWD`。
+- 🔴 **`deploy-gateway.sh` 是全站永久锁死级地雷**（覆盖 gateway.env，缺 IDENT_PEPPER 则账户不可恢复）→ 改网关一律走手术式脚本（`apply-vision-key-update.py` / `apply-llm-thinking-fix.py` / `apply-password-login-fix.sh`，断言 env 非目标部分 sha256 前后一致）。SSH 账号=`.env` 的 `USER=ubuntu`+`SSH_PWD`（实测 `sudo -n` 免密）；🔴 `.env` 里另一套 `DBEE_USER=dbee_app`+`DBEE_PWD` **实测 SSH 认证失败**（过时值）。`deploy.sh` 身份取**环境变量**不取 `.env`，须按文档传 `DBEE_USER=ubuntu`。
 - 网关鉴权头=`x-wb-webapp-access-key`，按 Origin 精确匹配 → Node 脚本须注入 Origin/Referer。真实表名见 `db/migrations/`（没有 habit/habits）。
 - `signIn` 两条路径（验证码/密码）改鉴权必双回归；密码路径标识须归一化（裸 11 位）。
 
@@ -102,7 +102,8 @@ Capacitor 8.5.3 混合壳；React18+Vite5+TS；Windows 出 Android、Mac mini M4
 - ICP 备案：注销重备路径；关 WHOIS 隐私保护；工信部短信核验 24h 内必做；两域名打包同一订单。
 - 竞品定位：¥18/¥128/¥328 锁定不改；「不卖 AI 神奇，卖能坚持下来」：厚免费+游戏化+本地引擎优先、AI 兜底+无广告+数据自托管；待办：实测自家 MAPE。
 - AI 成本：DeepSeek flash 峰值拍照 ≈¥0.0047/次；万级 DAU 远低于 ¥4000/月，反证方案 A。
-- LLM：只剩 `deepseek-flash`/`deepseek-v4-pro`；**只有 flash 接受图片**；`/llm/models` 须标 `supportsImages:true`；视觉走百炼 `qwen3.8-max-0902`；服务端切模型三端即时生效。
+- LLM：只剩 `deepseek-flash`/`deepseek-v4-pro`；**只有 flash 接受图片**；`/llm/models` 须标 `supportsImages:true`；服务端切模型三端即时生效。
+- 🔴 视觉链路（11-02 迁移）：走百炼 **`qwen3-vl-plus`** + 工作空间 **`ws-eu9wgvc1ysz242kj`**（旧 `qwen3.8-max-0902`/`ws-myumgi46hdb6mu3z` 已废）。**百炼 API Key 绑定工作空间** → `BASE_URL`/`MODEL`/`API_KEY` 三者必须**成对更换**（只换 key = 403，模型 ID 错 = 404）。单独改这三键用 `deploy/apply-vision-key-update.py`（手术式），**绝不跑 `deploy-gateway.sh`**（模板整体重渲染，`.secrets.local` 缺失即 `rand_hex` 重置 `IDENT_PEPPER` → 全站身份永久失效）。改完**必须回头同步** `gateway.env.template` + `.secrets.local`，否则下次常规部署静默回退。
 - 额度规则（权威值 `packages/shared/src/constants/index.ts`）：`FREE_DAILY_AI=3` + `AI_REDEEM_DAILY_LIMIT=2`；新手 150 分；streak7 满 7 天送 2 次。
 - 会员/IAP：三档 free/pro/lifetime；Apple 个人账号已过；Android 企业账号已注册；iOS 本地 StoreKit 测试就绪。
 - 多端小程序：Taro 4.3.0 双工程 + `packages/shared`；mini tsconfig 需 `moduleResolution:"bundler"`。
