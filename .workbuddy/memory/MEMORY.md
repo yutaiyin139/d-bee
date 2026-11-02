@@ -7,10 +7,14 @@
 > · 🔴 **打原生包绝不能用 `npm run build`**（白屏，铁律 #10）：内测 `VITE_ALLOW_CLOUD_NATIVE=true npm run build:native:internal`；上架 `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native`。
 > · 🔴 **产物自检必须以 `index.html` 引用的入口 js 为唯一真源**（铁律 #11）：`ENTRY=$(grep -oE 'assets/index-[A-Za-z0-9_-]+\.js' dist/index.html | head -1)`，再查 `dist/$ENTRY`。**干净构建本就有 2 个 `index-*.js`**（另一个是入口动态 import 的 chunk，hash 稳定），「>1 个 = 构建残留」是错误判据，会误判合法构建。同理 `describe()` 只在 `index.html` 内联脚本里，assets 中零命中。
 > · 📄 **隐私政策静态页**：`npm run build` 会自动跑 `tools/gen-legal-static.mjs` → `dist/legal/{terms,privacy,disclaimer}/index.html`（零 JS 可爬，OPPO 硬要求）。单一真源 = `src/content/legal.ts`；`build:native*` 不生成（原生端不需要）。上线时 `dist/legal/` 须一并部署；nginx 无需改（`try_files $uri $uri/` 的 `$uri/` 命中目录 index）。备案号走 `VITE_ICP_BEIAN`，未传即整块不渲染。
+> · 📄 **法律文案里的 `**强调**` 由两端渲染器各自转 `<strong>`**（11-02 修）：`LegalPage.tsx` 分段渲染（**不用 `dangerouslySetInnerHTML`**）、`gen-legal-static.mjs` 的 `rich()` **先 esc 后 bold（顺序不可颠倒）**；两端同带成对性守卫——`**` 为奇数时**剥星号**降级（保留星号=裸标记露出，奇偶分段=漏标记后正文全被误加粗）。改文案加 `**` 后须验产物 `grep -o '\*\*' | wc -l` = 0。渲染器只认 `p → list` 顺序，`list` 后无法再出段落；且 `DocSection` 只允许**一个** `p` 键（写两个 → TS1117）。
 
-## 进度快照（截至 2026-11-02 上午）
+## 进度快照（截至 2026-11-02 下午）
 
-**已完成**：iOS V1.7.3 已发布+上架就绪核查通过；Web V1.7.2 线上（http://150.158.51.106/）；Android vc13 重打验签通过；四端审查整改 #1~#5（→铁律 #5~#9）；密码登录缺陷修复（`8d4a0ef`）；合规 P0 多端一致性；阿里云真短信上线；App Store 截图链路就绪；10-31 全仓口径核查+安全四项（5432 已修 localhost、云库 0039 闸门补齐；SSH/sudo 密码未轮换）；ICP 企业备案已进管局（10-31）；11-01 白屏闭环（根因=误用 `npm run build`，自报面板实证；真修 `5d9de96` 须 Mac 重打）；识别提速 `dc217da` 已部署实证（6.7 倍）。重启影响面实测极低（JWT 30min TTL，重启只清内存态）。
+**已完成**：iOS V1.7.3 已发布+上架就绪核查通过；Web V1.7.2 线上（http://150.158.51.106/）；Android vc13 重打验签通过；四端审查整改 #1~#5（→铁律 #5~#9）；密码登录缺陷修复（`8d4a0ef`）；合规 P0 多端一致性；阿里云真短信上线；App Store 截图链路就绪；10-31 全仓口径核查+安全四项（5432 已修 localhost、云库 0039 闸门补齐；SSH/sudo 密码未轮换）；ICP 企业备案已进管局（10-31）；11-01 白屏闭环（根因=误用 `npm run build`，真修 `5d9de96` 须 Mac 重打）；识别提速 `dc217da` 已部署实证（6.7 倍）。重启影响面实测极低（JWT 30min TTL，重启只清内存态）。
+**11-02 三项零资质整改全部闭环**：①小程序付费墙口径收敛 ②隐私政策静态 HTML 直出 ③iOS 管理订阅深链（`b3aab66`+`630ccd3`，已推）；④**§4.2 公示按包内实际能力补全**（`99a1c52`：健康数据/系统权限/原生本地存储三处真缺口 + 修 markdown 加粗裸星号，**法律文案待用户过目**）。§4.3 AI 显式标识 = 现为唯一未解代码合规 P0。
+
+> ✅ **Git 已同步**：本地与远端均 `99a1c52`，无待推提交（11-02 14:2x 推送成功；此前三次因 schannel SSL 握手 + CONNECT tunnel 502 失败，属代理间歇波动，重试即通 —— 勿因单次失败改方案）。
 
 **下一步（上架前主线）**
 0. 🔴 移动号段收不到验证码=`PORT_NOT_REGISTERED` → 用户在阿里云控制台「签名管理→运营商报备结果」补报备（5–7 工作日）；期间移动用户走密码登录。
@@ -109,6 +113,7 @@ Capacitor 8.5.3 混合壳；React18+Vite5+TS；Windows 出 Android、Mac mini M4
 
 Apple 4.2 / 3.1.1 / 5.1.1(v) / AI 告知同意；中国：ICP 备案、App 备案、软著、算法备案、大模型登记、PIPL。
 🔴 **隐私政策公示禁止跨端照抄**：两库不互通、公示主体不同；写 legal.ts 前先核对真实链路，只写确实存在的能力；每条第三方链接必须 curl 验 200 且引「与我方关系匹配」的文件；`deploy/verify-legal.mjs` 自动校验。
+🔴 **能力公示必须以「包内实际能力」实证，不以旧文档/不以 import 为准**（11-02 §4.2 闭环）：查 manifest 权限 + `capacitor.build.gradle` 插件清单 + 原生插件方法体是否真实现（`dbee-health` Android 是阶段 3a 骨架，恒返 `not_ready`、HMS 依赖被注释 → 公示须写「资质申请中、当前不读取」，不可谎报能读）；数据流要看变量真实去向（`healthSteps` 只进渲染与估算、`api.ts` 中 `steps` 零命中 → 才敢写「不上传」）。**后端归属只看构建护栏与配置层实际行为**：`vite.config.ts:14-25` + `cloudConfig.ts:109-112` 双层 throw，未注入 endpoint **不回退**云库（旧文档「回退 CLOUD_HOST」四处均已过时）；`CLOUD_ORIGIN` 只是白名单校验的 Origin 头、不决定流量去向。**收集范围有实质变化必须同步改 `UPDATED`**（PIPL 第 14 条 → `LEGAL_UPDATED` 版本化机制会让老用户重弹同意门，属预期）。
 
 ## 工作方式
 
