@@ -1,4 +1,20 @@
 import type { MealEntry } from '../types'
+import { fmtNum } from './numfmt'
+
+/**
+ * 🔴 展示层数值格式化（本文件唯一允许的舍入入口）。
+ *
+ * 为什么不在 analyzeEntry 的 `* r` 源头舍入：
+ *   下面这些值**既用于阈值判断**（`protein >= 20`、`fiber >= 6`、`fRatio < 0.4`）
+ *   **又用于文案插值**。若在源头把 11.666… 改成 11.67，阈值判断就建立在
+ *   已失真的值上；更糟的是 fRatio/cRatio 这类派生比例会二次放大误差。
+ *   所以纪律是：**计算层保持全精度，只在插值那一刻格式化**。
+ *
+ * 起因：「饮食体检」页曾显示 `11.666666666666666 g/100g`、
+ * `5.833333333333333 g/100g` —— 份量换算 r = 100/grams 产生的无限循环小数
+ * 被直接模板插值。回归测试见 tools/numfmt.test.ts。
+ */
+const g = (n: number) => fmtNum(n, 2)
 
 /**
  * 食物画像引擎：风险发现 + 益处探索。
@@ -275,7 +291,7 @@ export function analyzeProfile(p: FoodProfile, aiScore?: number | null): FoodIns
       key: 'protein_top',
       label: '蛋白质很高',
       tone: 'good',
-      reason: `${protein} g/100g，减脂期最该保证的一类营养`,
+      reason: `${g(protein)} g/100g，减脂期最该保证的一类营养`,
       weight: 3,
     })
   } else if (protein >= 10) {
@@ -283,7 +299,7 @@ export function analyzeProfile(p: FoodProfile, aiScore?: number | null): FoodIns
       key: 'protein_good',
       label: '蛋白质较好',
       tone: 'good',
-      reason: `${protein} g/100g`,
+      reason: `${g(protein)} g/100g`,
       weight: 2,
     })
   }
@@ -292,7 +308,9 @@ export function analyzeProfile(p: FoodProfile, aiScore?: number | null): FoodIns
       key: 'high_p_low_f',
       label: '高蛋白低脂',
       tone: 'good',
-      reason: `蛋白 ${protein} g 而脂肪仅占 ${Math.round(fRatio * 100)}% 能量`,
+      // 蛋白值与百分比必须同一口径：此前一半裸插值、一半 Math.round，
+      // 同句里出现「17.142857142857142 g 而脂肪仅占 25%」这种割裂展示
+      reason: `蛋白 ${g(protein)} g 而脂肪仅占 ${Math.round(fRatio * 100)}% 能量`,
       weight: 3,
     })
   }
@@ -304,7 +322,9 @@ export function analyzeProfile(p: FoodProfile, aiScore?: number | null): FoodIns
         key: 'sugary_drink',
         label: '含糖饮料',
         tone: 'risk',
-        reason: `每 100ml 含碳水 ${carb} g，液体热量最不容易被记住`,
+        // 注：换算系数 r = 100/grams 是按「克」算的，此处文案写「100ml」，
+        // 依赖液体密度 ≈ 1g/ml 的行业近似（饮料/酒水成立）。属既有口径，未改动语义。
+        reason: `每 100ml 含碳水 ${g(carb)} g，液体热量最不容易被记住`,
         weight: 3,
       })
     }
@@ -439,7 +459,7 @@ export function analyzeProfile(p: FoodProfile, aiScore?: number | null): FoodIns
       key: 'high_fiber',
       label: '高膳食纤维',
       tone: 'good',
-      reason: `膳食纤维约 ${fiber} g/100g，饱腹感更持久`,
+      reason: `膳食纤维约 ${g(fiber)} g/100g，饱腹感更持久`,
       weight: 2,
     })
   } else if (fiber >= 3 && fiber > 0) {
@@ -447,7 +467,7 @@ export function analyzeProfile(p: FoodProfile, aiScore?: number | null): FoodIns
       key: 'some_fiber',
       label: '含膳食纤维',
       tone: 'good',
-      reason: `膳食纤维约 ${fiber} g/100g`,
+      reason: `膳食纤维约 ${g(fiber)} g/100g`,
       weight: 1,
     })
   }
@@ -458,7 +478,7 @@ export function analyzeProfile(p: FoodProfile, aiScore?: number | null): FoodIns
       key: 'high_added_sugar',
       label: '添加糖偏高',
       tone: 'risk',
-      reason: `添加糖约 ${addedSugar} g/100g，隐形糖是减脂期最容易被忽略的`,
+      reason: `添加糖约 ${g(addedSugar)} g/100g，隐形糖是减脂期最容易被忽略的`,
       weight: 3,
     })
   } else if (addedSugar >= 5 && addedSugar > 0) {
@@ -466,7 +486,7 @@ export function analyzeProfile(p: FoodProfile, aiScore?: number | null): FoodIns
       key: 'moderate_added_sugar',
       label: '含添加糖',
       tone: 'risk',
-      reason: `添加糖约 ${addedSugar} g/100g`,
+      reason: `添加糖约 ${g(addedSugar)} g/100g`,
       weight: 2,
     })
   }

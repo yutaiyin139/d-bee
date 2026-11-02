@@ -2,6 +2,7 @@ import { CORE_ROWS } from './foodsDataCore'
 import { FRESH_ROWS } from './foodsDataFresh'
 import { DISH_ROWS } from './foodsDataDishes'
 import { analyzeProfile, type FoodInsight } from './foodInsight'
+import { roundTo } from './numfmt'
 
 /**
  * 内置食物营养库（每 100g 可食部）。
@@ -183,14 +184,15 @@ export function listFoods(category: string, sort: FoodSort, limit = 60): FoodIte
 /** 把每 100g 营养换算成指定克重 */
 export function scaleFood(f: FoodItem, grams: number) {
   const r = grams / 100
+  // 热量与钠取整，克数类营养素保留 2 位小数（全站统一口径，见 numfmt.ts）
   return {
-    kcal: Math.round(f.kcal * r),
-    protein: Math.round(f.protein * r * 10) / 10,
-    carb: Math.round(f.carb * r * 10) / 10,
-    fat: Math.round(f.fat * r * 10) / 10,
-    sodium: f.sodium != null ? Math.round(f.sodium * r) : undefined,
-    fiber: f.fiber != null ? Math.round(f.fiber * r * 10) / 10 : undefined,
-    addedSugar: f.addedSugar != null ? Math.round(f.addedSugar * r * 10) / 10 : undefined,
+    kcal: roundTo(f.kcal * r, 0),
+    protein: roundTo(f.protein * r, 2),
+    carb: roundTo(f.carb * r, 2),
+    fat: roundTo(f.fat * r, 2),
+    sodium: f.sodium != null ? roundTo(f.sodium * r, 0) : undefined,
+    fiber: f.fiber != null ? roundTo(f.fiber * r, 2) : undefined,
+    addedSugar: f.addedSugar != null ? roundTo(f.addedSugar * r, 2) : undefined,
   }
 }
 

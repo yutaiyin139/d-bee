@@ -11,6 +11,7 @@
     "build:native": "vite build --mode native-release",
     "build:native:internal": "vite build --mode native-internal",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run tools/",
     "test:iap": "vitest run tools/iap-checkout.test.ts && node tools/iap-selftest.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "start": "npm run build && vite preview --host 0.0.0.0 --port ${PORT:-3000} --strictPort",

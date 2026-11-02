@@ -6,6 +6,8 @@
  * 接口无需 key，且返回 Access-Control-Allow-Origin: *，可直接在前端调用。
  */
 
+import { roundTo } from './numfmt'
+
 const ENDPOINT = 'https://world.openfoodfacts.org/api/v2/product'
 const FIELDS = [
   'code',
@@ -98,13 +100,14 @@ export async function lookupBarcode(barcode: string, signal?: AbortSignal): Prom
       name: name || `条码 ${code}`,
       brand: String(product.brands || '').trim(),
       per100g: {
-        kcal: Math.round(kcal),
-        protein: Math.round(protein * 10) / 10,
-        carb: Math.round(carb * 10) / 10,
-        fat: Math.round(fat * 10) / 10,
-        sodium: sodiumG > 0 ? Math.round(sodiumG * 1000) : undefined,
-        fiber: fiber > 0 ? Math.round(fiber * 10) / 10 : undefined,
-        sugar: sugar > 0 ? Math.round(sugar * 10) / 10 : undefined,
+        // 热量与钠取整，克数类营养素保留 2 位小数（全站统一口径，见 numfmt.ts）
+        kcal: roundTo(kcal, 0),
+        protein: roundTo(protein, 2),
+        carb: roundTo(carb, 2),
+        fat: roundTo(fat, 2),
+        sodium: sodiumG > 0 ? roundTo(sodiumG * 1000, 0) : undefined,
+        fiber: fiber > 0 ? roundTo(fiber, 2) : undefined,
+        sugar: sugar > 0 ? roundTo(sugar, 2) : undefined,
       },
       servingG,
       servingLabel: servingSize || (servingQty > 0 ? `${Math.round(servingQty)} 克` : '100 克'),

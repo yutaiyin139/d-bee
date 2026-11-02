@@ -37,6 +37,7 @@ import { createShareCanvas, drawCheckinCard, canvasToBlob } from '../lib/shareca
 import { shareImage } from '../lib/share'
 import { computeStreak, MILESTONES } from '../lib/streak'
 import { GRAMS_LIMIT, MINUTES_LIMIT, checkNumber, clampNumeric, sanitizeNumeric } from '../lib/validate'
+import { fmtNum } from '../lib/numfmt'
 import { usePlan } from '../state/plan'
 import { MEAL_LABELS, MEAL_ORDER } from '../types'
 import type { ExerciseLog, MealEntry, MealSlim, MealType, Profile, WaterLog } from '../types'
@@ -627,7 +628,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
                   <div className="rm-fill" style={{ width: `${ratio * 100}%`, background: m.color }} />
                 </div>
                 <div className="rm-val">
-                  {Math.round(got)} / {goal}克
+                  {fmtNum(got, 2)} / {goal}克
                 </div>
               </div>
             )
@@ -697,14 +698,16 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
 
               {(totals.na > 0 || totals.fb > 0) && (
                 <div className="microline" style={{ marginTop: 10 }}>
+                  {/* 钠以 mg 计、量级较大，按惯例取整；纤维与添加糖按 g 计，统一保留 2 位小数。
+                      旧写法 Math.round(x * 10) / 10 既是 1 位小数，也有乘法舍入缺陷（见 numfmt.ts）。 */}
                   {totals.na > 0 && (
-                    <span className="micro-pill">今日钠 {Math.round(totals.na)} mg</span>
+                    <span className="micro-pill">今日钠 {fmtNum(totals.na, 0)} mg</span>
                   )}
                   {totals.fb > 0 && (
-                    <span className="micro-pill">膳食纤维 {Math.round(totals.fb * 10) / 10} g</span>
+                    <span className="micro-pill">膳食纤维 {fmtNum(totals.fb, 2)} g</span>
                   )}
                   {totals.as > 0 && (
-                    <span className="micro-pill">添加糖 {Math.round(totals.as * 10) / 10} g</span>
+                    <span className="micro-pill">添加糖 {fmtNum(totals.as, 2)} g</span>
                   )}
                 </div>
               )}

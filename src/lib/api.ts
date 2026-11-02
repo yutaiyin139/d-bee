@@ -4,6 +4,7 @@ import type { Badge, Entitlement, ExerciseLog, HoneyBalance, HoneyLedger, Invite
 import { BONUS_TTL_DAYS, FREE_DAILY_AI, SCAN_FEATURE } from './entitlement'
 import { zh } from './errmsg'
 import { todayKey } from './nutrition'
+import { roundTo } from './numfmt'
 import { createNativeFetch } from './originProxy'
 import { platformName } from './platform'
 
@@ -189,18 +190,19 @@ export async function updateMealGrams(id: number, grams: number): Promise<MealEn
   // 以「每克营养值」为基准等比缩放，避免直接改 calories 造成与宏量不一致
   const baseGrams = Number(existing.grams) || 1
   const scale = g / baseGrams
-  const round1 = (n: number) => Math.round(n * 10) / 10
 
   const patch: Row = {
     grams: g,
     quantity_text: `${g} 克`,
-    calories: Math.round((Number(existing.calories) || 0) * scale),
-    protein_g: round1((Number(existing.protein_g) || 0) * scale),
-    carb_g: round1((Number(existing.carb_g) || 0) * scale),
-    fat_g: round1((Number(existing.fat_g) || 0) * scale),
-    sodium_mg: existing.sodium_mg != null ? Math.round((Number(existing.sodium_mg) || 0) * scale) : null,
-    fiber_g: existing.fiber_g != null ? round1((Number(existing.fiber_g) || 0) * scale) : null,
-    added_sugar_g: existing.added_sugar_g != null ? round1((Number(existing.added_sugar_g) || 0) * scale) : null,
+    // 热量与钠（mg）取整；克数类营养素保留 2 位小数（与 AI/条码/食物库换算同口径）。
+    // 走 roundTo 而非 Math.round(n*10)/10：后者大数时乘法溢出精度。
+    calories: roundTo((Number(existing.calories) || 0) * scale, 0),
+    protein_g: roundTo((Number(existing.protein_g) || 0) * scale, 2),
+    carb_g: roundTo((Number(existing.carb_g) || 0) * scale, 2),
+    fat_g: roundTo((Number(existing.fat_g) || 0) * scale, 2),
+    sodium_mg: existing.sodium_mg != null ? roundTo((Number(existing.sodium_mg) || 0) * scale, 0) : null,
+    fiber_g: existing.fiber_g != null ? roundTo((Number(existing.fiber_g) || 0) * scale, 2) : null,
+    added_sugar_g: existing.added_sugar_g != null ? roundTo((Number(existing.added_sugar_g) || 0) * scale, 2) : null,
     updated_at: new Date().toISOString(),
   }
 

@@ -15,6 +15,7 @@ import {
   type FoodSort,
 } from '../lib/foods'
 import { analyzeProfile, LEVEL_LABELS, levelOfScore, summarizeEntries } from '../lib/foodInsight'
+import { fmtNum, roundTo } from '../lib/numfmt'
 import { quotaExhaustedReason, AI_REDEEM_DAILY_LIMIT } from '../lib/entitlement'
 import { HONEY_PRICE } from '../lib/invite'
 import {
@@ -212,14 +213,19 @@ function fromPackaged(
   }
 }
 
+/* 🔴 这里的值会写进数据库，所以是「计算层」而非「展示层」：
+   用 roundTo 而不是 Math.round(x * 10) / 10 —— 后者在大数时乘法溢出精度
+   （1e21 → 999999999999999900000），且 NaN 会原样写库。
+   克数类营养素保留 2 位小数，与 AI 识别 / 条码 / 食物库换算同一口径；
+   热量与钠（mg）按惯例取整。 */
 const calc = (it: DraftItem) => ({
-  kcal: Math.round(it.kcalPerG * it.grams),
-  p: Math.round(it.pPerG * it.grams * 10) / 10,
-  c: Math.round(it.cPerG * it.grams * 10) / 10,
-  f: Math.round(it.fPerG * it.grams * 10) / 10,
-  na: Math.round(it.naPerG * it.grams),
-  fb: Math.round(it.fbPerG * it.grams * 10) / 10,
-  as: Math.round(it.asPerG * it.grams * 10) / 10,
+  kcal: roundTo(it.kcalPerG * it.grams, 0),
+  p: roundTo(it.pPerG * it.grams, 2),
+  c: roundTo(it.cPerG * it.grams, 2),
+  f: roundTo(it.fPerG * it.grams, 2),
+  na: roundTo(it.naPerG * it.grams, 0),
+  fb: roundTo(it.fbPerG * it.grams, 2),
+  as: roundTo(it.asPerG * it.grams, 2),
 })
 
 /** 从自定义食谱的一餐构造待记录项（营养已是实际摄入量，回算每克值） */
@@ -1373,12 +1379,12 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
               <div className="stat-grid" style={{ marginBottom: 16 }}>
                 <div className="stat">
                   <div className="l">蛋白质</div>
-                  <div className="v">{Math.round(totals.p)}<small>g</small></div>
+                  <div className="v">{fmtNum(totals.p, 2)}<small>g</small></div>
                 </div>
                 <div className="stat">
                   <div className="l">碳水 / 脂肪</div>
                   <div className="v">
-                    {Math.round(totals.c)}<small>g</small> / {Math.round(totals.f)}<small>g</small>
+                    {fmtNum(totals.c, 2)}<small>g</small> / {fmtNum(totals.f, 2)}<small>g</small>
                   </div>
                 </div>
               </div>

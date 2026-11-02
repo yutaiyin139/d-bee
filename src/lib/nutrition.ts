@@ -1,4 +1,5 @@
 import type { Profile } from '../types'
+import { roundTo } from './numfmt'
 
 /** 活动系数（Mifflin-St Jeor 法） */
 export const ACTIVITY_FACTORS = {
@@ -138,9 +139,19 @@ export function guessMealType(d: Date = new Date()): 'breakfast' | 'lunch' | 'di
   return 'snack'
 }
 
+/**
+ * 舍入到指定小数位。
+ *
+ * 🔴 已委托给 numfmt 的 roundTo（全站唯一权威实现）。
+ * 原实现 `Math.round(n * 10**d) / 10**d` 有三个实测缺陷：
+ *   ① 大数乘法溢出精度：round(1e21) → 999999999999999900000
+ *   ② 负数 .5 方向不一致：Math.round(-2.5) = -2，而展示层 toFixed 给 -3
+ *   ③ NaN/Infinity 会原样传染下游求和
+ * 保留本函数是为了不改动 8 处既有调用点；语义与旧版对正常数值完全一致
+ * （digits 默认 0），额外收益是异常值归零而非产出 NaN。
+ */
 export function round(n: number, digits = 0) {
-  const f = 10 ** digits
-  return Math.round(n * f) / f
+  return roundTo(n, digits)
 }
 
 /* ── 饮水 ── */
