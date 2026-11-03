@@ -2,6 +2,7 @@
  * 小程序端营养/日期/运动/饮水纯函数（对齐主工程 src/lib/nutrition.ts）。
  * 仅移植 Dashboard 所需部分，calcBmr/calcTarget 由后端/引导页处理，此处不重复。
  */
+import { roundTo } from '@dbee/shared'
 
 /** 本地日期 YYYY-MM-DD（避免 toISOString 时区偏移） */
 export function todayKey(d: Date = new Date()) {
@@ -144,9 +145,20 @@ export function targetFromProfile(p: { daily_calorie_target: number | null; prot
   }
 }
 
+/**
+ * 舍入到指定小数位。
+ *
+ * 🔴 已委托给 `@dbee/shared` 的 roundTo（全站唯一权威实现），与主工程
+ * `src/lib/nutrition.ts:153` 逐字同源。原实现 `Math.round(n * 10**d) / 10**d`
+ * 有三个实测缺陷：
+ *   ① 大数乘法溢出精度：round(1e21) → 999999999999999900000
+ *   ② 负数 .5 方向不一致：Math.round(-2.5) = -2，而展示层 toFixed 给 -3
+ *   ③ NaN/Infinity 会原样传染下游求和
+ * 保留本函数是为了不改动既有调用点；语义与旧版对正常数值完全一致
+ * （digits 默认 0），额外收益是异常值归零而非产出 NaN。
+ */
 export function round(n: number, digits = 0): number {
-  const f = 10 ** digits
-  return Math.round(n * f) / f
+  return roundTo(n, digits)
 }
 
 export function calcTarget(input: {

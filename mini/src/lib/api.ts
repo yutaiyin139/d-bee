@@ -23,7 +23,7 @@
  * owner_id 一律不传，由数据库 DEFAULT auth.uid() 填充，RLS 负责隔离（与主工程一致）。
  */
 import { cloud } from './cloud'
-import { FREE_DAILY_AI, BONUS_TTL_DAYS, type Entitlement, type UserPlan } from '@dbee/shared'
+import { FREE_DAILY_AI, BONUS_TTL_DAYS, roundTo, type Entitlement, type UserPlan } from '@dbee/shared'
 
 /* ── 类型（与主工程 src/types.ts 一致，这里精简内联）──────────────── */
 
@@ -341,20 +341,23 @@ export async function updateMealGrams(id: number, grams: number): Promise<MealEn
   if (!existing) throw new Error('该记录不存在或不属于当前账号')
 
   const g = Math.max(1, Math.round(grams))
+  // 以「每克营养值」为基准等比缩放，避免直接改 calories 造成与宏量不一致
   const baseGrams = Number(existing.grams) || 1
   const scale = g / baseGrams
-  const round1 = (n: number) => Math.round(n * 10) / 10
 
   const patch: Row = {
     grams: g,
     quantity_text: `${g} 克`,
-    calories: Math.round((Number(existing.calories) || 0) * scale),
-    protein_g: round1((Number(existing.protein_g) || 0) * scale),
-    carb_g: round1((Number(existing.carb_g) || 0) * scale),
-    fat_g: round1((Number(existing.fat_g) || 0) * scale),
-    sodium_mg: existing.sodium_mg != null ? Math.round((Number(existing.sodium_mg) || 0) * scale) : null,
-    fiber_g: existing.fiber_g != null ? round1((Number(existing.fiber_g) || 0) * scale) : null,
-    added_sugar_g: existing.added_sugar_g != null ? round1((Number(existing.added_sugar_g) || 0) * scale) : null,
+    // 热量与钠（mg）取整；克数类营养素保留 2 位小数（与 AI/条码/食物库换算同口径）。
+    // 走 roundTo 而非 Math.round(n*10)/10：后者大数时乘法溢出精度。
+    // 🔴 口径与主工程 src/lib/api.ts:194-205 逐字一致（P1-A 下沉 @dbee/shared 后同源）。
+    calories: roundTo((Number(existing.calories) || 0) * scale, 0),
+    protein_g: roundTo((Number(existing.protein_g) || 0) * scale, 2),
+    carb_g: roundTo((Number(existing.carb_g) || 0) * scale, 2),
+    fat_g: roundTo((Number(existing.fat_g) || 0) * scale, 2),
+    sodium_mg: existing.sodium_mg != null ? roundTo((Number(existing.sodium_mg) || 0) * scale, 0) : null,
+    fiber_g: existing.fiber_g != null ? roundTo((Number(existing.fiber_g) || 0) * scale, 2) : null,
+    added_sugar_g: existing.added_sugar_g != null ? roundTo((Number(existing.added_sugar_g) || 0) * scale, 2) : null,
   }
 
   const { data, error } = await db('meal_entries').update(patch).eq('id', id).select()

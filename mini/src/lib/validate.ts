@@ -1,7 +1,11 @@
 /**
  * 输入边界校验（对齐主工程 src/lib/validate.ts 的数值部分）。
  * 纯函数、零依赖，供 Onboarding 与各输入框复用。
+ *
+ * 舍入一律走 @dbee/shared 的 numfmt（P1-A 下沉后两端同源），
+ * 🔴 本文件内不得再出现 `Math.round(n*10**d)/10**d` 这类手写舍入。
  */
+import { fmtNum, roundTo } from '@dbee/shared'
 
 export interface NumLimit {
   label: string
@@ -99,14 +103,26 @@ export function clampNumeric(raw: string, limit: NumLimit): string {
   const n = Number(s)
   if (!Number.isFinite(n)) return ''
   const clamped = Math.min(limit.max, Math.max(limit.min, n))
-  const rounded = limit.int ? Math.round(clamped) : Math.round(clamped * 10) / 10
+  // 🔴 按 limit.decimals 舍入，而不是硬编码 1 位。
+  //    此前写死 Math.round(x*10)/10，与上面 sanitizeNumeric 的截断位数不一致：
+  //    若将来有 decimals: 2 的规则（营养素克数就是 2 位），这里会把值悄悄砍回 1 位。
+  //    decimals 未声明时沿用 sanitizeNumeric 的默认值 1，保持既有行为不变。
+  //    与主工程 src/lib/validate.ts:170 同源（P1-A 下沉 @dbee/shared）。
+  const rounded = limit.int ? roundTo(clamped, 0) : roundTo(clamped, limit.decimals ?? 1)
   return String(rounded)
 }
 
+/**
+ * 数值 + 单位的展示格式化（去掉多余的 .0）。
+ *
+ * 🔴 已委托给 numfmt 的 fmtNum（全站唯一权威实现），保留本函数以不改动调用点。
+ * 原实现 `Math.round(n * 10 ** decimals) / 10 ** decimals` 有浮点缺陷：
+ * formatNum(1.005, 2) 会得到 "1" 而不是 "1.01"（1.005*100 在 double 下并非精确 100.5）。
+ * fmtNum 走 toFixed，按 double 真实值做定点舍入，语义一致且不再溢出。
+ * 行为差异仅在于：显式传 decimals>=2 时不再补尾随零（当前唯一调用点用默认 1 位，无影响）。
+ */
 export function formatNum(n: number | null | undefined, decimals = 1): string {
-  if (n == null || !Number.isFinite(n)) return '—'
-  const r = Math.round(n * 10 ** decimals) / 10 ** decimals
-  return Number.isInteger(r) ? String(r) : r.toFixed(decimals)
+  return fmtNum(n, decimals)
 }
 
 export const MAX_TARGET_WEIGHT_DIFF = 100

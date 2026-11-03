@@ -4,7 +4,28 @@
  * levelOfScore / LEVEL_LABELS，及 analyzeProfile 核心（分类反查用简化关键词版，
  * 不搬运完整 1175 条食物库，后续轮次评估是否引入共享食物库）。
  */
+import { fmtNum } from '@dbee/shared'
 import type { MealEntry } from './api'
+
+/**
+ * 🔴 展示层数值格式化（本文件唯一允许的舍入入口），与主工程
+ * `src/lib/foodInsight.ts:17` 同源（P1-A 下沉 @dbee/shared）。
+ *
+ * 为什么不在 analyzeEntry 的 `* r` 源头舍入：
+ *   下面这些值**既用于阈值判断**（`protein >= 20`、`fiber >= 6`、`fRatio < 0.4`）
+ *   **又用于文案插值**。若在源头把 11.666… 改成 11.67，阈值判断就建立在
+ *   已失真的值上；更糟的是 fRatio/cRatio 这类派生比例会二次放大误差。
+ *   所以纪律是：**计算层保持全精度，只在插值那一刻格式化**。
+ *
+ * 起因（主工程实测事故，本端此前同样存在）：份量换算 `r = 100 / grams`
+ * 产生无限循环小数后被直接模板插值，界面显示 `11.666666666666666 g/100g`。
+ * 本端 fiber / addedSugar 两处此前是**裸插值**（连 Math.round 都没有），
+ * 属于同源事故未修的残留，本次一并根治。
+ *
+ * 口径：克数类（蛋白/碳水/脂肪/纤维/添加糖）2 位小数走 g()；
+ *       kcal、百分比、钠 mg 取整走 Math.round（与主端逐字一致，勿改）。
+ */
+const g = (n: number) => fmtNum(n, 2)
 
 export type InsightTone = 'risk' | 'good'
 
@@ -147,12 +168,12 @@ export function analyzeEntry(
   else if (!fatExempt && fRatio >= 0.35) risks.push({ key: 'oily', label: '偏油', tone: 'risk', reason: `脂肪提供了 ${Math.round(fRatio * 100)}% 的能量`, weight: 2 })
   else if (fRatio <= 0.25 && pRatio >= 0.2) benefits.push({ key: 'lean_fat', label: '脂肪比例适中', tone: 'good', reason: `脂肪只占 ${Math.round(fRatio * 100)}% 的能量`, weight: 1 })
 
-  if (protein >= 20) benefits.push({ key: 'protein_top', label: '蛋白质很高', tone: 'good', reason: `${Math.round(protein)} g/100g，减脂期最该保证的一类营养`, weight: 3 })
-  else if (protein >= 10) benefits.push({ key: 'protein_good', label: '蛋白质较好', tone: 'good', reason: `${Math.round(protein)} g/100g`, weight: 2 })
-  if (protein >= 15 && fRatio < 0.4) benefits.push({ key: 'high_p_low_f', label: '高蛋白低脂', tone: 'good', reason: `蛋白 ${Math.round(protein)} g 而脂肪仅占 ${Math.round(fRatio * 100)}% 能量`, weight: 3 })
+  if (protein >= 20) benefits.push({ key: 'protein_top', label: '蛋白质很高', tone: 'good', reason: `${g(protein)} g/100g，减脂期最该保证的一类营养`, weight: 3 })
+  else if (protein >= 10) benefits.push({ key: 'protein_good', label: '蛋白质较好', tone: 'good', reason: `${g(protein)} g/100g`, weight: 2 })
+  if (protein >= 15 && fRatio < 0.4) benefits.push({ key: 'high_p_low_f', label: '高蛋白低脂', tone: 'good', reason: `蛋白 ${g(protein)} g 而脂肪仅占 ${Math.round(fRatio * 100)}% 能量`, weight: 3 })
 
   if (cat === '饮料酒水') {
-    if (carb >= 8) risks.push({ key: 'sugary_drink', label: '含糖饮料', tone: 'risk', reason: `每 100ml 含碳水 ${Math.round(carb)} g，液体热量最不容易被记住`, weight: 3 })
+    if (carb >= 8) risks.push({ key: 'sugary_drink', label: '含糖饮料', tone: 'risk', reason: `每 100ml 含碳水 ${g(carb)} g，液体热量最不容易被记住`, weight: 3 })
     if (has(name, ['酒', '啤酒', '白酒', '红酒', '黄酒', '米酒', '清酒'])) risks.push({ key: 'alcohol', label: '含酒精', tone: 'risk', reason: '酒精几乎只提供热量，且会降低自控力', weight: 3 })
   } else if (kcal >= 200 && cRatio >= 0.6 && !has(name, WHOLEGRAIN_KEYS)) {
     risks.push({ key: 'carb_heavy', label: '碳水占比高', tone: 'risk', reason: `碳水提供了 ${Math.round(cRatio * 100)}% 的能量`, weight: 2 })
@@ -175,11 +196,11 @@ export function analyzeEntry(
   else if (sodium >= 300) risks.push({ key: 'moderate_sodium', label: '钠偏高', tone: 'risk', reason: `钠约 ${Math.round(sodium)} mg/100g`, weight: 2 })
   else if (sodium > 0 && sodium <= 60) benefits.push({ key: 'low_sodium', label: '低钠', tone: 'good', reason: `钠约 ${Math.round(sodium)} mg/100g`, weight: 1 })
 
-  if (fiber >= 6) benefits.push({ key: 'high_fiber', label: '高膳食纤维', tone: 'good', reason: `膳食纤维约 ${fiber} g/100g`, weight: 2 })
-  else if (fiber >= 3 && fiber > 0) benefits.push({ key: 'some_fiber', label: '含膳食纤维', tone: 'good', reason: `膳食纤维约 ${fiber} g/100g`, weight: 1 })
+  if (fiber >= 6) benefits.push({ key: 'high_fiber', label: '高膳食纤维', tone: 'good', reason: `膳食纤维约 ${g(fiber)} g/100g`, weight: 2 })
+  else if (fiber >= 3 && fiber > 0) benefits.push({ key: 'some_fiber', label: '含膳食纤维', tone: 'good', reason: `膳食纤维约 ${g(fiber)} g/100g`, weight: 1 })
 
-  if (addedSugar >= 10) risks.push({ key: 'high_added_sugar', label: '添加糖偏高', tone: 'risk', reason: `添加糖约 ${addedSugar} g/100g`, weight: 3 })
-  else if (addedSugar >= 5 && addedSugar > 0) risks.push({ key: 'moderate_added_sugar', label: '含添加糖', tone: 'risk', reason: `添加糖约 ${addedSugar} g/100g`, weight: 2 })
+  if (addedSugar >= 10) risks.push({ key: 'high_added_sugar', label: '添加糖偏高', tone: 'risk', reason: `添加糖约 ${g(addedSugar)} g/100g`, weight: 3 })
+  else if (addedSugar >= 5 && addedSugar > 0) risks.push({ key: 'moderate_added_sugar', label: '含添加糖', tone: 'risk', reason: `添加糖约 ${g(addedSugar)} g/100g`, weight: 2 })
 
   const riskList = uniq(risks, 3)
   const benefitList = uniq(benefits, 3)

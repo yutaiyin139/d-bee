@@ -3,16 +3,12 @@
  * 把区间内的饮食记录压成一份可直接展示、也可喂给模型的统计结果。
  * 所有计算都在前端完成，模型只负责解读。
  */
+import { balancePercents } from '@dbee/shared'
 import type { MealEntry, Profile, WeightLog } from './api'
-import { shiftDate, todayKey, targetFromProfile } from './nutrition'
+import { round, shiftDate, todayKey, targetFromProfile } from './nutrition'
 
 const MEAL_LABELS: Record<string, string> = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' }
 const MEAL_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'] as const
-
-function round(n: number, digits = 0): number {
-  const p = 10 ** digits
-  return Math.round(n * p) / p
-}
 
 export interface DayStat {
   date: string
@@ -110,14 +106,27 @@ export function computeReport(
     { kcal: 0, protein: 0, carb: 0, fat: 0 },
   )
 
+  // 日均按「有记录的天数」算，否则漏记的日子会把均值拉低，误导用户
   const base = Math.max(loggedDays, 1)
+  // 热量按惯例取整；营养素克数统一保留 2 位小数（与全站展示口径一致）
   const avgKcal = round(sum.kcal / base)
-  const avgProtein = round(sum.protein / base)
-  const avgCarb = round(sum.carb / base)
-  const avgFat = round(sum.fat / base)
+  const avgProtein = round(sum.protein / base, 2)
+  const avgCarb = round(sum.carb / base, 2)
+  const avgFat = round(sum.fat / base, 2)
 
-  const kcalEnergy = avgProtein * 4 + avgCarb * 4 + avgFat * 9
-  const ratio = (v: number) => (kcalEnergy > 0 ? Math.round((v / kcalEnergy) * 100) : 0)
+  /* 供能比：🔴 必须用**未舍入**的日均原值算，且三项配平到合计恰好 100。
+     此前用已取整的 avgProtein/avgCarb/avgFat 各自 Math.round，
+     既让比例失真，又出现「24%+24%+53% = 101%」这种合计不等于 100 的观感错误。
+     （主工程 a977ee4 已修此处，本次把同一修法搬到小程序端。）
+     原值 = sum/base（sum 为区间内累加的原始克数，未舍入）。 */
+  const rawProtein = sum.protein / base
+  const rawCarb = sum.carb / base
+  const rawFat = sum.fat / base
+  const [proteinRatio, carbRatio, fatRatio] = balancePercents([
+    rawProtein * 4,
+    rawCarb * 4,
+    rawFat * 9,
+  ])
 
   const onTargetDays = logged.filter(
     (d) => d.kcal >= target.calories * 0.9 && d.kcal <= target.calories * 1.1,
@@ -154,9 +163,9 @@ export function computeReport(
     avgCarb,
     avgFat,
     proteinTarget: target.protein_g,
-    proteinRatio: ratio(avgProtein * 4),
-    carbRatio: ratio(avgCarb * 4),
-    fatRatio: ratio(avgFat * 9),
+    proteinRatio,
+    carbRatio,
+    fatRatio,
     mealSplit: MEAL_ORDER.map((m) => ({
       name: MEAL_LABELS[m],
       kcal: Math.round(mealKcal[m] / base),

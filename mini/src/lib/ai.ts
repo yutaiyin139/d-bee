@@ -8,6 +8,7 @@
  * 差异：小程序用 Taro.chooseImage 拿 tempFilePath，无 File/canvas，故不提供
  * compressImage（图片压缩由 chooseImage 的 sizeType 控制）。
  */
+import { roundTo } from '@dbee/shared'
 import { cloud } from './cloud'
 
 export interface DetectedFood {
@@ -122,13 +123,17 @@ function normalizeItems(raw: unknown): DetectedFood[] {
         food_name: String(it.food_name ?? it.name ?? '').trim() || '未识别食物',
         quantity_text: String(it.quantity_text ?? it.quantity ?? `${Math.round(grams)} 克`).trim(),
         grams: Math.round(grams),
-        calories: Math.round(num(it.calories ?? it.kcal)),
-        protein_g: Math.round(num(it.protein_g ?? it.protein) * 10) / 10,
-        carb_g: Math.round(num(it.carb_g ?? it.carb) * 10) / 10,
-        fat_g: Math.round(num(it.fat_g ?? it.fat) * 10) / 10,
-        sodium_mg: num(it.sodium_mg) > 0 ? Math.round(num(it.sodium_mg)) : undefined,
-        fiber_g: num(it.fiber_g) > 0 ? Math.round(num(it.fiber_g) * 10) / 10 : undefined,
-        added_sugar_g: num(it.added_sugar_g) > 0 ? Math.round(num(it.added_sugar_g) * 10) / 10 : undefined,
+        // 热量取整（kcal 惯例）；克数类营养素统一保留 2 位小数。
+        // 走 roundTo 而非 Math.round(x*10)/10：后者大数时乘法溢出精度，且 NaN 会原样落库。
+        // 🔴 口径与主工程 src/lib/ai.ts:112-119 逐字一致（P1-A 下沉 @dbee/shared 后同源）。
+        calories: roundTo(num(it.calories ?? it.kcal), 0),
+        protein_g: roundTo(num(it.protein_g ?? it.protein), 2),
+        carb_g: roundTo(num(it.carb_g ?? it.carb), 2),
+        fat_g: roundTo(num(it.fat_g ?? it.fat), 2),
+        // 钠以 mg 计、量级较大，取整
+        sodium_mg: num(it.sodium_mg) > 0 ? roundTo(num(it.sodium_mg), 0) : undefined,
+        fiber_g: num(it.fiber_g) > 0 ? roundTo(num(it.fiber_g), 2) : undefined,
+        added_sugar_g: num(it.added_sugar_g) > 0 ? roundTo(num(it.added_sugar_g), 2) : undefined,
         note: it.note ? String(it.note) : undefined,
         health_score: Number.isFinite(num(it.health_score)) && num(it.health_score) > 0
           ? Math.min(100, Math.round(num(it.health_score)))

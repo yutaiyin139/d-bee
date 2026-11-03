@@ -31,7 +31,7 @@ import {
 } from '../../lib/invite'
 import { STREAK_BADGES } from '../../lib/badge'
 import { isSignedIn } from '../../lib/auth'
-import { STREAK_BONUS_AMOUNT } from '@dbee/shared'
+import { STREAK_BONUS_AMOUNT, fmtNum, roundTo } from '@dbee/shared'
 import './index.scss'
 
 const MEAL_LABELS = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' } as const
@@ -419,7 +419,8 @@ export default function Index() {
     const grams = gramsRaw > 0 ? Math.round(gramsRaw) : null
     const num = (s: string) => {
       const v = Number(s) || 0
-      return v > 0 ? Math.round(v * 10) / 10 : 0
+      // 克数类营养素写库保留 2 位小数（与主端 LogSheet.tsx:233-238 同口径）
+      return v > 0 ? roundTo(v, 2) : 0
     }
     setManualSaving(true)
     setError('')
@@ -657,9 +658,9 @@ export default function Index() {
 
               {(totals.na > 0 || totals.fb > 0) && (
                 <View className='microline'>
-                  {totals.na > 0 && <Text className='micro-pill'>今日钠 {Math.round(totals.na)} mg</Text>}
-                  {totals.fb > 0 && <Text className='micro-pill'>膳食纤维 {Math.round(totals.fb * 10) / 10} g</Text>}
-                  {totals.as > 0 && <Text className='micro-pill'>添加糖 {Math.round(totals.as * 10) / 10} g</Text>}
+                  {totals.na > 0 && <Text className='micro-pill'>今日钠 {fmtNum(totals.na, 0)} mg</Text>}
+                  {totals.fb > 0 && <Text className='micro-pill'>膳食纤维 {fmtNum(totals.fb, 2)} g</Text>}
+                  {totals.as > 0 && <Text className='micro-pill'>添加糖 {fmtNum(totals.as, 2)} g</Text>}
                 </View>
               )}
 
