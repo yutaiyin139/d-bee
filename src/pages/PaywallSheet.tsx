@@ -327,6 +327,30 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
             ))}
           </div>
 
+          {/* 订阅信息摘要（App Store 3.1.2(c) + Developer Program License Agreement Schedule 2 硬要求）：
+              订阅前须清楚展示——订阅时长与价格、到期前 24 小时自动续订扣款、取消路径。
+              价格以商店拉取的真实价为准（iosPriceState==='ok' 时引用），拉不到就不展示具体数字，
+              与「绝不回退硬编码价」的护栏保持一致。 */}
+          {isIOS() && (
+            <div className="card" style={{ marginTop: 14, padding: '12px 14px' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>订阅说明</div>
+              <div style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.8 }}>
+                · 月订阅：每 1 个月一期；年订阅：每 12 个月一期
+                {iosPriceState === 'ok' && (
+                  <>
+                    ，价格分别为 {storePrice['proMonthly']} 与 {storePrice['proYearly']}（以 App Store 实际显示为准）
+                  </>
+                )}
+                <br />
+                · 确认购买后将从你的 Apple ID 账户扣款；订阅到期前 24 小时内自动续订并按当前周期价格扣款，除非你在到期 24 小时前关闭自动续订
+                <br />
+                · 取消路径：iPhone「设置 → 你的头像 → 订阅」，或本页面「管理订阅」按钮；取消后当前周期内权益仍可使用
+                <br />
+                · 终身买断为一次性购买，不含自动续订，权益永久有效
+              </div>
+            </div>
+          )}
+
           {/* Android/Web：选中商品后出现支付方式（微信 + 支付宝，2026-10-25 拍板） */}
           {!isIOS() && selectedId && (
             <div className="pay-methods" style={{ display: 'flex', gap: 10, marginTop: 14 }}>

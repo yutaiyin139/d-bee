@@ -4,6 +4,7 @@ import { COACH_QUESTION_RULE } from '../lib/validate'
 import { errText } from '../lib/errmsg'
 import { getProfile } from '../lib/api'
 import { AiConsent } from '../components/AiConsent'
+import { AiLabel } from '../components/AiLabel'
 import { useModalA11y } from '../components/useModalA11y'
 import { grantAiConsent, hasAiConsent } from '../lib/aiConsent'
 import { usePlan } from '../state/plan'
@@ -147,7 +148,11 @@ export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
         aria-label="AI 饮食助手"
       >
         <div className="sheet-head">
-          <h2>问问小蜜</h2>
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            问问小蜜
+            {/* 《标识办法》第四条（一）：交互场景界面显著提示——整个对话区都是 AI 生成 */}
+            <AiLabel text="AI 生成回答" />
+          </h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button className="sheet-close" onClick={onClose} ref={closeRef} aria-label="关闭">×</button>
           </div>
@@ -178,6 +183,13 @@ export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
           })}
           {err && <div className="notice err">{err}</div>}
         </div>
+
+        {/* 文字周边提示标识（《标识办法》第四条（一））：固定在输入区上方，不随消息滚动，全程可见 */}
+        <AiLabel
+          inline
+          text="回答由 AI 生成，可能存在误差，不构成医疗或营养建议。"
+          style={{ padding: '6px 14px 0', margin: 0 }}
+        />
 
         <div className="coach-input">
           <input

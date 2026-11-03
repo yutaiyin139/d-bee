@@ -39,6 +39,7 @@ import {
 import { FoodTagList } from '../components/FoodTags'
 import { Scanner } from '../components/Scanner'
 import { AiConsent } from '../components/AiConsent'
+import { AiLabel } from '../components/AiLabel'
 import { useModalA11y } from '../components/useModalA11y'
 import { grantAiConsent, hasAiConsent } from '../lib/aiConsent'
 import type { Profile } from '../types'
@@ -173,6 +174,15 @@ function portionPresets(it: DraftItem): { label: string; grams: number }[] {
     { label: '整份', grams: base },
     { label: '双份', grams: base * 2 },
   ]
+}
+
+/**
+ * 该条目是否由 AI 生成/合成（《人工智能生成合成内容标识办法》第四条判定）。
+ * photo/text 全量走大模型；barcode 里只有「AI 读包装营养表」带 confidence，
+ * 纯扫码命中商品库的数据不是 AI 生成，不标识。
+ */
+function isAiDraft(it: DraftItem): boolean {
+  return it.source === 'photo' || it.source === 'text' || (it.source === 'barcode' && it.confidence !== undefined)
 }
 
 /** AI 估算的偏差提示：让用户知道这数字是「约数」，可一键修正 */
@@ -1283,6 +1293,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
             <>
               <div className="section-title">
                 本次将记录 {items.length} 项
+                {items.some(isAiDraft) && <AiLabel />}
                 <span className="hint">
                   共 {totals.kcal} kcal
                   {items.length >= 2 && (
@@ -1318,7 +1329,11 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
                     <div key={it.key} className="food-row" style={{ flexDirection: 'column', alignItems: 'stretch', padding: '12px 0' }}>
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                         <div style={{ minWidth: 0, flex: 1 }}>
-                          <div className="nm">{it.food_name}</div>
+                          <div className="nm">
+                            {it.food_name}
+                            {/* 《标识办法》第四条（一）：AI 识别条目的显式标识（商品库/手动条目不标） */}
+                            {isAiDraft(it) && <AiLabel style={{ marginLeft: 6 }} />}
+                          </div>
                           <div className="sub">
                             {v.kcal} kcal · 蛋 {v.p}g · 碳 {v.c}g · 脂 {v.f}g
                           </div>

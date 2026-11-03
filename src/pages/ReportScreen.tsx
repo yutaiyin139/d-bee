@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarHeatmap } from '../components/Calendar'
 import { BarChart, LineChart, RatioBar } from '../components/Charts'
 import { IconLock, IconPlus, IconWeight } from '../components/Icons'
+import { AiLabel } from '../components/AiLabel'
 import { generateReportInsight } from '../lib/ai'
 import { listMealsBetween, listWeightLogsAsc, saveWeight } from '../lib/api'
 import { FREE_REPORT_DAYS } from '../lib/entitlement'
@@ -400,7 +401,9 @@ export function ReportScreen({ profile }: ReportScreenProps) {
 
           <div className="section-title">
             本期解读
+            {/* 《标识办法》第四条（一）：显著提示标识 + 来源说明 */}
             <span className="hint">由 AI 根据上面的数据生成</span>
+            <AiLabel />
           </div>
           <div className="card">
             {insight ? (
@@ -412,6 +415,8 @@ export function ReportScreen({ profile }: ReportScreenProps) {
                     <span>{p}</span>
                   </div>
                 ))}
+                {/* 文字周边标识：解读正文之后 */}
+                <AiLabel inline text="解读内容由 AI 生成，可能存在误差，不构成医疗或营养建议。" />
                 <button className="btn-text" style={{ marginTop: 12 }} onClick={handleInsight} disabled={insightBusy}>
                   {insightBusy ? '重新生成中…' : '重新生成'}
                 </button>

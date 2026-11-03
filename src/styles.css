@@ -3040,3 +3040,37 @@ select {
   color: var(--ink-3);
   font-size: 14px;
 }
+
+/* ── AI 生成内容显式标识（《人工智能生成合成内容标识办法》第四条）────────────
+   徽章 + 行内提示两种形态，全站 AI 输出统一使用，见 components/AiLabel.tsx */
+.ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--honey-dark);
+  background: var(--honey-soft, #faeeda);
+  border: 1px solid rgba(150, 96, 10, 0.25);
+  border-radius: 99px;
+  padding: 1px 8px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.ai-gen-note {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-3);
+}
+
+.ai-gen-note .ai-badge {
+  flex-shrink: 0;
+  position: relative;
+  top: -1px;
+}
