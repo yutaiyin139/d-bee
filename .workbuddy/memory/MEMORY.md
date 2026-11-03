@@ -28,7 +28,7 @@
 >   「事后更正」是兜底，「事前不越界记载」才是做法。
 
 **下一步（上架前主线）**
--1. 🔴 **P1-A：`numfmt` 下沉 `@dbee/shared`**（小程序 P0 已完，见上）。mini 端营养素精度仍是 **1 位小数**（`ai.ts:126-131` 五处、`api.ts:346` round1、`Charts.tsx:47`），与主端「2 位小数 + 全站走 `numfmt.ts`」铁律**不一致**；根治须连同这几处一起改并做红绿验证（P0 批次刻意没顺手改，避免牵动面失控）。
+-1. ✅ **P1 全部落地（11-03）**：审计文档 P1-A~P1-G 七项 + #15 回迁可控准备均已执行完（详见 `2026-11-03.md`）。P1-A numfmt 已下沉 `@dbee/shared`（`842a879`），mini 端营养素精度已对齐主端 2 位小数。**剩三项全部被外部资质阻断**：P1-C 实测等真机+样本餐；P1-D 支付实装等商户号（清单已出，含 🔴 核销时序坑）；#19 回迁切换等 ICP 备案（开关代码已就位）。
 0. 🔴 移动号段收不到验证码=`PORT_NOT_REGISTERED` → 用户在阿里云控制台「签名管理→运营商报备结果」补报备（5–7 工作日）；期间移动用户走密码登录。
 1. Mac/Xcode 真机实证整改 #1~#5 + 红屏修复 `5d9de96`（Windows 编不了 Swift）。
 2. ASC 配 3 商品（`dbee_pro_monthly/yearly/lifetime`）+ IAP capability + webhook 指 `https://d-bee.cn` + `APPLE_BUNDLE_ID`/`SHARED_SECRET`/`APPLE_ALLOWED_ENVS` → iOS 提审（需备案号）。
@@ -39,9 +39,10 @@
 
 **待拍板（不阻塞开发）**
 - 🔴 **软著 AI 条款红线**：版权中心要求经办人亲笔手抄承诺「未使用 AI 开发」，申报文档不得 AI 代写 → **不可盲目提交，须先致电版权中心问口径**，说明书须用户亲写。素材包：`docs/软著登记-事实素材包与合规红线-2026-10-28.md` + `tools/gen-softcopyright-source.py`。
-- ①ICP 经营许可证（3 人社保）→ 方案 A：暂不办。②Apple 账号：先申 D-U-N-S、个人推进。③云库去留。④老用户迁移（推荐 A：开发数据不迁移）。⑤存量 7 行 newbie bonus 处置。⑥小程序是否回迁自托管（须同步改 `mini/src/lib/cloud.ts`+`legal.ts`）。⑦演示账户两套数据面（iOS 云库 owner `2115454156301934592` / web 自建 `1793280185303313979` 互不相通；iOS 切自建库须重建账户+预置数据，否则 Guideline 2.1）。⑧🔴 **App 名称口径二选一**（11-03 发现文档冲突）：《ASC配置清单》= `自律蜜蜂` vs《填报包》= `自律蜜蜂 - 饮食热量记录`。**备案名/ASC名/软著名三者须逐字统一**，否则填备案号时 409 `ICP_NUMBER_MIIT_APP_NAME_MISMATCH` 存不进。已在 ASC 清单加警示块，**决策前该字段悬置、勿据此建 App**。
+- ①ICP 经营许可证（3 人社保）→ 方案 A：暂不办。②Apple 账号：先申 D-U-N-S、个人推进。③云库去留。④老用户迁移（推荐 A：开发数据不迁移）。⑤存量 7 行 newbie bonus 处置。⑥✅ **小程序回迁自托管已拍板（11-03）**：开关 `mini/src/lib/backend.ts`（默认 cloud 零改变，切需 `D_BEE_BACKEND=selfhost`+`D_BEE_SELFHOST_READY=true`），legal.ts 用 `BACKEND_KIND` 分支。🔴 **真正工作量是身份模型不是改 endpoint**：云库 uid=`wx:<openid>` vs 自托管 owner_id=19 位数字串、`ident_kind` CHECK 只有 phone/email、网关无 login-wechat。好消息：22 RPC + 11 表 + RLS **全已在自托管侧**，SDK 前缀 `/.cloud` 与网关**完全对齐**。清单 `docs/小程序回迁自托管-切换清单-2026-11-03.md`。⑦演示账户两套数据面（iOS 云库 owner `2115454156301934592` / web 自建 `1793280185303313979` 互不相通；iOS 切自建库须重建账户+预置数据，否则 Guideline 2.1）。⑧🔴 **App 名称口径二选一**（11-03 发现文档冲突）：《ASC配置清单》= `自律蜜蜂` vs《填报包》= `自律蜜蜂 - 饮食热量记录`。**备案名/ASC名/软著名三者须逐字统一**，否则填备案号时 409 `ICP_NUMBER_MIIT_APP_NAME_MISMATCH` 存不进。已在 ASC 清单加警示块，**决策前该字段悬置、勿据此建 App**。
 - ⚠️ 安全待办（用户处理）：①重置 DeepSeek API key ②轮换 SSH/dbee_app 密码（轮换优先于重写 git 历史）。
-- 📌 审计文档 5 项待拍板：**①「小程序手动录入做不做」已决已做**（11-03 下午，选「做」）。剩 ②小程序数据面维持云库还是回迁自托管（最根本一题，决定「四端数据一致」能否真成立）③MAPE 实测是否现在做 ④「本期解读」是否更名「减重周报」⑤Android 兑换码是否需调研华为/小米内购政策。
+- 📌 审计文档 5 项待拍板 **11-03 全部有结论**：①手动录入已做。②**数据面拍板「四端最终都迁回自托管」**，#15 可控准备已完（`b10df0c`），切换等备案（#19）。③MAPE **工具已就绪**（`0f9e397`），实测等真机+样本餐，之前不得对外表述精度。④「本期解读」**不更名**。⑤Android 兑换码调研**已完成**（`a1c1393`）：兑换码**不隐藏**（华为官方认可自建赠送码，前提免费发码），真风险是支付直连（华为强制 IAP Kit + 购买页禁展示支付方式名称），定性「上华为前必须改」。
+- 🔴 **P1-D 核销时序坑（资质就绪前必须先决策）**：Apple=拉模式（客户端主动验签），微信/支付宝=推模式（权威信号=服务端异步回调，通常晚于客户端核销）→ 现设计直接接会「用户已扣款，App 报支付校验失败」（**主路径**非边缘）。解法：核销改「查订单状态+有限重试」+ 新增 `settling` 状态。另 `getAdapter`（checkout.ts:39-46）**无分发渠道维度** → 上华为前须加。详见 `docs/P1-D在线支付实装前置清单-2026-11-03.md`。
 
 **版本/git**：commit 流水不入记忆，一律 `git log`（11-03 下午本地远端同步）。
 
@@ -102,7 +103,7 @@ Capacitor 8.5.3 混合壳；React18+Vite5+TS；Windows 出 Android、Mac mini M4
 ## 数据面与部署现状（详版见 REFERENCE.md）
 
 - **泳道 A（10-23 闭环）**：`150.158.51.106` nginx + dbee-gateway（:8080）+ PostgREST（:3001）+ PG 17.11；`/.cloud/**` 全走自托管；PG 监听已收 localhost。
-- Web 已切自建 PG；Android/iOS/小程序仍走云库；自建网关唯一缺口=无 `/v1/login-wechat`。切换时机=备案→A 记录→HTTPS→三端指 `https://d-bee.cn`；**欠账=`0043-data-sync-final.sql`** + 身份映射 + 186****4728 分裂账号修复。
+- Web 已切自建 PG；Android/iOS/小程序仍走云库；自建网关唯一缺口=无 `/v1/login-wechat`（🔴 回迁当天须补，响应体要与 `auth.mjs:162-187` 的 `sessionPayload` 同构，否则 SDK `parseSession` 失败；⚠️ `config.mjs` grep `appid` 命中的是 `SMS_TENCENT_SDKAPPID`（腾讯云短信），**不是**微信 appId，别误判「已配好」）。切换时机=备案→A 记录→HTTPS→三端指 `https://d-bee.cn`；**欠账=`0043-data-sync-final.sql`** + 身份映射 + 186****4728 分裂账号修复。
 - PIPL：`0030-full-selfhost-mirror.sql` 含真实健康档案**不入库**（gitignore）；0030 已含 0025~0028 变更，勿盲跑 0025~0029。
 - 支付链路：Apple 验签在 Node 网关（`server/lib/iap.mjs`）+ Notifications V2 + `0037` 三函数；自测 `tools/iap-selftest.mjs` 47 项。
 - 短信：aliyun RPC + HMAC-SHA1 手写签名；🔴 签名口径=「北京迪蜂科技有限公司」不是「自律蜜蜂」；凭据在 `.secrets.local`。
@@ -144,5 +145,8 @@ Apple 4.2 / 3.1.1 / 5.1.1(v) / AI 告知同意；中国：ICP 备案、App 备�
 - APK 归档 `dist-release/`（gitignore）；Web 归档 `backups/`。
 - 云库 applicationId `wbapp_w6iIU6TqTyHvJxESPTxBTy`（genie-baas db_exec_sql）；云库地址 `https://zilv-mifeng.app.workbuddy.host`。
 - curl 本机 dev server 需 `--noproxy '*'`。
-- 🔴 **测试 = vitest**（`npm test` = `vitest run tools/`，测试放 `tools/*.test.ts`；无 lint）。**EPERM 会静默丢测试文件**：报 `EPERM ...Temp\<hash>\ssr\<hash>`（栈里是 WorkBuddy 的 `node-brokered-fs-shim.cjs` 拦截写入），文件被跳过且**全绿是假绿**（症状 = Tests 数偏少，如只 17/47）。`rm -rf node_modules/.vite` **有时无效**（11-03 实测）。**可靠规避 = 逐文件 `npx vitest run <单文件>`** 再自己加总（当前基线 47 = iap-checkout 9 + numfmt 30 + report-ratio 8）。
+- 🔴 **测试 = vitest**（`npm test` = `vitest run tools/`，测试放 `tools/*.test.ts`；无 lint）。**EPERM 会静默丢测试文件**：报 `EPERM ...Temp\<hash>\ssr\<hash>`（栈里是 WorkBuddy 的 `node-brokered-fs-shim.cjs` 拦截写入），文件被跳过。**11-03 六次采样校准**：有 EPERM 时 **exit=1**（不会假绿放行），无 EPERM 时 exit=0 全绿 → 比「假绿」更精确的说法是「批跑可能少跑文件但会报错退出」。**可靠做法仍是逐文件 `npx vitest run <单文件>` 再加总**。当前基线 **134 = 7 文件**（ai-mape 28 + iap-checkout 9 + mini-backend-switch 22 + mini-invite-link 31 + mini-report-ratio 6 + numfmt 30 + report-ratio 8）。🔴 **别用 shell 循环累加求和**（11-03 实测 `$((total+n))` 出 bug 显示 14），逐文件读数后用 python 复算。
+- 🔴 **mini 端类型检查须单独跑且带 `--skipLibCheck`**：根 `tsconfig.json` 的 include 只有 `["src","vite.config.ts"]`，**不覆盖 `mini/`** → `npm run typecheck` 通过 ≠ mini 无误。mini 自己的 tsconfig 无 skipLibCheck，裸跑会被 `node_modules/@tarojs/components` 的 `CommonEventFunction` 噪音淹（exit=2 但与自有代码无关）。正确姿势：`cd mini && npx tsc --noEmit --skipLibCheck -p tsconfig.json`。
+- 🔴 **构建期护栏必须写在构建配置里，不能指望被打包的业务代码**（11-03 实测教训）：webpack **不执行**被打包模块的顶层代码，故 `mini/src/lib/backend.ts` 的 throw 只在小程序启动时触发，误配的包照样 `build:weapp` exit=0 发出去。修法 = 在 `mini/config/index.ts`（Node 构建期执行）里调**同一个** `resolveBackendTarget()`，两层复用同一函数不漂移。主端同构：`vite.config.ts:14-25` 构建期 + `cloudConfig.ts:109-112` 运行时。
+- 🔴 **MAPE 达标 ≠ 无需处理**：单看 MAPE 会误导决策，必须四指标并报（MAPE 排除真值 0 且显式计数 / WMAPE 抗小真值放大 / MAE 带单位 / **Bias 有符号**）。判据 `tools/ai-mape/mape.ts`：MAPE>15% 且 |Bias|/MAPE≥0.6 → systematic（先改 prompt）；<0.6 → random（考虑换模型）；**MAPE≤15% 但 |Bias%|>10 仍判 systematic**（11-03 用模板样本实测揪出的真 bug：热量 MAPE 12.76% 判达标而 Bias -17.29%，减脂产品系统性低估热量会累积成用户减脂失败，且该状态不该做精度营销）。工具已就绪，**实测需真机+样本餐（≥20 条、覆盖 4 热量档），在此之前不得对外表述任何精度数字**。
 - 微营养素：foodsData*.ts 已 10 列化（1175 条零兜底）；`db/.tmp-backup.sql` 临时备份不入库。
