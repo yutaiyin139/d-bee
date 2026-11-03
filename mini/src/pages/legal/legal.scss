@@ -80,6 +80,57 @@
     }
   }
 
+  /* 备案信息（P1-F）：SITE.icp 为空时整块不渲染，故这里只描述有值时的形态 */
+  .legal-icp {
+    margin-top: 28px;
+    padding: 24px 28px;
+    box-sizing: border-box;
+    background: $surface;
+    border: 1px solid $line;
+    border-radius: $radius;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    .legal-icp-num {
+      font-size: 24px;
+      color: $ink-2;
+      line-height: 1.9;
+      letter-spacing: 1px;
+    }
+
+    .legal-icp-hint {
+      margin-top: 8px;
+      font-size: 20px;
+      color: $ink-3;
+      text-align: center;
+      line-height: 1.6;
+    }
+
+    .legal-icp-msg {
+      margin-top: 10px;
+      font-size: 22px;
+      color: $green;
+      text-align: center;
+      line-height: 1.6;
+    }
+  }
+
+  /* 页脚元信息：对齐主工程 SiteFooter 的 site-footer-meta */
+  .legal-meta {
+    margin-top: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    .legal-meta-line {
+      font-size: 20px;
+      color: $ink-3;
+      line-height: 1.9;
+      text-align: center;
+    }
+  }
+
   .legal-done {
     width: 100%;
     height: 84px;

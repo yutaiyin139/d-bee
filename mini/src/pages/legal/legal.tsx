@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { View, Text, Button } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
-import { getDoc, type DocId } from '../../content/legal'
+import { getDoc, SITE, type DocId } from '../../content/legal'
+import { copyText } from '../../lib/clipboard'
 import './legal.scss'
 
 /**
@@ -14,8 +16,27 @@ export default function Legal() {
   const id: DocId = raw === 'privacy' || raw === 'disclaimer' ? raw : 'terms'
   const doc = getDoc(id)
 
+  // 备案号复制结果提示（P1-F）
+  const [icpMsg, setIcpMsg] = useState('')
+
   function goBack() {
     Taro.navigateBack()
+  }
+
+  /**
+   * 复制备案号查询网址（P1-F）。
+   *
+   * 与主工程 SiteFooter 的差异：主端用 `<a href target="_blank">` 直接跳
+   * beian.miit.gov.cn；小程序**打不开任意外链**（须先在 mp 后台把域名加进
+   * businessDomain 白名单，而政府站点不可能为我们配置校验文件），
+   * 故改为「复制网址 + 文字指引用户自行到浏览器打开」。
+   * 备案号文本本身也一并复制，便于用户在查询页粘贴核验。
+   */
+  async function copyIcpQuery() {
+    const ok = await copyText(`${SITE.icpUrl} （备案号：${SITE.icp}）`)
+    setIcpMsg(ok
+      ? '查询网址与备案号已复制，请在浏览器打开核验'
+      : '复制失败，请手动记录备案号后到浏览器查询')
   }
 
   return (
@@ -39,6 +60,41 @@ export default function Legal() {
             ) : null}
           </View>
         ))}
+      </View>
+
+      {/*
+        备案信息（P1-F）。渲染逻辑对齐主工程 src/components/SiteFooter.tsx:35-49：
+        **留空则整块不渲染** —— 备案审核期间展示假备案号属违规，
+        故 SITE.icp 为空串时这里什么都不出现（当前即此状态，备案号未下证）。
+
+        🔴 备案号下证后的操作：只需改 mini/src/content/legal.ts 的
+           `icp: ''` → `icp: '京ICP备2026XXXXXX号-1'`（以及 police），
+           本页无需再改。主端走 VITE_ICP_BEIAN 构建期环境变量，
+           本端因小程序无 import.meta.env 而用常量（见 legal.ts 文件头说明）。
+
+        ⚠️ 刻意**不**渲染 SITE.version：该字段在 mini 是死代码且值陈旧
+           （写死 '1.6.9'，既非 mini/package.json 的 0.1.0，也非主端的 1.7.3，
+           主端走构建期注入的 __APP_VERSION__）。在小程序里它没有单一真源，
+           渲染出来等于向用户展示错误版本号。若将来要展示，先解决版本来源。
+      */}
+      {SITE.icp ? (
+        <View className='legal-icp'>
+          <Text className='legal-icp-num' onClick={() => void copyIcpQuery()}>
+            {SITE.icp}
+          </Text>
+          {SITE.police ? (
+            <Text className='legal-icp-num' onClick={() => void copyIcpQuery()}>
+              {SITE.police}
+            </Text>
+          ) : null}
+          <Text className='legal-icp-hint'>点击复制查询网址，可在浏览器核验备案信息</Text>
+          {icpMsg ? <Text className='legal-icp-msg'>{icpMsg}</Text> : null}
+        </View>
+      ) : null}
+
+      <View className='legal-meta'>
+        <Text className='legal-meta-line'>{SITE.nameEn}（{SITE.name}）</Text>
+        <Text className='legal-meta-line'>营养数据仅供参考，不构成医疗建议</Text>
       </View>
 
       <Button className='btn btn-ghost legal-done' onClick={goBack}>我已阅读</Button>
