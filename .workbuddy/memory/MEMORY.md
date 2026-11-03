@@ -9,13 +9,16 @@
 > · 📄 **隐私政策静态页**：`npm run build` 会自动跑 `tools/gen-legal-static.mjs` → `dist/legal/{terms,privacy,disclaimer}/index.html`（零 JS 可爬，OPPO 硬要求）。单一真源 = `src/content/legal.ts`；`build:native*` 不生成（原生端不需要）。上线时 `dist/legal/` 须一并部署；nginx 无需改（`try_files $uri $uri/` 的 `$uri/` 命中目录 index）。备案号走 `VITE_ICP_BEIAN`，未传即整块不渲染。
 > · 📄 **法律文案里的 `**强调**` 由两端渲染器各自转 `<strong>`**（11-02 修）：`LegalPage.tsx` 分段渲染（**不用 `dangerouslySetInnerHTML`**）、`gen-legal-static.mjs` 的 `rich()` **先 esc 后 bold（顺序不可颠倒）**；两端同带成对性守卫——`**` 为奇数时**剥星号**降级（保留星号=裸标记露出，奇偶分段=漏标记后正文全被误加粗）。改文案加 `**` 后须验产物 `grep -o '\*\*' | wc -l` = 0。渲染器只认 `p → list` 顺序，`list` 后无法再出段落；且 `DocSection` 只允许**一个** `p` 键（写两个 → TS1117）。
 
-## 进度快照（截至 2026-11-02 下午）
+## 进度快照（截至 2026-11-03 下午）
 
-**已完成**：iOS V1.7.3 已发布+上架就绪核查通过；Web **V1.7.3 线上**（http://150.158.51.106/，11-02 重发，`verify-live`+`verify-legal` 双 PASS）；Android vc13 重打验签通过 + **vc14 内测包已交付待实测**；四端审查整改 #1~#5（→铁律 #5~#9）；密码登录缺陷修复（`8d4a0ef`）；合规 P0 多端一致性；阿里云真短信上线；App Store 截图链路就绪；10-31 全仓口径核查+安全四项（5432 已修 localhost、云库 0039 闸门补齐；SSH/sudo 密码未轮换）；ICP 企业备案已进管局（10-31）；11-01 白屏闭环（根因=误用 `npm run build`，真修 `5d9de96` 须 Mac 重打）；识别提速 `dc217da` 已部署实证（6.7 倍）；**11-02 视觉链路迁新工作空间+新模型已进生产并验证生效**（`b528988`）。重启影响面实测极低（JWT 30min TTL，重启只清内存态）。
-**11-02 三项零资质整改全部闭环**：①小程序付费墙口径收敛 ②隐私政策静态 HTML 直出 ③iOS 管理订阅深链（`b3aab66`+`630ccd3`，已推）；④**§4.2 公示按包内实际能力补全**（`99a1c52`：健康数据/系统权限/原生本地存储三处真缺口 + 修 markdown 加粗裸星号，**法律文案待用户过目**）。§4.3 AI 显式标识 = 现为唯一未解代码合规 P0。
+**已完成**：iOS V1.7.3 已发布+上架就绪核查通过；Web **V1.7.3 线上**（http://150.158.51.106/，11-02 重发，`verify-live`+`verify-legal` 双 PASS）；Android vc13 重打验签通过 + **vc14 内测包已交付待实测**；四端审查整改 #1~#5（→铁律 #5~#9）；密码登录缺陷修复（`8d4a0ef`）；合规 P0 多端一致性；阿里云真短信上线；App Store 截图链路就绪；10-31 全仓口径核查+安全四项（5432 已修 localhost、云库 0039 闸门补齐；SSH/sudo 密码未轮换）；ICP 企业备案已进管局（10-31）；11-01 白屏闭环（根因=误用 `npm run build`，真修 `5d9de96` 须 Mac 重打）；识别提速 `dc217da` 已部署实证（6.7 倍）；**11-02 视觉链路迁新工作空间+新模型已进生产并验证生效**（`b528988`）；**11-02 晚营养素数值口径收敛（`a977ee4`）**：新增 `src/lib/numfmt.ts` 全站唯一权威实现，克数类 2 位小数、kcal/钠取整，修复 `report.ts` 供能比反算失真（旧 18+37+46=101%，改全精度+`balancePercents` 配平恒 100）。重启影响面实测极低（JWT 30min TTL，重启只清内存态）。
+**11-02 三项零资质整改全部闭环**：①小程序付费墙口径收敛 ②隐私政策静态 HTML 直出 ③iOS 管理订阅深链（`b3aab66`+`630ccd3`，已推）；④**§4.2 公示按包内实际能力补全**（`99a1c52`：健康数据/系统权限/原生本地存储三处真缺口 + 修 markdown 加粗裸星号，**法律文案待用户过目**）。§4.3 AI 显式标识 → **11-03 已解**：新增 `src/components/AiLabel.tsx`（徽章+行内两形态），接入 `CoachSheet`（标题徽章+输入区上方常驻行）/`ReportScreen`（本期解读）/`LogSheet`（`isAiDraft()`：photo+text 全标，barcode 仅带 confidence 才标，manual/纯扫码不标）；`legal.ts` 四之一补标识方法条款（第八条）。同批补 `PaywallSheet` 订阅信息摘要块（3.1.2(c)/Schedule 2：周期+商店真实价+24h 续订+取消路径）。**主端代码合规 P0 已清零**（`74aa2bc`，已推）。依据《标识办法》国信办通字〔2025〕2号 **2025-09-01 已施行**（我此前误记 2026-09-01）。总闸门视图见 `docs/苹果端上线前置条件总清单-2026-11-03.md`。
 
-> ⚠️ **Git 有待推提交（仅记忆文件）**：远端停在 `b528988`（**代码提交已全部推送成功**），本地领先若干个 `.workbuddy/memory/` 提交。11-02 16:2x–16:4x 连续 **12 次** push 全失败（schannel SSL / Empty reply / CONNECT tunnel 502 三种交替），属代理间歇波动 —— **网络恢复后第一件事就是 `git push origin main`**。勿因单次失败改方案。
-> 📌 具体领先几个以 `git status -sb` 为准，此处刻意不写精确数字（写了就会因后续提交立刻过时）。
+**11-03 下午：四端审计 + 小程序 P0 全项执行完**（审计 `19eda78`、执行 `07a46ca`，均已推）。审计文档 `docs/四端一致性与商业化优化-审计与实施计划-2026-11-03.md`（3🔴/3🟠/6🟡 + 对标自律茄子/薄荷 + P0×5/P1×7/P2×6）。**小程序 P0-A~E 落地且严守「只改 `mini/`、主端零改动」**（验证 `git status --porcelain -- src/ server/ packages/ db/` 为空）：配额 fail-open→fail-closed（删 `bumpUsage`，0035 后必抛错）+ `degraded` 贯通使「服务降级」不再误弹付费墙；🔴 **顺手挖出真实资损缺陷**——`scan.tsx` 识别失败的 catch 不退预占额度（白扣次数，违反「识别成功才扣次数」），并把 `releasePhotoQuota` 从吞错的 `void` 改 `boolean` 让「未消耗次数」有据可依；**免费手动录入**补在首页内联弹层（不接回孤儿页 `checkin.tsx`：硬编码 today/写死 snack/绕过积分结算）+ 顺带修它三个数据质量 bug；**AiLabel** Taro 版接入 9 处 + `legal.ts` 四之一补条款（法务文案按小程序功能名重写、不照抄主端第三方服务商名，两端公示主体不同）；付费墙删「完善资料再送拍照次数」（`grantPhotoBonus` 只有 `'streak7'` = 虚假承诺）。**验证**：mini tsc src/ 错误 0、`build:weapp` 成功（896K < 2MB 主包限）；主端回归 tsc 0 + 逐文件 vitest **47/47 全绿**。
+
+
+> ✅ **Git 已同步**（11-03 下午，push 后 `git status -sb` 无 ahead/behind）：小程序 P0 提交已推上远端（本轮曾遇代理 502 的两个提交 `74aa2bc`/`19eda78` 也已推上）。**仍未部署生产**（11-02 用户说「稍后发布」，发布时跑 `npm run build` 而非 `build:web`）。
+> 📌 具体领先几个、远端停在哪，一律以 `git status -sb` + `git log` 为准，此处刻意不写死精确值（写了就会过时）。
 > 🔴 **纪律自我打脸（今天第二次）**：我曾写「本地与远端均 `b528988`，无待推提交」，几分钟后推送失败就让它变成过时记载；改回「待推 1 个」后，又因新增一个提交再次过时（变成 2 个）。与上午 14:2x 那次同源。
 > **教训升级（覆盖上午那条「事后回头更正」）**：病根不是「忘了更正」，而是
 > **① 在事实落定之前就把它写成完成态**（推送没成功就写「已同步」）——必然产生一个
@@ -26,6 +29,7 @@
 >   「事后更正」是兜底，「事前不越界记载」才是做法。
 
 **下一步（上架前主线）**
+-1. ✅ ~~小程序端三项 P0~~ → **11-03 下午已全部执行完（`07a46ca`，已推）**，见上「进度快照」。后续按审计文档推 **P1 七项**，首推 **P1-A `numfmt` 下沉 `@dbee/shared`**：mini 端营养素精度仍是 **1 位小数**（`ai.ts:126-131` 五处、`api.ts:346` round1、`Charts.tsx:47` 默认 fmt），与主端「2 位小数 + 全站走 `numfmt.ts`」的铁律**不一致**；本批手动录入沿用 1 位与 mini 内部自洽，根治须连同上述几处一起改并做红绿验证（P0 批次刻意没顺手改，避免牵动面失控）。
 0. 🔴 移动号段收不到验证码=`PORT_NOT_REGISTERED` → 用户在阿里云控制台「签名管理→运营商报备结果」补报备（5–7 工作日）；期间移动用户走密码登录。
 1. Mac/Xcode 真机实证整改 #1~#5 + 红屏修复 `5d9de96`（Windows 编不了 Swift）。
 2. ASC 配 3 商品（`dbee_pro_monthly/yearly/lifetime`）+ IAP capability + webhook 指 `https://d-bee.cn` + `APPLE_BUNDLE_ID`/`SHARED_SECRET`/`APPLE_ALLOWED_ENVS` → iOS 提审（需备案号）。
@@ -36,10 +40,11 @@
 
 **待拍板（不阻塞开发）**
 - 🔴 **软著 AI 条款红线**：版权中心要求经办人亲笔手抄承诺「未使用 AI 开发」，申报文档不得 AI 代写 → **不可盲目提交，须先致电版权中心问口径**，说明书须用户亲写。素材包：`docs/软著登记-事实素材包与合规红线-2026-10-28.md` + `tools/gen-softcopyright-source.py`。
-- ①ICP 经营许可证（3 人社保）→ 方案 A：暂不办。②Apple 账号：先申 D-U-N-S、个人推进。③云库去留。④老用户迁移（推荐 A：开发数据不迁移）。⑤存量 7 行 newbie bonus 处置。⑥小程序是否回迁自托管（须同步改 `mini/src/lib/cloud.ts`+`legal.ts`）。⑦演示账户两套数据面（iOS 云库 owner `2115454156301934592` / web 自建 `1793280185303313979` 互不相通；iOS 切自建库须重建账户+预置数据，否则 Guideline 2.1）。
+- ①ICP 经营许可证（3 人社保）→ 方案 A：暂不办。②Apple 账号：先申 D-U-N-S、个人推进。③云库去留。④老用户迁移（推荐 A：开发数据不迁移）。⑤存量 7 行 newbie bonus 处置。⑥小程序是否回迁自托管（须同步改 `mini/src/lib/cloud.ts`+`legal.ts`）。⑦演示账户两套数据面（iOS 云库 owner `2115454156301934592` / web 自建 `1793280185303313979` 互不相通；iOS 切自建库须重建账户+预置数据，否则 Guideline 2.1）。⑧🔴 **App 名称口径二选一**（11-03 发现文档冲突）：《ASC配置清单》= `自律蜜蜂` vs《填报包》= `自律蜜蜂 - 饮食热量记录`。**备案名/ASC名/软著名三者须逐字统一**，否则填备案号时 409 `ICP_NUMBER_MIIT_APP_NAME_MISMATCH` 存不进。已在 ASC 清单加警示块，**决策前该字段悬置、勿据此建 App**。
 - ⚠️ 安全待办（用户处理）：①重置 DeepSeek API key ②轮换 SSH/dbee_app 密码（轮换优先于重写 git 历史）。
+- 📌 审计文档 5 项待拍板中，**①「小程序手动录入做不做」已决并做完**（11-03 下午，选了「做」，见上）。剩 ②**小程序数据面维持云库还是回迁自托管**（最根本的一题，决定「四端数据一致」能否真成立）③MAPE 实测是否现在做 ④「本期解读」是否更名「减重周报」⑤Android 兑换码是否需调研华为/小米内购政策。
 
-**版本/git**：commit 流水不入记忆，一律 `git log`（11-01 22:23 起本地远端同步，HEAD `6cbe6c8`）。
+**版本/git**：commit 流水不入记忆，一律 `git log`（11-03 下午本地远端同步）。
 
 ## 三条主线
 
@@ -139,5 +144,6 @@ Apple 4.2 / 3.1.1 / 5.1.1(v) / AI 告知同意；中国：ICP 备案、App 备�
 - SSH 发布：`150.158.51.106` / `ubuntu` / 密码见本地 `.env`（`SSH_PWD` 勿入记忆/文档）；脚本 `deploy/deploy.sh`。
 - APK 归档 `dist-release/`（gitignore）；Web 归档 `backups/`。
 - 云库 applicationId `wbapp_w6iIU6TqTyHvJxESPTxBTy`（genie-baas db_exec_sql）；云库地址 `https://zilv-mifeng.app.workbuddy.host`。
-- curl 本机 dev server 需 `--noproxy '*'`；`package.json` 无测试框架/lint。
+- curl 本机 dev server 需 `--noproxy '*'`。
+- 🔴 **测试 = vitest**（`npm test` = `vitest run tools/`，测试放 `tools/*.test.ts`；无 lint）。**EPERM 会静默丢测试文件**：报 `EPERM ...Temp\<hash>\ssr\<hash>`（栈里是 WorkBuddy 的 `node-brokered-fs-shim.cjs` 拦截写入），文件被跳过且**全绿是假绿**（症状 = Tests 数偏少，如只 17/47）。`rm -rf node_modules/.vite` **有时无效**（11-03 实测）。**可靠规避 = 逐文件 `npx vitest run <单文件>`** 再自己加总（当前基线 47 = iap-checkout 9 + numfmt 30 + report-ratio 8）。
 - 微营养素：foodsData*.ts 已 10 列化（1175 条零兜底）；`db/.tmp-backup.sql` 临时备份不入库。

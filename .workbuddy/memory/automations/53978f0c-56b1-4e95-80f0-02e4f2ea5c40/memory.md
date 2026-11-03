@@ -208,6 +208,19 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
   Node 脚本直接解析构建（重排表序 + row_counts + count(*) 交叉校验 + id 升序）→ 删临时文件。
   **后续 dump 超限时优先走「复制落盘结果→脚本构建」，不必再分片转录。**
 
+### 2026-11-03 09:04（第 19 次）
+- 结果：**成功**。产出 `db/backups/2026-11-03.json`（130,789 字节）。
+- 行数：profiles=18 / meal_entries=140 / water_logs=50 / exercise_logs=28 / weight_logs=3 /
+  entitlements=2 / ai_usage=29（合计 270 行）。
+- 校验：`.verify-backup.cjs` PASS——JSON.parse OK、顶层字段完整、7 表 row_counts 与
+  tables.<表>.length 及另发 count(*) 的线上实时行数三方一致；7 表 id 严格升序。
+- 清理：cutoff=2026-10-04，现存 15 份每日 json（最早 10-13），过期 0 份。
+- 观察：**与 11-02 快照 7 表内容逐字节完全相同**（仅 generated_at 变），24h 内云库零新增。
+  与「前端已切自托管（泳道 A）」的判断一致——云库已非生产写入源，增量应为 0。
+- 流程：沿用「MCP 落盘结果 → PowerShell Copy-Item 进工作区 → 脚本构建」，本次把构建逻辑固化为
+  可复用脚本 `db/backups/.build-from-raw.cjs <raw文件> <目标json>`（表序重排 + row_counts + id 升序校验），
+  后续超限 dump 直接两步走，不必再临时写脚本。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。
