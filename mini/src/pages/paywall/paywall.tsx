@@ -6,6 +6,7 @@ import { getEntitlement, redeemByCode } from '../../lib/api'
 import {
   AI_REDEEM_DAILY_LIMIT,
   FREE_DAILY_AI,
+  FREE_HONEY_PRO_ITEM,
   FREE_NO_ADS_ITEM,
   FREE_REPORT_DAYS,
   PRO_REPORT_DAYS,
@@ -45,6 +46,7 @@ import './paywall.scss'
 const FREE_ITEMS = [
   `每日 ${FREE_DAILY_AI} 次免费 AI 拍照识别（识别成功才扣次数）`,
   `积分可再兑换拍照识别，每日最多 ${AI_REDEEM_DAILY_LIMIT} 次（50 积分/次）`,
+  FREE_HONEY_PRO_ITEM,
   '手动录入、体重饮水运动记录全部免费',
   'AI 问答不限次数（每分钟限 3 次防刷）',
   `饮食报告看近 ${FREE_REPORT_DAYS} 天`,

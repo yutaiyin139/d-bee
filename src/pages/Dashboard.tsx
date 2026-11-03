@@ -26,6 +26,7 @@ import {
 } from '../lib/api'
 import type { CoachContext } from '../lib/ai'
 import { STREAK_BADGES } from '../lib/badge'
+import { AI_REDEEM_DAILY_LIMIT, FREE_DAILY_AI } from '../lib/entitlement'
 import { categoryOf } from '../lib/foods'
 import { LEVEL_LABELS, levelOfScore, nextMealAdvice, summarizeEntries } from '../lib/foodInsight'
 import { ACTIVITY_EATBACK_RATIO, connectHealth, DEFAULT_STEP_GOAL, estimateActivityKcal, getHealthVendor, healthStatusHint, isHealthConnectable, isHealthConnected, isUsableHealthStatus, syncFromHealth } from '../lib/health'
@@ -1070,7 +1071,7 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
       {!pro && (
         <>
           <div className="helper" style={{ textAlign: 'center', marginTop: 6 }}>
-            免费版每日 3 次拍照识别，今日还剩 {aiRemaining ?? 0} 次，可用积分再兑 2 次
+            免费版每日 {FREE_DAILY_AI} 次拍照识别，今日还剩 {aiRemaining ?? 0} 次，可用积分再兑 {AI_REDEEM_DAILY_LIMIT} 次
           </div>
           {/* 拉新入口：首页直达，不再只藏在「我的」二级页 */}
           <button className="invite-strip" onClick={() => setInviteOpen(true)}>
