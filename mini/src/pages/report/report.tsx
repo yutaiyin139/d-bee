@@ -12,6 +12,7 @@ import Taro, { useDidShow } from '@tarojs/taro'
 import { BarChart, LineChart, RatioBar, C_HONEY, C_BLUE, C_GREEN } from '../../components/Charts'
 import { IconLock, IconWeight } from '../../components/Icons'
 import { generateReportInsight } from '../../lib/ai'
+import { AiLabel } from '../../components/AiLabel'
 import { getProfile, listMealsBetween, listWeightLogsAsc, saveWeight, getEntitlement, type MealEntry, type Profile, type WeightLog } from '../../lib/api'
 import { shiftDate, todayKey, monthGrid } from '../../lib/nutrition'
 import {
@@ -414,9 +415,12 @@ export default function ReportPage() {
             </>
           ) : null}
 
-          {/* 本期解读 */}
+          {/* 本期解读（《标识办法》第四条（一）：标题徽章 + 底部整行提示，对齐主工程 ReportScreen） */}
           <View className='section-title'>
-            <Text>本期解读</Text>
+            <View className='section-title-left'>
+              <Text>本期解读</Text>
+              <AiLabel />
+            </View>
             <Text className='hint'>由 AI 根据上面的数据生成</Text>
           </View>
           <View className='card'>
@@ -429,6 +433,7 @@ export default function ReportPage() {
                     <Text className='point-text'>{p}</Text>
                   </View>
                 ))}
+                <AiLabel inline text='解读内容由 AI 生成，可能存在误差，不构成医疗或营养建议。' />
                 <Button className='btn-text' onClick={() => void handleInsight()} disabled={insightBusy}>
                   {insightBusy ? '重新生成中…' : '重新生成'}
                 </Button>

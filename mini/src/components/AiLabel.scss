@@ -1,0 +1,33 @@
+// 「AI 生成」显式标识样式（对齐主工程 src/styles.css .ai-badge / .ai-gen-note，
+// px → rpx 按 1px = 2rpx 换算；tokens.scss 已全局注入）
+
+.ai-badge {
+  display: inline-block;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: $honey-dark;
+  background: $honey-soft;
+  border: 1px solid rgba(150, 96, 10, 0.25);
+  border-radius: 99px;
+  padding: 2px 16px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.ai-gen-note {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 16px;
+
+  .ai-badge {
+    flex-shrink: 0;
+  }
+
+  .ai-gen-text {
+    font-size: 24px;
+    line-height: 1.7;
+    color: $ink-3;
+  }
+}

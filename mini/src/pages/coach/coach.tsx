@@ -11,6 +11,7 @@ import {
 import { todayKey, waterTargetMl } from '../../lib/nutrition'
 import { isPro } from '@dbee/shared'
 import { AiConsent } from '../../components/AiConsent'
+import { AiLabel } from '../../components/AiLabel'
 import { grantAiConsent, hasAiConsent } from '../../lib/aiConsent'
 import './coach.scss'
 
@@ -177,12 +178,18 @@ export default function Coach() {
     <View className='coach-page'>
       <ScrollView className='coach-body' scrollY scrollIntoView='coach-bottom' scrollWithAnimation>
         {messages.map((m, i) => {
-          // 流式生成中的教练气泡：无文字显示「思考中」，有文字后打字机渲染 + 光标
+          // 流式生成中的教练气泡：无文字显示「思考中」，有文字后打字机渲染 + 光标。
+          // 《标识办法》第四条（一）：生成过程与结果都要带「AI 生成」显式标识。
           if (m.streaming) {
             return (
               <View key={i} className='coach-msg'>
                 {m.text
-                  ? <Text>{m.text}<Text className='coach-caret'>▌</Text></Text>
+                  ? (
+                    <>
+                      <View className='coach-ai-tag'><AiLabel text='AI 生成回答' /></View>
+                      <Text>{m.text}<Text className='coach-caret'>▌</Text></Text>
+                    </>
+                  )
                   : (
                     <View className='coach-thinking'>
                       <Text>正在结合你的数据思考…</Text>
@@ -193,6 +200,12 @@ export default function Coach() {
           }
           return (
             <View key={i} className={`coach-msg ${m.role === 'user' ? 'mine' : ''}`}>
+              {m.role !== 'user' && (
+                <View className='coach-ai-tag'>
+                  <AiLabel text='AI 生成回答' />
+                  <Text className='coach-ai-hint'>可能存在误差，不构成医疗或营养建议</Text>
+                </View>
+              )}
               <Text>{m.text}</Text>
             </View>
           )

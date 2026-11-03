@@ -94,12 +94,30 @@
       margin-bottom: 8px;
     }
 
+    /* AI 生成标识与标题/食物名并排（《标识办法》第四条（一），P0-A） */
+    .result-title-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 8px;
+
+      .result-title {
+        margin-bottom: 0;
+      }
+    }
+
     .result-item {
       padding: 16px 0;
       border-bottom: 1px solid $line;
 
       &:last-child {
         border-bottom: none;
+      }
+
+      .result-name-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
       }
 
       .result-name {

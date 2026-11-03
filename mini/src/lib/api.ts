@@ -1,12 +1,24 @@
 /**
- * 小程序端云端数据访问层（精简版，与主工程 src/lib/api.ts 对齐）。
+ * 小程序端云端数据访问层（精简版，代码形状与主工程 src/lib/api.ts 对齐）。
  *
- * 与主工程共用同一云端（同一 resourceId / RPC 函数 / 表结构），
- * 差异仅在于 cloud 实例来自 createMiniProgramWorkBuddyCloud（见 ./cloud.ts）。
+ * 🔴 先读这段再动代码：**代码对齐 ≠ 数据互通**。
+ *   本端与主工程 web/iOS/Android 连的是**两套互不相通的后端**：
+ *     · 小程序 → WorkBuddy 云库（`./cloud.ts` 的 CLOUD_HOST，
+ *       createMiniProgramWorkBuddyCloud）；
+ *     · 主工程 → 自托管 PostgreSQL + 自建网关（见 `src/cloudConfig.ts`）。
+ *   同一手机号在两端是**两个独立账户**，一端的读写**不会**出现在另一端。
+ *   两端表结构同源（同一份 migration）、RPC 函数同名，但部署在两套库、
+ *   resourceId 不同 —— 所以「看起来像同一个后端」是最容易踩的坑。
+ *   写任何跨端同步假设前，务必先读 `./cloud.ts` 顶部 2026-10-29 的更正说明。
  *
- * 与主工程 src/lib/api.ts 功能对齐（档案 / 饮食 / 饮水 / 运动 / 体重 /
- * 食谱 / 会员权益与 AI 用量 / 拍照额度 / 邀请 / 蜜糖积分 / 徽章 /
- * 数据导出清理 / 统一支付），四端共用同一后端，任一端的读写都会同步。
+ * 与主工程 src/lib/api.ts 的功能面对齐（档案 / 饮食 / 饮水 / 运动 / 体重 /
+ * 食谱 / 会员权益与 AI 用量 / 拍照额度 / 邀请 / 蜜糖积分 / 徽章 / 数据导出清理），
+ * 便于同一套业务规则在两端保持一致。
+ *
+ * ⚠️ 「统一支付」(createPaymentOrder / verifyPaymentOrder) 在本端**是预留死代码**：
+ *   全仓无任何调用点，且小程序 legal.ts §一 明确「不销售任何商品或服务、不涉及
+ *   在线支付」，会员权益只通过兑换码解锁。企业资质（商户号）就绪前**禁止**接入，
+ *   接入须同步改 legal.ts 口径并满足微信小程序虚拟支付合规要求（详见 paywall.tsx 头注）。
  *
  * owner_id 一律不传，由数据库 DEFAULT auth.uid() 填充，RLS 负责隔离（与主工程一致）。
  */
@@ -107,6 +119,12 @@ export interface PhotoQuota {
   baseRemaining: number
   bonusRemaining: number
   totalRemaining: number
+  /**
+   * true = 额度服务不可用（RPC 失败），此时三个 remaining 均为 0。
+   * UI 据此区分「服务降级」与「额度用尽」：前者提示稍后重试、**不弹付费墙**，
+   * 后者才引导升级。语义对齐主工程 QuotaResult.degraded（src/lib/api.ts:370-385）。
+   */
+  degraded?: boolean
 }
 
 export interface HoneyLedger {
@@ -549,27 +567,20 @@ export async function getUsage(usageDate: string, feature: string): Promise<numb
   return row?.count ?? 0
 }
 
-/** 兜底路径：先读再写（并发下会覆盖，仅作 RPC 不可用时的降级） */
-export async function bumpUsage(usageDate: string, feature: string, current: number): Promise<void> {
-  if (current > 0) {
-    const { data, error } = await db('ai_usage')
-      .select('id')
-      .eq('usage_date', usageDate)
-      .eq('feature', feature)
-      .maybeSingle()
-    if (error) throw new Error(`读取用量失败：${error.message ?? ''}`)
-    const found = data as { id?: number } | null
-    if (found?.id !== undefined) {
-      const { error: upErr } = await db('ai_usage').update({ count: current + 1 }).eq('id', found.id).select()
-      if (upErr) throw new Error(`记录用量失败：${upErr.message ?? ''}`)
-      return
-    }
-  }
-  const { error } = await db('ai_usage').insert({ usage_date: usageDate, feature, count: 1 }).select()
-  if (error) throw new Error(`记录用量失败：${error.message ?? ''}`)
-}
-
-/** 原子占用一次 AI 配额（走 consume_ai_quota RPC，多端并发不超发） */
+/**
+ * 原子占用一次 AI 配额（走 consume_ai_quota RPC，多端并发不超发）。
+ *
+ * 🔴 fail-closed（2026-11-03 P0-B 修）：RPC 不可用时**拒绝**本次调用，返回
+ * `allowed:false + degraded:true`。旧实现是回退「先读 count 再写 count+1」
+ * （原 bumpUsage）后放行，有两宗罪：
+ *   ① 绕过 consume_ai_quota 的服务端原子限制，并发下互相覆盖，免费额度形同虚设
+ *      —— AI 调用有真实模型成本，fail-open 等于「数据库函数一出问题就免费无限用」；
+ *   ② 0035 之后 authenticated 对 ai_usage 只有 SELECT（写只能走 RPC，见
+ *      db/migrations/0035-security-and-integrity.sql:101-105），这条直写路径必然抛错，
+ *      而旧代码把它 await 在 catch 里 → 症状是「识别功能静默失效，日志无痕」。
+ * 故与主工程 src/lib/api.ts:417-447 同口径：一律拒绝，并用 degraded 让 UI 把
+ * 「服务降级」与「额度用尽」区分开（前者不弹付费墙）。
+ */
 export async function consumeAiQuota(usageDate: string, feature: string, limit: number): Promise<QuotaResult> {
   try {
     const { data, error } = await callRpc('consume_ai_quota', {
@@ -587,21 +598,34 @@ export async function consumeAiQuota(usageDate: string, feature: string, limit: 
       used,
       remaining: Number.isFinite(Number(row.remaining)) ? Number(row.remaining) : Math.max(0, limit - used),
     }
-  } catch {
-    const used = await getUsage(usageDate, feature)
-    if (used >= limit) return { allowed: false, used, remaining: 0 }
-    await bumpUsage(usageDate, feature, used)
-    return { allowed: true, used: used + 1, remaining: Math.max(0, limit - used - 1) }
+  } catch (err) {
+    // 尽力读一次用量，仅用于展示（读权限保留，不受 0035 REVOKE 影响）。
+    // 读失败也不能放行 —— 一律拒绝，只是 used 退化为 0。
+    const used = await getUsage(usageDate, feature).catch(() => 0)
+    console.warn('[consumeAiQuota] 配额 RPC 不可用，已 fail-closed 拒绝本次调用', err)
+    return { allowed: false, used, remaining: 0, degraded: true }
   }
 }
 
 /* ── 拍照额度（AI 识别前置）───────────────────────────────────── */
 
+/**
+ * 查询当前拍照额度（基础 + 未过期奖励）。
+ *
+ * 🔴 2026-11-03 P0-B 修：RPC 出错时旧实现**静默返回满额 FREE_DAILY_AI**，
+ * 等于「额度服务一挂就告诉用户你还有 3 次」→ 绕过预检，用户点了拍照才在
+ * consumePhotoQuota 处被拒（体验断裂），且展示与实际不符。
+ * 现在出错返回全 0 + `degraded:true`，由 UI 区分「服务降级」与「额度用尽」。
+ * 注：主工程此处是 throw（src/lib/api.ts:462-464），本端改返回 degraded 标记
+ * 而不抛异常——小程序两个调用点（scan/checkin）都是 `Promise.all` 并发拉取，
+ * 抛异常会让整屏数据（积分/权益/记录）一起进 catch 变空，代价大于收益；
+ * 语义等价（都不放行、都让 UI 知道是降级）。
+ */
 export async function getPhotoQuota(): Promise<PhotoQuota> {
   const { data, error } = await callRpc('get_photo_quota', { p_base_limit: FREE_DAILY_AI })
-  if (error) return { baseRemaining: FREE_DAILY_AI, bonusRemaining: 0, totalRemaining: FREE_DAILY_AI }
+  if (error) return { baseRemaining: 0, bonusRemaining: 0, totalRemaining: 0, degraded: true }
   const row = (Array.isArray(data) ? data[0] : data) as { base_remaining?: number; bonus_remaining?: number; total_remaining?: number } | null
-  if (!row) return { baseRemaining: FREE_DAILY_AI, bonusRemaining: 0, totalRemaining: FREE_DAILY_AI }
+  if (!row) return { baseRemaining: 0, bonusRemaining: 0, totalRemaining: 0, degraded: true }
   return {
     baseRemaining: Number(row.base_remaining ?? 0),
     bonusRemaining: Number(row.bonus_remaining ?? 0),
@@ -618,6 +642,13 @@ export interface QuotaResult {
   remaining: number
   /** 预占 token（识别失败退还时凭它精确释放；仅拍照额度返回，可空） */
   token?: string | null
+  /**
+   * true = 配额服务不可用（RPC 失败）导致的 fail-closed 拒绝，
+   * 而非「今日额度已用尽」。UI 据此区分：额度用尽 → 引导升级；
+   * 服务降级 → 提示「暂时不可用，请稍后重试」，不把基础设施故障说成用户该付费。
+   * 语义与主工程 src/lib/api.ts:370-385 一致。
+   */
+  degraded?: boolean
 }
 
 /** 查询「当日成功拍照次数」（云端唯一真相源，跨设备一致） */
@@ -632,14 +663,22 @@ export async function getTodayPhotoCount(): Promise<number> {
   }
 }
 
+/**
+ * 原子占用一次「拍照识别」额度（识别失败由 releasePhotoQuota 退还）。
+ *
+ * 🔴 fail-closed + degraded 标记（2026-11-03 P0-B 修）：RPC 出错或返回格式异常时，
+ * 旧实现只返回 `allowed:false`（不带 degraded）→ UI 无法区分「服务故障」与「额度用尽」，
+ * 会把基础设施故障说成「你该付费了」并弹付费墙。现在两种拒绝都带 `degraded:true`。
+ * 与主工程 src/lib/api.ts:495-520 同口径（主端是回退到同样 fail-closed 的 consumeAiQuota）。
+ */
 export async function consumePhotoQuota(): Promise<QuotaResult> {
   const { data, error } = await callRpc('consume_photo_quota', {
     p_usage_date: todayKey(),
     p_base_limit: FREE_DAILY_AI,
   })
-  if (error) return { allowed: false, used: 0, remaining: 0 }
+  if (error) return { allowed: false, used: 0, remaining: 0, degraded: true }
   const row = (Array.isArray(data) ? data[0] : data) as { allowed?: boolean; token?: string; used?: number; remaining?: number } | null
-  if (!row || typeof row.allowed !== 'boolean') return { allowed: false, used: 0, remaining: 0 }
+  if (!row || typeof row.allowed !== 'boolean') return { allowed: false, used: 0, remaining: 0, degraded: true }
   const used = Number(row.used ?? 0)
   return {
     allowed: row.allowed === true,
@@ -649,9 +688,29 @@ export async function consumePhotoQuota(): Promise<QuotaResult> {
   }
 }
 
-export async function releasePhotoQuota(token: string | null | undefined): Promise<void> {
-  if (!token) return
-  await callRpc('release_photo_quota', { p_token: token })
+/**
+ * 退还一次拍照额度（识别失败时调用，凭 consume 返回的 token 精确释放）。
+ *
+ * 🔴 返回退还结果（2026-11-03 P0-C）：旧签名返回 void 且吞掉 error，
+ *   调用方无从判断是否真退成功 —— 而 UI 要对用户说「本次未消耗识别次数」，
+ *   退还失败时这句话就是虚假承诺（付费墙也宣传「识别成功才扣次数」）。
+ *   现在返回 true = 已退还；false = 无 token（无可退）或 RPC 报错。
+ *   主工程此处仍是 void（src/lib/api.ts:524），本端加返回值属向后兼容的超集，
+ *   不改任何既有调用行为。
+ */
+export async function releasePhotoQuota(token: string | null | undefined): Promise<boolean> {
+  if (!token) return false
+  try {
+    const { error } = await callRpc('release_photo_quota', { p_token: token })
+    if (error) {
+      console.warn('[releasePhotoQuota] 退还失败', error.message)
+      return false
+    }
+    return true
+  } catch (err) {
+    console.warn('[releasePhotoQuota] 退还异常', err)
+    return false
+  }
 }
 
 /** 发放拍照奖励额度（新手/连续打卡/积分兑换），grant_key 防重复 */
@@ -954,7 +1013,16 @@ export interface PaymentOrder {
   currency: string
 }
 
-/** 创建支付订单（服务端查价，客户端只传 product_id + provider） */
+/**
+ * 创建支付订单（服务端查价，客户端只传 product_id + provider）。
+ *
+ * 🔴 合规警示：本函数在小程序端**当前无任何调用点**（预留死代码）。
+ *   mini/src/content/legal.ts §一 与 paywall.tsx 已声明「本小程序免费提供，
+ *   不销售任何商品或服务，不涉及在线支付」，会员只走兑换码。
+ *   企业资质（微信支付商户号）就绪前**不要**给它接 UI；真要接入必须：
+ *   ① 同步改 legal.ts §一 口径 ② 满足微信小程序虚拟支付合规要求
+ *   ③ 走微信虚拟支付/小游戏虚拟支付通道，不得直接调起普通商户支付。
+ */
 export async function createPaymentOrder(
   productId: string,
   provider: 'apple' | 'google' | 'wechat' | 'alipay',

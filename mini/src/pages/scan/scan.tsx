@@ -19,6 +19,7 @@ import {
 import { checkStatBadges } from '../../lib/badgeCheck'
 import { photoLadderHint, quotaExhaustedReason, isPro, FREE_DAILY_AI, HONEY_PRICE, AI_REDEEM_DAILY_LIMIT } from '@dbee/shared'
 import { AiConsent } from '../../components/AiConsent'
+import { AiLabel } from '../../components/AiLabel'
 import { grantAiConsent, hasAiConsent } from '../../lib/aiConsent'
 import { shouldShowUpsell, markUpsellShown, dismissUpsell } from '../../lib/upsell'
 import './scan.scss'
@@ -30,6 +31,9 @@ export default function Scan() {
   const [msg, setMsg] = useState('')
   const [honey, setHoney] = useState(0)
   const [quota, setQuota] = useState(0)
+  // 额度服务是否降级（RPC 不可用）。true 时「今日剩余」显示为「—」而非 0，
+  // 避免把基础设施故障误报成「额度用尽」（P0-B fail-closed 配套）
+  const [quotaDegraded, setQuotaDegraded] = useState(false)
   const [pro, setPro] = useState(false)
   const [todayPhotoCount, setTodayPhotoCount] = useState(0)
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -59,6 +63,7 @@ export default function Scan() {
       const [h, q, ent, n] = await Promise.all([getHoneyBalance(), getPhotoQuota(), getEntitlement(), getTodayPhotoCount()])
       setHoney(h.balance)
       setQuota(q.totalRemaining)
+      setQuotaDegraded(q.degraded === true)
       setPro(isPro(ent))
       setTodayPhotoCount(n)
     } catch {
@@ -66,13 +71,21 @@ export default function Scan() {
     }
   }
 
-  /** 只读额度预检：Pro 无限次；免费额度用完则按阶梯引导（对齐主工程 checkPhotoQuota） */
+  /**
+   * 只读额度预检：Pro 无限次；免费额度用完则按阶梯引导（对齐主工程 checkPhotoQuota）。
+   * 🔴 fail-closed（P0-B）：额度查询失败或降级时**拒绝**本次识别，而不是当作满额放行。
+   *   旧实现 `quota ? quota.totalRemaining : FREE_DAILY_AI` 在 RPC 不可用时按满额放行，
+   *   并发下可超发免费额度（与主端 consumeAiQuota fail-closed 口径不一致）。
+   */
   async function checkPhotoQuota(): Promise<boolean> {
     if (pro) return true
     setMsg('')
     const quota = await getPhotoQuota().catch(() => null)
-    const totalRemaining = quota ? quota.totalRemaining : FREE_DAILY_AI
-    if (totalRemaining > 0) return true
+    if (!quota || quota.degraded) {
+      setMsg('识别服务暂时不可用（额度校验失败）。本次未消耗额度，请稍后重试；若持续如此请联系客服。')
+      return false
+    }
+    if (quota.totalRemaining > 0) return true
 
     const bal = await getHoneyBalance().catch(() => null)
     const balance = bal ? bal.balance : 0
@@ -105,6 +118,8 @@ export default function Scan() {
       return
     }
     setMsg('')
+    // claim 声明在 try 外：catch 分支需要它来退还识别失败时预占的额度（P0-C）。
+    let claim: { allowed: boolean; token?: string | null; remaining?: number; degraded?: boolean } | null = null
     try {
       // 0. 额度预检：Pro 无限次；免费额度用完直接提示（对齐主工程 checkPhotoQuota）
       const ok = await checkPhotoQuota()
@@ -114,11 +129,17 @@ export default function Scan() {
       }
 
       // 1. 预占额度（Pro 会员跳过占用；识别成功才扣，失败退还）
-      let claim: { allowed: boolean; token?: string | null; remaining?: number } | null = null
       if (!pro) {
         const c = await consumePhotoQuota()
         if (!c.allowed) {
-          setMsg(quotaExhaustedReason())
+          // 🔴 fail-closed（P0-B）：区分「服务降级」与「额度用尽」两种 !allowed。
+          //   degraded=true 表示配额 RPC 不可用（基础设施故障），不是用户真没额度，
+          //   提示稍后重试且不弹阶梯引导；否则才是额度用尽，走原有引导文案。
+          if (c.degraded) {
+            setMsg('识别服务暂时不可用（额度扣减失败）。本次未消耗额度，请稍后重试；若持续如此请联系客服。')
+          } else {
+            setMsg(quotaExhaustedReason())
+          }
           await refreshStats()
           return
         }
@@ -174,7 +195,21 @@ export default function Scan() {
         })()
       }
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : '识别失败，请重试')
+      // 🔴 P0-C：识别失败必须退还预占额度。付费墙承诺「识别成功才扣次数」，
+      //   此前 catch 分支只提示不退额，识别报错/网络失败都会白扣一次，
+      //   与宣传不符（主工程 LogSheet.tsx:594 的 catch 有 refundAiQuota）。
+      //   并按 releasePhotoQuota 的真实返回值如实措辞：退还失败时
+      //   **不能**告诉用户「未消耗次数」（那是虚假承诺），改为提示可能未返还。
+      const reason = e instanceof Error ? e.message : '识别失败，请重试'
+      if (claim) {
+        const released = await releasePhotoQuota(claim.token ?? null)
+        setMsg(released
+          ? `${reason}（本次未消耗识别次数）`
+          : `${reason}（额度退还失败，本次识别次数可能未返还，请稍后联系客服）`)
+      } else {
+        // Pro 会员不预占额度，无需退还
+        setMsg(reason)
+      }
     } finally {
       setLoading(false)
       await refreshStats()
@@ -231,7 +266,7 @@ export default function Scan() {
     <View className='scan'>
       <View className='stat-bar'>
         <Text className='stat'>积分：{honey}</Text>
-        <Text className='stat'>今日识别剩余：{quota} 次</Text>
+        <Text className='stat'>今日识别剩余：{quotaDegraded ? '—' : `${quota} 次`}</Text>
       </View>
 
       <Button className='btn-photo' loading={loading} disabled={loading} onClick={onTakePhoto}>
@@ -265,15 +300,24 @@ export default function Scan() {
 
       {items.length > 0 ? (
         <View className='result-card'>
-          <Text className='result-title'>识别结果</Text>
+          {/* 《标识办法》第四条（一）：拍照识别结果全部由大模型生成，
+              标题徽章 + 每条食物名旁徽章 + 底部整行提示（对齐主工程 LogSheet） */}
+          <View className='result-title-row'>
+            <Text className='result-title'>识别结果</Text>
+            <AiLabel />
+          </View>
           {items.map((it, i) => (
             <View className='result-item' key={i}>
-              <Text className='result-name'>{it.food_name}</Text>
+              <View className='result-name-row'>
+                <Text className='result-name'>{it.food_name}</Text>
+                <AiLabel />
+              </View>
               <Text className='result-meta'>
                 {it.quantity_text} · {it.calories} kcal · 蛋白 {it.protein_g}g
               </Text>
             </View>
           ))}
+          <AiLabel inline text='识别结果由 AI 生成，可能存在误差，不构成医疗或营养建议，请核对后再保存。' />
 
           {/* 存为食谱（P2-2）：识别结果一键收藏为常吃食谱 */}
           {recipeInputOpen ? (

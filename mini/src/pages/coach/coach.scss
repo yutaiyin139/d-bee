@@ -43,6 +43,20 @@
         color: $honey-dark;
         animation: caretBlink 1s steps(1, end) infinite;
       }
+
+      /* AI 生成显式标识（《人工智能生成合成内容标识办法》第四条（一），P0-A） */
+      .coach-ai-tag {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 14px;
+
+        .coach-ai-hint {
+          font-size: 21px;
+          line-height: 1.4;
+          color: $ink-3;
+        }
+      }
     }
 
     .coach-thinking {

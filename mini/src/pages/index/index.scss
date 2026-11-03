@@ -289,6 +289,13 @@
     font-weight: 400;
     color: $ink-3;
   }
+
+  /* AI 生成标识与标题并排（《标识办法》第四条（一），P0-A） */
+  .section-title-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
 }
 
 // ── 饮食体检 ──
@@ -1290,6 +1297,122 @@
   }
 
   .mp-hint {
+    font-size: 23px;
+    color: $ink-3;
+  }
+}
+
+// ── 手动记一餐弹层（P0-D）──
+.manual-form {
+  .mf-row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .mf-field {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 88px;
+    padding: 0 24px;
+    background: $bg-2;
+    border-radius: $radius;
+
+    .mf-unit {
+      flex-shrink: 0;
+      font-size: 24px;
+      color: $ink-3;
+    }
+  }
+
+  .mf-input {
+    flex: 1;
+    min-width: 0;
+    height: 60px;
+    font-size: 28px;
+    color: $ink;
+    background: transparent;
+  }
+
+  .mf-row > .mf-input {
+    height: 88px;
+    padding: 0 24px;
+    background: $bg-2;
+    border-radius: $radius;
+  }
+
+  .mf-recent {
+    margin: 8px 0 16px;
+
+    .mf-recent-title {
+      display: block;
+      font-size: 24px;
+      color: $ink-3;
+      margin-bottom: 12px;
+    }
+
+    .mf-recent-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .mf-recent-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 22px;
+      height: 60px;
+      line-height: 60px;
+      background: $surface;
+      border: 1px solid $line-2;
+      border-radius: 99px;
+
+      .mf-rf-name {
+        font-size: 24px;
+        color: $ink;
+        max-width: 220px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .mf-rf-kcal {
+        font-size: 21px;
+        color: $ink-3;
+      }
+    }
+  }
+
+  .mf-error {
+    display: block;
+    font-size: 24px;
+    color: $risk-ink;
+    margin-bottom: 12px;
+  }
+
+  .mf-save {
+    width: 100%;
+    height: 96px;
+    line-height: 96px;
+    font-size: 32px;
+    font-weight: 600;
+    color: $honey-btn-ink;
+    background: $honey;
+    border-radius: $radius;
+    border: none;
+
+    &[disabled] {
+      opacity: 0.6;
+    }
+  }
+
+  .mf-note {
+    display: block;
+    margin-top: 16px;
+    text-align: center;
     font-size: 23px;
     color: $ink-3;
   }

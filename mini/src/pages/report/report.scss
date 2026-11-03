@@ -79,6 +79,13 @@
     color: $ink-3;
   }
 
+  /* AI 生成标识与标题并排（《标识办法》第四条（一），P0-A） */
+  .section-title-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
   .trend-good {
     color: $green;
   }
