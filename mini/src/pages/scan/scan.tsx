@@ -21,6 +21,7 @@ import { photoLadderHint, quotaExhaustedReason, isPro, FREE_DAILY_AI, HONEY_PRIC
 import { AiConsent } from '../../components/AiConsent'
 import { AiLabel } from '../../components/AiLabel'
 import { grantAiConsent, hasAiConsent } from '../../lib/aiConsent'
+import { ensurePrivacyAuthorized, isPrivacyError, PRIVACY_DENIED_TEXT } from '../../lib/privacy'
 import { shouldShowUpsell, markUpsellShown, dismissUpsell } from '../../lib/upsell'
 import './scan.scss'
 
@@ -118,6 +119,20 @@ export default function Scan() {
       return
     }
     setMsg('')
+
+    // 🔴 P1-G：隐私授权必须排在**额度预占之前**。
+    //   chooseImage 是隐私接口，基础库 >= 2.32.3（本项目 3.4.10）且 2023-09-15 后
+    //   平台强制校验；未授权时它会直接失败。若先扣额度再拍照，用户拒绝授权就会
+    //   白扣一次（虽然 catch 会退还，但退还本身可能失败，见 P0-C）。
+    //   这里前置拦截，把「注定失败的调用」挡在扣费之前。
+    //   注意与上面的 AiConsent 是两道独立的关：AiConsent 是我方业务层的 AI 告知同意，
+    //   本检查是微信平台层的隐私接口门禁（详见 lib/privacy.ts 文件头）。
+    const privacy = await ensurePrivacyAuthorized()
+    if (!privacy.ok) {
+      setMsg(PRIVACY_DENIED_TEXT)
+      return
+    }
+
     // claim 声明在 try 外：catch 分支需要它来退还识别失败时预占的额度（P0-C）。
     let claim: { allowed: boolean; token?: string | null; remaining?: number; degraded?: boolean } | null = null
     try {
@@ -200,7 +215,18 @@ export default function Scan() {
       //   与宣传不符（主工程 LogSheet.tsx:594 的 catch 有 refundAiQuota）。
       //   并按 releasePhotoQuota 的真实返回值如实措辞：退还失败时
       //   **不能**告诉用户「未消耗次数」（那是虚假承诺），改为提示可能未返还。
-      const reason = e instanceof Error ? e.message : '识别失败，请重试'
+      // 🔴 P1-G：前置检查放行但 chooseImage 仍报隐私错（errno 112）的情形。
+      //   发生在 mp 后台《用户隐私保护指引》未勾选对应信息类型时——此时微信的
+      //   getPrivacySetting 返回 needAuthorization=false（它不知道你要用哪些接口），
+      //   前置检查无从拦截，失败只能在这里兜住。
+      //   微信给的是英文 errMsg，直接显示给用户等于没提示，故翻成可读文案。
+      //   这条文案同时是**运维信号**：真机出现它 = 后台声明漏勾，须去补
+      //   （见 lib/privacy.ts 文件尾的人工清单）。
+      const reason = isPrivacyError(e)
+        ? PRIVACY_DENIED_TEXT
+        : e instanceof Error
+          ? e.message
+          : '识别失败，请重试'
       if (claim) {
         const released = await releasePhotoQuota(claim.token ?? null)
         setMsg(released
