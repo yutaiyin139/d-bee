@@ -110,7 +110,7 @@ export default function InvitePage() {
     const title = code
       ? `我在用「自律蜜蜂」自律打卡，邀请码 ${code}，注册双方得积分`
       : '我在用「自律蜜蜂」记录饮食、自律打卡，一起变自律吧！'
-    const path = code ? `/pages/index/index?inviter=${encodeURIComponent(code)}` : '/pages/index/index'
+    const path = code ? `/pages/index/index?invite=${encodeURIComponent(code)}` : '/pages/index/index'
     return { title, path }
   })
 
@@ -118,7 +118,7 @@ export default function InvitePage() {
     const title = code
       ? `我在用「自律蜜蜂」自律打卡，邀请码 ${code}，注册双方得积分`
       : '我在用「自律蜜蜂」记录饮食、自律打卡，一起变自律吧！'
-    const query = code ? `inviter=${encodeURIComponent(code)}` : ''
+    const query = code ? `invite=${encodeURIComponent(code)}` : ''
     return { title, query }
   })
 

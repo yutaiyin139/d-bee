@@ -5,6 +5,9 @@ import { IconBee } from '../../components/Icons'
 import { bindInvite } from '../../lib/api'
 import { cloud } from '../../lib/cloud'
 import {
+  INVITE_CODE_MAX, clearPendingInvite, getPendingInvite, normalizeInviteCode,
+} from '../../lib/inviteLink'
+import {
   signIn,
   sendPhoneOtp,
   signInWithPhone,
@@ -29,14 +32,27 @@ export default function Login() {
   const [otpSent, setOtpSent] = useState(false)
   const [sending, setSending] = useState(false)
 
-  // 邀请码（选填）：新用户注册时填写可绑定邀请关系，双方得积分
+  // 邀请码（选填）：新用户注册时填写可绑定邀请关系，双方得积分。
+  // 初值来自分享卡片落地时暂存的码（P1-B）—— 好友点分享进来无需手输。
   const [inviteCode, setInviteCode] = useState('')
   const [inviteExpanded, setInviteExpanded] = useState(false)
+  // 邀请码是否来自分享链接。只有链接带入才显示「已识别」卡片；手动展开的
+  // 输入框不受 inviteCode 是否为空影响，避免输入第一个字符后输入框被顶掉。
+  // （与主工程 AuthScreen 的 fromLink 同构）
+  const [fromLink, setFromLink] = useState(false)
 
   const native = canNativeSignIn()
   const platform = currentPlatformName()
 
   useLoad(async () => {
+    // 分享卡片落地的邀请码：预填并标记为「已识别」（对齐主工程 initialInviteCode）
+    const pending = getPendingInvite()
+    if (pending) {
+      setInviteCode(pending)
+      setInviteExpanded(true)
+      setFromLink(true)
+    }
+
     if (await isSignedIn()) {
       try {
         const s = await signIn()
@@ -47,7 +63,12 @@ export default function Login() {
     }
   })
 
-  /** 登录成功后绑定邀请码（选填，失败静默不阻断登录，对齐主工程 tryBindInvite） */
+  /**
+   * 登录成功后绑定邀请码（选填，失败静默不阻断登录，对齐主工程 tryBindInvite）。
+   *
+   * 终态（ok / already / self）才清掉暂存码；invalid / throttled / daily_limit
+   * 视为未确定，保留待下次登录再试 —— 详见 lib/inviteLink.ts 文件头的风控说明。
+   */
   async function tryBindInvite() {
     const codeStr = inviteCode.trim()
     if (!codeStr) return
@@ -57,11 +78,34 @@ export default function Login() {
         const { data: session } = await cloud.auth.getSession()
         if (!session) continue
         const status = await bindInvite(codeStr)
-        if (status === 'ok' || status === 'already' || status === 'self') return
+        if (status === 'ok' || status === 'already' || status === 'self') {
+          if (fromLink) clearPendingInvite()
+          return
+        }
       } catch {
         /* 继续重试 */
       }
     }
+    // 三次仍未拿到终态：不清暂存码，下次登录可再试（不阻断登录）
+  }
+
+  /**
+   * 手动输入邀请码：只做 normalize（转大写 + 过滤非法字符）。
+   *
+   * 刻意**不**写入 Storage —— 暂存码的语义是「分享卡片落地带入」，
+   * 手动输入若也写进去，用户下次进登录页会被误标成「已识别好友邀请码」，
+   * 且退出登录后码还残留。手动码只活在本次会话的 state 里。
+   */
+  function onInviteInput(value: string) {
+    setInviteCode(normalizeInviteCode(value))
+  }
+
+  /** 清除链接带入的码（对齐主工程 AuthScreen 的「清除」按钮） */
+  function clearInviteFromLink() {
+    setInviteCode('')
+    setFromLink(false)
+    setInviteExpanded(false)
+    clearPendingInvite()
   }
 
   const onNativeLogin = async () => {
@@ -167,14 +211,24 @@ export default function Login() {
               </Button>
             </View>
 
-            {!inviteExpanded ? (
+            {fromLink && inviteCode ? (
+              <View className='invite-link-card'>
+                <View className='invite-link-row'>
+                  <Text className='invite-link-label'>已识别好友邀请码</Text>
+                  <Text className='invite-link-code'>{inviteCode}</Text>
+                  <Text className='invite-link-clear' onClick={clearInviteFromLink}>清除</Text>
+                </View>
+                <Text className='invite-link-helper'>注册成功后自动绑定，双方都能获得积分</Text>
+              </View>
+            ) : !inviteExpanded ? (
               <Text className='invite-toggle' onClick={() => setInviteExpanded(true)}>有好友邀请码？点此填写（双方得积分）</Text>
             ) : (
               <Input
                 className='input invite-input'
                 placeholder='邀请码（选填）'
                 value={inviteCode}
-                onInput={(e) => setInviteCode(e.detail.value.toUpperCase())}
+                maxlength={INVITE_CODE_MAX}
+                onInput={(e) => onInviteInput(e.detail.value)}
               />
             )}
 

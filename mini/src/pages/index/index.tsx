@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { View, Text, Button, Input } from '@tarojs/components'
-import Taro, { useLoad, useShareAppMessage, useShareTimeline } from '@tarojs/taro'
+import Taro, { useDidShow, useLoad, useRouter, useShareAppMessage, useShareTimeline } from '@tarojs/taro'
 import {
   IconDrop, IconFire, IconFork, IconPea, IconPlus, IconRun, IconWater,
   IconChart, IconMe, IconToday,
@@ -31,6 +31,10 @@ import {
 } from '../../lib/invite'
 import { STREAK_BADGES } from '../../lib/badge'
 import { isSignedIn } from '../../lib/auth'
+import {
+  consumePendingInvite, getPendingInvite, readInviteFromEnterOptions,
+  readInviteFromParams, setPendingInvite,
+} from '../../lib/inviteLink'
 import { STREAK_BONUS_AMOUNT, fmtNum, roundTo } from '@dbee/shared'
 import './index.scss'
 
@@ -136,9 +140,75 @@ export default function Index() {
 
   const today = todayKey()
 
+  // 分享卡片落地：从 query 读邀请码（?invite=CODE，兼容旧版 ?inviter=CODE）。
+  // router.params 只在冷启动可靠；热启动（后台时点新卡片）只触发 onShow，
+  // 故 useDidShow 里另用 getEnterOptionsSync 读「本次进入」的参数。
+  const router = useRouter()
+
+  /** 落地读码：本次进入的启动参数优先，页面 query 兜底 */
+  function pickLandedInvite(): string {
+    return readInviteFromEnterOptions() || readInviteFromParams(router.params as Record<string, unknown> | undefined)
+  }
+
+  // 冷启动时 onLoad 与 onShow 会先后各触发一次，两处都做「已登录→消费邀请码」，
+  // 而 state（loggedIn）此刻尚未提交，闭包守卫拦不住并发。用一个 ref 记录
+  // 「本次已发起消费」，保证 consumePendingInvite 不重复跑（bind_invite 幂等，
+  // 但重复调用会白白多打一次 RPC 并可能计入风控）。
+  const inviteConsumingRef = useRef(false)
+  function ensureInviteConsumed() {
+    if (inviteConsumingRef.current) return
+    inviteConsumingRef.current = true
+    void consumePendingInvite().finally(() => {
+      inviteConsumingRef.current = false
+    })
+  }
+
+  /**
+   * 读到落地码则暂存；已登录立即消费（老用户重复点卡片，bind_invite 幂等）。
+   *
+   * 去重必要性：`getEnterOptionsSync()` 返回的是「**本次进入小程序**」的参数，
+   * 同一次进入内恒定不变。而 onShow 在页面间来回时（首页 → 拍照识别 → 返回）
+   * 会反复触发。若不去重，每次返回都会把**已消费并清除**的码重新存回 Storage
+   * 再绑一次 —— bind_invite 会返回 'already'（幂等，不会重复发积分），
+   * 但白白多打一次 RPC，还可能计入 60s/5 次的风控统计。
+   * 用 ref 记住「本次进入已处理过的码」：只有读到**不同**的码（= 热启动点了
+   * 新卡片）才重新暂存并绑定。
+   */
+  const handledEnterCodeRef = useRef('')
+  function captureLandedInvite(signedIn: boolean) {
+    const landed = pickLandedInvite()
+    const isNewLanding = landed && landed !== handledEnterCodeRef.current
+    if (isNewLanding) {
+      handledEnterCodeRef.current = landed
+      setPendingInvite(landed)
+    }
+    // 有新码，或还留着上次未绑成（非终态）的残留码 → 尝试消费
+    if (signedIn && (isNewLanding || getPendingInvite())) ensureInviteConsumed()
+  }
+
   useLoad(async () => {
     const ok = await isSignedIn()
     setLoggedIn(ok)
+    captureLandedInvite(ok)
+  })
+
+  // 从登录页返回时刷新登录态：小程序是 navigateTo 打开登录页，登录成功后
+  // 用户返回首页，而首页此时仍是 useLoad 时读到的 loggedIn=false，会一直
+  // 卡在 auth gate（必须杀掉小程序重进）。onShow 在返回栈弹出时必触发。
+  // 同时这里也是**热启动**的唯一入口：小程序在后台时用户点了新的分享卡片，
+  // onLoad 不重跑、router.params 还是旧值，只有 getEnterOptionsSync 能拿到新码。
+  useDidShow(async () => {
+    if (loggedIn) {
+      // 已在首页态下的热启动（如从聊天卡片直接切回）：只需补读落地码
+      captureLandedInvite(true)
+      return
+    }
+    const ok = await isSignedIn()
+    if (!ok) return
+    setLoggedIn(true)
+    // 登录页已绑过码则这里是空操作；若当时会话未就绪（非终态）留了码，
+    // 回首页这一刻会话通常已稳定，补一次消费。
+    captureLandedInvite(true)
   })
 
   // 删除确认 3 秒自动复位
@@ -238,7 +308,7 @@ export default function Index() {
     const title = streak.current > 0
       ? `我用 D-Bee 记录了今天的饮食，已连续打卡 ${streak.current} 天`
       : '我在用「自律蜜蜂」记录饮食、自律打卡，一起变自律吧！'
-    const path = inviteCode ? `/pages/index/index?inviter=${encodeURIComponent(inviteCode)}` : '/pages/index/index'
+    const path = inviteCode ? `/pages/index/index?invite=${encodeURIComponent(inviteCode)}` : '/pages/index/index'
     return { title, path }
   })
 
@@ -246,7 +316,7 @@ export default function Index() {
     const title = streak.current > 0
       ? `我用 D-Bee 记录了今天的饮食，已连续打卡 ${streak.current} 天`
       : '我在用「自律蜜蜂」记录饮食、自律打卡，一起变自律吧！'
-    const query = inviteCode ? `inviter=${encodeURIComponent(inviteCode)}` : ''
+    const query = inviteCode ? `invite=${encodeURIComponent(inviteCode)}` : ''
     return { title, query }
   })
 
