@@ -17,9 +17,15 @@ import type { Entitlement, UserPlan } from '../types'
 import {
   AI_REDEEM_DAILY_LIMIT,
   FREE_DAILY_AI,
+  FREE_REPORT_DAYS,
   HONEY_PRICE,
+  PRICE_LIFETIME,
+  PRICE_PRO_MONTHLY,
+  PRICE_PRO_YEARLY,
   type ProductId,
 } from '../constants'
+import { fmtNum } from '../numfmt'
+import { proUntilText } from '../datefmt'
 
 export interface Product {
   id: ProductId
@@ -33,12 +39,58 @@ export interface Product {
   highlight?: boolean
 }
 
-/** 付费墙展示的商品列表（顺序即展示顺序） */
+/**
+ * 付费墙展示的商品列表（顺序即展示顺序）。
+ *
+ * 🔴 price **必须引用 `PRICE_*` 常量，不可写字面量**（2026-11-03 修）：
+ *   此前这里写的是 `price: 18` / `128` / `298`，与 constants 的 PRICE_* 是
+ *   两份互相独立的副本，改价时必然漏改一处。同一文件的 constants:84 对
+ *   FREE_HONEY_PRO_ITEM 早已写明「用模板字符串从 HONEY_PRICE 取值，不硬编码
+ *   数字：调价时文案自动跟随」——价格本身反而硬编码是本末倒置。
+ */
 export const PRODUCTS: Product[] = [
-  { id: 'proMonthly', plan: 'pro', name: '月订阅', price: 18, months: 1 },
-  { id: 'proYearly', plan: 'pro', name: '年订阅', price: 128, months: 12, highlight: true },
-  { id: 'lifetime', plan: 'lifetime', name: '终身买断', price: 298 },
+  { id: 'proMonthly', plan: 'pro', name: '月订阅', price: PRICE_PRO_MONTHLY, months: 1 },
+  { id: 'proYearly', plan: 'pro', name: '年订阅', price: PRICE_PRO_YEARLY, months: 12, highlight: true },
+  { id: 'lifetime', plan: 'lifetime', name: '终身买断', price: PRICE_LIFETIME },
 ]
+
+/**
+ * 由商品生成付费墙价格文案（如 `¥128 / 年（约 ¥10.7/月）`）。
+ *
+ * 🔴 为什么要把它放进 shared（2026-11-03）：
+ *   此前主端 `src/pages/PaywallSheet.tsx` 另有一份硬编码的 `PRICE_TAG`：
+ *     { proMonthly: '¥18 / 月', proYearly: '¥128 / 年（约 ¥10.7/月）', lifetime: '¥298 永久' }
+ *   它是全仓**第三份**价格副本，且只有 Android/Web 分支在用 —— iOS 分支刻意
+ *   「绝不回退硬编码价」（只用 App Store 拉到的真实价）。改价时漏改这份，就会
+ *   出现「商店价 ¥20、Web 展示 ¥18」的价格不符：既误导用户，也可能被认定价格欺诈。
+ *   收敛到这里后，价格只剩 `PRICE_*` 一个真相源，文案随之自动生成。
+ *
+ * 实现约束（与项目数值纪律一致）：
+ *   · 数字一律走 `fmtNum`（全站唯一权威实现），**禁止自己写 toFixed / Math.round**；
+ *   · 均摊月价保留 1 位小数、去尾随零（128/12 = 10.666… → `10.7`；120/12 → `10`）；
+ *   · `months` 缺失或 ≤0 → **不编造订阅周期**，只输出 `¥128`（宁可少写，不可写错）；
+ *   · `price` 非有限数 → 整体退化为占位符 `—`，与主端 iOS 分支「拉不到商店价显示 —」
+ *     同一处置：不展示一个与真实扣款不符的数字。
+ */
+export function priceTag(p: Product): string {
+  if (!Number.isFinite(p.price)) return '—'
+  const price = `¥${fmtNum(p.price, 2)}`
+
+  // 买断档：无订阅期，不谈均摊
+  if (p.plan === 'lifetime') return `${price} 永久`
+
+  const months = p.months ?? 0
+  if (months <= 0) return price
+
+  const unit = months === 1 ? '月' : months === 12 ? '年' : `${months} 个月`
+  if (months === 1) return `${price} / ${unit}`
+
+  // 非月订阅才附均摊月价，帮用户横向比较（App Store 3.1.2 的比价要求同源）
+  const monthly = p.price / months
+  if (!Number.isFinite(monthly)) return `${price} / ${unit}`
+  return `${price} / ${unit}（约 ¥${fmtNum(monthly, 1)}/月）`
+}
+
 
 /** 是否为「已解锁会员」（pro 未过期 或 lifetime） */
 export function isPro(ent: Entitlement | null | undefined): boolean {
@@ -64,6 +116,46 @@ export function effectivePlan(ent: Entitlement | null | undefined): UserPlan {
   if (ent.plan === 'lifetime') return 'lifetime'
   if (ent.plan === 'pro') return isPro(ent) ? 'pro' : 'free'
   return 'free'
+}
+
+/**
+ * 「我的」页会员状态卡片的副标题（四端共用同一实现）。
+ *
+ * 🔴 为什么要下沉（2026-11-03，四端一致性审计）：
+ *   这段四分支文案原本在两端各写一份，且已经**分叉**：
+ *     · 主端 src/pages/ProfileScreen.tsx（会员状态卡片副标题）—— 四个分支齐全，额度用真实值
+ *     · mini/src/pages/profile/profile.tsx      —— 只有三个分支（缺 lifetime 兑换码、
+ *       缺 pro 有效期），且把剩余拍照次数**硬编码成 3**
+ *   后果：mini 的付费用户在「我的」页永远看到「免费版 + 升级按钮」，免费用户额度
+ *   用尽时仍显示「剩 3 次」，点了拍照才被 fail-closed 拒绝。
+ *   两份副本靠人工对齐必然会漂 —— 和定价三副本（PRICE_PRO_MONTHLY / PRODUCTS[].price /
+ *   PaywallSheet 的 PRICE_TAG）是同一种病，故一并收到单一真相源。
+ *
+ * 🔴 `aiRemaining` 的 null 语义由调用方决定，两端刻意不同（这是**对的**差异，不要抹平）：
+ *   · 主端 usePlan 的 aiRemaining 在非 Pro 时恒为数字（photoQuota 各分支都设 total），
+ *     故 `?? 0` 只是类型兜底，实际输出与改动前逐字一致。
+ *   · mini 的 getPhotoQuota 失败时返回 degraded=true（P0-B 后补的 fail-closed 实现，
+ *     比主端更严格）。此时调用方应传 `aiRemaining: null`，本函数输出「暂时读不到」
+ *     而非编一个数字 —— 显示一个读不到的额度等于向用户谎报：他可能据此以为还能拍照，
+ *     实际会在识别时被拒。宁可少显示，不可显示与真实额度不符的次数。
+ *   主端 getPhotoQuota 在 row 为 null 时返回满额 FREE_DAILY_AI（fail-open 展示），
+ *   是 P0-B 之前的旧语义；展示层这个差异有意保留。
+ *
+ * @param ent          会员权益（null = 读不到，按免费档展示）
+ * @param aiRemaining  今日剩余拍照次数；null = 未知/读不到（见上）；Pro 传 null（不限次）
+ * @param freeReportDays 免费档可看的报告天数，走常量插值不硬编码
+ */
+export function memberSubText(
+  ent: Entitlement | null | undefined,
+  aiRemaining: number | null | undefined,
+  freeReportDays: number = FREE_REPORT_DAYS,
+): string {
+  if (isLifetime(ent)) {
+    return ent?.redeemed_code ? `已通过兑换码 ${ent.redeemed_code} 永久解锁` : '全部功能已永久解锁'
+  }
+  if (isPro(ent)) return proUntilText(ent?.pro_until)
+  const quotaText = aiRemaining == null ? '今日拍照额度暂时读不到' : `今日剩拍照 ${aiRemaining} 次`
+  return `${quotaText} · 报告看近 ${freeReportDays} 天`
 }
 
 /** 本周一（用于周配额：usage_date 存周一日期） */

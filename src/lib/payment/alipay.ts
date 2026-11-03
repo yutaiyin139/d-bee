@@ -92,7 +92,8 @@ export function createAlipayAdapter(): PaymentAdapter | null {
 
   return {
     async fetchProducts(): Promise<ProductInfo[]> {
-      // 支付宝无商店本地化价格；返回空，付费墙回退硬编码 PRICE_TAG。
+      // 支付宝无商店本地化价格；返回空，付费墙回退到 @dbee/shared 的 priceTag(p)
+      // （由 PRODUCTS + PRICE_* 生成，2026-11-03 起取代此前 PaywallSheet 里的硬编码 PRICE_TAG）。
       // 真实价格以服务端下单查价为准（防篡改），这里仅作展示。
       return []
     },

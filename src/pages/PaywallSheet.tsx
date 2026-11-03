@@ -10,6 +10,8 @@ import {
   FREE_REPORT_DAYS,
   PRO_REPORT_DAYS,
   PRODUCTS,
+  priceTag,
+  proNoticeText,
   type ProductId,
 } from '../lib/entitlement'
 import { REDEEM_CODE_RULE } from '../lib/validate'
@@ -56,11 +58,12 @@ const PRO_ITEMS = [
   `饮食报告扩展到 ${PRO_REPORT_DAYS} 天 + 数据导出`,
 ]
 
-const PRICE_TAG: Record<string, string> = {
-  proMonthly: '¥18 / 月',
-  proYearly: '¥128 / 年（约 ¥10.7/月）',
-  lifetime: '¥298 永久',
-}
+// 🔴 此处曾有一份硬编码的 PRICE_TAG（{ proMonthly: '¥18 / 月', ... }），2026-11-03 删除：
+//   它与 shared 的 PRICE_* 常量、PRODUCTS[].price 构成**三份互相独立的价格副本**，
+//   改价必漏改。现统一走 @dbee/shared 的 priceTag(p) 从 PRODUCTS 生成，价格只剩
+//   PRICE_* 一个真相源。回归测试见 tools/price-single-source.test.ts。
+//   ⚠️ 注意 priceTag 只在 Android/Web 分支使用；iOS 分支仍只用 App Store 拉到的
+//   真实价（见下方渲染注释），绝不回退到本地生成的价格文案 —— 商店价才是唯一合法成交价。
 
 export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void }) {
   const { paywall, closePaywall, redeem, pro, lifetime, entitlement, refresh } = usePlan()
@@ -245,11 +248,11 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
       {hint && <div className="notice info">{hint}</div>}
       {pro && (
         <div className="notice ok">
-          {lifetime
-            ? '你已是终身会员，全部功能永久解锁。'
-            : entitlement?.pro_until
-              ? `你已是 Pro 会员，有效期至 ${new Date(entitlement.pro_until).toLocaleDateString('zh-CN')}。`
-              : '你已是 Pro 会员，所有功能已解锁。'}
+          {/* 2026-11-03 四端一致性：整句收到 shared proNoticeText，与小程序端共用同一实现。
+              此前这里直接 new Date(pro_until).toLocaleDateString('zh-CN')，输出取决于各端
+              JS 引擎的 ICU/locale 数据（web/iOS/Android 与微信小程序并不同步），
+              同一到期日可能给出不同文案。 */}
+          {lifetime ? '你已是终身会员，全部功能永久解锁。' : proNoticeText(entitlement?.pro_until)}
         </div>
       )}
 
@@ -330,7 +333,7 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
                     // iOS 只显示商店真实价：加载中显示占位，失败显示「—」，绝不回退硬编码价
                     iosPriceState === 'ok' ? storePrice[p.id] : iosPriceState === 'loading' ? '获取中…' : '—'
                   ) : (
-                    PRICE_TAG[p.id]
+                    priceTag(p)
                   )}
                 </div>
                 {p.highlight && <div className="pay-option-tag">最划算</div>}

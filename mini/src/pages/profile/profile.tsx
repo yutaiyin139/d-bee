@@ -5,16 +5,21 @@
  *  - 健康数据源：isHealthConnectable() 恒 false → 隐藏该区块
  *  - 体重趋势图：主工程用 SVG LineChart，小程序端以列表形式展示（图表统一在报告页处理）
  *  - 数据导出：走 share.ts 占位（返回「正在接入」提示）
- *  - 会员升级：小程序端暂无支付，点「升级」给出诚实提示
+ *  - 会员升级：点「升级」跳 pages/paywall（兑换码解锁；小程序端无内购/微信外支付）
+ *
+ * 🔴 会员状态副标题**不是**本页自己拼的，而是调 @dbee/shared 的 `memberSubText`，
+ *    与主端 ProfileScreen 共用同一个函数（2026-11-03 四端一致性修复，此前本页是一份
+ *    残缺副本：缺 lifetime/pro 两个分支、免费档把剩余次数硬编码成 3）。
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { View, Text, Button, Input, Switch } from '@tarojs/components'
-import Taro from '@tarojs/taro'
+import Taro, { useDidShow } from '@tarojs/taro'
 import { IconCrown, IconDownload, IconTrash } from '../../components/Icons'
 import {
   listWeightLogs, saveProfile, saveWeight, clearAllRecords,
   exportAllData, listMealsBetween, buildMealsCsv,
-  getProfile, type Profile, type WeightLog,
+  getProfile, getEntitlement, getPhotoQuota,
+  type Entitlement, type Profile, type WeightLog,
 } from '../../lib/api'
 import { ACTIVITY_LABELS, GOAL_LABELS, calcTarget, todayKey } from '../../lib/nutrition'
 import {
@@ -25,7 +30,7 @@ import {
 import { exportJSON, exportText, isExportAvailable, EXPORT_UNAVAILABLE_MESSAGE } from '../../lib/share'
 import { isHealthConnectable } from '../../lib/health'
 import { HONEY_PRICE } from '../../lib/invite'
-import { FREE_REPORT_DAYS } from '@dbee/shared'
+import { isPro, isLifetime, memberSubText } from '@dbee/shared'
 import { signOut } from '../../lib/auth'
 import { getNotifyPrefs, setNotifyPrefs, enableCheckinNotify, disableCheckinNotify, enableWaterNotify, disableWaterNotify } from '../../lib/notifications'
 import './profile.scss'
@@ -34,9 +39,28 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // 会员状态（小程序端暂无 entitlements 拉取，先按免费版展示）
-  const [pro, setPro] = useState(false)
-  const [lifetime, setLifetime] = useState(false)
+  // 会员状态（2026-11-03 修）：此前注释写「小程序端暂无 entitlements 拉取，先按免费版展示」，
+  // pro/lifetime 声明后**从未被赋值** → 付费用户在「我的」页永远看到「免费版」+「升级」按钮，
+  // 且剩余拍照次数被硬编码成 3（真实额度可能是 0 或已用完）。四端一致性要求下这是明确 bug。
+  // 现照 mini/src/pages/paywall/paywall.tsx 的既有模式拉取权益（coach/report/scan/paywall
+  // 四页早就这么做了，只有本页漏掉）。
+  const [entitlement, setEntitlement] = useState<Entitlement | null>(null)
+  const pro = useMemo(() => isPro(entitlement), [entitlement])
+  const lifetime = useMemo(() => isLifetime(entitlement), [entitlement])
+  /**
+   * 今日剩余拍照次数。null = 未加载完成、读不到（降级）或 Pro（不限次，无需展示数字）。
+   * 🔴 传给 shared `memberSubText` 的降级语义刻意**比主端保守**，且这是对的：
+   *      · 主端 getPhotoQuota 在 row 为 null 时返回满额 FREE_DAILY_AI（展示乐观值）
+   *      · mini getPhotoQuota 失败时返回 { totalRemaining: 0, degraded: true }（fail-closed）
+   *    mini 是 P0-B 之后才补的 fail-closed 实现（见 lib/api.ts:618 注释），比主端更严格。
+   *    故 degraded 时传 null，让 memberSubText 输出「暂时读不到」而非编一个数字 ——
+   *    宁可少显示，不可显示与真实额度不符的次数（用户可能据此以为还能拍照，实际会被拒）。
+   */
+  const [aiRemaining, setAiRemaining] = useState<number | null>(null)
+  const [quotaDegraded, setQuotaDegraded] = useState(false)
+
+  /** useDidShow 首次触发跳过标记（见下方 useDidShow 注释） */
+  const shownOnce = useRef(false)
 
   // 身体数据编辑
   const [editing, setEditing] = useState(false)
@@ -132,11 +156,64 @@ export default function ProfilePage() {
     } finally {
       setLoading(false)
     }
+    // 权益与额度**刻意放在 try/catch 之外**：它们各自有独立的失败降级
+    // （权益读不到按免费档、额度读不到不谎报数字），不应因为读权益失败
+    // 就让上面的体重记录也一起丢掉，反之亦然。
+    await loadEntitlement()
+  }
+
+  /**
+   * 拉取会员权益 + 今日剩余额度。
+   *
+   * 🔴 为什么单独抽出来：`useDidShow` 也要调它。profile 用 `navigateTo` 打开付费墙，
+   *    兑换成功后 `navigateBack` 回来时本页**仍在页面栈里**，`useEffect` 不会重跑 ——
+   *    不加 useDidShow 的话，用户兑换成功了却还看到「免费版 + 升级按钮」。
+   *    这与 index.tsx:200 的 useDidShow 刷新登录态是同一类小程序生命周期坑。
+   */
+  async function loadEntitlement() {
+    try {
+      const ent = await getEntitlement()
+      setEntitlement(ent)
+      // Pro/终身不限拍照次数，不必再查额度（与主端 plan.tsx:80-85 同一处置）
+      if (isPro(ent)) {
+        setAiRemaining(null)
+        setQuotaDegraded(false)
+        return
+      }
+    } catch {
+      // 读不到权益不阻塞使用，按免费档展示（对齐主端 plan.tsx:86-89）
+      setEntitlement(null)
+    }
+    try {
+      const q = await getPhotoQuota()
+      setQuotaDegraded(q.degraded === true)
+      setAiRemaining(q.degraded ? null : Math.max(0, q.totalRemaining))
+    } catch {
+      setQuotaDegraded(true)
+      setAiRemaining(null)
+    }
   }
 
   useEffect(() => {
     void load()
   }, [])
+
+  /**
+   * 回到本页时刷新会员状态与额度。
+   *
+   * 场景：本页「升级」按钮用 navigateTo 打开付费墙，用户兑换成功后 navigateBack 回来，
+   * 本页仍在栈中、useEffect 不重跑 —— 不刷新的话会一直显示「免费版 + 升级」。
+   *
+   * 🔴 Taro 的 useDidShow **首次进入也会触发**，会与上面的 useEffect 重复发请求，
+   *    故用 ref 跳过第一次（只刷权益/额度，不重跑整个 load()：体重记录等不必重拉）。
+   */
+  useDidShow(() => {
+    if (!shownOnce.current) {
+      shownOnce.current = true
+      return
+    }
+    void loadEntitlement()
+  })
 
   const num = (v: string, fb: number) => {
     const n = Number(v)
@@ -333,6 +410,22 @@ export default function ProfilePage() {
     Taro.navigateTo({ url: '/pages/leaderboard/leaderboard' })
   }
 
+  /**
+   * 会员状态卡片的副标题。2026-11-03 修：此前 mini 本页只有三个分支且免费档把剩余
+   * 拍照次数**硬编码成 3**，兑换码与有效期两条信息完全缺失；现已改为调 shared 的
+   * `memberSubText`，与主端 src/pages/ProfileScreen.tsx **同一个函数**（不是两份对齐的副本）。
+   *
+   * 🔴 额度降级时传 null 让 shared 输出「暂时读不到」，刻意比主端更保守：
+   *    mini 的 getPhotoQuota 失败时返回 degraded=true，此时显示任何数字都是谎报
+   *    （用户会据此以为还能拍照，实际会在识别时被 fail-closed 拒绝）。
+   *    主端该路径返回满额 FREE_DAILY_AI，是 P0-B 之前的旧语义。
+   *    这个差异是有意保留的端能力差异，**不要「为了一致」改回满额**。
+   */
+  const memberSub = useMemo(
+    () => memberSubText(entitlement, quotaDegraded ? null : aiRemaining),
+    [entitlement, aiRemaining, quotaDegraded],
+  )
+
   if (loading) {
     return <View className='page'><View className='skeleton' style={{ height: 200 }} /></View>
   }
@@ -349,9 +442,7 @@ export default function ProfilePage() {
           <IconCrown color={pro ? '#6b4a08' : '#6b655c'} size={20} />
           <View className='member-text'>
             <Text className='member-title'>{lifetime ? 'D-Bee 终身会员' : pro ? 'D-Bee Pro' : '免费版'}</Text>
-            <Text className='member-sub'>
-              {lifetime ? '全部功能已永久解锁' : pro ? '全部功能已解锁' : `今日剩拍照 3 次 · 报告看近 ${FREE_REPORT_DAYS} 天`}
-            </Text>
+            <Text className='member-sub'>{memberSub}</Text>
           </View>
         </View>
         {!pro && (

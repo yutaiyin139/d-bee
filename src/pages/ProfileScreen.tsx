@@ -13,7 +13,7 @@ import {
   saveProfile,
   saveWeight,
 } from '../lib/api'
-import { FREE_REPORT_DAYS } from '../lib/entitlement'
+import { memberSubText } from '../lib/entitlement'
 import {
   ACTIVITY_LABELS,
   GOAL_LABELS,
@@ -416,15 +416,10 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
               {lifetime ? 'D-Bee 终身会员' : pro ? 'D-Bee Pro' : '免费版'}
             </div>
             <div className="member-sub">
-              {lifetime
-                ? entitlement?.redeemed_code
-                  ? `已通过兑换码 ${entitlement.redeemed_code} 永久解锁`
-                  : '全部功能已永久解锁'
-                : pro
-                  ? entitlement?.pro_until
-                    ? `有效期至 ${new Date(entitlement.pro_until).toLocaleDateString('zh-CN')}`
-                    : '全部功能已解锁'
-                  : `今日剩拍照 ${aiRemaining ?? 0} 次 · 报告看近 ${FREE_REPORT_DAYS} 天`}
+              {/* 2026-11-03 四端一致性：四分支文案下沉到 shared memberSubText，
+                  与小程序端「我的」页共用同一实现（此前两端各写一份且已分叉）。
+                  主端 aiRemaining 非 Pro 时恒为数字，输出与下沉前逐字一致。 */}
+              {memberSubText(entitlement, aiRemaining)}
             </div>
           </div>
         </div>

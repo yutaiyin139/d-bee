@@ -110,7 +110,8 @@ export function createWechatPayAdapter(): PaymentAdapter | null {
 
   return {
     async fetchProducts(): Promise<ProductInfo[]> {
-      // 微信支付无商店本地化价格；返回硬编码价文案，付费墙据此展示（PRICE_TAG）。
+      // 微信支付无商店本地化价格；返回空，付费墙回退到 @dbee/shared 的 priceTag(p)
+      // （由 PRODUCTS + PRICE_* 生成，2026-11-03 起取代此前 PaywallSheet 里的硬编码 PRICE_TAG）。
       // 真实价格以服务端下单查价为准（防篡改），这里仅作展示。
       return []
     },

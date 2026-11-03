@@ -12,6 +12,7 @@ import {
   PRO_REPORT_DAYS,
   isPro,
   isLifetime,
+  proNoticeText,
   type Entitlement,
 } from '@dbee/shared'
 import { REDEEM_CODE_RULE } from '../../lib/validate'
@@ -134,11 +135,10 @@ export default function Paywall() {
       {pro ? (
         <View className='notice ok'>
           <Text>
-            {lifetime
-              ? '你已是终身会员，全部功能永久解锁。'
-              : entitlement?.pro_until
-                ? `你已是 Pro 会员，有效期至 ${new Date(entitlement.pro_until).toLocaleDateString('zh-CN')}。`
-                : '你已是 Pro 会员，所有功能已解锁。'}
+            {/* 2026-11-03 四端一致性：整句收到 shared proNoticeText，与主端
+                PaywallSheet.tsx 共用同一实现（此前两端各写一份逐字相同的文案，
+                且日期格式化依赖各端 JS 引擎的 locale 数据，输出不保证一致）。 */}
+            {lifetime ? '你已是终身会员，全部功能永久解锁。' : proNoticeText(entitlement?.pro_until)}
           </Text>
         </View>
       ) : null}
@@ -171,7 +171,7 @@ export default function Paywall() {
 
       {!pro ? (
         <>
-          {/* 🔴 刻意不渲染价格档位（PRODUCTS + PRICE_TAG）：与 legal.ts「免费提供、
+          {/* 🔴 刻意不渲染价格档位（PRODUCTS + priceTag）：与 legal.ts「免费提供、
               不销售任何商品或服务、不涉及在线支付」保持一致。见文件头注释。 */}
           <View className='field'>
             <Text className='field-label'>兑换码</Text>
