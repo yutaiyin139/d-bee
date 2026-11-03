@@ -22,7 +22,7 @@ import {
   type NumLimit, checkNumber, checkTargetWeightDiff, checkText,
   clampNumeric, firstError, rangeText, sanitizeNumeric,
 } from '../../lib/validate'
-import { exportJSON, exportText } from '../../lib/share'
+import { exportJSON, exportText, isExportAvailable, EXPORT_UNAVAILABLE_MESSAGE } from '../../lib/share'
 import { isHealthConnectable } from '../../lib/health'
 import { HONEY_PRICE } from '../../lib/invite'
 import { FREE_REPORT_DAYS } from '@dbee/shared'
@@ -232,9 +232,15 @@ export default function ProfilePage() {
   }
 
   async function doExport() {
-    setExporting(true)
     setDataErr('')
     setDataMsg('')
+    // 🔴 导出未实装时**不发网络请求**：exportAllData() 会拉全量数据再被占位丢弃，
+    //   白跑一次请求还显示「导出中…」转圈，属「可见但不可用」误导（P2-A）。
+    if (!isExportAvailable) {
+      setDataMsg(EXPORT_UNAVAILABLE_MESSAGE)
+      return
+    }
+    setExporting(true)
     try {
       const bundle = await exportAllData()
       const res = await exportJSON(bundle, `d-bee-export-${todayKey()}.json`, { title: 'D-Bee 数据导出', text: '这是你在 D-Bee 里记录的全部数据。' })
@@ -247,9 +253,13 @@ export default function ProfilePage() {
   }
 
   async function doExportCsv() {
-    setExporting(true)
     setDataErr('')
     setDataMsg('')
+    if (!isExportAvailable) {
+      setDataMsg(EXPORT_UNAVAILABLE_MESSAGE)
+      return
+    }
+    setExporting(true)
     try {
       const meals = await listMealsBetween('1970-01-01', '2999-12-31')
       if (meals.length === 0) {
@@ -500,19 +510,27 @@ export default function ProfilePage() {
       {/* 数据与隐私 */}
       <View className='section-title'><Text>数据与隐私</Text></View>
       <View className='card'>
-        <View className='list-line' onClick={() => void doExport()}>
+        {/* 🔴 P2-A：导出未实装时置灰 + 「即将上线」角标，与 legal.ts §五 的
+            「当前版本暂不可用」声明口径一致。刻意**不禁用点击** —— 点下去会给出
+            「可通过邮箱申请副本」的提示，那是 PIPL 第 45 条复制权的真实兜底路径，
+            彻底禁用反而把这条权利入口也藏掉了。 */}
+        <View className={isExportAvailable ? 'list-line' : 'list-line list-line-muted'} onClick={() => void doExport()}>
           <View className='line-label-wrap'>
             <IconDownload size={16} />
             <Text className='line-label'>导出全部数据（JSON）</Text>
           </View>
-          <Text className='line-val'>{exporting ? '导出中…' : '导出'}</Text>
+          {isExportAvailable
+            ? <Text className='line-val'>{exporting ? '导出中…' : '导出'}</Text>
+            : <Text className='line-badge'>即将上线</Text>}
         </View>
-        <View className='list-line' onClick={() => void doExportCsv()}>
+        <View className={isExportAvailable ? 'list-line' : 'list-line list-line-muted'} onClick={() => void doExportCsv()}>
           <View className='line-label-wrap'>
             <IconDownload size={16} />
             <Text className='line-label'>导出饮食记录（CSV）</Text>
           </View>
-          <Text className='line-val'>{exporting ? '导出中…' : '导出'}</Text>
+          {isExportAvailable
+            ? <Text className='line-val'>{exporting ? '导出中…' : '导出'}</Text>
+            : <Text className='line-badge'>即将上线</Text>}
         </View>
         <View className='list-line' onClick={() => !confirmClear && setConfirmClear(true)}>
           <View className='line-label-wrap'>

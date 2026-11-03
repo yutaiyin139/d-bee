@@ -30,6 +30,21 @@ export const BONUS_TTL_DAYS = 7 // 识别次数奖励有效期（防囤积）
 /** 消耗额度的 feature 标识（ai_usage.feature） */
 export const SCAN_FEATURE = 'scan'
 
+/* ── 免费版权益文案（P2-D，多端付费墙共用）───────────────── */
+/**
+ * 「永久无广告」—— 把竞品当作付费权益的东西，D-Bee 当免费卖点。
+ *
+ * 🔴 这是**对外承诺**，不是营销修辞。成立的依据（2026-11-03 全仓核实）：
+ *   · 两端 package.json / project.config.json / src/ / mini/src/ 中
+ *     admob|pangle|穿山甲|gdt|优量汇|unityads|adsense 以及小程序
+ *     createRewardedVideoAd/createInterstitialAd/createBannerAd **零命中**；
+ *   · mini/src/content/legal.ts 已公示「不含广告、不诱导付费、无隐藏扣费」；
+ *   · src/content/legal.ts:222 已公示开源组件「不含广告追踪与用户画像能力」。
+ * 将来若真要接入任何广告变现，**必须先删掉这条常量并同步改法务文本**，
+ * 否则构成虚假宣传（且小程序端会与 legal.ts 公示直接冲突）。
+ */
+export const FREE_NO_ADS_ITEM = '永久无广告、无隐藏扣费'
+
 /* ── 定价（单位：元；最终以支付平台商品为准）────────────────── */
 export const PRICE_PRO_MONTHLY = 18
 export const PRICE_PRO_YEARLY = 128

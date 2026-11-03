@@ -109,6 +109,23 @@
     align-items: center;
   }
 
+  // P2-A：能力未实装的行 —— 整体降饱和，右侧换「即将上线」角标替代「导出」
+  .line-badge {
+    font-size: 22px;
+    color: $info-ink;
+    background: $honey-soft;
+    border-radius: 8px;
+    padding: 4px 12px;
+    display: flex;
+    align-items: center;
+  }
+
+  &.list-line-muted {
+    .line-label {
+      color: $ink-3;
+    }
+  }
+
   .arrow {
     margin-left: 8px;
     color: $ink-3;

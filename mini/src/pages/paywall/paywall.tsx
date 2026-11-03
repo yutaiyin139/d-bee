@@ -6,6 +6,7 @@ import { getEntitlement, redeemByCode } from '../../lib/api'
 import {
   AI_REDEEM_DAILY_LIMIT,
   FREE_DAILY_AI,
+  FREE_NO_ADS_ITEM,
   FREE_REPORT_DAYS,
   PRO_REPORT_DAYS,
   isPro,
@@ -48,6 +49,7 @@ const FREE_ITEMS = [
   'AI 问答不限次数（每分钟限 3 次防刷）',
   `饮食报告看近 ${FREE_REPORT_DAYS} 天`,
   '连续打卡 7 天再送拍照次数',
+  FREE_NO_ADS_ITEM,
 ]
 // 注：与主工程 PaywallSheet 相比，本端刻意去掉「扫条码」「文字描述识别」两条——
 // 小程序端当前没有这两个功能（无 scanCode 调用、parseFoodFromText 无 UI 入口），

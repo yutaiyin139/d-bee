@@ -5,6 +5,7 @@ import type { DocId } from '../content/legal'
 import {
   AI_REDEEM_DAILY_LIMIT,
   FREE_DAILY_AI,
+  FREE_NO_ADS_ITEM,
   FREE_REPORT_DAYS,
   PRO_REPORT_DAYS,
   PRODUCTS,
@@ -33,8 +34,16 @@ const FREE_ITEMS = [
   '文字描述识别、手动录入、体重饮水运动记录全部免费',
   'AI 问答不限次数（每分钟限 3 次防刷）',
   `饮食报告看近 ${FREE_REPORT_DAYS} 天`,
-  '连续打卡 7 天、完善资料再送拍照次数',
+  '连续打卡 7 天再送拍照次数',
+  FREE_NO_ADS_ITEM,
 ]
+// 🔴 「完善资料再送拍照次数」删去（2026-11-03，P2-D 同步小程序端 P0-C 结论）：
+//   完善资料实际发的是**蜜糖积分**而非识别次数 —— src/state/plan.tsx:185
+//   `grantHoney('newbie', 'newbie', NEWBIE_BONUS_AMOUNT, ...)`，代码注释原文
+//   「发蜜糖积分，不再发识别次数」。全仓 `grantPhotoBonus(` 仅 'streak7' 一处调用，
+//   签名里的 'newbie' 分支从无调用方。原文案属虚假承诺，且小程序端已于 P0-C
+//   （commit 07a46ca）删除同一句，此处为主端漏改导致的四端文案分叉。
+//   新手积分本身已由上面「积分可再兑换拍照识别」一条如实覆盖。
 
 const PRO_ITEMS = [
   'AI 拍照识别不限次数',
