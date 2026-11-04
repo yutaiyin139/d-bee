@@ -74,5 +74,25 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       allowedHosts: true,
     },
+    /**
+     * 🔴 fileParallelism: false —— 关掉测试文件级并行，**必须保留**。
+     *
+     * 症状（2026-11-04 实测）：并行跑 `npm test` 时本机报
+     *   `EPERM: operation not permitted, open '<TMPDIR>/ssr/<hash>'`
+     * 而 vitest 把它当 unhandled error 吞掉，**被卡住的测试文件直接不统计**：
+     *   并行 → Test Files 8 passed / Tests 150   ← 假绿
+     *   串行 → Test Files 10 passed / Tests 190  ← 真相（多出的 40 项是 2 个文件）
+     * 即「全绿」可能建立在丢了 20% 测试的基础上，且 exit code 仍是 0，CI/人眼都发现不了。
+     *
+     * 为何写在这里而不是只写进 package.json 的 `test` 脚本（--no-file-parallelism）：
+     *   脚本参数只覆盖 `npm test` 一条路径；直接 `npx vitest run tools/xxx.test.ts`
+     *   或 IDE 的测试按钮都不带该参数，仍会假绿。配置项对所有调用方式生效。
+     *
+     * 代价：全套 15.9s vs 并行 9.4s（慢 6.5s）。用 6.5 秒换「绿是真绿」，划算。
+     * 排查提示：看到 `Test Files` 数 < `ls tools/*.test.ts | wc -l` 就是这个问题复发。
+     */
+    test: {
+      fileParallelism: false,
+    },
   }
 })
