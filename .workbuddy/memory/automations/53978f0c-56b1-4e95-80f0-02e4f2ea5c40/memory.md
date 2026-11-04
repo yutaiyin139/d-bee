@@ -221,6 +221,17 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
   可复用脚本 `db/backups/.build-from-raw.cjs <raw文件> <目标json>`（表序重排 + row_counts + id 升序校验），
   后续超限 dump 直接两步走，不必再临时写脚本。
 
+### 2026-11-04 03:31（第 20 次）
+- 结果：**成功**。产出 `db/backups/2026-11-04.json`（133,838 字节，历史最大）。
+- 行数：profiles=18 / meal_entries=142 / water_logs=57 / exercise_logs=28 / weight_logs=4 /
+  entitlements=2 / ai_usage=30（合计 281 行）。
+- 校验：`.build-from-raw.cjs` 内含 7 表 id 严格升序校验 + `.verify-backup.cjs` PASS——
+  JSON.parse OK、顶层字段完整、7 表 row_counts 与 tables.<表>.length 及另发 count(*) 的线上实时行数三方一致。
+- 清理：cutoff=2026-10-05，现存 16 份每日 json（最早 10-13），过期 0 份。临时 raw 已删除。
+- 观察：与 11-03 相比新增 11 行——water_logs +7（50→57，id 至 57）、meal_entries +2（140→142，id 至 149）、
+  weight_logs +1（3→4，id=4）、ai_usage +1（29→30，id 至 83）。entitlements 仍 2、exercise_logs 28、profiles 18。
+- 流程：genie-baas 本会话已注册；dump 83,126 字符超限落盘，走「Copy-Item 进工作区 → `.build-from-raw.cjs`」两步，一次通过。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。
