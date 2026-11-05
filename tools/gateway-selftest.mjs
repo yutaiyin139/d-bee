@@ -445,7 +445,12 @@ section('config · validate 拦住不安全配置')
   assert('生产环境默认只收 Production', [...cpFull.appleAllowedEnvs].join(',') === 'Production', [...cpFull.appleAllowedEnvs].join(','))
   assert('缺 LLM_API_KEY 时给非致命提示', warnings({ ...c, llmApiKey: '' }).some((w) => w.includes('LLM_API_KEY')))
   assert('配了 bundleId 但缺 sharedSecret → 提示 21004 风险', warnings({ ...c, llmApiKey: 'sk-x', publishableKey: 'wbpk_x', appleBundleId: 'com.x', appleSharedSecret: '' }).some((w) => w.includes('APPLE_SHARED_SECRET')))
-  assert('配齐后无提示', warnings({ ...c, llmApiKey: 'sk-x', publishableKey: 'wbpk_x', appleBundleId: 'com.x', appleSharedSecret: 'sec' }).length === 0)
+  // A3（2026-11-05）：微信小程序凭据未配 → 提示 login-wechat 将 503。
+  // envBase 不含 WECHAT_* → c.wechatMiniSecrets 是空 Map，正好触发该 warning。
+  assert('缺微信凭据 → 提示 login-wechat 将 503', warnings(c).some((w) => w.includes('login-wechat')))
+  // 「配齐」基线须含微信凭据（wx 开头 appid + secret），否则上面那条 warning 会残留
+  const wxOk = new Map([['wxb7c7122de9c3ab1f', 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4']])
+  assert('配齐后无提示', warnings({ ...c, llmApiKey: 'sk-x', publishableKey: 'wbpk_x', appleBundleId: 'com.x', appleSharedSecret: 'sec', wechatMiniSecrets: wxOk }).length === 0)
 }
 
 section('config · isOriginAllowed（安全审计⑦ CORS 白名单）')

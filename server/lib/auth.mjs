@@ -19,6 +19,10 @@
  *   POST /.cloud/auth/v1/signup                新用户换会话
  *        req  { verification_token, phone_number|email, password? }
  *        resp 同 signin
+ *   POST /.cloud/auth/v1/login-wechat          微信小程序登录（A1，2026-11-05）
+ *        req  { code, appid }                  ← wx.login() 临时 code + 当前小程序 appid
+ *        resp 同 signin；sub = 'wx:'+openid（SDK userFromSessionPayload 读 sub 为 user.id）
+ *        服务端调微信 jscode2session 换 openid；owner_id 用确定性 wx:<openid>（见 0043）
  *   POST /.cloud/auth/v1/token                 refresh（**不是**换会话）
  *        req  { grant_type: 'refresh_token', refresh_token }
  *   GET  /.cloud/auth/v1/user/me               当前用户
@@ -57,6 +61,25 @@ import { cloudError, clientIp, RateLimiter } from './http.mjs'
 const PW_LIMIT_WINDOW_MS = 15 * 60_000
 const PW_LIMIT_PER_IDENT = 10
 const PW_LIMIT_PER_IP = 30
+
+/**
+ * 微信登录按 IP 的限流阈值（15 分钟窗口）。
+ * 每次冷启动小程序都会 wx.login 一次，正常用户一天数十次；
+ * 设 60 次/15 分钟 = 挡住脚本刷 code，又不误伤真实用户。
+ */
+const WX_LIMIT_PER_IP = 60
+
+/**
+ * openid 掩码（app_users.ident_masked 用）。
+ * 约束：0031 的 app_users_masked_is_masked 要求含 '*'；0043 微信路径复用该约束。
+ * 形态：wx**** + 后 4 位（够用户认出「这是我的微信」，不可反推完整 openid）。
+ * openid 短于 8 位时全掩 —— 宁可不展示，不可泄露。
+ */
+function maskWechatOf(openid) {
+  const s = typeof openid === 'string' ? openid : ''
+  if (s.length < 8) return 'wx****'
+  return `wx****${s.slice(-4)}`
+}
 
 /**
  * refresh_token 用不透明随机串（而非 JWT），存内存以便登出/续期时吊销。
@@ -98,11 +121,23 @@ class RefreshStore {
 
 /**
  * 构造 auth 处理器。
- * @param {object} deps { cfg, pool, otp, logger, refresh }
+ * @param {object} deps { cfg, pool, otp, logger, refresh, fetchImpl }
+ * @param {typeof globalThis.fetch} [deps.fetchImpl] 外呼注入点（微信 jscode2session）。
+ *   默认 globalThis.fetch；自测注入 mock，避免真打微信接口。
  */
 export function createAuthHandlers(deps) {
   const { cfg, pool, otp, logger } = deps
+  const fetchImpl = deps.fetchImpl ?? globalThis.fetch
   const refresh = deps.refresh ?? new RefreshStore({ ttlSec: cfg.refreshTtlSec })
+
+  /**
+   * 微信登录限流（与密码登录同思路：全局 limiterApi 300 次/分钟对认证端点等于没设防）。
+   * 按 IP 限：jscode2session 是**我方付费/配额**的外呼，必须挡住「单 IP 刷 code 换 openid」。
+   * 阈值比密码登录宽：正常用户每次冷启动都要 wx.login 一次，太紧会误伤。
+   */
+  const wxLimiterIp = new RateLimiter({
+    windowMs: 15 * 60_000, limit: WX_LIMIT_PER_IP, maxKeys: 200_000,
+  })
 
   // 密码登录限流（见文件头 PW_LIMIT_* 注释：为何不复用 limiterIdent/limiterApi）
   const pwLimiterIdent = new RateLimiter({
@@ -247,6 +282,85 @@ export function createAuthHandlers(deps) {
     pwLimiterIdent.reset(`${kind}:${value}`)
     logger.info(`[auth] 密码登录成功 ${kind}=${maskAny(kind, value)} owner=${user.owner_id} ip=${ip}`)
     return { status: 200, body: await sessionPayload(user.owner_id, null, user.token_version) }
+  }
+
+  /**
+   * 微信 jscode2session：用小程序 wx.login() 的临时 code 换 openid。
+   *
+   * 🔴 三条安全纪律（写在这里而不是靠自觉）：
+   *   ① AppSecret 只在 URL query 里出现（微信官方接口形态，无 POST 替代）。
+   *      → **本函数与其调用方一律不记 URL**，日志只落 appid 与 errcode。
+   *      若将来加请求日志中间件，必须把 /sns/jscode2session 的 query 脱敏。
+   *   ② session_key 是微信侧的会话密钥（可解密手机号等敏感数据），
+   *      拿到即弃：本函数**只返回 openid**，不把 session_key 传出、不落库、不记日志。
+   *   ③ appid → secret 的查表本身就是白名单：客户端传来的 appid 若不在
+   *      WECHAT_MINI_SECRETS 里，直接 503，绝不拿它去外呼（防 SSRF/凭据试探）。
+   *
+   * @returns {Promise<{ok:true, openid:string}|{ok:false, status:number, message:string, code:string, errcode?:number}>}
+   */
+  async function exchangeWechatCode({ code, appid }) {
+    const secret = cfg.wechatMiniSecrets?.get(appid)
+    if (!secret) {
+      // 未知 appid：可能是未配置的小程序（试用/正式两套要分别配），也可能是试探
+      logger.warn(`[auth] 微信登录拒绝：appid 未在 WECHAT_MINI_SECRETS 中配置 appid=${appid}`)
+      return { ok: false, status: 503, message: '微信登录暂未开通', code: 'wechat_not_configured' }
+    }
+
+    const url = `${cfg.wechatApiBase}/sns/jscode2session?` + new URLSearchParams({
+      appid, secret, js_code: code, grant_type: 'authorization_code',
+    }).toString()
+
+    let resp
+    try {
+      resp = await fetchImpl(url, {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+        signal: AbortSignal.timeout(cfg.wechatTimeoutMs ?? 10_000),
+      })
+    } catch (err) {
+      // 超时/DNS/连接失败：不外泄内部细节
+      logger.error(`[auth] jscode2session 网络失败 appid=${appid}: ${err?.message || err}`)
+      return { ok: false, status: 502, message: '微信服务暂时不可用，请稍后再试', code: 'wechat_upstream_unreachable' }
+    }
+
+    let data
+    try {
+      data = await resp.json()
+    } catch {
+      logger.error(`[auth] jscode2session 返回非 JSON appid=${appid} http=${resp.status}`)
+      return { ok: false, status: 502, message: '微信服务返回异常，请稍后再试', code: 'wechat_bad_response' }
+    }
+
+    const errcode = Number.isFinite(data?.errcode) ? data.errcode : (resp.ok ? 0 : -1)
+    if (errcode !== 0 || typeof data?.openid !== 'string' || !data.openid) {
+      // errmsg 可能含 appid/secret 相关线索 → 只进服务端日志，不回传客户端
+      logger.warn(`[auth] jscode2session 失败 appid=${appid} errcode=${errcode} errmsg=${String(data?.errmsg || '').slice(0, 120)}`)
+      // 按 errcode 归类：
+      //   40029 invalid code / 40163 code been used / 41008 missing code / 40013 invalid appid
+      //     → 401，让前端重新 wx.login() 换新 code（code 一次性，5 分钟有效）
+      //   45011 api freq limit / -1 system error / 45009 api freq out of limit → 503 可重试
+      //   40125 invalid appsecret / 41002 appid missing / 41004 appsecret missing
+      //     → 我方配置问题，对外统一「暂未开通」，不暴露原因
+      if (errcode === 40029 || errcode === 40163 || errcode === 41008) {
+        return { ok: false, status: 401, message: '登录凭证无效或已过期，请重试', code: 'invalid_grant', errcode }
+      }
+      if (errcode === 45011 || errcode === 45009 || errcode === -1) {
+        return { ok: false, status: 503, message: '微信服务繁忙，请稍后再试', code: 'wechat_rate_limited', errcode }
+      }
+      if (errcode === 40125 || errcode === 41002 || errcode === 41004 || errcode === 40013) {
+        return { ok: false, status: 503, message: '微信登录暂未开通', code: 'wechat_not_configured', errcode }
+      }
+      return { ok: false, status: 502, message: '微信登录失败，请重试', code: 'wechat_exchange_failed', errcode }
+    }
+
+    // openid 形态校验：微信 openid 是 28 位左右的 [A-Za-z0-9_-] 串。
+    // 挡住畸形值再入库 —— ident_hash 一经写入不可改（改 PEPPER=全站失配），
+    // 脏 openid 会变成永久身份污染。
+    if (!/^[A-Za-z0-9_-]{6,64}$/.test(data.openid)) {
+      logger.error(`[auth] jscode2session 返回畸形 openid appid=${appid} len=${data.openid.length}`)
+      return { ok: false, status: 502, message: '微信登录失败，请重试', code: 'wechat_bad_openid' }
+    }
+    return { ok: true, openid: data.openid }
   }
 
   return {
@@ -402,6 +516,77 @@ export function createAuthHandlers(deps) {
       await touchLogin(pool, user.owner_id)
       logger.info(`[auth] 登录成功 ${kind}=${maskAny(kind, value)} owner=${user.owner_id}`)
       return { status: 200, body: await sessionPayload(user.owner_id, null, user.token_version) }
+    },
+
+    /**
+     * ── 微信小程序登录（A1，2026-11-05）────────────────────────────────
+     *
+     *   POST /.cloud/auth/v1/login-wechat
+     *        req  { code, appid }          ← wx.login() 的临时 code + 当前小程序 appid
+     *        resp 同 signin（sessionPayload 结构）
+     *
+     * SDK 侧调用点：`cloud.auth.signInWithWechat(code, appid)`
+     * （@tencent-ai/workbuddy-cloud-sdk，AUTH_PATHS.loginWechat = '/v1/login-wechat'，
+     *  baseUrl = endpoint + '/.cloud/auth' → 完整路径与网关的 A 前缀逐字对齐）。
+     *
+     * 🔴 身份模型的关键决策（0043 迁移头注释同源）：
+     *   owner_id = 'wx:' + openid，**不走 newOwnerId() 的 19 位数字发号**。理由：
+     *     ① 云库小程序用户的业务数据 owner_id 就是这个形态，SDK 注释亦明确
+     *        「session.user.id 为 TCB custom uid：wx: + openid」；
+     *     ② mini/src/lib/auth.ts 的 cacheSession 以 `uid.replace(/^wx:/,'')` 取 openid，
+     *        形态一致则 mini 端零改动；
+     *     ③ 全库 owner_id 列均为 text、无长度/CHECK/uuid 约束（0030-schema.sql
+     *        逐表核对），auth.uid() 亦 RETURNS text → RLS 与 26 个 SECURITY
+     *        DEFINER 函数对 owner_id 形态无感，零改动兼容。
+     *
+     * 安全要点：
+     *   · 限流按 IP（wxLimiterIp）：jscode2session 是我方配额外呼，须挡刷
+     *   · AppSecret 不出日志（见 exchangeWechatCode 的纪律①）
+     *   · openid 畸形值入库前拦下（ident_hash 一经写入不可改）
+     *   · 失败文案不暴露「secret 配错」等内部原因，统一「暂未开通」
+     */
+    async loginWechat(req, res, body) {
+      if (!checkAccessKey(req)) return cloudError(res, 401, 'invalid access key', 'invalid_api_key')
+
+      const code = typeof body.code === 'string' ? body.code.trim() : ''
+      const appid = typeof body.appid === 'string' ? body.appid.trim() : ''
+      if (!code) return cloudError(res, 400, '缺少登录凭证 code', 'invalid_request')
+      if (!appid) return cloudError(res, 400, '缺少 appid', 'invalid_request')
+      // appid 形态：微信小程序 appid 恒为 wx + 16 位小写字母数字。
+      // 提前挡掉畸形值，避免它进入日志与外呼 query。
+      if (!/^wx[0-9a-f]{16}$/i.test(appid)) {
+        return cloudError(res, 400, 'appid 格式不正确', 'invalid_request')
+      }
+
+      const ip = clientIp(req, { trustedProxies: cfg.trustedProxyIps })
+      const rlIp = wxLimiterIp.hit(ip)
+      if (!rlIp.ok) {
+        res.setHeader('retry-after', String(rlIp.retryAfterSec))
+        logger.info(`[auth] 微信登录限流 ip=${ip} retryAfter=${rlIp.retryAfterSec}s`)
+        return cloudError(res, 429, '请求过于频繁，请稍后再试', 'rate_limited')
+      }
+
+      const exchanged = await exchangeWechatCode({ code, appid })
+      if (!exchanged.ok) {
+        return cloudError(res, exchanged.status, exchanged.message, exchanged.code)
+      }
+      const openid = exchanged.openid
+
+      // owner_id 用确定性形态 wx:<openid>（见上方决策注释）
+      const ownerId = `wx:${openid}`
+      const r = await ensureUser(pool, {
+        kind: 'wechat',
+        value: openid,
+        masked: maskWechatOf(openid),
+        pepper: cfg.identPepper,
+        fixedOwnerId: ownerId,
+      })
+      await touchLogin(pool, r.ownerId)
+
+      // token_version：新建为 1；老用户读库内当前值（缺失按 1，与 signin 一致）
+      const ver = r.created ? 1 : (await getTokenVersion(pool, r.ownerId)) ?? 1
+      logger.info(`[auth] 微信登录${r.created ? '建号' : '成功'} appid=${appid} owner=${r.ownerId} ip=${ip}`)
+      return { status: 200, body: await sessionPayload(r.ownerId, null, ver) }
     },
 
     /** ── 新用户注册（verification_token + 标识 + 可选密码）── */

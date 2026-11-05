@@ -25,6 +25,7 @@ import { createIapHandlers } from './iap.mjs'
  * @param {boolean} [deps.enableLlm=true]
  * @param {boolean} [deps.enableIap=true]
  * @param {typeof globalThis.fetch} [deps.fetchImpl] 自测注入（iap 外呼 Apple 用）
+ * @param {typeof globalThis.fetch} [deps.wechatFetchImpl] 自测注入（auth 外呼微信 jscode2session 用；与 fetchImpl 分离，见装配处注释）
  * @returns {{server: http.Server, router: Router, otp: OtpStore, auth: object, llm: object, iap: object, limiters: object}}
  */
 export function createApp(deps) {
@@ -47,7 +48,13 @@ export function createApp(deps) {
   const limiterApi = new RateLimiter({ windowMs: 60_000, limit: cfg.rateLimitPerMin, maxKeys: 100_000 })
   const usageLimiter = new RateLimiter({ windowMs: 86_400_000, limit: cfg.llmDailyCapPerUser, maxKeys: 200_000 })
 
-  const auth = createAuthHandlers({ cfg, pool: gatewayPool, otp, logger, limiterIdent, limiterIp })
+  const auth = createAuthHandlers({
+    cfg, pool: gatewayPool, otp, logger, limiterIdent, limiterIp,
+    // 微信 jscode2session 的外呼注入点。刻意用**独立**的 wechatFetchImpl 而非
+    // 复用 deps.fetchImpl：后者已被 IAP 的 Apple mock 占用，其 mock 只认 Apple URL，
+    // 收到微信 URL 会抛 → 两个自测互相污染。都不注入时 auth.mjs 内回落 globalThis.fetch。
+    ...(deps.wechatFetchImpl ? { fetchImpl: deps.wechatFetchImpl } : {}),
+  })
   const dbProxy = deps.enableDbProxy === false ? null : createDbProxy({ cfg, logger, gatewayPool })
   // LLM 用业务池（dbee_app）：0039 的 llm_gate 只授 dbee_app EXECUTE。
   // gatewayPool 用于 token_version 校验（安全审计①），与业务池分离。
@@ -79,6 +86,9 @@ export function createApp(deps) {
   router.on('POST', `${A}/verification`, wrap(auth.sendVerification))
   router.on('POST', `${A}/verification/verify`, wrap(auth.verifyCode))
   router.on('POST', `${A}/signin`, wrap(auth.signIn))
+  // 微信小程序登录（A1）：SDK AUTH_PATHS.loginWechat='/v1/login-wechat'，
+  // baseUrl=endpoint+'/.cloud/auth' → 完整路径与 A 前缀拼接逐字对齐（2026-11-05 实证）
+  router.on('POST', `${A}/login-wechat`, wrap(auth.loginWechat))
   router.on('POST', `${A}/signup`, wrap(auth.signUp))
   router.on('POST', `${A}/token`, wrap(auth.token))
   router.on('GET', `${A}/user/me`, wrap(auth.userMe))

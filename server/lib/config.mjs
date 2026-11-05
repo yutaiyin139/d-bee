@@ -167,6 +167,20 @@ export function loadConfig(env = process.env) {
     otpResendSec: int(env.OTP_RESEND_SEC, 60),
     otpIpHourLimit: int(env.OTP_IP_HOUR_LIMIT, 20),
 
+    // ── 微信小程序登录凭据（A3，2026-11-05，/v1/login-wechat）────────────
+    // 🔴 试用与正式是**两套独立小程序**（SDK signInWithWechat 注释原文：
+    //   「必须带当前账号的 appid」，mini 端取 Taro.getAccountInfoSync().
+    //   miniProgram.appId），故 secret 必须支持按 appid 配多组：
+    //     WECHAT_MINI_SECRETS="wxAAA=secretA,wxBBB=secretB"
+    //   单组简写 WECHAT_APPID + WECHAT_SECRET 也收，合并进同一张表。
+    //   AppSecret 是 32 位 hex（不含逗号/等号），解析无歧义。
+    // 值只进服务器 /etc/dbee/gateway.env 或 deploy/gateway/.secrets.local，
+    //   不入库。未配置 → login-wechat 返回 503（同 IAP/LLM 模式，不阻止启动）。
+    wechatMiniSecrets: parseWechatSecrets(env),
+    // jscode2session 端点。默认微信官方；可覆盖仅供自测注入 mock。
+    wechatApiBase: (env.WECHAT_API_BASE?.trim() || 'https://api.weixin.qq.com').replace(/\/+$/, ''),
+    wechatTimeoutMs: int(env.WECHAT_TIMEOUT_MS, 10000),
+
     // ── database ───────────────────────────────────────────
     dbHost: env.DBEE_HOST?.trim() || '127.0.0.1',
     dbPort: int(env.DBEE_PORT, 5432),
@@ -304,6 +318,32 @@ export function loadConfig(env = process.env) {
   return cfg
 }
 
+/**
+ * 解析微信小程序凭据 → Map<appid, secret>（A3）。
+ * 两个来源合并（多组优先，单组作补充）：
+ *   · WECHAT_MINI_SECRETS="wxAAA=secretA,wxBBB=secretB"  ← 试用/正式两套小程序
+ *   · WECHAT_APPID + WECHAT_SECRET                        ← 单组简写
+ * 格式非法（缺 =、空值）的条目直接忽略并留待 warnings() 提示，不抛 ——
+ * 凭据未配不应阻止网关启动（login-wechat 端点自返 503，同 IAP/LLM 模式）。
+ */
+export function parseWechatSecrets(env) {
+  const map = new Map()
+  const multi = typeof env.WECHAT_MINI_SECRETS === 'string' ? env.WECHAT_MINI_SECRETS : ''
+  for (const seg of multi.split(',')) {
+    const s = seg.trim()
+    if (!s) continue
+    const eq = s.indexOf('=')
+    if (eq <= 0) continue
+    const appid = s.slice(0, eq).trim()
+    const secret = s.slice(eq + 1).trim()
+    if (appid && secret) map.set(appid, secret)
+  }
+  const appid = env.WECHAT_APPID?.trim() || ''
+  const secret = env.WECHAT_SECRET?.trim() || ''
+  if (appid && secret && !map.has(appid)) map.set(appid, secret)
+  return map
+}
+
 function parseTtlSafe(v, dflt) {
   // 延迟 require 避免循环依赖
   const n = typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.floor(v) : null
@@ -410,6 +450,10 @@ export function warnings(cfg) {
     w.push('APPLE_SHARED_SECRET 未配置 —— 自动续期订阅商品验签会返回 21004（买断商品不受影响）')
   }
   if (cfg.prod && cfg.accessTtlSec > 30 * 86400) w.push('access token 有效期超过 30 天，偏长')
+  // A3：微信小程序凭据未配 → login-wechat 返回 503（小程序微信登录不可用）
+  if (!cfg.wechatMiniSecrets || cfg.wechatMiniSecrets.size === 0) {
+    w.push('WECHAT_MINI_SECRETS / WECHAT_APPID+WECHAT_SECRET 未配置 —— /v1/login-wechat 将返回 503（小程序微信登录不可用）')
+  }
   // 安全审计⑦：生产未配 CORS 白名单 → 提示（不阻断，跨域请求会被拒绝，同源不受影响）
   if (cfg.prod && cfg.corsAllowedOrigins.size === 0) {
     w.push('生产环境未配置 CORS_ALLOWED_ORIGINS —— 所有跨域请求将被拒绝（同源请求不受影响）')

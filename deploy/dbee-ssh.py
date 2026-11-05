@@ -9,6 +9,8 @@
   python dbee.py putdir <本地目录> <远端目录>   # 递归上传目录内容
   python dbee.py putfile <本地文件> <远端文件>  # 上传单个【文本】文件（\r\n→\n 换行归一）
   python dbee.py putbin  <本地文件> <远端文件>  # 上传单个【二进制】文件（不做任何换行替换）
+  python dbee.py getfile <远端文件> <本地文件>  # 【下载】单个文件，原样字节（备份异地副本用）
+  python dbee.py getsudo <远端文件> <本地文件>  # 【下载】需 root 才能读的文件（如 /var/backups/dbee）
 
 占位符替换表（值来自环境变量）：
   __SUDO_PWD__    -> DBEE_PWD
@@ -26,6 +28,7 @@
 """
 import os
 import posixpath
+import shlex
 import stat
 import sys
 import uuid
@@ -242,6 +245,84 @@ def put_bin(client, local_path, remote_path):
     return 0
 
 
+def get_file(client, remote_path, local_path):
+    """【下载】单个文件，原样字节落盘（备份异地副本用）。
+
+    与 put_bin 对称：绝不做换行替换 —— pg_dump -Fc 是二进制归档，
+    一个字节被改写 sha256 就不匹配、pg_restore 直接失败。
+    """
+    parent = os.path.dirname(os.path.abspath(local_path))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    sftp = client.open_sftp()
+    try:
+        sftp.get(remote_path, local_path)
+    finally:
+        sftp.close()
+    size = os.path.getsize(local_path)
+    print(f"[下载] {remote_path} -> {local_path} ({size} B)")
+    return 0
+
+
+def get_sudo(client, remote_path, local_path):
+    """【下载】当前 SSH 用户无读权限的文件（如 /var/backups/dbee，770 root:postgres）。
+
+    做法：sudo cp 到 /tmp 并降权 → sftp 取回 → 无论成败都清掉 /tmp 暂存。
+    🔴 两个安全点（都踩过或差点踩）：
+      ① 密码**不拼进命令行**（`ps` 能看见别人的进程），改为落 700 临时脚本执行，
+         与 run_script 同一模式，并过 assert_no_leaked_secret 自检；
+      ② 暂存文件含真实健康数据（PIPL），finally 里必须删，绝不留在服务器 /tmp。
+    """
+    staging = f"/tmp/dbee-pull-{uuid.uuid4().hex[:8]}"
+    helper = (
+        "#!/usr/bin/env bash\n"
+        "set -e\n"
+        f"SUDO_PWD='{PLACEHOLDER}'\n"
+        # 🔴 两个实测踩过的坑：
+        #   ① cp/chmod/chown 必须在**同一个 sudo 里**——sudo cp 出的文件属 root，
+        #      再以登录用户身份 chmod 会被 "Operation not permitted" 拒；
+        #   ② chmod 600 + 属主 root 会让随后的 sftp 读被 EACCES 拒，
+        #      故须 chown 回登录用户。LOGIN_USER 必须在 sudo **之前**取（进 sudo 后 id -un = root）。
+        "LOGIN_USER=$(id -un)\n"
+        'echo "$SUDO_PWD" | sudo -S bash -c '
+        f'"cp {shlex.quote(remote_path)} {staging} && chown \'$LOGIN_USER\' {staging} '
+        f'&& chmod 600 {staging}" 2>/dev/null\n'
+    )
+    body = render_text(helper)
+    assert_no_leaked_secret(body, "<getsudo-helper>")
+
+    script_remote = f"/tmp/dbee-{uuid.uuid4().hex[:8]}.sh"
+    sftp = client.open_sftp()
+    try:
+        with sftp.file(script_remote, "w") as fh:
+            fh.write(body)
+        sftp.chmod(script_remote, 0o700)
+    finally:
+        sftp.close()
+
+    try:
+        _stdin, stdout, stderr = client.exec_command(f"bash {script_remote}", timeout=600)
+        code = stdout.channel.recv_exit_status()
+        if code != 0:
+            err = stderr.read().decode("utf-8", "replace").strip()
+            print(f"[getsudo] sudo cp 失败 exit={code}: {err}", file=sys.stderr)
+            return 1
+        return get_file(client, staging, local_path)
+    finally:
+        # 🔴 暂存文件是整库 dump（含真实健康档案，PIPL 敏感），用 shred -u 覆写后删，
+        #    不是 rm。已 chown 给登录用户故无需 sudo；shred 失败退回 rm 兜底。
+        #    辅助脚本不含数据，rm 即可。清理尽力而为，绝不掩盖主结果。
+        cleanup = (
+            f"shred -u -n 2 {shlex.quote(staging)} 2>/dev/null || rm -f {shlex.quote(staging)}; "
+            f"rm -f {shlex.quote(script_remote)}"
+        )
+        try:
+            client.exec_command(cleanup)[1].channel.recv_exit_status()
+        except Exception:  # noqa: BLE001 — 连接已断等任何情况都不该掩盖结果
+            print(f"[warn] 远端暂存 {staging} / {script_remote} 未能清理，请手工 sudo shred",
+                  file=sys.stderr)
+
+
 def main():
     action = sys.argv[1]
     # render 是纯本地操作，不需要连服务器
@@ -257,6 +338,10 @@ def main():
             return put_file(client, sys.argv[2], sys.argv[3])
         if action == "putbin":
             return put_bin(client, sys.argv[2], sys.argv[3])
+        if action == "getfile":
+            return get_file(client, sys.argv[2], sys.argv[3])
+        if action == "getsudo":
+            return get_sudo(client, sys.argv[2], sys.argv[3])
         print("unknown action", file=sys.stderr)
         return 2
     finally:

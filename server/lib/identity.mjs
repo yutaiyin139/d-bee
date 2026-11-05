@@ -215,11 +215,16 @@ export async function findUserByOwnerId(pool, ownerId) {
  * @param {boolean} isNewHint 来自 verify 阶段的 isExistingUser；仅用于决定要不要
  *   设 password_hash（邮箱注册路径）。**不作为是否建号的依据** —— 那个由
  *   「查得到就是老用户」决定，避免客户端谎报 isExistingUser 造出重复账号。
+ * @param {string|null} fixedOwnerId 确定性 owner_id（0043 微信路径专用：
+ *   'wx:'+openid，与云库小程序 uid 同构，见迁移头注释）。传入时**不走
+ *   newOwnerId() 发号**，冲突也不换新 id 重试 —— 对确定性 id，「主键撞了但
+ *   按标识回查不到」只可能是数据异常（同 owner_id 挂着别的标识），重试无益，
+ *   直接落入末尾 throw。phone/email 路径不传此参数，行为与从前逐字一致。
  */
-export async function ensureUser(pool, { kind, value, masked, passwordHash = null, pepper, maxRetries = 3 }) {
+export async function ensureUser(pool, { kind, value, masked, passwordHash = null, pepper, fixedOwnerId = null, maxRetries = 3 }) {
   const hash = identHash(kind, value, pepper)
   for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const ownerId = newOwnerId()
+    const ownerId = fixedOwnerId ?? newOwnerId()
     const { rowCount } = await pool.query(
       `INSERT INTO public.app_users (owner_id, ident_kind, ident_hash, ident_masked, password_hash, token_version)
        VALUES ($1, $2, $3, $4, $5, 1)
@@ -234,6 +239,8 @@ export async function ensureUser(pool, { kind, value, masked, passwordHash = nul
     const existing = await findUserByIdent(pool, kind, value, pepper)
     if (existing) return { ownerId: existing.owner_id, created: false }
     // 回查为 null → 是 owner_id 主键冲突（标识并不存在）→ 换个 id 重试
+    // 确定性 id 没有「换一个」的余地：撞主键又查不到标识 = 数据异常，跳出报错
+    if (fixedOwnerId) break
   }
   throw Object.assign(new Error('无法签发 owner_id：连续重试仍冲突'), { status: 500 })
 }

@@ -1,3 +1,11 @@
+-- ═══════════════════════════════════════════════════════════════════════
+-- ⛔ 已废弃（2026-11-05）：本文件是旧「云库 MCP 只读通道」的备份查询，仅作历史留档。
+--    数据面权威源已切到服务器自建 PostgreSQL `dbee`，备份改走两层 pg_dump：
+--      第1层 服务器 cron 每日 03:30 → /var/backups/dbee/*.dump（deploy/dbee-backup.sh）
+--      第2层 本地异地副本 每日 04:30 → db/backups/offsite/*.dump（deploy/pull-latest-backup.py）
+--    现行机制见 db/BACKUP.md。本查询**不再被执行**，勿据此恢复备份。
+-- ═══════════════════════════════════════════════════════════════════════
+--
 -- D-Bee（自律蜜蜂）每日备份查询 —— 单条语句，返回整库逻辑快照
 --
 -- 用途：配合 WorkBuddy 云端 MCP 只读通道执行（applicationId = wbapp_w6iIU6TqTyHvJxESPTxBTy，mode=read），
