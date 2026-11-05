@@ -232,6 +232,21 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
   weight_logs +1（3→4，id=4）、ai_usage +1（29→30，id 至 83）。entitlements 仍 2、exercise_logs 28、profiles 18。
 - 流程：genie-baas 本会话已注册；dump 83,126 字符超限落盘，走「Copy-Item 进工作区 → `.build-from-raw.cjs`」两步，一次通过。
 
+### 2026-11-05 08:55（第 21 次）
+- 结果：**失败**，未产出 `db/backups/2026-11-05.json`（未写空备份、未覆盖历史；今日无同日既有文件）。
+- 原因：与 10-19/10-20/10-25/10-29 同一故障面——`mcp__genie-baas__workbuddy_cloudservice_db_exec_sql`
+  未注册（ToolSearch 精确名只回 `workbuddy_sites_deploy`、3 组关键词无命中；DeferExecuteTool 报
+  not found in deferred tools index）；`workbuddy_cloud_service(inspect)` → `activated:false`/`applications:[]`；
+  `list_installed_plugins` → No connectors installed。
+- 已落 `db/backups/FAILED-2026-11-05.md`（时间、SQL 原文、错误串、8 项通道探测表、保留策略复核、建议）。
+- 通道复核新增确认：本地无 `psql`、无 `node_modules/pg`；`.env` **仅有自托管 `DBEE_*` + LLM/短信/SSH 键**，
+  确无云库连接串 → 无第二合规通道（自托管 dbee 的 pg_hba 拒绝已于 10-29 实测，本次未重复）。
+- 清理：cutoff=2026-10-06，现存 **16 份**每日 json（最早 10-13），过期 0 份。
+- 结论：最后有效快照仍为 **2026-11-04**；备份链本日断 1 天，需在已绑定应用的会话手动补跑。
+- 小失误自纠：FAILED 文件初稿把现存份数写成 17，实测 16，已更正。**写份数前先 `ls *.json | wc -l`，勿凭印象。**
+- **同日 08:56 重复触发**：按既定规则只做最小复测（直接 DeferExecuteTool 精确名），仍 not found，
+  结论不变；已在同一份 `FAILED-2026-11-05.md` 追加「重复触发记录」表格，**未新建文件、未重复全流程排查**。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。

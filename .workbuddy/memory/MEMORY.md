@@ -9,9 +9,9 @@
 > · 📄 **隐私政策静态页**：`npm run build` 会自动跑 `tools/gen-legal-static.mjs` → `dist/legal/{terms,privacy,disclaimer}/index.html`（零 JS 可爬，OPPO 硬要求）。单一真源 = `src/content/legal.ts`；`build:native*` 不生成（原生端不需要）。上线时 `dist/legal/` 须一并部署；nginx 无需改（`try_files $uri $uri/` 的 `$uri/` 命中目录 index）。备案号走 `VITE_ICP_BEIAN`，未传即整块不渲染。
 > · 📄 **法律文案里的 `**强调**` 由两端渲染器各自转 `<strong>`**（11-02 修）：`LegalPage.tsx` 分段渲染（**不用 `dangerouslySetInnerHTML`**）、`gen-legal-static.mjs` 的 `rich()` **先 esc 后 bold（顺序不可颠倒）**；两端同带成对性守卫——`**` 为奇数时**剥星号**降级（保留星号=裸标记露出，奇偶分段=漏标记后正文全被误加粗）。改文案加 `**` 后须验产物 `grep -o '\*\*' | wc -l` = 0。渲染器只认 `p → list` 顺序，`list` 后无法再出段落；且 `DocSection` 只允许**一个** `p` 键（写两个 → TS1117）。
 
-## 进度快照（截至 2026-11-04 上午）
+## 进度快照（截至 2026-11-04 晚）
 
-**已完成**：iOS V1.7.3 已发布+上架就绪核查通过；Web **已发布生产 `http://150.158.51.106/`**（11-03 晚，`verify-live`+`verify-legal` 双 PASS，含 11-02 挂起的 `a977ee4` 一并上线）；Android vc13 验签通过 + vc14 内测包已交付待实测；阿里云真短信上线；ICP 企业备案已进管局；**11-03 全天密集收敛（P0/P1/P2 全项 + 四端一致性）**：苹果端合规 P0 清零（`74aa2bc` AI 显式标识 + 订阅摘要）；四端审计 `19eda78`（对标自律茄子/薄荷，P0~P2 计划）；小程序端 P0 全项 `07a46ca`（配额 fail-closed + AI 标识 9 处 + 免费手动录入 + 文案如实化）+ P1 全项 A~G（`842a879` numfmt 下沉 `@dbee/shared`、分享邀请码闭环、隐私授权门、MAPE 工具、兑换码调研、备案号渲染、在线支付前置清单）；P2 全项（导出置灰如实化、付费墙补永久无广告+积分兑Pro、退款误伤客服 SOP）；**四端一致性定价收敛 `7d61151`**（定价三副本 + 会员状态副本收敛单一真相源）；小程序上线前缺口清单 `b2efdfa`（证伪审计 5 处误判 + 揪 3 项真缺口）+ 阶段0备案口径 `877bd56`。更早条目读当日日志/`git log`。
+**已完成**：iOS V1.7.3 已发布+上架就绪核查通过；Web **已发布生产 `http://150.158.51.106/`**（11-03 晚，`verify-live`+`verify-legal` 双 PASS，含 11-02 挂起的 `a977ee4` 一并上线）；Android vc13 验签通过 + vc14 内测包已交付待实测；阿里云真短信上线；ICP 企业备案已进管局；**11-03 全天密集收敛（P0/P1/P2 全项 + 四端一致性）**：苹果端合规 P0 清零（`74aa2bc` AI 显式标识 + 订阅摘要）；四端审计 `19eda78`（对标自律茄子/薄荷，P0~P2 计划）；小程序端 P0 全项 `07a46ca`（配额 fail-closed + AI 标识 9 处 + 免费手动录入 + 文案如实化）+ P1 全项 A~G（`842a879` numfmt 下沉 `@dbee/shared`、分享邀请码闭环、隐私授权门、MAPE 工具、兑换码调研、备案号渲染、在线支付前置清单）；P2 全项（导出置灰如实化、付费墙补永久无广告+积分兑Pro、退款误伤客服 SOP）；**四端一致性定价收敛 `7d61151`**（定价三副本 + 会员状态副本收敛单一真相源）；小程序上线前缺口清单 `b2efdfa`（证伪审计 5 处误判 + 揪 3 项真缺口）+ 阶段0备案口径 `877bd56`。**11-04 午后～晚间收敛（等备案期工程线 + 软著材料）**：四端一致性护栏 `2174cbe`（`tools/four-end-consistency.test.ts` 6 道 10 项，日期禁 toLocaleDateString / 定价禁硬编码 / 手写舍入快照 / 会员文案走 shared / AI 同意门清单 / 分叉须注释）+ `vite.config.ts` 强制 vitest 串行（**推翻 11-03「有 EPERM 时 exit=1 不假绿」结论**：实测 exit=0 假绿、丢 2 文件 40 项，已修）；四端上线路线图 `18cbc99`（首发建议 **mini**：唯一不依赖软著与 Mac）；技术白皮书（619 行 9 章 2 附录，`docs/自律蜜蜂技术白皮书-2026-11-04.md`，未提交）+ 软著完整材料清单（`docs/软著登记-完整申请材料清单-2026-11-04.md`，未提交）；Word 版白皮书已交付（`自律蜜蜂健康习惯追踪管理软件技术白皮书V1.0.docx`，封面/目录/九章/两附录）。更早条目读当日日志/`git log`。
 **11-02 三项零资质整改闭环**：①小程序付费墙口径收敛 ②隐私政策静态 HTML 直出 ③iOS 管理订阅深链（`b3aab66`+`630ccd3`）；④§4.2 公示按包内实际能力补全（`99a1c52`，**法律文案待用户过目**）。§4.3 AI 显式标识 → **11-03 已解**（`74aa2bc`）：`src/components/AiLabel.tsx`（徽章+行内）接入 `CoachSheet`/`ReportScreen`/`LogSheet`（`isAiDraft()`：photo+text 全标，barcode 仅带 confidence 才标，manual/纯扫码不标）+ `legal.ts` 四之一补标识条款；同批补 `PaywallSheet` 订阅摘要块（周期+商店真实价+24h 续订+取消路径）。**主端代码合规 P0 已清零**。依据《标识办法》国信办通字〔2025〕2号 **2025-09-01 已施行**（我此前误记 2026-09-01）。总闸门视图见 `docs/苹果端上线前置条件总清单-2026-11-03.md`。
 
 **11-03 下午：四端审计 + 小程序 P0-A~E 全部执行完**（审计 `19eda78`、执行 `07a46ca`，均已推）。审计文档 `docs/四端一致性与商业化优化-审计与实施计划-2026-11-03.md`；细节与逐条理由读 `2026-11-03.md`。**只改 `mini/`、主端零改动**（验证 `git status --porcelain -- src/ server/ packages/ db/` 为空）。三条最易踩的坑：① 小程序 `getPhotoQuota` **与主端故意不同**——主端 throw，本端返回 `degraded` 标记不抛（调用点是 `Promise.all` 并发，抛异常会让整屏数据一起变空）；`degraded` 让 UI 分开「服务降级」（不弹付费墙）与「额度用尽」。② `releasePhotoQuota` 返回 `boolean`（主端仍 `void`）**是有意超集**——识别失败必须退还预占额度（否则违反「识别成功才扣次数」），退还可能失败，UI 须按真实结果措辞。③ `checkin.tsx` 是**无入口孤儿页但不可删**（已注册 → 小程序码/分享路径可直达）；手动录入正式实现在首页内联弹层。**验证**：mini tsc src/ 错误 0、`build:weapp` 成功（896K < 2MB）；主端回归 tsc 0 + 逐文件 vitest **47/47 全绿**。
@@ -28,6 +28,7 @@
 >   「事后更正」是兜底，「事前不越界记载」才是做法。
 
 **下一步（上架前主线）**
+-2. 🟠 **软著材料已备但卡 AI 条款红线（11-04）**：白皮书 + 完整申请材料清单已产出（`docs/`，2 份**未提交**），但版权中心要求经办人亲笔手抄「未用 AI」承诺、说明书须用户亲写 → 提交前须用户本人致电版权中心问口径。另两处待提交：白皮书 + 材料清单尚未 commit。
 -1. ✅ **P1 全部落地（11-03）**：审计文档 P1-A~P1-G 七项 + #15 回迁可控准备均已执行完（详见 `2026-11-03.md`）。P1-A numfmt 已下沉 `@dbee/shared`（`842a879`），mini 端营养素精度已对齐主端 2 位小数。**剩三项全部被外部资质阻断**：P1-C 实测等真机+样本餐；P1-D 支付实装等商户号（清单已出，含 🔴 核销时序坑）；#19 回迁切换等 ICP 备案（开关代码已就位）。**P2 也已全项执行完（11-03 晚）**：P2-A 导出置灰/P2-C 积分兑Pro曝光/P2-D 文案/P2-F 退款SOP；仅 P2-B `foodInsight` 双实现合并（2-3d 重构）留待。
 0. 🔴 移动号段收不到验证码=`PORT_NOT_REGISTERED` → 用户在阿里云控制台「签名管理→运营商报备结果」补报备（5–7 工作日）；期间移动用户走密码登录。
 1. Mac/Xcode 真机实证整改 #1~#5 + 红屏修复 `5d9de96`（Windows 编不了 Swift）。
@@ -57,7 +58,7 @@
   二者都不能靠 grep 自动判定，靠「一端命中、另一端 0 命中」这个信号 + 人工定性。
   📌 定性时必须**查全端**不能只看同名文件：`mini/src/pages/profile/profile.tsx:6` 注释就明说了趋势图刻意改列表。
 
-**版本/git**：commit 流水不入记忆，一律 `git log`；同步态一律 `git status -sb`（本行原先写死了 HEAD 哈希，违反自己上面那条纪律，11-04 已改）。
+**版本/git**：commit 流水不入记忆，一律 `git log`；同步态一律 `git status -sb`（本行原先写死了 HEAD 哈希，违反自己上面那条纪律，11-04 已改；11-05 再次移除残留的 HEAD 哈希——写死即过时，且「未提交清单」属 `git status` 的职责）。**待用户过目后才提交**：`docs/自律蜜蜂技术白皮书-2026-11-04.md` + `docs/软著登记-完整申请材料清单-2026-11-04.md`（软著材料，须用户本人致电版权中心确认 AI 条款口径）。
 - 🔴 **改任何跨端逻辑前先跑 `npx vitest run tools/four-end-consistency.test.ts`**（11-04 新建，6 道护栏 10 项）：
   日期 `toLocaleDateString` 禁用 / 定价硬编码禁用 / 手写舍入快照基线 7 处 / 会员文案必走 shared `memberSubText` /
   AI 同意门无门清单快照 4 页（调 AI 页面总数 8）/ 刻意分叉处必须留说明注释。
@@ -124,7 +125,7 @@ Capacitor 8.5.3 混合壳；React18+Vite5+TS；Windows 出 Android、Mac mini M4
 ## 数据面与部署现状（详版见 REFERENCE.md）
 
 - **泳道 A（10-23 闭环）**：`150.158.51.106` nginx + dbee-gateway（:8080）+ PostgREST（:3001）+ PG 17.11；`/.cloud/**` 全走自托管；PG 监听已收 localhost。
-- Web 已切自建 PG；Android/iOS/小程序仍走云库；自建网关唯一缺口=无 `/v1/login-wechat`（🔴 回迁当天须补，响应体要与 `auth.mjs:162-187` 的 `sessionPayload` 同构，否则 SDK `parseSession` 失败；⚠️ `config.mjs` grep `appid` 命中的是 `SMS_TENCENT_SDKAPPID`（腾讯云短信），**不是**微信 appId，别误判「已配好」）。切换时机=备案→A 记录→HTTPS→三端指 `https://d-bee.cn`；**欠账=`0043-data-sync-final.sql`** + 身份映射 + 186****4728 分裂账号修复。
+- Web 已切自建 PG；Android/iOS/小程序仍走云库；自建网关的 `/v1/login-wechat` **代码已补齐**（11-05 `c0224fc`：`app.mjs:91` 挂路由 + `auth.mjs:301 exchangeWechatCode`，响应体与 `auth.mjs` 的 `sessionPayload` 同构，`tools/wechat-login-selftest.mjs` 66 项全过含幂等/建号/错误分类）。**剩余欠账 = ① 生产网关尚未部署**（`deploy/*.py|*.sh` 零涉及 wechat，须走手术式脚本，**绝不跑 `deploy-gateway.sh`**）+ **② 迁移 `0043` 服务器待执行**（`ident_kind` CHECK 扩 `wechat`，不扩则 INSERT 必被 23514 拒）+ ③ `.env`/`.secrets.local` 配 `WECHAT_MINI_SECRETS`（未配则端点自返 503，不阻止启动，同 IAP/LLM 模式）+ 身份映射 + 186****4728 分裂账号修复 + `0043-data-sync-final.sql`。切换时机=备案→A 记录→HTTPS→三端指 `https://d-bee.cn`。⚠️ `config.mjs` grep `appid` 命中的是 `SMS_TENCENT_SDKAPPID`（腾讯云短信），**不是**微信 appId，别误判「已配好」。
 - PIPL：`0030-full-selfhost-mirror.sql` 含真实健康档案**不入库**（gitignore）；0030 已含 0025~0028 变更，勿盲跑 0025~0029。
 - 支付链路：Apple 验签在 Node 网关（`server/lib/iap.mjs`）+ Notifications V2 + `0037` 三函数；自测 `tools/iap-selftest.mjs` 47 项。
 - 短信：aliyun RPC + HMAC-SHA1 手写签名；🔴 签名口径=「北京迪蜂科技有限公司」不是「自律蜜蜂」；凭据在 `.secrets.local`。
@@ -143,7 +144,7 @@ Capacitor 8.5.3 混合壳；React18+Vite5+TS；Windows 出 Android、Mac mini M4
 - 会员/IAP：三档 free/pro/lifetime；Apple 个人账号已过；Android 企业账号已注册；iOS 本地 StoreKit 测试就绪。
 - 多端小程序：Taro 4.3.0 双工程 + `packages/shared`；mini tsconfig 需 `moduleResolution:"bundler"`。
 - 健康数据源：连接真源=云端 `health_connected`；「企业账号已注册」≠「应用已上架华为市场」。
-- 微信：暂缓（`WECHAT_LOGIN_ENABLED` 改回 true 即启用）；移动应用 code 需 `sns/oauth2/access_token` 不可混用 jscode2session。
+- 微信：Web/原生扫码登录暂缓（`WECHAT_LOGIN_ENABLED=false`，营业执照相关）；**小程序侧是另一条链路、不受该开关影响**（mini 独立 Taro 工程不 import `src/lib/wechat.ts`，走 `wx.login()`→`/v1/login-wechat`，启停看网关 `WECHAT_MINI_SECRETS` 而非该开关）。移动应用 code 需 `sns/oauth2/access_token` 不可混用 jscode2session。
 
 ## 过审合规
 
@@ -158,6 +159,10 @@ Apple 4.2 / 3.1.1 / 5.1.1(v) / AI 告知同意；中国：ICP 备案、App 备�
 **文档维护**：可执行文档直接更正；历史快照只加横幅不改正文；代码加护栏时文档同步改。
 **提交前凭据扫描（11-02 踩坑两次后固化）**：①必须查**索引版本** `git show ":$f"`（`git diff --cached` 会含被删旧行 → 假阳性）；②手机号正则必须**带数字边界** `(^|[^0-9])1[3-9][0-9]{9}([^0-9]|$)` —— 19 位雪花 owner ID（如 `2111301028417638400`）的子串会裸匹配 `13010284176`，无边界正则每次都会误报；命中后先看上下文再判断，别无脑改文件。
 **自检判据纪律（11-02 教训）**：任何「产物自检」命令写进手册前，必须在**干净构建的真产物**上实跑，且要能区分合法产物与异常产物。曾因未验证就把「index-*.js >1 个 = 构建残留」写进 Mac 手册，实际干净构建本就有 2 个（另一个是入口动态 import 的稳定 chunk）→ 错误判据比没有判据更危险（会让人反复 rm -rf 重打仍「不通过」）。
+🔴 **写护栏的两条铁律（11-05 红验证实测抓出我自己护栏的 2 个假绿漏洞）**：① **一个 `it()` 只放一条断言** —— 多断言挤一个 it 时首条失败即抛出，后续断言**根本不执行**，表现为「测试通过了」但那条从未被验证（实测删掉 `name==='d-bee'` 校验却没报红，只因同 it 里 version 断言先失败）。② **存在性断言必须匹配「实际使用」而非「标识符出现」** —— `/LegalLinks/` 会命中 import 行，把 JSX 换成 `<View/>` 却留 import，护栏照样绿；改匹配 `/<LegalLinks[\s/>]/`。📌 **新增护栏也必须做红验证**（注入违规→确认精准报红→立即 `cp` 恢复→`git diff` 确认干净），其真正价值是抓出「自己写的护栏本身是假绿」。
+🔴 **产物/文案核查：grep 中文恒假阴性**（webpack/Taro 把中文转义成 `\uXXXX`）→ 必须先 `t.encode('utf-8').decode('unicode_escape', errors='ignore')` 再搜；同理**日期正则要容空格**（源码是 `'2026 年 10 月 29 日'`，用 `2026年10月29日` 搜会漏掉最关键证据）；`mailto:` 在产物里是模板串运行时拼接，grep 完整字面量亦 0 命中。**据此判「没编译进去/产物是旧的」必错**。📌 微信开发者工具的「编译」**不跑 Taro 构建**，只重载 `dist/`；改完源码须先 `cd mini && npm run build:weapp`。
+🔴 **`npm run build:web` 会删掉 `dist/legal/` 静态法务页**（只跑 `vite build`，清空 dist 后不再生成）。这些页是商店/OPPO 隐私爬虫要直接抓的（`privacyConsent.ts:40`「不需登录、不需点击、不需再跳转」），丢了被判「url 无法访问」。→ **即使只验证编译也别用 `build:web`**：验证用 `tsc --noEmit`，要产物用完整 `npm run build`（末尾 `gen-legal-static.mjs` 出 3 份）。
+**法律日期 `UPDATED` 语义 = 文档正文最后一次实质改动日**，不是「今天动过这个文件」更不是发版日；改注释/改 `SITE` 字段不该刷新它，否则等于谎称协议内容变过。两端日期**刻意不同**（正文本就分叉：主体表述、第三方 SDK 公示、AI 功能名都不同），强行对齐反而造假。📌 主端 `LEGAL_UPDATED` 驱动隐私同意版本比对（`privacyConsent.ts:29`）→ 改值 = **生产全体老用户重弹同意窗**，属产品决策不可自动改；mini 不依赖该日期（走微信原生 `ensurePrivacyAuthorized`），改它零副作用。
 **记忆维护**：commit 流水不入 MEMORY.md；只存结论/铁律/决策/坑/权威口径；体积压到 ~10KB（超过注入截断）；细节移 REFERENCE.md。
 
 ## 环境备忘
@@ -176,10 +181,12 @@ Apple 4.2 / 3.1.1 / 5.1.1(v) / AI 告知同意；中国：ICP 备案、App 备�
   - ✅ **已修：`vite.config.ts` 加 `test.fileParallelism = false`**。写在配置而非 npm script，
     这样 `npx vitest run xxx`、IDE 测试按钮也都串行。代价 15.9s vs 9.4s。
     📌 `rm -rf node_modules/.vite` **无效**（清缓存后并行照旧假绿）；重定向 TMPDIR 亦无效。
-  - **当前基线 190 = 10 文件**（four-end-consistency 10 + numfmt 30 + mini-profile-member 28 + mini-invite-link 31 + ai-mape 28 + iap-checkout 9 + price-single-source 18 + mini-backend-switch 22 + report-ratio 8 + mini-report-ratio 6）。
+  - **当前基线 197 = 10 文件**（four-end-consistency 17 + numfmt 30 + mini-profile-member 28 + mini-invite-link 31 + ai-mape 28 + iap-checkout 9 + price-single-source 18 + mini-backend-switch 22 + report-ratio 8 + mini-report-ratio 6）。
   - 🔴 **每次跑完必核对 `Test Files` 数 == `ls -1 tools/*.test.ts | wc -l`**，少一个就是有文件被吞。
   - 🔴 **别用 shell 循环累加求和**（11-03 实测 `$((total+n))` 出 bug 显示 14），逐文件读数后用 python 复算。
 - 🔴 **mini 端类型检查须单独跑且带 `--skipLibCheck`**：根 `tsconfig.json` 的 include 只有 `["src","vite.config.ts"]`，**不覆盖 `mini/`** → `npm run typecheck` 通过 ≠ mini 无误。mini 自己的 tsconfig 无 skipLibCheck，裸跑会被 `node_modules/@tarojs/components` 的 `CommonEventFunction` 噪音淹（exit=2 但与自有代码无关）。正确姿势：`cd mini && npx tsc --noEmit --skipLibCheck -p tsconfig.json`。
 - 🔴 **构建期护栏必须写在构建配置里，不能指望被打包的业务代码**（11-03 实测教训）：webpack **不执行**被打包模块的顶层代码，故 `mini/src/lib/backend.ts` 的 throw 只在小程序启动时触发，误配的包照样 `build:weapp` exit=0 发出去。修法 = 在 `mini/config/index.ts`（Node 构建期执行）里调**同一个** `resolveBackendTarget()`，两层复用同一函数不漂移。主端同构：`vite.config.ts:14-25` 构建期 + `cloudConfig.ts:109-112` 运行时。
 - 🔴 **MAPE 达标 ≠ 无需处理**：单看 MAPE 会误导决策，必须四指标并报（MAPE 排除真值 0 且显式计数 / WMAPE 抗小真值放大 / MAE 带单位 / **Bias 有符号**）。判据 `tools/ai-mape/mape.ts`：MAPE>15% 且 |Bias|/MAPE≥0.6 → systematic（先改 prompt）；<0.6 → random（考虑换模型）；**MAPE≤15% 但 |Bias%|>10 仍判 systematic**（11-03 用模板样本实测揪出的真 bug：热量 MAPE 12.76% 判达标而 Bias -17.29%，减脂产品系统性低估热量会累积成用户减脂失败，且该状态不该做精度营销）。工具已就绪，**实测需真机+样本餐（≥20 条、覆盖 4 热量档），在此之前不得对外表述任何精度数字**。
-- 微营养素：foodsData*.ts 已 10 列化（1175 条零兜底）；`db/.tmp-backup.sql` 临时备份不入库。
+- 微营养素：foodsData*.ts 已 10 列化（**1180 条**零兜底；core 359 + fresh 335 + dishes 486，11-04 跑真实 `parse()` 复算，旧记「1175」已过时）；`db/.tmp-backup.sql` 临时备份不入库。
+- 🔴 **限流口径文档与代码不一致（11-04 发现，待修）**：`packages/shared/src/rules/index.ts:8` 注释称「AI 文字问答免费用户 1 分钟最多 3 次防刷」，但 `server/lib/llm.mjs` 检索 `60_000`/`60000` **零命中** = **不存在任何分钟级限流器**；实际是 `textLimiter` **50 次/日**。三个限流器默认值 **200/50/8**（`config.mjs:223,228,238`；`usageLimiter` 定义在 **`app.mjs:48`** 后注入 llm.mjs，不在 llm.mjs 内）。→ 对外文案/白皮书引用限流口径前**必须查代码不查注释**；该注释待改或补回分钟级限流。
+- 📌 **开源授权类型必须实读 `package.json` license 字段**（11-04 白皮书初稿写错 2 处）：`@capgo/capacitor-wechat` = **MPL-2.0**（非 MIT，文件级 copyleft；仅经插件接口调用不改源码则不触发开源义务）、`zxing-wasm` = **MIT**（非 Apache-2.0）。

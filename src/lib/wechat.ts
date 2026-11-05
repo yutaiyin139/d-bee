@@ -23,9 +23,12 @@
  *   微信小程序 —— 又是第三条路：小程序里既没有 `location.assign` 扫码回流，
  *           也没有移动应用 SDK，而是 `wx.login()` 拿临时 code，云端走 jscode2session
  *           换会话（这正是 cloud.auth.signInWithWechat(code, appid) 原生支持的场景）。
- *           当前总开关 WECHAT_LOGIN_ENABLED=false，小程序端登录一并关闭；
- *           未来接小程序时，在 isWechatLoginAvailable() 里增加 isWechatMiniProgram()
- *           分支即可，不影响 Web / 原生两条既有路径。
+ *           🔴 **本文件与本开关对小程序端完全无效**：mini 是独立 Taro 工程，
+ *           不 import `src/lib/wechat.ts`，其登录走自己的 `mini/src/lib/auth.ts`
+ *           → `signInWithWechat(code, appid)` → 自建网关 `/v1/login-wechat`
+ *           （A1 已于 2026-11-05 补齐，自测 `tools/wechat-login-selftest.mjs` 66 项）。
+ *           即：**改 WECHAT_LOGIN_ENABLED 不会启用也不会关闭小程序登录**，
+ *           想启停小程序侧请看 mini 工程与网关凭据（`WECHAT_MINI_SECRETS`），别改这里。
  *
  * ── 原生路径的前置条件（四条缺一不可）────────────────────────────────
  *   1. 微信开放平台「移动应用」审核通过，拿到 AppID
@@ -100,8 +103,9 @@ function getPlugin(): WechatPlugin | null {
  */
 export function isWechatLoginAvailable(): boolean {
   if (!WECHAT_LOGIN_ENABLED) return false
-  // 微信小程序：走 wx.login + jscode2session（规划中），当前总开关关闭故不会到达；
-  // 未来启用时在此用 isWechatMiniProgram() 分流，避免小程序误走下方「Web 扫码」分支。
+  // 🔴 本函数只服务 Web 与原生（Capacitor）两端。小程序是独立 Taro 工程、不 import 本文件，
+  //   其入口可见性由 mini 自己的页面决定 —— 故这里**不需要也不应该**加 isWechatMiniProgram() 分支。
+  //   （历史注释曾计划在此分流小程序，实测 mini 与本文件零耦合，该计划已作废，留此防再走弯路。）
   if (!isNative()) return true
   if (!NATIVE_CODE_EXCHANGE_SUPPORTED) return false
   if (!wechatAppId()) return false
