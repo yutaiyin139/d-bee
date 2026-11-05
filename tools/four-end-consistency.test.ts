@@ -339,3 +339,165 @@ describe('护栏 6 · 刻意分叉清单必须有说明注释（防被「顺手�
     ).toBe(true)
   })
 })
+
+/**
+ * 护栏 7 · 合规公示可达性与版本号同源（2026-11-05 新建）。
+ *
+ * 起因：用户反馈「小程序端没有用户协议、隐私政策、免责声明和版本信息」。查证后发现
+ * 事实更细：三份文档 mini **一直都有**（pages/legal + profile「关于」卡片入口），
+ * 但存在三个真实缺口 —— 这正是「一致性问题的第三类：功能覆盖差异」的典型样本，
+ * 与护栏 3 注释里记录的体重文案缺口同源同类，故必须同样落成机器护栏。
+ *
+ * 三个缺口的性质各不相同，修法也不同：
+ *  ① 登录前不可达 —— mini 三份文档只挂在「我的 → 关于」下，而该页登录后才可达；
+ *     未登录时首页渲染 auth gate（仅标题+描述+登录按钮），login 页零协议文案。
+ *     用户注册前看不到隐私政策 = 违反 PIPL 第 17 条「处理前以显著方式告知」。
+ *     主端 AuthScreen 就渲染了 SiteFooter，属明确覆盖差异 → 补 LegalLinks 组件。
+ *  ② 版本信息缺失 —— mini 的 SITE.version 写死 '1.6.9'（既非 mini/package.json 的
+ *     0.1.0 也非产品版本 1.7.3），因无单一真相源，legal.tsx 干脆「刻意不渲染」，
+ *     结果是 mini 全端不展示版本 → 改为构建期注入 __APP_VERSION__（与主端同源）。
+ *  ③ 失实指引 —— 两端注销提示都写「请通过『关于 → 联系我们』与客服联系」，
+ *     而该入口两端都不存在（web 连「关于」区块都没有）→ 两端补真实「联系我们」入口。
+ *
+ * ⚠️ 本护栏**不**断言法律日期与最后提交日的关系（见下方 it 的说明）。
+ */
+describe('护栏 7 · 合规公示可达性与版本号同源', () => {
+  it('🔴 mini 登录前必须可达法律文档（auth gate 与 login 页都要有入口）', () => {
+    // 两个页面都要查：login 由 navigateTo 独立打开，不是首页的同一棵渲染树。
+    // 只补一处仍会留缺口 —— 用户可能停在 auth gate，也可能直接进 login 页。
+    const gate = byPath('mini/src/pages/index/index.tsx')!
+    const login = byPath('mini/src/pages/login/login.tsx')!
+
+    // 🔴 必须匹配 **JSX 使用**（`<LegalLinks`），不能只匹配标识符 `LegalLinks`。
+    // 2026-11-05 红验证踩过：把 <LegalLinks /> 换成 <View /> 但留下 import 行，
+    // /LegalLinks/ 照样命中 → 护栏假绿。加了未使用 = 等于没加。
+    for (const f of [gate, login]) {
+      expect(
+        /<LegalLinks[\s/>]/.test(f.code),
+        `${f.path} 缺少 <LegalLinks /> 的**实际渲染**（仅有 import 不算）—— ` +
+          '登录前不可达隐私政策属 PIPL 第 17 条违规，不是「可以后补」的体验优化项',
+      ).toBe(true)
+    }
+
+    // login 页的 LegalLinks 必须在 !session 三元**之外**，否则已登录态看不到入口
+    const idx = login.code.indexOf('<LegalLinks')
+    const branch = login.code.indexOf('{!session ? (')
+    expect(
+      idx > 0 && branch > 0 && idx > branch,
+      'login.tsx 的 <LegalLinks /> 必须在登录态条件分支之外（放分支内会漏掉一种状态）',
+    ).toBe(true)
+  })
+
+  it('🔴 LegalLinks 必须是单一组件，两端页面不得各写一份文案副本', () => {
+    const comp = byPath('mini/src/components/LegalLinks.tsx')
+    expect(comp, 'mini/src/components/LegalLinks.tsx 不存在 —— 入口组件被删了？').toBeTruthy()
+
+    // 三份文档的标签只允许出现在 LegalLinks 组件与「关于」卡片里。
+    // 若某天有人在新页面又手写一遍「用户协议/隐私政策/免责声明」三个链接，
+    // 就出现了第二份文案副本（护栏 4 防的正是这种漂移），本断言会红。
+    const LABELS = ['用户协议', '隐私政策', '免责声明']
+    const dup = LOADED.filter(
+      (f) =>
+        f.path.startsWith('mini/src/') &&
+        LABELS.every((l) => f.code.includes(l)) &&
+        f.path !== 'mini/src/components/LegalLinks.tsx' &&
+        f.path !== 'mini/src/pages/profile/profile.tsx' && // 「关于」卡片：登录后的正入口
+        f.path !== 'mini/src/content/legal.ts', // 文档标题定义处
+    ).map((f) => f.path)
+
+    expect(
+      dup,
+      `以下文件自行硬写了三份法律文档入口（应复用 LegalLinks 组件，避免文案副本漂移）：${dup.join(', ')}`,
+    ).toEqual([])
+  })
+
+  // 🔴 以下三条**刻意拆成独立 it**，不合并。2026-11-05 红验证实证：合成一个 it 时，
+  // 首条断言失败即抛出，后续断言根本不执行 —— 当时删掉 config 的 name 校验，
+  // 测试却因 version 断言先红而「看起来通过了」，那条 config 断言的有效性无从证明。
+  // 拆分后每条独立报红，才谈得上「有侦测力」。
+  it('🔴 两端 SITE.version 必须走构建期注入，禁止写死版本字面量', () => {
+    // 单一真相源 = 项目根 package.json 的 version。主端 vite.config.ts:64 与
+    // mini/config/index.ts 的 defineConstants 都注入同名 __APP_VERSION__。
+    // 写死字面量正是「package.json 已升版、界面还显示旧版本」的成因（见 vite.config.ts:55-58）。
+    for (const p of ['src/content/legal.ts', 'mini/src/content/legal.ts']) {
+      const f = byPath(p)!
+      expect(
+        /version:\s*__APP_VERSION__/.test(f.code),
+        `${p} 的 SITE.version 必须写 __APP_VERSION__（构建期注入），不得写死版本号字面量`,
+      ).toBe(true)
+    }
+  })
+
+  it('🔴 mini/config 必须真实注入 __APP_VERSION__（否则编译后是 undefined）', () => {
+    const cfg = stripComments(readFileSync(join(ROOT, 'mini', 'config', 'index.ts'), 'utf8'))
+    expect(
+      /__APP_VERSION__:\s*JSON\.stringify/.test(cfg),
+      'mini/config/index.ts 缺少 __APP_VERSION__ 的 defineConstants 注入 —— ' +
+        'SITE.version 编译后会变成未定义标识符，界面显示异常',
+    ).toBe(true)
+  })
+
+  it('🔴 mini/config 解析版本号必须校验 name==="d-bee"（防误读 mini/package.json 的 0.1.0）', () => {
+    const cfg = stripComments(readFileSync(join(ROOT, 'mini', 'config', 'index.ts'), 'utf8'))
+    // 根 package.json 的 name 是 'd-bee'、version 是产品版本（1.7.3）；
+    // mini/package.json 的 name 是 'd-bee-mini'、version 是 0.1.0（小程序包自身版本）。
+    // 少了这道校验，候选路径一旦命中 mini 自己的包，就会向用户展示 0.1.0 —— 错版本号比不显示更糟。
+    expect(
+      /name\s*===\s*['"]d-bee['"]/.test(cfg),
+      'mini/config/index.ts 解析版本号时未校验 package.json 的 name==="d-bee" —— ' +
+        '可能误读 mini/package.json 拿到 0.1.0，向用户展示错误版本号',
+    ).toBe(true)
+  })
+
+  it('🔴 两端必须有真实「联系我们」入口，且不得再出现指向不存在入口的文案', () => {
+    // ① 入口必须真实存在（两端都要有字面标签「联系我们」的可点元素）
+    expect(
+      /联系我们/.test(byPath('src/components/SiteFooter.tsx')!.code),
+      'web 页脚缺少「联系我们」入口 —— 注销提示与法律正文都在指路到它',
+    ).toBe(true)
+    expect(
+      /联系我们/.test(byPath('mini/src/pages/profile/profile.tsx')!.code),
+      'mini「关于」卡片缺少「联系我们」入口 —— 注销提示与法律正文都在指路到它',
+    ).toBe(true)
+
+    // ② 失实指引不得复活：「关于 → 联系我们」这个路径两端都不存在
+    //    （web 无「关于」区块；mini 的「关于」卡片里也没有二级路径）
+    const bad = LOADED
+      .map((f) => ({ path: f.path, lines: hits(f.code, /关于\s*→\s*联系我们/) }))
+      .filter((x) => x.lines.length > 0)
+      .map((x) => `${x.path}:${x.lines.join(',')}`)
+
+    expect(
+      bad,
+      `以下位置的用户可见文案指向不存在的「关于 → 联系我们」路径（注释里提及不算，` +
+        `本断言已剥离注释）：${bad.join(', ')}`,
+    ).toEqual([])
+  })
+
+  // 🟡 刻意**不做**「UPDATED 日期不得早于文件最后提交日」的自动断言。
+  //
+  // 原因（2026-11-05 查证）：主端 LEGAL_UPDATED 被 src/lib/privacyConsent.ts:29 用于
+  // 隐私同意版本比对 —— `kvGet('privacy.agreed') === LEGAL_UPDATED`，日期一变，
+  // **全体老用户下次启动都会重新弹隐私同意窗**。这在 PIPL 第 14 条下是正确的
+  // （处理个人信息种类变化时应重新取得同意），但它是有真实用户影响的产品决策，
+  // 不该由一条测试在 CI 里自动「修好」。
+  //
+  // 当前已知状态（人工核对，非自动断言）：
+  //   src/content/legal.ts       UPDATED=11-02，文件最后实质改动 11-03 09:54（74aa2bc，
+  //                              补 AI 生成内容标识条款）→ **偏早 1 天，待产品决策**
+  //   mini/src/content/legal.ts  UPDATED=11-03，最后实质改动 11-03 12:35（07a46ca）→ 已校正
+  // mini 端不依赖该日期做门控（走微信原生 ensurePrivacyAuthorized），故改动零副作用。
+  //
+  // 改任一端日期前必须先读 privacyConsent.ts，确认是否要触发重新同意。
+  it('两端 legal.ts 必须留有关于 UPDATED 语义的说明注释（防被当普通常量随手改）', () => {
+    for (const p of ['src/content/legal.ts', 'mini/src/content/legal.ts']) {
+      const f = byPath(p)!
+      // mini 侧要求写明「最后实质改动日」语义；主端要求写明它与隐私同意门控的联动。
+      expect(
+        /最后.*改动|最后更新|重新.*同意|privacyConsent|门控|版本比对/.test(f.raw),
+        `${p} 缺少 UPDATED 语义说明 —— 主端该常量驱动隐私同意重新弹窗，` +
+          '随手改会让全体老用户重新同意，必须留注释警示',
+      ).toBe(true)
+    }
+  })
+})

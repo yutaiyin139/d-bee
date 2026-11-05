@@ -17,6 +17,7 @@ import {
 } from '../../lib/api'
 import { Sheet } from '../../components/Sheet'
 import { AiLabel } from '../../components/AiLabel'
+import { LegalLinks } from '../../components/LegalLinks'
 import {
   EXERCISES, exerciseKcal, formatDateShort, guessMealType, shiftDate,
   todayKey, waterTargetMl,
@@ -576,6 +577,17 @@ export default function Index() {
           <Text className='auth-title'>自律蜜蜂</Text>
           <Text className='auth-desc'>登录后记录你的每一餐，热量与营养一目了然。</Text>
           <Button className='btn-primary' onClick={goLogin}>登录 / 注册</Button>
+          {/*
+            🔴 登录前的法律文档入口（合规必修，2026-11-05）。
+            此前本页未登录时只有标题 + 描述 + 登录按钮，三份法律文档仅挂在
+            「我的 → 关于」下，而「我的」页登录后才可达 → 用户注册前看不到隐私政策，
+            违反《个人信息保护法》第十七条「处理前以显著方式告知」。
+            主端 AuthScreen.tsx:551 在登录页就渲染 SiteFooter，本次补齐这一覆盖差异。
+            文案刻意**不写**「登录即表示你已同意」：那是默示同意声明，PIPL 下对
+            个人信息处理存在争议，也与本项目「文案如实化」纪律相悖（P0-C 已清过一批
+            虚假承诺）。此处只做中性告知，不替用户宣称其已同意。
+          */}
+          <LegalLinks hint='注册或登录前，请阅读以下协议与政策' />
         </View>
       </View>
     )

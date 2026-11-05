@@ -1,0 +1,59 @@
+// 登录前法律文档入口样式（对齐主工程 src/styles.css .site-footer / .site-footer-links，
+// px → rpx 按 1px = 2rpx 换算；tokens.scss 已由 config/index.ts sass.resource 全局注入）
+
+.legal-links {
+  margin-top: 40px;
+  text-align: center;
+
+  .legal-links-hint {
+    display: block;
+    font-size: 22px;
+    line-height: 1.7;
+    color: $ink-3;
+    margin-bottom: 8px;
+  }
+
+  .legal-links-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .legal-links-item {
+    display: flex;
+    align-items: center;
+  }
+
+  .legal-links-dot {
+    font-size: 22px;
+    color: $ink-3;
+    margin: 0 10px;
+  }
+
+  // 可点击：蜂蜜深色 + 下划线，与主端 .btn-text 的链接语义一致。
+  // 🔴 不用 $blue（主端链接色）—— 本项目链接态统一走 $honey-dark，见 legal.scss
+  //    .legal-icp-num 的既有实现，两处口径必须一致，否则同一份法律文案里
+  //    「备案号」和「用户协议」看起来不像同一类可点元素。
+  .legal-links-text {
+    font-size: 24px;
+    line-height: 1.7;
+    color: $honey-dark;
+    text-decoration: underline;
+    padding: 6px 2px;   // 扩大点击热区（微信建议 ≥ 44px 见方，此处靠 padding 补足）
+  }
+}
+
+// 紧凑形态：登录页底部空间紧，缩小上边距与字号
+.legal-links--compact {
+  margin-top: 28px;
+
+  .legal-links-hint {
+    font-size: 20px;
+  }
+
+  .legal-links-dot,
+  .legal-links-text {
+    font-size: 22px;
+  }
+}

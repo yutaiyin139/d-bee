@@ -746,7 +746,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
         </div>
         {confirmDeleteAcct && (
           <div className="helper" style={{ color: 'var(--red)', marginBottom: 4 }}>
-            ⚠️ 将删除你的全部记录与身体档案并退出登录，不可恢复。如需彻底注销账号，请通过「关于 → 联系我们」与客服联系。
+            ⚠️ 将删除你的全部记录与身体档案并退出登录，不可恢复。如需彻底注销账号，请通过「联系我们」与客服联系。
           </div>
         )}
       </div>

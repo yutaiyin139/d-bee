@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { View, Text, Button, Input } from '@tarojs/components'
 import { useLoad } from '@tarojs/taro'
 import { IconBee } from '../../components/Icons'
+import { LegalLinks } from '../../components/LegalLinks'
 import { bindInvite } from '../../lib/api'
 import { cloud } from '../../lib/cloud'
 import {
@@ -253,6 +254,15 @@ export default function Login() {
           </Button>
         </>
       )}
+
+      {/*
+        🔴 登录前法律文档入口（合规必修，2026-11-05）。刻意放在 !session 三元**之外**：
+        本页既服务未登录（微信一键登录 / 手机号验证码），也会显示已登录会话卡片，
+        两种状态都应能查阅协议与隐私政策。放进任一分支都会留缺口。
+        与 index.tsx auth gate 复用同一个 LegalLinks 组件（单一真相源），
+        避免两处各写一份文案日后漂移。
+      */}
+      <LegalLinks compact hint='注册或登录前，请阅读以下协议与政策' />
     </View>
   )
 }

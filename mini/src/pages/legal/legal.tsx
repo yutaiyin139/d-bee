@@ -72,10 +72,14 @@ export default function Legal() {
            本页无需再改。主端走 VITE_ICP_BEIAN 构建期环境变量，
            本端因小程序无 import.meta.env 而用常量（见 legal.ts 文件头说明）。
 
-        ⚠️ 刻意**不**渲染 SITE.version：该字段在 mini 是死代码且值陈旧
-           （写死 '1.6.9'，既非 mini/package.json 的 0.1.0，也非主端的 1.7.3，
-           主端走构建期注入的 __APP_VERSION__）。在小程序里它没有单一真源，
-           渲染出来等于向用户展示错误版本号。若将来要展示，先解决版本来源。
+        ⚠️ 历史记录：本页曾**刻意不渲染** SITE.version，理由是「该字段在 mini 是死代码
+           且值陈旧（写死 '1.6.9'，既非 mini/package.json 的 0.1.0 也非主端 1.7.3），
+           没有单一真源，渲染出来等于向用户展示错误版本号」。
+           当时的判断是对的 —— 显示错版本号比不显示更糟。
+           🔴 2026-11-05 已根治：版本改为构建期注入（mini/config/index.ts 的
+           __APP_VERSION__，与主端 vite.config.ts:64 同名同源，都取项目根
+           package.json 的 version），SITE.version 自此有唯一真相源，
+           故下方恢复渲染，与主端 SiteFooter.tsx:29 口径一致（名称 + 版本号同一行）。
       */}
       {SITE.icp ? (
         <View className='legal-icp'>
@@ -93,7 +97,8 @@ export default function Legal() {
       ) : null}
 
       <View className='legal-meta'>
-        <Text className='legal-meta-line'>{SITE.nameEn}（{SITE.name}）</Text>
+        {/* 名称 + 版本号同一行，与主端 SiteFooter.tsx:29 逐字对齐。 */}
+        <Text className='legal-meta-line'>{SITE.nameEn}（{SITE.name}）{SITE.version}</Text>
         <Text className='legal-meta-line'>营养数据仅供参考，不构成医疗建议</Text>
       </View>
 

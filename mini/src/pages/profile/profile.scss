@@ -109,6 +109,20 @@
     align-items: center;
   }
 
+  // 「联系我们」行的邮箱值。邮箱（dbeeSupport@163.com，19 字符）比常规 line-val
+  // 内容长得多，在 .list-line 的 space-between 布局下会与左侧「联系我们」挤压：
+  // flex 子项默认 min-width:auto 不收缩 → 溢出卡片。故显式 min-width:0 允许收缩，
+  // 并用 break-all 强制在任意字符处折行（邮箱含 @ 与 . 但无空格，普通 word-break
+  // 会把它当不可断的长单词整体顶出容器）。
+  .contact-val {
+    min-width: 0;
+    margin-left: 20px;
+    text-align: right;
+    word-break: break-all;
+    // 与 legal.scss .legal-icp-num 的链接态同色，保持「可点击元素」视觉口径一致
+    color: $honey-dark;
+  }
+
   // P2-A：能力未实装的行 —— 整体降饱和，右侧换「即将上线」角标替代「导出」
   .line-badge {
     font-size: 22px;

@@ -2257,6 +2257,26 @@ select {
   color: var(--honey-dark);
 }
 
+/*
+  页脚内「联系我们」是 <a href="mailto:">（浏览器可直接唤起邮件客户端），
+  而旁边三个法律入口是 <button className="btn-text">。两者必须**视觉同类**，
+  否则用户看不出「联系我们」可点。
+  特异性说明：`.site-footer a` 是 (0,1,1)，高于 `.btn-text` 的 (0,1,0)，
+  故仅给 a 加 class="btn-text" 会被压成 --ink-3 灰色。下面这条 (0,2,1)
+  显式让页脚内的文本按钮链接取 .btn-text 的蜂蜜深色，并在 hover 时加深，
+  与三个 button 的观感对齐。
+  ⚠️ 不要改成给 a 加内联 style —— 内联样式无法被主题变量与 :hover 协同覆盖。
+*/
+.site-footer-links a.btn-text {
+  color: var(--honey-dark);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.site-footer-links a.btn-text:hover {
+  filter: brightness(0.82);
+}
+
 .site-footer .dot {
   color: var(--ink-3);
   opacity: 0.55;

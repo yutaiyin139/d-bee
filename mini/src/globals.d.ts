@@ -13,3 +13,11 @@ declare const my: {
     fail?: (err: { errorMessage?: string; error?: number }) => void
   }): void
 }
+
+/**
+ * 产品版本号，构建期由 mini/config/index.ts 的 defineConstants 注入。
+ * 🔴 与主端 src/globals.d.ts:6 的同名声明**同源同值**（都来自项目根 package.json，
+ * 格式 `v${version}`）。此处声明只为让 tsc 识别该全局常量 —— 运行时它并不存在，
+ * webpack 在构建期已把标识符整体替换成字符串字面量。
+ */
+declare const __APP_VERSION__: string

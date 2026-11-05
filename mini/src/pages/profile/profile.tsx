@@ -32,6 +32,8 @@ import { isHealthConnectable } from '../../lib/health'
 import { HONEY_PRICE } from '../../lib/invite'
 import { isPro, isLifetime, memberSubText } from '@dbee/shared'
 import { signOut } from '../../lib/auth'
+import { SITE } from '../../content/legal'
+import { copyText } from '../../lib/clipboard'
 import { getNotifyPrefs, setNotifyPrefs, enableCheckinNotify, disableCheckinNotify, enableWaterNotify, disableWaterNotify } from '../../lib/notifications'
 import './profile.scss'
 
@@ -398,6 +400,20 @@ export default function ProfilePage() {
     }
   }
 
+  /**
+   * 复制公示邮箱（「联系我们」行）。小程序无 mailto，复制是唯一可行路径。
+   * 反馈文案与 legal.ts「四、个人信息的查阅、复制…联系我们」条目的承诺口径一致：
+   * 「我们将在 15 个工作日内答复」—— 两处若不一致就等于给用户两个不同的时限。
+   */
+  async function copyContactEmail() {
+    const ok = await copyText(SITE.contactEmail)
+    Taro.showToast({
+      title: ok ? `邮箱已复制：${SITE.contactEmail}` : `复制失败，请手动记录：${SITE.contactEmail}`,
+      icon: 'none',
+      duration: ok ? 2500 : 4000,   // 失败时给足时间手抄
+    })
+  }
+
   function goInvite() {
     Taro.navigateTo({ url: '/pages/invite/invite' })
   }
@@ -673,6 +689,22 @@ export default function ProfilePage() {
           <Text className='line-label'>免责声明</Text>
           <Text className='line-val'><Text className='arrow'>›</Text></Text>
         </View>
+        {/*
+          🔴 「联系我们」（2026-11-05 补）。此前本卡片只有三条法律文档，但注销账号的
+          提示文案（下方 confirmDeleteAcct 分支）与 legal.ts 正文都指引用户
+          「通过『关于 → 联系我们』与客服联系」—— 而该入口在两端都**不存在**，
+          属四端共有的失实指引（web 端连「关于」区块都没有）。本次两端一并补齐。
+
+          邮箱刻意**默认直接显示**在行内而非点击后才弹出：法律要求公示联系方式应
+          「以显著方式」呈现，藏在交互后面等于没公示。点击整行 = 复制到剪贴板
+          （小程序无 DOM、无 mailto，不能直接唤起邮件客户端，故复制是唯一可行路径，
+          与 legal.tsx 备案号的既有交互口径一致）。
+        */}
+        <View className='list-line' onClick={() => void copyContactEmail()}>
+          <Text className='line-label'>联系我们</Text>
+          <Text className='line-val contact-val'>{SITE.contactEmail}</Text>
+        </View>
+        <View className='helper'>点击邮箱可复制；我们将在 15 个工作日内答复</View>
       </View>
 
       {/* 账号管理 */}
@@ -697,7 +729,7 @@ export default function ProfilePage() {
           </Text>
         </View>
         {confirmDeleteAcct ? (
-          <View className='helper danger'><Text>⚠️ 将删除你的全部记录与身体档案并退出登录，不可恢复。如需彻底注销账号，请通过「关于 → 联系我们」与客服联系。</Text></View>
+          <View className='helper danger'><Text>⚠️ 将删除你的全部记录与身体档案并退出登录，不可恢复。如需彻底注销账号，请通过「联系我们」与客服联系。</Text></View>
         ) : null}
       </View>
 
