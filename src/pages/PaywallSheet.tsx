@@ -19,6 +19,8 @@ import { usePlan } from '../state/plan'
 import { errText } from '../lib/errmsg'
 import { checkout, getAdapter, restorePurchases, type PayProvider } from '../lib/payment/checkout'
 import { openManageSubscriptions } from '../lib/manageSubscription'
+import { isAlipayAvailable } from '../lib/payment/alipay'
+import { isWechatPayAvailable } from '../lib/payment/wechatPay'
 import { isIOS } from '../lib/platform'
 
 /**
@@ -86,6 +88,28 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
   // 拉取失败时**禁止购买**而不是回退硬编码价：商店价才是唯一合法成交价，
   // 展示一个与实际扣款不一致的静态价既误导用户，也可能被审核认定为价格欺诈。
   const [iosPriceState, setIosPriceState] = useState<'loading' | 'ok' | 'error'>('loading')
+
+  /**
+   * 🔴 微信/支付宝通道**能力探测**（2026-11-06 修「可见但不可用」）。
+   *
+   * 此前按钮无条件渲染，点下去必返「当前平台暂不支持在线支付或支付组件需要升级」。
+   * 根因不是资质没到位，而是 **web 端根本没有支付通道**：
+   *   · `getPlugin()` 读 `window.Capacitor.Plugins.CapacitorWechat`，而 web 端
+   *     `isNative()` 恒 false、`window.Capacitor` 不存在 → adapter 恒 null；
+   *   · `@capgo/capacitor-wechat` 的 package.json 只声明 `{ios, android}`，**无 web 实现**；
+   *   · 支付宝侧同理，且 `package.json` 连 alipay 插件依赖都没有。
+   * `isWechatPayAvailable()` / `isAlipayAvailable()` 本来就为此而写，却全仓 0 处调用。
+   *
+   * 用**能力探测**而非 `isWeb()` 平台判断：资质就绪后 Android 插件装上，同一份代码
+   * 自动恢复按钮，无需再改这里（架构铁律 #1：运行时探测，不写死平台分支）。
+   * 每次打开付费墙重算一次 —— 插件注册在 Capacitor 启动时完成，打开时必然已稳定。
+   */
+  const [payChannels, setPayChannels] = useState({ wechat: false, alipay: false })
+  useEffect(() => {
+    if (!paywall.open || isIOS()) return
+    setPayChannels({ wechat: isWechatPayAvailable(), alipay: isAlipayAvailable() })
+  }, [paywall.open])
+  const noPayChannel = !isIOS() && !payChannels.wechat && !payChannels.alipay
 
   // 付费墙每次打开时重置选中商品，避免上一次的选择残留高亮
   useEffect(() => {
@@ -306,6 +330,14 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
               </button>
             </div>
           )}
+          {/* 🔴 无可用支付通道（web 端现状）：如实告知，不再让用户点了才知道失败。
+              引导两条真实可行的路：去 App 内开通，或用兑换码（下方入口始终可用）。 */}
+          {noPayChannel && (
+            <div className="notice info" style={{ marginTop: 14 }}>
+              网页版暂不支持在线支付。你可以在 iOS / Android App 内开通会员，
+              或在下方输入兑换码解锁（同样立即生效）。
+            </div>
+          )}
           {/* 商品选择：iOS 点商品直接内购；Android/Web 先选中商品，再在下方选微信/支付宝 */}
           <div className="pay-grid" style={{ marginTop: 18 }}>
             {PRODUCTS.map((p) => (
@@ -313,10 +345,10 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
                 key={p.id}
                 type="button"
                 className={`pay-option ${p.highlight ? 'is-hl' : ''} ${!isIOS() && selectedId === p.id ? 'is-sel' : ''}`}
-                disabled={payingId !== null || busy || iosBlocked}
-                aria-disabled={payingId !== null || busy || iosBlocked}
+                disabled={payingId !== null || busy || iosBlocked || noPayChannel}
+                aria-disabled={payingId !== null || busy || iosBlocked || noPayChannel}
                 onClick={() => {
-                  if (iosBlocked) return
+                  if (iosBlocked || noPayChannel) return
                   if (isIOS()) {
                     void buyProduct(p.id, 'apple')
                   } else {
@@ -365,27 +397,33 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
             </div>
           )}
 
-          {/* Android/Web：选中商品后出现支付方式（微信 + 支付宝，2026-10-25 拍板） */}
-          {!isIOS() && selectedId && (
+          {/* Android/Web：选中商品后出现支付方式（微信 + 支付宝，2026-10-25 拍板）。
+              🔴 逐渠道能力探测：只渲染真正可用的通道，避免「按钮在但必失败」。
+              web 端两渠道均不可用 → 整块不渲染，由上方 noPayChannel 提示接管。 */}
+          {!isIOS() && selectedId && (payChannels.wechat || payChannels.alipay) && (
             <div className="pay-methods" style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-              <button
-                type="button"
-                className="btn"
-                style={{ flex: 1 }}
-                disabled={payingId !== null || busy}
-                onClick={() => void buyProduct(selectedId, 'wechat')}
-              >
-                {payingProvider === 'wechat' && payingId === selectedId ? <span className="spinner" /> : '微信支付'}
-              </button>
-              <button
-                type="button"
-                className="btn"
-                style={{ flex: 1 }}
-                disabled={payingId !== null || busy}
-                onClick={() => void buyProduct(selectedId, 'alipay')}
-              >
-                {payingProvider === 'alipay' && payingId === selectedId ? <span className="spinner" /> : '支付宝'}
-              </button>
+              {payChannels.wechat && (
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ flex: 1 }}
+                  disabled={payingId !== null || busy}
+                  onClick={() => void buyProduct(selectedId, 'wechat')}
+                >
+                  {payingProvider === 'wechat' && payingId === selectedId ? <span className="spinner" /> : '微信支付'}
+                </button>
+              )}
+              {payChannels.alipay && (
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ flex: 1 }}
+                  disabled={payingId !== null || busy}
+                  onClick={() => void buyProduct(selectedId, 'alipay')}
+                >
+                  {payingProvider === 'alipay' && payingId === selectedId ? <span className="spinner" /> : '支付宝'}
+                </button>
+              )}
             </div>
           )}
 

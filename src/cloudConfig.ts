@@ -42,6 +42,35 @@ function trimSlash(url: string): string {
 }
 
 /**
+ * Web 端 origin → 数据面 endpoint 的**纯函数**（零依赖，可单测）。
+ *
+ * 🔴 为什么强制 https（2026-11-06 生产登录故障根治）：
+ *   站点已上 HTTPS，certbot `--nginx` installer 会在 80 端口 server 块自动注入
+ *   `if ($host = d-bee.cn) { return 301 https://$host$request_uri; }`
+ *   （配置里带 `# managed by Certbot` 标记，**不在本仓模板内** → 改模板无效）。
+ *   浏览器对 301 的历史兼容行为是 **POST→GET 降级**，于是：
+ *     POST http://d-bee.cn/.cloud/auth/v1/verification
+ *       → 301 → GET https://…/verification → 网关只注册了 POST → 404「未知端点」
+ *   实测复现（access.log 用户手机请求链 + `curl --data -L` 得 404，
+ *   而 https 直连同端点得 401 invalid access key = 路由正常）。
+ *   页面若从 http 加载（SPA 常驻内存的旧标签），`window.location.origin` 就是 http →
+ *   所有 API 都踩这个坑。强制 https 后请求直连 443、不经重定向，方法不被降级。
+ *
+ * 本地开发（isLocalHostname）不走此分支，http 原样保留（dev server 没有 TLS）。
+ */
+export function resolveWebOrigin(loc: {
+  origin?: string
+  protocol?: string
+  hostname?: string
+}): string | null {
+  const { origin, protocol, hostname } = loc ?? {}
+  if (!origin || !protocol || !hostname) return null
+  if (!/^https?:$/.test(protocol)) return null
+  if (isLocalHostname(hostname)) return null
+  return protocol === 'http:' ? origin.replace(/^http:/, 'https:') : origin
+}
+
+/**
  * 是否运行在原生 App 容器内（Capacitor）。
  *
  * 这里**刻意不 import ./lib/platform**：cloudConfig 是模块级的初始化常量，
@@ -118,16 +147,20 @@ function resolveEndpoint(): string {
 
   if (fromEnv) return trimSlash(fromEnv)
 
-  // Web：取当前来源，交给本站 Nginx 反代到自建网关。
+  // Web：取当前来源（强制 https），交给本站 Nginx 反代到自建网关。
+  // 判定与升级逻辑全部在 resolveWebOrigin 里（纯函数，可单测，见其文档注释）。
   if (typeof window !== 'undefined' && window.location) {
-    const { origin, protocol, hostname } = window.location
-    if (origin && /^https?:$/.test(protocol) && hostname && !isLocalHostname(hostname)) {
-      return origin
-    }
+    const fromOrigin = resolveWebOrigin(window.location)
+    if (fromOrigin) return fromOrigin
   }
 
-  // 本地开发 / 预览等无反代场景，直连云端。
-  return CLOUD_HOST
+  // 本地开发 / 预览等无 nginx 反代场景：回退自建网关（d-bee.cn）。
+  // 🔴 不再回退 WorkBuddy 云库 —— 云库即将释放，本地开发统一走自建栈，避免
+  //    「本地连云库、生产连自建」的行为分叉（2026-11-06 用户批准「回退自建网关」）。
+  //    可行性已实测：生产网关 CORS 放行 http://localhost:3000
+  //    （OPTIONS /.cloud/auth/v1/verification → 204 + access-control-allow-origin 回显）。
+  //    ⚠️ 依赖生产 CORS_ALLOWED_ORIGINS 保留 localhost —— 收紧白名单会让本地开发登录失败。
+  return PRODUCTION_NATIVE_ENDPOINT
 }
 
 export const publicConfig = {
