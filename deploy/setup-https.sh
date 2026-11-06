@@ -1,5 +1,7 @@
 # 在服务器上执行：为站点域名申请 Let's Encrypt 证书并开启 HTTPS。
-# 占位符 __DOMAIN__ / __DOMAINS__ / __EMAIL__ / __SUDO_PWD__ 由 deploy/dbee-ssh.py 替换。
+# 占位符 __DOMAIN__ / __DOMAINS__ / __EMAIL__ / SUDO_PLACEHOLDER 由 deploy/dbee-ssh.py 替换。
+# 🔴 注释里绝不写字面的 SUDO 占位符：它会被渲染成明文密码，触发 dbee-ssh.py 的
+#    assert_no_leaked_secret 拒绝上传（2026-11-06 实测踩过）。上面用无害串指代。
 #
 # 双域名规划（2026-10-28 起）：
 #   d-bee.cn      = 自律蜜蜂 Web 端（SPA + /.cloud/ 反代）

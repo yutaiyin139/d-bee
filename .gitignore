@@ -11,6 +11,17 @@ dist/
 # 数据库临时备份（含真实用户数据，约定不入库）
 db/.tmp-backup.sql
 
+# 🔴 部署渲染产物含明文 sudo 密码（dbee-ssh.py 把 __SUDO_PWD__ 替换成 DBEE_PWD），
+#    绝不入库。deploy.sh 用完即 rm，此处再兜一层防误 add。
+deploy/*.rendered.sh
+deploy/*.rendered.conf
+deploy/nginx.rendered.conf
+deploy/tmp-*
+
+# 🔴 根目录一次性排查探针脚本（tmp-*.sh，内含 __SUDO_PWD__ 占位符，由 dbee-ssh.py
+#    运行时渲染成明文密码）—— 用完即弃、绝不入库，防 `git add .` 误提交。
+/tmp-*.sh
+
 # Python 编译缓存（py_compile / import 产物）
 __pycache__/
 *.py[cod]

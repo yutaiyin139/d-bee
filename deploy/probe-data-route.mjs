@@ -1,5 +1,8 @@
 // 数据路由探针：打开线上页面，抓取所有网络请求，判定数据实际发往哪里。
-// 用法：node deploy/probe-data-route.mjs http://150.158.51.106/
+// 用法：node deploy/probe-data-route.mjs https://d-bee.cn/
+// 🔴 默认值 2026-11-06 由 http://150.158.51.106/ 改为 https://d-bee.cn/：
+//    certbot --redirect 后 IP 直连 HTTP 已变 404（跳转块只匹配域名），
+//    继续用 IP 默认值会让探针打开一个 404 页、抓不到任何数据请求。
 import { createRequire } from 'node:module'
 import { existsSync, readdirSync } from 'node:fs'
 import os from 'node:os'
@@ -43,7 +46,7 @@ async function launchOptions() {
   }
 }
 
-const base = (process.argv[2] || 'http://150.158.51.106/').replace(/\/+$/, '')
+const base = (process.argv[2] || 'https://d-bee.cn/').replace(/\/+$/, '')
 const host = new URL(base).host
 
 const browser = await chromium.launch(await launchOptions())

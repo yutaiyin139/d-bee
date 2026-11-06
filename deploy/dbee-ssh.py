@@ -92,7 +92,10 @@ def assert_no_leaked_secret(body, remote):
         print(f"!! 拒绝上传 {remote}：密码字面量出现在 {len(bad)} 处非 sudo 行（会泄露到输出/日志）",
               file=sys.stderr)
         for ln, text in bad[:5]:
-            print(f"   L{ln}: {text}", file=sys.stderr)
+            # 🔴 报错行本身含明文密码，必须打码后再输出 —— 否则「防泄露的守卫」
+            #    自己把密码打进终端/日志，反而成了泄露源（2026-11-06 实测踩过：
+            #    setup-https.sh 第 2 行注释写了占位符，渲染后密码被原样回显）。
+            print(f"   L{ln}: {text.replace(pwd, '<REDACTED>')}", file=sys.stderr)
         print("   修法：描述文字里不要写占位符；确需引用时写作 SUDO_PLACEHOLDER 等无害串。",
               file=sys.stderr)
         raise SystemExit(3)

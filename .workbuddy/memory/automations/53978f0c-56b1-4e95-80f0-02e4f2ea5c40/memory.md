@@ -247,6 +247,14 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
 - **同日 08:56 重复触发**：按既定规则只做最小复测（直接 DeferExecuteTool 精确名），仍 not found，
   结论不变；已在同一份 `FAILED-2026-11-05.md` 追加「重复触发记录」表格，**未新建文件、未重复全流程排查**。
 
+### 2026-11-06 08:45（第 22 次）· 通道切换后首次
+- 结果：**成功**。**数据源已从 WorkBuddy 云库切换为服务器自建 PostgreSQL `dbee`**，本自动化职责改为「第 2 层异地副本」（第 1 层服务器 cron 03:30 已自带）。
+- 执行：`deploy/pull-latest-backup.py`（凭据 `DBEE_USER=ubuntu` + `SSH_PWD`，**不能用 `.env` 里的 dbee_app 过时值**）→ 拉 `dbee-daily-20261106-033001.dump`，167.2 KB，sha256 与服务器 SHA256SUMS 一致，exit=0，新拉 1 / 已最新 0 / 失败 0。
+- 保留：按 mtime 用 Python 清理 >30 天 `.dump`，0 份过期；`db/backups/offsite/` 存量 **2 份**（11-05、11-06，均 171,220 B，sha 不同=正常）。
+- 安全：`git status --porcelain db/` 为空；`.gitignore:50 backups/` 覆盖产物；未 cat/grep dump 正文。
+- 旧流程正式废弃：genie-baas MCP、`db/backups/YYYY-MM-DD.json`、`.parts/` 分片、`tool-results` 落盘转存——全部停用，勿再回退。
+- 本次附加：MEMORY.md 注入超限被截断，已瘦身 38.9KB → 8.7k 字符，迁出内容并入 REFERENCE.md 的「2026-11-06 迁入」章节；同时修正「三条主线·备份」的过时记载。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。
@@ -259,6 +267,9 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
    FAILED-*.md 不参与清理（不受保留策略影响）。
 5. 表顺序在源 JSON 中为 ai_usage/entitlements/exercise_logs/meal_entries/profiles/water_logs/weight_logs
    （Postgres json_build_object 不保证键序），落盘时重排为 schema 顺序，不影响校验。
-6. **唯一的硬依赖是 genie-baas 只读工具在会话中已注册**。它不在索引里时无第二条合规通道：
-   本地无云端凭据（anon 表权限已撤）、服务器无业务库（dbee 只是 10-13 的镜像）、
-   SSH 无 sshpass/私钥。此时必须走 FAILED 分支，**不要用服务器镜像顶替**（会造成日期与数据不符的假备份）。
+6. ~~**唯一的硬依赖是 genie-baas 只读工具在会话中已注册**~~ **【已作废，2026-11-05 起】**
+   现行唯一依赖 = `deploy/pull-latest-backup.py` + SSH 凭据（`DBEE_USER=ubuntu` / `DBEE_PWD=$SSH_PWD`）。
+   下方历史描述仅存档：本地无云端凭据、服务器无业务库、SSH 无 sshpass/私钥；走 FAILED 分支勿用服务器镜像顶替。
+   校验脚本 `.cjs` 后缀、dump 超限落盘转存等经验**随云库流程一并停用**。
+7. 备份产物 `db/backups/offsite/*.dump` 含真实健康数据：只报文件名/大小/sha 前 16 位，**绝不 cat/grep 正文**；
+   `git status --porcelain db/` 必须为空；**绝不跑 `deploy/deploy-gateway.sh`**（缺 IDENT_PEPPER 会重置 → 全站身份永久失效）。

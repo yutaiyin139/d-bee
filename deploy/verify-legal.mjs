@@ -2,16 +2,26 @@
  * 合规页面线上验收：用真实浏览器核对
  *   1) 页脚是否存在「用户协议 / 隐私政策 / 免责声明」三个入口
  *   2) 三份文档页能否正常打开、标题与正文是否渲染
- *   3) 备案号未配置时**不得**出现任何「ICP备」字样
- *      （备案审核期间展示假备案号属违规，必须为空）
+ *   3) 备案号**双向**校验。期望值按与 SITE.icp **完全同一条解析链**取得：
+ *      EXPECT_ICP 环境变量 > .env 的 VITE_ICP_BEIAN（覆盖口）> @dbee/shared 的
+ *      ICP_BEIAN_D_BEE_CN（默认真相源，四端同源）
+ *        · 期望非空 → 页面**必须**逐字出现该号；出现别的「ICP备」号即 FAIL
+ *          （防「-1 官网号填进 -2 自律蜜蜂站」这类域名错配，备案号须与域名一一对应）
+ *        · 期望为空 → 页面**不得**出现任何「ICP备」字样（展示假备案号属违规）
+ *      🔴 2026-11-06 起由单向「必须不出现」改为双向：ICP 已下证
+ *         （京ICP备2026075565号-2 / 自律蜜蜂 / d-bee.cn）。
+ *      ⚠️ 若期望非空而线上不出现，通常是**生产尚未用新代码重新构建部署**，
+ *         不是页面 bug —— 此时会明确提示，可用 EXPECT_ICP= 临时按旧产物验收。
  *   4) 首启隐私同意门四要素 + 排版（华为/小米/OPPO 硬性拒审项）
  *   5) 法律深链免同意放行（审核员/爬虫直达 /legal/privacy 须能读全文）
  *   6) 第三方 SDK 公示完整性（与真实链路涉及的每一方逐条比对）
  *   7) 公示 URL 可达性（每条第三方链接真实可达，防死链/错误主体）
  *
  * 用法：
- *   node deploy/verify-legal.mjs http://150.158.51.106/
  *   node deploy/verify-legal.mjs https://d-bee.cn/
+ *   node deploy/verify-legal.mjs https://www.d-bee.cn/
+ *   🔴 别再用 http://150.158.51.106/ —— 2026-11-06 上 HTTPS 后，certbot 的跳转块
+ *      只对域名做 301，IP 直连 HTTP 落 return 404，验收会全项 FAIL（不是页面 bug）。
  * 环境变量：
  *   CHECK_URLS=0  跳过第 7 项联网校验（无外网的 CI 用）
  */
@@ -20,6 +30,7 @@ import { mkdirSync, existsSync, readdirSync } from 'node:fs'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { createServer } from 'vite'
 
 const WORKSPACE = process.env.PW_WORKSPACE || 'C:/Users/yuty/.workbuddy/binaries/node/workspace/'
 const require = createRequire(WORKSPACE)
@@ -35,6 +46,48 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const shotDir = path.join(__dirname, 'screenshots')
 mkdirSync(shotDir, { recursive: true })
 const hostTag = new URL(target).hostname.replace(/[^\w.-]/g, '_')
+
+/**
+ * 期望的 ICP 备案号（第 3 项校验的基准）。
+ *
+ * 🔴 **不在这里复制 SITE.icp 的解析链**（那会变成第三份实现，必然漂移）。
+ *   改为用 vite `ssrLoadModule` 直接取 `src/content/legal.ts` 导出的 `SITE.icp`
+ *   —— 即页脚**实际会渲染的那个值**，与 tools/gen-legal-static.mjs:187 同一范式。
+ *   这样「校验的期望值」与「渲染的真值」在语言层面就是同一个对象，不可能不一致。
+ *
+ *   ⚠️ 为什么不能直接 `import { ICP_BEIAN_D_BEE_CN } from '@dbee/shared'`：
+ *      实测报 ERR_UNSUPPORTED_DIR_IMPORT —— shared 的 dist 用目录式 re-export
+ *      （`export * from './constants'`，无扩展名），只有 vite/webpack 能解析，
+ *      裸 Node ESM 不行。且那样取的是 shared 常量、**绕过**了 .env 覆盖口，
+ *      与实际渲染值可能不同 → 又是复制解析链。
+ *
+ *   mode 固定 'production'：与 `vite build` 一致，才能读到 `.env.production` 与
+ *   构建期传入的 `VITE_ICP_BEIAN`（同 gen-legal-static.mjs 的注释理由）。
+ *
+ * 优先级：显式 EXPECT_ICP 环境变量（传 '' = 按未备案口径验收旧产物）> SITE.icp。
+ */
+async function resolveExpectedIcp() {
+  if (process.env.EXPECT_ICP !== undefined) {
+    return { value: process.env.EXPECT_ICP.trim(), source: 'EXPECT_ICP 环境变量' }
+  }
+  const server = await createServer({
+    root: path.join(__dirname, '..'),
+    mode: 'production',
+    server: { middlewareMode: true },
+    appType: 'custom',
+    logLevel: 'warn',
+  })
+  try {
+    const mod = await server.ssrLoadModule('/src/content/legal.ts')
+    const v = String(mod?.SITE?.icp ?? '').trim()
+    if (!v) {
+      return { value: '', source: 'SITE.icp 为空（.env 与 shared 常量都未提供）' }
+    }
+    return { value: v, source: 'SITE.icp（vite ssrLoadModule 实取，= 页脚真实渲染值）' }
+  } finally {
+    await server.close()
+  }
+}
 
 function findCachedChrome() {
   const base = path.join(os.homedir(), 'AppData', 'Local', 'ms-playwright')
@@ -296,10 +349,61 @@ for (const name of links) {
   console.log(`  入口「${name}」: ${n > 0 ? 'YES' : 'NO'}`)
 }
 
-console.log('\n--- 2) 备案号占位检查 ---')
+console.log('\n--- 2) 备案号校验（双向）---')
 const bodyAll = (await page.locator('body').innerText().catch(() => '')) || ''
-const icpVisible = /ICP备|京ICP|沪ICP|粤ICP/.test(bodyAll)
-console.log(`  页面出现「ICP备」字样: ${icpVisible ? 'YES ← 未配置环境变量时不该出现' : 'NO（正确）'}`)
+const expectedIcp = await resolveExpectedIcp()
+console.log(`  期望值: ${expectedIcp.value || '(空 = 未备案口径)'}  ← 取自 ${expectedIcp.source}`)
+
+// 页面上真实出现的备案号（可能为空、可能与期望不符）
+// 省份简称用标准全称：京津冀晋蒙辽吉黑沪苏浙皖闽赣鲁豫鄂湘粤桂琼渝川贵云藏陕甘青宁新
+const ICP_RE =
+  /[京津冀晋蒙辽吉黑沪苏浙皖闽赣鲁豫鄂湘粤桂琼渝川贵云藏陕甘青宁新]ICP备\d{6,}号(?:-\d+)?/g
+const icpFound = [...new Set(bodyAll.match(ICP_RE) ?? [])]
+const icpAnyVisible = /ICP备|京ICP|沪ICP|粤ICP/.test(bodyAll)
+
+let icpOk
+if (expectedIcp.value) {
+  // 已备案口径：必须逐字出现期望号
+  const shown = bodyAll.includes(expectedIcp.value)
+  icpOk = shown
+  if (shown) {
+    console.log(`  页面出现「${expectedIcp.value}」: YES（正确）`)
+    // 额外防错配：出现了期望号之外的其他备案号 = 域名/主体错配
+    const wrong = icpFound.filter((n) => n !== expectedIcp.value)
+    if (wrong.length) {
+      icpOk = false
+      console.log(`  🔴 同时出现**其他**备案号: ${wrong.join('、')} —— 备案号须与域名一一对应，疑似错填`)
+    }
+  } else {
+    // 🔴 两种失败的**根因完全不同**，诊断必须分开，否则会把「填错号」误报成「没部署」：
+    //   A) 页面有别的备案号 → 号填错了（域名/主体错配，合规问题，改代码）
+    //   B) 页面完全没有号 → 生产产物还是旧的（部署问题，重新构建部署）
+    if (icpFound.length) {
+      console.log('  🔴 页面出现的是**别的**备案号，与期望不符')
+      console.log(`     期望: ${expectedIcp.value}`)
+      console.log(`     实际: ${icpFound.join('、')}`)
+      console.log(
+        '     这是**填错号**（不是部署问题）：备案号须与域名一一对应。' +
+          '\n     本项目 d-bee.cn（自律蜜蜂）= 京ICP备2026075565号-2；' +
+          '\n     京ICP备2026075565号-1 是 d-bee.com.cn（门户网站）的号，**不可**用于本站。',
+      )
+    } else if (icpAnyVisible) {
+      console.log('  🔴 页面有「ICP备」字样但未匹配到完整备案号 —— 可能被截断或格式异常，请人工核对')
+    } else {
+      console.log('  🔴 页面完全没有任何备案号')
+      console.log('     最可能原因：生产产物还是旧的 —— 备案号已进代码（shared 常量）但未重新构建部署。')
+      console.log('     确认命令：curl -s <线上 index-*.js> | grep -o "京ICP备[0-9]*号-[0-9]"')
+      console.log('     （注意 webpack 会把中文转义成 \\uXXXX，grep 不到时改用 unicode_escape 解码后再搜）')
+      console.log('     若确实要按旧产物验收，用 EXPECT_ICP="" 显式声明未备案口径。')
+    }
+  }
+} else {
+  // 未备案口径：不得出现任何「ICP备」字样
+  icpOk = !icpAnyVisible
+  console.log(
+    `  页面出现「ICP备」字样: ${icpAnyVisible ? `YES ← 未配置时不该出现（${icpFound.join('、') || '?'}）` : 'NO（正确）'}`,
+  )
+}
 
 console.log('\n--- 3) 三份文档页 ---')
 const docChecks = [
@@ -363,7 +467,7 @@ const pass =
   sdkPass &&
   hasFooter &&
   links.every((n) => linkState[n]) &&
-  !icpVisible &&
+  icpOk &&
   docChecks.every((d) => docOk[d.name]) &&
   consoleErrors.length === 0 &&
   pageErrors.length === 0
