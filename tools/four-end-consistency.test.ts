@@ -501,3 +501,91 @@ describe('护栏 7 · 合规公示可达性与版本号同源', () => {
     }
   })
 })
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * 护栏 8 · ICP 备案号单一真相源 + 域名后缀不得错配（2026-11-06 备案下证后新增）
+ *
+ * 背景：ICP 下证拿到**两个**备案号，同一主体、两个站点，后缀不同：
+ *   · 京ICP备2026075565号-2 = 自律蜜蜂 / d-bee.cn      ← 本项目（四端）
+ *   · 京ICP备2026075565号-1 = 门户网站 / d-bee.com.cn  ← 官网，**不在本仓库**
+ * 二者只差一个字符，而 mini/src/pages/legal/legal.tsx、docs/备案材料清单.md、
+ * docs/小程序上线前缺口清单… 三处旧文档的「回填示例」全都写成了 -1 —— 照抄即合规违规。
+ *
+ * 另一层风险：备案号原先只走 .env 的 VITE_ICP_BEIAN，而 .env 被 gitignore（.gitignore:6）
+ * → 换机器/CI 构建读不到该键，会**静默产出没有备案号的页面**（页脚那行不渲染、
+ *   构建 exit 0）。备案号是法律要求每页公示的公开信息、不是密钥，故真相源改为入库的
+ *   packages/shared 常量，.env 降级为紧急覆盖口。
+ *
+ * 本护栏把「不得写死副本」「不得错用官网号」变成机器强制。
+ * 注：collect() 只扫 src 与 mini/src，**不含 packages/shared/src**，
+ *     故 shared 常量用 readFileSync 直读（同护栏 7 读 mini/config/index.ts 的做法）。
+ * ────────────────────────────────────────────────────────────────────────── */
+describe('护栏 8 · ICP 备案号单一真相源 + 后缀不得错配', () => {
+  const SHARED_CONST = join(ROOT, 'packages', 'shared', 'src', 'constants', 'index.ts')
+  // 🔴 必须 stripComments：护栏 7 的漏洞 B 教训重演过一次 —— 若在 raw（含注释）上断言，
+  // 把 `export const POLICE_BEIAN = ''` **注释掉**后，注释文本里的子串仍会被正则命中 →
+  // 存在性断言假绿。红验证注入「注释掉该常量」时它没报红，当场抓出这个 bug。
+  const sharedCode = () => stripComments(readFileSync(SHARED_CONST, 'utf8'))
+  /** 本站（d-bee.cn / 自律蜜蜂）的正确备案号 */
+  const ICP_SELF = '京ICP备2026075565号-2'
+  /** 官网（d-bee.com.cn / 门户网站）的备案号 —— 本仓库代码中**不得**作为生效值出现 */
+  const ICP_PORTAL = '京ICP备2026075565号-1'
+
+  it('shared 必须导出 ICP_BEIAN_D_BEE_CN，且值 = 本站备案号（后缀 -2）', () => {
+    const raw = sharedCode()
+    const m = raw.match(/export const ICP_BEIAN_D_BEE_CN\s*=\s*'([^']*)'/)
+    expect(
+      m,
+      'packages/shared/src/constants/index.ts 缺少 ICP_BEIAN_D_BEE_CN 导出（生效代码中）—— ' +
+        '两端 legal.ts 都引用它，缺失会导致构建失败或备案号静默变空',
+    ).not.toBeNull()
+    expect(
+      m![1],
+      `ICP_BEIAN_D_BEE_CN = '${m![1]}'，但本站是 d-bee.cn（自律蜜蜂），` +
+        `正确值应为 '${ICP_SELF}'。` +
+        `🔴 '${ICP_PORTAL}' 是**官网门户**（d-bee.com.cn）的号，用于本站属域名错配（合规违规）`,
+    ).toBe(ICP_SELF)
+  })
+
+  it('两端 legal.ts 的 SITE.icp 必须引用 shared 常量，禁止写死备案号字面量', () => {
+    // 断言「引用了常量」——注意必须匹配 icp 那一行的实际赋值，不能只匹配 import
+    // （护栏 7 的漏洞 B 教训：/LegalLinks/ 会命中 import 行，存在性断言必须匹配实际使用）。
+    for (const p of ['src/content/legal.ts', 'mini/src/content/legal.ts']) {
+      const f = byPath(p)!
+      const assign = f.code.match(/^\s*icp:\s*(.+?),?\s*$/m)
+      expect(assign, `${p} 找不到 SITE.icp 赋值行`).not.toBeNull()
+      expect(
+        /ICP_BEIAN_D_BEE_CN/.test(assign![1]),
+        `${p} 的 SITE.icp 赋值为「${assign![1].trim()}」，未引用 ICP_BEIAN_D_BEE_CN。` +
+          '两端各写一份字面量必然漂移（本项目版本号踩过同一坑），' +
+          '必须都引用 shared 常量；主端可保留 env 覆盖口，但**回退值必须是该常量**',
+      ).toBe(true)
+    }
+  })
+
+  it('两端源码（剥离注释后）不得出现官网备案号 -1 的字面量', () => {
+    // 用 code（剥离注释）而非 raw：src/content/legal.ts 与 mini/src/pages/legal/legal.tsx
+    // 的**注释里**都刻意保留了「-1 是官网号、不可用于本站」的警示说明，那是正确的；
+    // 要防的是它出现在**生效代码**里。
+    const bad = LOADED.map((f) => ({ path: f.path, lines: hits(f.code, new RegExp(ICP_PORTAL, 'g')) })).filter(
+      (x) => x.lines.length > 0,
+    )
+    expect(
+      bad.map((b) => `${b.path}:${b.lines.join(',')}`),
+      `🔴 生效代码中出现官网备案号 ${ICP_PORTAL}（d-bee.com.cn 门户站的号）。` +
+        `本仓库只服务 d-bee.cn，应使用 ${ICP_SELF}`,
+    ).toEqual([])
+  })
+
+  it('公安备案号常量必须存在（当前允许为空 = 该行不渲染，但不得删字段）', () => {
+    const raw = sharedCode()
+    // ICP 下证后 30 日内须办公安联网备案（依据《计算机信息网络国际联网安全保护管理办法》
+    // 第 12 条，即 2026-12-06 前）。拿到前留空、页脚那一行不渲染是合规的；
+    // 但字段必须存在，否则将来拿到号时又要改两端结构。
+    expect(
+      /export const POLICE_BEIAN\s*=\s*'[^']*'/.test(raw),
+      'shared 缺少 POLICE_BEIAN 常量（生效代码中）—— 两端 legal.ts 都引用它；' +
+        '公安联网备案须在 ICP 下证后 30 日内办理（2026-12-06 前）',
+    ).toBe(true)
+  })
+})

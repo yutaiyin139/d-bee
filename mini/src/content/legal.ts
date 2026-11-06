@@ -1,8 +1,9 @@
 /**
  * 站点信息与法律文本（结构与主工程 src/content/legal.ts 对齐，**内容按小程序真实链路独立维护**）。
  *
- * 差异：小程序端无 import.meta.env，备案号等易变信息在此以常量占位，
- * 备案号下来后改为从后端下发或在此文件更新即可。
+ * 差异：小程序端无 import.meta.env。备案号这类**四端必须同值**的公开信息取自
+ * `@dbee/shared` 常量（与主端同一真相源，避免两端各写一份而漂移）；
+ * 其余文案按小程序真实链路在本文件独立维护。
  *
  * 🔴 运营主体（2026-10-27 起）：域名已过户至「北京迪蜂科技有限公司」，
  *   法律文本责任主体由「开发者」改为公司，与主工程保持一致。
@@ -25,6 +26,13 @@
  *   📌 若将来小程序回迁自托管统一后端（docs 中列为待拍板项），本文件 §三/§四 须同步改为
  *      与主工程一致的口径，届时 cloud.ts 的 endpoint/resourceId 也会一并切换。
  */
+
+import {
+  ICP_BEIAN_D_BEE_CN,
+  ICP_QUERY_URL,
+  POLICE_BEIAN,
+  POLICE_QUERY_URL,
+} from '@dbee/shared'
 
 /** 运营主体全称。须与营业执照、主工程 SITE.operator 逐字一致。 */
 const OPERATOR = '北京迪蜂科技有限公司'
@@ -52,10 +60,21 @@ export const SITE = {
    */
   version: __APP_VERSION__,
   operator: OPERATOR,
-  icp: '',
-  icpUrl: 'https://beian.miit.gov.cn/',
-  police: '',
-  policeUrl: 'https://beian.mps.gov.cn/',
+  /**
+   * ICP 备案号（2026-11-06 下证）—— 取自 `@dbee/shared`，与主端**同源同值**。
+   *
+   * 🔴 本站 d-bee.cn = 京ICP备2026075565号-**2**。
+   *   京ICP备2026075565号-**1** 是官网 d-bee.com.cn（门户网站）的号，**不可**填到本项目。
+   *   （本页 legal.tsx 的旧注释曾把示例写成 -1，已一并改正，防照抄填错。）
+   * 📌 小程序无 import.meta.env，故不走环境变量；但**也不写死字面量** ——
+   *   两端各写一份就是两个真相源，必然漂移（这正是本项目版本号曾踩过的坑）。
+   *   备案号是公开信息不是密钥，放 shared 常量即可随 Git 同步到四端。
+   */
+  icp: ICP_BEIAN_D_BEE_CN,
+  icpUrl: ICP_QUERY_URL,
+  /** 公安联网备案号：ICP 下证后 30 日内办理（即 2026-12-06 前）。拿到前为空 = 不渲染。 */
+  police: POLICE_BEIAN,
+  policeUrl: POLICE_QUERY_URL,
   /** 对外公示联系邮箱。🔴 2026-10-27 由 support@d-bee.com.cn（域名无 MX 收不到信）改为 163，须与主工程一致。 */
   contactEmail: 'dbeeSupport@163.com',
 }

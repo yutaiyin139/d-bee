@@ -64,13 +64,21 @@ export default function Legal() {
 
       {/*
         备案信息（P1-F）。渲染逻辑对齐主工程 src/components/SiteFooter.tsx:35-49：
-        **留空则整块不渲染** —— 备案审核期间展示假备案号属违规，
-        故 SITE.icp 为空串时这里什么都不出现（当前即此状态，备案号未下证）。
+        **留空则整块不渲染** —— 备案审核期间展示假备案号属违规。
 
-        🔴 备案号下证后的操作：只需改 mini/src/content/legal.ts 的
-           `icp: ''` → `icp: '京ICP备2026XXXXXX号-1'`（以及 police），
-           本页无需再改。主端走 VITE_ICP_BEIAN 构建期环境变量，
-           本端因小程序无 import.meta.env 而用常量（见 legal.ts 文件头说明）。
+        ✅ 2026-11-06 ICP 已下证，备案号已回填（SITE.icp 非空 → 下方整块正常渲染）。
+        🔴 备案号的真相源是 `packages/shared/src/constants` 的 ICP_BEIAN_D_BEE_CN，
+           由 mini/src/content/legal.ts 引用，**不要在本页写死字面量**（两端各写一份必漂移）。
+        🔴🔴 两个备案号必须与域名一一对应，填错即合规违规：
+           · 京ICP备2026075565号-**2** = 自律蜜蜂，d-bee.cn ← **本项目用这个**
+           · 京ICP备2026075565号-**1** = 北京迪蜂科技有限公司门户网站，d-bee.com.cn
+             （官网不在本仓库，本项目任何地方都不该出现 -1）
+           ⚠️ 本注释原先把回填示例写成「京ICP备2026XXXXXX号-1」，是错的 ——
+              照抄会把官网号填到自律蜜蜂站上。已于 2026-11-06 更正。
+           `deploy/verify-legal.mjs` 第 3 项会自动抓这类错配（页面出现期望号之外的号即 FAIL）。
+
+        📌 公安联网备案号（SITE.police）仍为空：ICP 下证后 **30 日内**须办理
+           （即 2026-12-06 前）。拿到后填 shared 的 POLICE_BEIAN，下方自动多渲染一行。
 
         ⚠️ 历史记录：本页曾**刻意不渲染** SITE.version，理由是「该字段在 mini 是死代码
            且值陈旧（写死 '1.6.9'，既非 mini/package.json 的 0.1.0 也非主端 1.7.3），
