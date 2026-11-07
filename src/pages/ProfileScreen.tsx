@@ -7,6 +7,7 @@ import { IconCrown, IconDownload, IconRun, IconTrash } from '../components/Icons
 import {
   buildMealsCsv,
   clearAllRecords,
+  deleteAccount,
   exportAllData,
   listMealsBetween,
   listWeightLogs,
@@ -373,23 +374,26 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
   }
 
   /**
-   * 注销账号（降级实现）。
-   * 云端当前不提供删除 auth 账号的能力（SDK 无 deleteUser、admin 端点只读），
-   * 因此这里做「清空全部数据 + 登出」的本地数据删除，并明确告知：彻底注销账号
-   * 需联系客服人工处理。这满足 Apple 5.1.1(v) 的「App 内提供删除入口」最低要求。
+   * 注销账号（真删号，Apple Guideline 5.1.1(v)）。
+   *
+   * 2026-11-07 整改前这里是**降级实现**：只 `clearAllRecords()` + 清空档案字段 +
+   * 登出 + 提示「彻底注销请联系客服」，身份行仍在库里，用户甚至能用同一手机号
+   * 重新登录。云库时期 SDK 无 deleteUser 尚可解释；切自建 PG 后网关同样没有删号
+   * 端点，转客服不满足 Apple 5.1.1(v) 的「App 内删除账号」要求。
+   *
+   * 现在改为调用 `deleteAccount()` → 0045 SECURITY DEFINER RPC，在数据库事务内
+   * 删除 17 张业务表 + `app_users` 身份行。成功后**只** `onSignOut()` 清本地会话：
+   * 🔴 绝不能再调 `clearAllRecords()` / `saveProfile()` —— 后者会 INSERT 一条新的
+   * `profiles` 档案，等于把刚删掉的账号又重建回来（护栏 9 专门守这一点）。
+   *
+   * 失败时保持登录态并如实报错（不假装已注销），由用户决定是否重试。
    */
   async function doDeleteAccount() {
     setDeletingAcct(true)
     setDataErr('')
     setDataMsg('')
     try {
-      await clearAllRecords()
-      // 也清掉身体档案，避免残留可识别个人信息
-      try {
-        await saveProfile({ nickname: null, barriers: null, plan_summary: null })
-      } catch {
-        // 档案清理失败不阻断登出
-      }
+      await deleteAccount()
       setConfirmDeleteAcct(false)
       onSignOut()
     } catch (e) {
@@ -746,7 +750,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
         </div>
         {confirmDeleteAcct && (
           <div className="helper" style={{ color: 'var(--red)', marginBottom: 4 }}>
-            ⚠️ 将删除你的全部记录与身体档案并退出登录，不可恢复。如需彻底注销账号，请通过「联系我们」与客服联系。
+            ⚠️ 将永久删除你的账号及全部数据（含饮食、体重、饮水、运动记录，身体档案、徽章、蜂蜜与会员权益），并退出登录。此操作不可恢复。
           </div>
         )}
       </div>

@@ -75,6 +75,14 @@
 - `CREATE POLICY` 顺序 `AS→FOR→TO→USING→WITH CHECK`；GRANT 追加语义；BYPASSRLS 已收回（0033）；`pg_dump` 必须 `sudo -u postgres` + 体积守卫；`JWT_SECRET`/`IDENT_PEPPER` 存 `deploy/gateway/.secrets.local`（改 JWT_SECRET=全员登出，改 IDENT_PEPPER=身份失配）；网关与 PostgREST 共用同一 HS256 secret；`DBEE_PROD=1` 拒 `SMS_PROVIDER=log` 且收紧 Apple 收据。
 - 🔴 **`deploy-gateway.sh` 是全站永久锁死级地雷**（模板整体重渲染，缺 IDENT_PEPPER 即 `rand_hex` 重置 → 全站身份永久失效）→ 改网关一律走手术式脚本（`apply-vision-key-update.py` / `apply-llm-thinking-fix.py` / `apply-password-login-fix.sh`，断言 env 非目标部分 sha256 前后一致）。**只读/备份操作也绝不跑它。**
 - SSH=`USER=ubuntu`+`SSH_PWD`（`sudo -n` 免密）；`.env` 另一套 `DBEE_USER=dbee_app`/`DBEE_PWD` **实测认证失败**；`deploy.sh` 身份取环境变量不取 `.env`。
+- 🔴🔴 **nginx reload 有「优雅退出窗口」→ 紧跟着验证会拿到旧行为 = 假红**（11-06 实测栽过）：`systemctl reload nginx` 在「新 worker 已起、开始接受新连接」时就返回成功，但**旧 worker 会继续处理它已接手的连接，且持有旧配置**。脚本 reload 后立刻 curl 验证，很可能落在旧 worker 上 → 表现为「补丁没生效」。
+  - 实例：301→308 补丁首轮验证报 `POST→308→POST→404`，一度判定「308 没生效」；三条独立证据反证配置正确（服务器内部 `curl -v` 得 `POST→308→POST→401` 方法保留 / access.log 两条 `POST 308`+`POST 401` / `127.0.0.1:8080` 直连网关 `POST→401`）。
+  - **修法**：reload 后 `sleep 8` 等旧 worker 退出，且**验证项本身重试 3 次**。📌 任何「reload + 立即断言」的脚本都有此坑，改 nginx 配置类脚本一律照此设防。
+  - 📌 反过来说：**判定「生产配置错」之前，先排除验证时机**。本轮三条证据都指向配置对，错的是验证时机。
+- 🔴 **补丁脚本必须可重入（幂等）**：已应用后再跑，应**跳过改动直接验证**，否则会报出「命中 0 行 ≠ 期望 2 行」这类**误导性错误**（看起来像补丁失败，实际是早就生效了）。
+  - 实现：先数改前状态，`BEFORE=0 && CUR_TARGET=2 → ALREADY=1`，则跳过 备份/替换/`nginx -t`/reload，直接进验证段；结尾按 `ALREADY` 输出「复核通过」或「完成」。
+  - 附带价值：**certbot renew 会把 `return 301` 重新注回来**（installer 每次续期改写 80 块），届时原样重跑同一脚本即可复位 308 —— 可重入让「定期复核」变成零成本动作。
+  - 📌 同源纪律：`apply-vision-key-update.py` 等手术式脚本也都断言「env 非目标部分 sha256 前后一致」，属同一思路（改动最小 + 可重复执行 + 自带证据）。
 - 网关鉴权头=`x-wb-webapp-access-key`，按 Origin 精确匹配 → Node 脚本须注入 Origin/Referer。真实表名见 `db/migrations/`（没有 habit/habits）。`signIn` 两条路径（验证码/密码）改鉴权必双回归；密码路径标识须归一化（裸 11 位）。
 
 ### 数据面与部署现状（11-05）
@@ -373,12 +381,375 @@ TLS：`nginx.conf:33` 全局含废弃 `TLSv1 TLSv1.1`，但 certbot 的 `options
 - Web 端（连自建 PG）：owner = `1793280185303313979`
 造演示数据/排查「为什么看不到数据」时先确认打的是哪一面。
 
-⑧🔴 **App 名称口径二选一（未决，该字段悬置）**：`自律蜜蜂` vs `自律蜜蜂 - 饮食热量记录`。
-**备案名 / ASC 名 / 软著名必须逐字统一**，否则 Apple 提审报 409 `ICP_NUMBER_MIIT_APP_NAME_MISMATCH`。
-决策前不要在任何一处先填。
+⑧✅ **App 名称 2026-11-07 定案 = `自律蜜蜂`**（用户拍板方案 B，弃 `自律蜜蜂 - 饮食热量记录`）。
+**备案报名名 / ASC 名称 / 软著登记名必须逐字统一为该值**，否则 Apple 提审报 409 `ICP_NUMBER_MIIT_APP_NAME_MISMATCH`。
+🔴 **历史文档仍留长名（未同步；按「历史快照只加横幅不改正文」纪律，是否统一待用户批准）**：
+`docs/AppStore产品页-填报包-2026-10-28.md` §一 + §30 强校验说明、`tools/check-asc-product-page.py` 的 `FIELDS["App 名称"]`、
+`docs/苹果iOS端-发布梳理与清单.md` §175/§241（写「备案须按长名逐字报」）、
+`docs/ASC配置-建App与配商品-操作清单-2026-10-25.md` §51-54（仍写「决策前悬置勿据此建 App」）、
+`docs/iOS上线可行性与步骤-2026-11-06.md` A1 行。**照这些文件填 ASC / 办备案前必须先按定案值校正**。
+另：`ios/App/App/Info.plist` 的 `CFBundleDisplayName=D-Bee` 是设备桌面名（与商店名是两回事），是否改中文待用户决策。
+`docs/苹果端上线前置条件总清单-2026-11-03.md` 已于 11-07 加状态横幅，其中第 ⑤ 条已写明定案值。
 
 ### 11-06 web 部署回滚点（补充）
 
 `/var/backups/d-bee-web-20261106-131509`（13:16 重新部署前的产物快照）+
 `/var/backups/nginx-d-bee.pre-certbot-20261106-144531.conf`（certbot 改写前的 97 行 nginx 配置）。
 线上入口 `index-CkK9x744.js`（含备案号 `-2`）。
+
+---
+
+## 2026-11-06 深夜二次清理：由 MEMORY.md 迁出的详版
+
+> 原因：MEMORY.md 清理前实测 **16.7KB**（注释声称 ~9KB，早已名不副实），注入会被截断。
+> 本次把「操作细节/详版解释」整体迁来，MEMORY.md 只留决策与铁律一句话指针。**内容未删，只是搬家。**
+
+### 权威口径·详版
+
+- **ICP 备案号单一真相源（11-06 下证当日）**：原实现 `SITE.icp = env('VITE_ICP_BEIAN')`，而 `.env` 被
+  `.gitignore:6` 忽略 → 换机器/CI 构建会**静默产出无备案号的页面**（页脚整行不渲染、`exit 0` 不报错）＝无声合规违规。
+  备案号是法律要求每页公示的**公开信息**（不是密钥），进 `packages/shared/src/constants/index.ts`：
+  `ICP_BEIAN_D_BEE_CN` / `ICP_QUERY_URL`(beian.miit.gov.cn) / `POLICE_BEIAN=''`(空＝该行不渲染，合规) /
+  `POLICE_QUERY_URL`(beian.mps.gov.cn)。两端 `legal.ts` 改 `env('VITE_ICP_BEIAN') || ICP_BEIAN_D_BEE_CN`。
+  `deploy/verify-legal.mjs` 用 vite `ssrLoadModule('/src/content/legal.ts')` 取 `SITE.icp` 作期望值
+  （**校验期望与渲染真值同一对象**），双向判定 + 31 省级简称正则；三种失败诊断分开：
+  A 填错号 / B 号码被截断 / C 已进代码但未重新构建部署。
+  🔴 不能用裸 Node `import('@dbee/shared')`：dist 是目录式 re-export → `ERR_UNSUPPORTED_DIR_IMPORT`。
+- **隐私政策静态页**：`npm run build` 自动跑 `tools/gen-legal-static.mjs` → `dist/legal/`（零 JS 可爬，
+  OPPO 硬要求：`privacyConsent.ts:40` 不需登录/点击/再跳转）；真源 `src/content/legal.ts`；
+  `build:native*` 不生成；上线须一并部署。`build:web` 只跑 `vite build` → 清空 dist 后**删掉 `dist/legal/`**，
+  🔴 即使只是验证编译也别用它（验证用 `tsc --noEmit`，要产物用完整 `npm run build`）。
+- **法律文案 `**强调**` 渲染**：两端各自转 `<strong>`；静态页 `rich()` 必须先 `esc()` 再 bold
+  （否则 XSS）；奇数个 `**` 剥星号降级；改后验 `grep -o '\*\*' | wc -l` = 0。
+- **铁律 #13 取证 5 法**：打真实端点 / 产物内 grep 正文（中文须解码）/ 比 mtime 时间线 /
+  查 DB 元数据 / 查部署物 mtime。探针第一版必须「发现性」非「断言性」；断言须「应用前必须红」才算有鉴别力。
+- **产物自检**：干净构建本就有 2 个 `index-*.js`（另一个是入口动态 import 的稳定 chunk），
+  「>1 个＝残留」是错误判据；以 `index.html` 引用的入口 js 为唯一真源。
+  ⚠️ 任何「产物自检」命令写进手册前，必须在干净构建的真产物上实跑且能区分合法/异常产物。
+
+### 架构铁律 12 条·全文（MEMORY 只留编号与一句话）
+
+1. 平台差异只走 `src/lib/` 抽象层；运行时探测 `window.Capacitor`，不 import Capacitor 包。
+2. `cloudConfig.ts` 零项目内依赖（最早求值），勿引入循环引用。
+3. 云端请求走 `OriginProxy` 注入云 SDK `options.fetch`，勿 patch window.fetch；endpoint 由
+   `cloudConfig.ts` 决定（native-release 硬断言 `https://d-bee.cn`）。
+4. 输入校验走 `src/lib/validate.ts`；错误文案统一 `src/lib/errmsg.ts`（`zh()`/`errText()`）。
+5. StoreKit 2：服务端核销成功才 `finish()`；退款交易只 finish 不送核销。回归 `npm run test:iap`。
+6. 原生能力必须返回显式状态，禁止吞成 0/空；HealthKit 只在 `isUsableHealthStatus(status)` 时写回。
+7. 弹窗无障碍统一 `useModalA11y(onClose)`；`role="button"` div 用 `src/lib/a11y.ts` 的 `onActivateKey`。
+8. iOS 付费墙禁止硬编码价兜底：拉价失败禁用购买+重试，价格位显示「—」。
+9. OriginProxy 取消归一为 End 非 Error，取消绝不回退缓冲重发；在途流注册表 finally 移除。
+10. 原生包禁用 `npm run build`（Web 产物护栏被死代码消除成无条件 throw → 白屏无报错）；
+    自检 `grep -c "禁止直接复用 Web 产物" dist/assets/index-*.js` 必须为 0。
+11. Capacitor 8.5.3 `addListenerNative` 链尾 `.catch()` 兜不住全部失败（callbackId 非 Promise /
+    原生永不 resolve / cb 同步抛错）→ 三路分别设防。
+12. 跨引擎错误上报 message 与 stack 分开取（iOS JSC stack 不含 message）；错误面板分致命/非致命；
+    `padding-top` 叠 `env(safe-area-inset-top)`。
+
+### 环境备忘·详版
+
+- SSH `150.158.51.106`，`USER=ubuntu` + `SSH_PWD`（`sudo -n` 免密）；`.env` 的 `DBEE_USER=dbee_app`
+  是过时值、认证会失败。**验收一律打 `https://d-bee.cn/`**（certbot `--redirect` 后 IP http 由 200 变 404，
+  冒烟/探针/验收三处默认值已改）。curl 本机 dev server 需 `--noproxy '*'`。
+- APK 归档 `release/`（gitignore）。🔴 **绝不可放在 `android/app/build/outputs/apk/release/` 内**：
+  Gradle `PackageAndroidArtifact` 会清理输出目录「陈旧文件」，下次 `assembleRelease` 连归档一起删。
+  命名 `D-Bee-<版本>-vc<N>-<用途>-<日期>.apk`。`assembleRelease` 输出名恒为 `app-release.apk`，
+  要保留两个变体必须打完一个立即 `cp` 到 `release/` 再打下一个。
+- Web 归档 `backups/`；异地备份 `db/backups/offsite/*.dump`（含真实健康数据，`.gitignore:50 backups/` 已覆盖，
+  **严禁 git add / 移出项目**）。`deploy/pull-latest-backup.py` 用 `DBEE_USER=ubuntu` + `SSH_PWD`，
+  校验服务器 `SHA256SUMS` 逐字节一致。
+- 🟠 `deploy.sh`/render 的 `__SUDO_PWD__` 占位符注释地雷（4 处，清单见「B2 详版」）：`render`/`run`
+  都会替换占位符 → 下次 `APPLY_NGINX_CONF=1` 必被守卫拦 exit 3。
+- 🔴 **nginx 只反代 `/.cloud/` 与 `/auth/`**（`nginx.selfhost.conf.example:59,78`）；其余路径落
+  `location /` 的 `try_files` → POST 静态资源由 nginx 返回 **405**、GET 返回 SPA fallback 200。
+  → **不能用 405 判断网关路由是否存在**。判路由要打正确前缀，并用「对照已存在路由返回 401」区分：
+  实测 `POST /.cloud/auth/v1/login-wechat` → 404「未知端点」（未部署），
+  而 `POST /.cloud/auth/v1/verification` → 401「invalid access key」（路由在）。
+  📌 网关注册前缀 `A = '/.cloud/auth/v1'`（`server/lib/app.mjs:71`），SDK `AUTH_PATHS.loginWechat='/v1/login-wechat'`
+  是相对 baseUrl `endpoint+'/.cloud/auth'` 的路径，两者拼接才对齐。
+- 网关密码登录：`signInWithPassword` 走 **`POST /.cloud/auth/v1/signin`**（`auth.mjs:490` 分流），
+  body `{username,password}`；`/token` 只接受 `grant_type=refresh_token`。
+  请求头 access-key 名 = **`x-wb-webapp-access-key`**（不是 `apikey`），值取 `src/cloudConfig.ts` 的 `wbpk_…`。
+- 测试：`npm test` = `vitest run tools/`；`vite.config.ts` 强制 `test.fileParallelism=false`
+  （并行会静默丢测试文件：曾报 8 文件/150 项「全绿」而真相是 10 文件/190 项）。
+  跑完必核对 `Test Files` 数 == `ls -1 tools/*.test.ts | wc -l`。
+- mini 类型检查须单独跑（根 tsconfig 不覆盖 `mini/`）：`cd mini && npx tsc --noEmit --skipLibCheck -p tsconfig.json`。
+- 构建期护栏必须写在构建配置里（webpack 不执行被打包模块顶层代码）：`mini/config/index.ts` 调与运行时
+  **同一个** `resolveBackendTarget()`；主端同构 `vite.config.ts:14-25` + `cloudConfig.ts:109-112`。
+- MAPE：四指标并报（MAPE 排除真值 0 / WMAPE / MAE / **Bias 有符号**），判据 `tools/ai-mape/mape.ts`；
+  **实测需真机+样本餐（≥20 条、4 热量档），此前不得对外表述任何精度数字**。
+- 🔴 产物里 grep 中文必假阴性（webpack/Taro 转义成 `\uXXXX`），必须先 `unicode_escape` 解码；
+  日期正则要容 `\s*`（源码写 `'2026 年 10 月 29 日'`，数字与年月日间有空格）。
+  📌 判断数据面必须追「哪个常量真正被 `resolveEndpoint` 返回」，不能 grep 到域名就下结论
+  （native-release 产物里同时有 `workbuddy.host` 常量声明与 `d-bee.cn`，前者不可达）。
+
+### 待拍板·详版（MEMORY 只留一行指针）
+
+- **P1-D 核销时序坑**：Apple=拉模式，微信/支付宝=推模式（权威信号是服务端异步回调）→ 直接接会
+  「已扣款但 App 报校验失败」（**主路径**）。解法：核销改「查订单状态+有限重试」+ 新增 `settling`；
+  `getAdapter`（`checkout.ts:39-46`）**无分发渠道维度** → 上华为前须加。
+  见 `docs/P1-D在线支付实装前置清单-2026-11-03.md`。
+- **mini 上线前 4 项**（`docs/小程序上线前缺口清单与实施步骤-2026-11-03.md`）：A 先发修复版 vs 先变更主体
+  （倾向先发）；B AI 同意门补门 vs 改文案（现只覆盖 2/4 入口，主端同缺口）；C 登录页协议做到哪步；
+  D 提醒开关置灰 vs 申请模板 ID。另 **潜在硬阻断：request 合法域名主体不一致** —— mini 请求
+  `*.workbuddy.host`/`www.workbuddy.cn`（备案主体=腾讯），微信要求合法域名主体与小程序主体一致 →
+  阶段 0 先向腾讯客服核实。
+- **护栏扫出 2 项**：**A9** 7 处手写舍入改走 numfmt（⚠️ 非机械替换：`fmtNum` 异常返 `—` 且默认去尾随零，
+  会改 `placeholder` 语义）；**A10** mini 缺「已减重/较起始」体重变化（主端有、`mini/src` 0 命中）——
+  选「不补」也要写进护栏注释记为刻意。
+- **一致性第三类：功能覆盖差异 ≠ 分叉**。原本只有「必须一致」与「刻意分叉」；第三类是同一功能
+  一端有一端没有。**分叉必须修**（同一功能两种行为=bug），**覆盖差异必须产品决策**（补，或明确记为刻意省略）。
+  定性时必须查全端、不能只看同名文件。
+
+---
+
+## 2026-11-06 深夜：由「会话工作区 MEMORY.md」并入的独有纪律
+
+> 背景：存在**两份** MEMORY.md —— ①本项目仓库 `.workbuddy/memory/MEMORY.md`（跨机同步真相源）
+> ②会话工作区 `C:/Users/yuty/WorkBuddy/2026-10-17-09-57-18/.workbuddy/memory/MEMORY.md`（被自动注入的那份，16.5KB）。
+> 本次把 ② 的**独有纪律**并入本文件，② 改写为精简核心版 + 指向本文件，**内容不丢、消除两套分叉**。
+> 🔴 ② 里的**状态结论已全部过时**，不并入、只在此留档存证：
+> 「web 已发布 11-04 → `http://150.158.51.106/`」「**不要设 `DBEE_DOMAIN`**（d-bee.cn 无 A 记录）」
+> 「Android 正式包**不可发布**（钉死的 d-bee.cn 查无 A 记录）」「护栏 6 道 10 项 / 全量 190 项 / 10 文件」
+> → 11-06 实测：web 走 `https://d-bee.cn/`、DNS+HTTPS 双就绪、应设 `DBEE_DOMAIN=d-bee.cn`、
+> Android 正式包已可实测、护栏 8 道 / **11 文件 219 项**。详见本文件「现状」相关章节与当日日志。
+
+### 数值口径（全站强制；MEMORY 只留一行指针）
+
+**唯一权威实现 `src/lib/numfmt.ts`。新增数字展示/舍入一律走它，禁止自己写 `toFixed` 或 `Math.round(n*f)/f`。**
+- `roundTo(n, 2)` 计算层→数值，异常归 0（防 NaN 传染求和）
+- `fmtNum(n, 2, {padZero,placeholder})` 展示层→字符串，去尾随零，异常 `—`
+- `pct(n, 0)` 入参**已是百分数**，不再乘 100
+- `balancePercents(values, 100)` 最大余数法配平
+- 精度：**克数类营养素（蛋白/碳水/脂肪/纤维/添加糖）2 位小数；kcal 与钠 mg 取整**
+- **纪律：计算层全精度，只在展示层插值那一刻舍入**。绝不「先舍入再参与计算」。
+  `foodInsight.ts` 的 protein/fiber **既用于阈值判断**（`>=20`、`>=6`）**又用于插值**，
+  故只在 8 处插值点走 `g(x)`，**阈值不动**。反例：`report.ts` 供能比曾用已取整日均值反算 → `18+37+46=101%`，已修。
+- 为何不用 `Math.round(n * 10**d) / 10**d`：①大数溢出精度（`1e21`→`999999999999999900000`）
+  ②负数 .5 方向不一致（`Math.round(-2.5)=-2` vs `toFixed` 给 `-3`）③乘法误差会「凑巧」掩盖逻辑错。
+  注：`1.005→"1.00"` 不是 bug，其 double 真实值为 `1.0049999999999998934`。
+- 🔴 日期禁 `toLocaleDateString`，统一走 `formatCnDate` / shared `datefmt`（四端一致）。
+
+### 刻意的产品行为（别当 bug 修）
+
+- `uniq(tags,3)`：单条画像**最多 3 风险 + 3 益处**，权重并列按插入顺序保留靠前者 —— 造测试 fixture 要注意。
+- `sanitizeNumeric` int 模式**删小数点**而非四舍五入：`clampNumeric('232.9',int)`→`'2329'`；负号被过滤 `'-5'`→`'5'`。
+
+### git push 的 schannel 握手失败
+
+本机走 HTTP(S) 代理时 git 默认 **schannel**（Windows 原生 SSL 后端）握手失败，
+表现为连续多次 `schannel: failed to receive handshake, SSL/TLS connection failed`（exit 128）。
+**解法：单次覆盖 openssl 后端**（不必改全局配置）：
+`git -c http.sslBackend=openssl push origin main` —— 实测立即成功。
+→ 纪律：schannel 握手失败**别当成「网络不通/远端挂了」反复重试**，换 sslBackend=openssl 试一次。
+（推送失败也可能是代理波动，for 重试 5 次勿改方案。）
+
+### native 构建会覆盖 `dist/`，与 web 产物互斥
+
+`vite build --mode native-release` / `native-internal` 和 web 的 `npm run build` **都写 `dist/`**。
+`cap sync` 从 `dist/` 拷进 `android/app/src/main/assets/public`（及 ios）。
+后果：跑完 native 构建，`dist/` 里就是**钉死了 endpoint 的原生产物**；此时若 `SKIP_BUILD=1` 部署 web，
+会把 native 产物误推到 web 服务器。
+→ 纪律：native 构建后、部署 web 前，必须 `npm run build` 重新生成 web dist 再部署；
+部署前用「线上 `index-*.js` 文件名」与 `ls dist/assets/index-*.js` 比对确认一致。
+
+### 归档 APK 的位置（Gradle 会清理输出目录）
+
+🔴 **绝不可放在 `android/app/build/outputs/apk/release/` 内**：Gradle `PackageAndroidArtifact`
+会清理输出目录「陈旧文件」，把 APK `cp` 进去做归档，下一次 `assembleRelease` 会连归档一起删
+（11-04 实测两个归档双双消失，`unzip -t` 报 zip 读取失败才发现）。
+→ 归档一律放项目根 `release/`（`.gitignore` 已忽略），命名 `D-Bee-<版本>-vc<N>-<用途>-<日期>.apk`。
+另：`assembleRelease` 输出名恒为 `app-release.apk`，第二次构建必覆盖第一次；
+要保留两个变体（正式/内测）必须打完一个立即 `cp` 到 `release/` 再打下一个。
+旧包备份名 `app-release.BACKUP-20261102-cloudinternal.apk`。
+
+### 产物里的 workbuddy 域名 ≠ 连云库
+
+native-release 正式包压缩产物中**同时**出现 `https://d-bee.cn` 与 `https://zilv-mifeng.app.workbuddy.host`。
+追赋值链：`fp/G5 = workbuddy.host` 只是 **CLOUD_HOST 常量声明**，`kf = "https://d-bee.cn"` 才是
+PRODUCTION_NATIVE_ENDPOINT。运行时 `fromNativeEnv` 有值 → 走第一分支断言 `=== 'https://d-bee.cn'`，
+云库常量在 native-release 下**不可达**（只在 DEV 与 native-internal + 显式授权两个口子生效）。
+→ 判断数据面必须追「哪个常量真正被 `resolveEndpoint` 返回」，不能 grep 到域名就下结论。
+
+### 探针实测：native 构建四场景（11-04 复核，全部符合双层护栏预期）
+
+- `native-release` 不注入 endpoint → **exit 1 throw**「必须设置 VITE_NATIVE_ENDPOINT=https://d-bee.cn」
+- `native-release` + `VITE_NATIVE_ENDPOINT=https://d-bee.cn` → **exit 0 通过**，产物内 endpoint = d-bee.cn
+- `native-internal` 不注入 → **exit 1 throw**「请设置 VITE_NATIVE_ENDPOINT 或 VITE_ALLOW_CLOUD_NATIVE=true」
+- `native-internal` + `VITE_ALLOW_CLOUD_NATIVE=true` → **exit 0 但 warn**「显式允许使用 WorkBuddy 云库；此产物禁止上架」
+> 构建期护栏写在 `vite.config.ts`（Node 执行），运行时护栏在 `cloudConfig.ts:resolveNativeEndpoint`。
+> 两者都对：webpack 不执行被打包模块顶层代码，故构建期护栏必须留在构建配置里。
+
+### 出 Word 文档：正文 section 内 ≥2 个顶层 `<div>` 会丢目录节分节符
+
+`workbuddy-docx` 流水线转 docx 时，若 `<section role="body">` 内包了多个 `<div>`（每章一个），
+引擎会**漏生成目录节的 sectPr** → verify 报 **S-5 + S-8**（目录与正文连排同页）。
+7 组最小对照实验锁定：**只与顶层 div 个数有关**，与目录条目数/嵌套层级/正文体量/class 数量全无关
+（0 或 1 个 div → ✅；≥2 个 → ❌）。
+→ 修法：**正文扁平化**，章节标题直接 `<h1 class="section-header" id="section-N">`，不要包 div；
+最多保留 1 个 div（如摘要的 `.executive-summary`）。
+📌 这与 `doc-typeset/prompts/base.md`「内部章节用 div」**直接冲突**，以引擎实测为准。
+📌 转换失败别猜，**做最小对照实验**（固定其他变量只改一个）比读源码快。
+📌 扫 docx 文本查 AI 痕迹前必须 `html.unescape()`，否则 `&amp;&amp;` 会被误报成英文残留。
+> 交付记录：`自律蜜蜂健康习惯追踪管理软件技术白皮书V1.0.docx`（封面/目录/九章/两附录，
+> 宋体小四 110 段首行缩进 2 字符、页脚 PAGE 域、标题绑定 41/41、内容 343 段零缺失）。
+
+### html_review 的 TQ-04/TQ-05（「只 1 个 h1」）是刻意不满足的非阻断项
+
+章节标题必须用 `h1.section-header` 才有 outlineLvl 语义（否则目录条目不能跳转），
+与 TQ-04「整篇只 1 个 h1」直接冲突。**用白皮书（14 个 h1）复跑 `review_html.py` 取证**：
+TQ-04/TQ-05 确实扣分，但 `typographic_quality` 仍 80 ≥ 75 → **passed=true**。
+→ 纪律：**不要为刷分把章节标题降级成 h2**（会丢目录跳转）。多 h1 是正确写法。
+📌 反之 SI-02（表格缺 `<thead>/<tbody>`）**是真阻断项**，必须补语义表头 —— 含 code-table。
+📌 preflight 的 `orphan_css_classes` 是**非阻断**提示，不必改。
+📌 design-token 的 `general` 主题字体是 PingFang SC，**必须覆写为 `"SimSun","宋体",serif`**
+（`doc-formatter §2.5` 硬约束：font-family 第一项须是 SimSun/宋体），否则转换层字体失效。
+> 交付记录 2：`D-Bee自律蜜蜂小程序体验版用户测试指引V1.0.docx`（review 96 分、内容 235 段零缺失、标题绑定 32/32、pageref 33）。
+
+### 排查产物新旧：grep 中文必假阴性
+
+webpack/Taro 把中文字符串转义成 `\uXXXX`，**直接 grep 中文恒 0 命中**，据此判断「产物是旧的」必错。
+必须先解码再搜：`t.encode('utf-8').decode('unicode_escape', errors='ignore')`。
+📌 日期正则要容空格：源码写 `'2026 年 10 月 29 日'`（数字与年月日间**有空格**），
+用 `2026年10月29日` 搜会漏掉最关键证据。搜中文/日期字面量一律用宽松正则 `\s*`。
+📌 微信开发者工具的「编译」**不跑 Taro 构建**，只重载 `dist/` 现有产物。
+改完源码必须先 `cd mini && npm run build:weapp`（或 `dev:weapp` watch）。
+
+### 写护栏的两条铁律（红验证实测抓出的假绿漏洞）
+
+1. **一个 `it()` 只放一条断言**。多断言挤一个 it 时，首条失败即抛出，后续断言**根本不执行**
+   → 表现为「测试通过了」但那条断言从未被验证过。实测：删掉 `name==='d-bee'` 校验（违规真实生效）
+   却没报红，只因同 it 里 version 断言先失败。
+2. **存在性断言必须匹配「实际使用」而非「标识符出现」**。`\LegalLinks\` 会命中 import 行 ——
+   把 `<LegalLinks/>` 换成 `<View/>` 但留 import，护栏照样绿。改匹配 `/<LegalLinks[\s/>]/`。
+📌 快照式基线之外，**新增护栏也必须做红验证**（注入违规 → 确认精准报红 → 立即 `cp` 恢复 →
+`git diff` 确认干净）。红验证的真正价值是抓出「自己写的护栏本身是假绿」。
+📌 补充第三条（项目 REFERENCE「工作方式纪律」已有）：断言须在 `stripComments()` 后的代码上做。
+
+### `npm run build:web` 会删掉 `dist/legal/` 静态法务页
+
+`build:web` 只跑 `vite build` → **清空 dist 后不再生成静态法务页**，`dist/legal/` 直接消失。
+这些页是商店/OPPO 隐私政策爬虫要直接抓的（`privacyConsent.ts:40`：「不需登录、不需点击、不需再跳转」），
+丢了会被判「url 无法访问或内容不合规」。
+→ **即使只是验证编译也别用 `build:web`**；验证用 `tsc --noEmit`，要产物用完整 `npm run build`。
+
+### 法律文案改动的隐藏联动（改前必读）
+
+主端 `LEGAL_UPDATED` 被 `src/lib/privacyConsent.ts:29` 用于隐私同意版本比对
+（`kvGet('privacy.agreed') === LEGAL_UPDATED`）→ **改日期 = 全体老用户重新弹隐私同意窗**。
+PIPL 第 14 条下这是正确行为，但属有真实用户影响的产品决策，**不可自动改**。
+mini 端**不依赖**该日期（走微信原生 `ensurePrivacyAuthorized`），改它零副作用。
+📌 `UPDATED` 语义 = **文档正文最后一次实质改动日**，不是「今天动过这个文件」，更不是发版日；
+改注释/改 SITE 字段不该刷新它，否则等于谎称协议内容变过。
+📌 两端法律日期**刻意不同**（正文本就分叉：主体表述、第三方 SDK 公示、AI 功能名都不同），
+强行对齐反而造假。
+
+### iOS 上线依赖刷新 · 详版（2026-11-07）
+
+权威文档 = `docs/iOS上线依赖全景与实施步骤-2026-11-07.md`（A~F 六组依赖矩阵 + 四阶段步骤 + 差异表）；
+`docs/iOS上线可行性与步骤-2026-11-06.md` 与 11-03 旧清单均已加状态横幅，只作历史快照。
+
+**🔴 修正 11-06 的「工程侧 100% 就绪」**：只对**代码/服务端**成立。ASC 表单填报面几乎空白 ——
+App Privacy 营养标签 / 新年龄分级问卷 / App 审核信息（联系人+备注+演示账户）/ 3 商品审核信息 /
+订阅披露两处链接 + EULA / 截图与创意素材上传 / 支持 URL / 备案号字段，**均为中国区提审必填**。
+「不挡 TestFlight、挡提审」是本轮最重要的分类。
+
+**Apple 官方政策（2026-11-07 检索 developer.apple.com/news/upcoming-requirements/、/cn/news/、/cn/tvos/submit/）**：
+- **2026-04-28 起**上传 ASC 的 iOS/iPadOS App 必须 **Xcode 26+ / iOS 26 SDK+** 构建 → 硬上传闸门，Mac 动手前先 `xcodebuild -version`。
+- **2026-09-09 起**须 target iOS 13+（项目 `IPHONEOS_DEPLOYMENT_TARGET=15.0` ✅）。
+- **2026-01-31 起**新年龄分级问卷必答（4+/9+/13+/16+/18+，新增 in-app controls / capabilities / medical-wellness / violent themes）。
+  ⚠️ Apple 明确要求把 **AI 助手/聊天功能对敏感内容出现频率的影响**计入分级 → 本项目有「问问小蜜」+ 健康主题，**不能预设 4+**。
+- App Privacy 营养标签未填 → 提交按钮阻塞；须与实际采集一致（Apple 会核对，含每个 SDK）。
+- 隐私清单 + Required Reason API：常用第三方 SDK 须自带**签名**隐私清单，缺失 → 上传 `ITMS-91053`；用 Xcode `Validate App` 预检。
+- 5.1.1(v)：能注册账号就必须提供 **App 内发起的账号删除**，deactivation / 转客服通常不足。
+- 3.1.2：订阅购买前须披露时长/价格/到期前 24h 续订/取消路径，并提供管理订阅入口；标准 EULA 须在描述或 App 内链接。
+- TestFlight：**内部测试即时**；**外部测试须先过 Beta App Review**（11-06 未区分）。
+
+**🔴 今天新识别的两处会致拒审缺口**：
+1. **法务 URL 死链**：`docs/AppStore产品页-填报包-2026-10-28.md` §三/§六 三条 URL 与「支持 URL」仍写
+   `http://150.158.51.106/legal/*` → 11-07 实测 **404**（certbot 后 IP http 由 200 变 404）。
+   域名版 `https://d-bee.cn/legal/{privacy,terms,disclaimer}/` 全 200；无尾斜杠会 308 到带斜杠（跟随 -L 仍 200）。
+   `tools/check-asc-product-page.py:67-69` 已是域名版。ASC 一律填带尾斜杠的域名版，照抄填报包 = Guideline 2.1 拒审。
+   📌 `/legal/refund/` 的 200 是 **SPA `index.html` fallback**，`dist/legal/` 只有 privacy/terms/disclaimer 三个静态目录。
+2. **账号删除 5.1.1(v) 降级实现**：`src/pages/ProfileScreen.tsx:375-394` 只做「清空记录+档案+登出」，
+   注释写「云端不提供 deleteUser、admin 端点只读」是**云库时期**判断；11-07 复核**自建网关同样无删号端点**
+   （`server/lib/app.mjs:86-110` 只有 verification/verification.verify/signin/login-wechat/signup/token/user.me/signout/llm/apple/healthz）。
+   自建 PG 是我们自己的，**完全有能力做真删号**；但属「新增端点 + 前端 + 生产部署」高风险动作，须用户批准。
+
+**填报包整体已过时（4 处）**：名称仍是长名、三条 URL 是 IP 死链、§339 注释仍写「iOS 端仍连云端/HTTPS 切换完成前」、
+§三 描述写「云数据库」（数据面已自建 PG）。**不能照抄填 ASC**。
+
+**✅ 今天新核的齐备项**：`ios/App/App/PrivacyInfo.xcprivacy` 已存在（6 类采集：手机号/邮箱/用户ID/健康/照片/其他用户内容，
+均 Linked=true、Tracking=false、用途 AppFunctionality + UserDefaults `CA92.1`）；`ITSAppUsesNonExemptEncryption=false`；
+相机/相册/HealthKit 用途说明齐；`App.entitlements` 有 healthkit；商店截图 `deploy/screenshots/store/` iPhone 5 张 1179×2556 /
+iPad 5 张 2048×2732；IAP 审核截图 `output/promo/dbee-review-{monthly,yearly,lifetime}.png` 3 张；`check-asc-product-page.py` 全字段通过。
+🆕 壳内产物（11-04 08:59）除「无 `-2` 备案号、无 `public/legal/`」外，还有 **`Google Play` 失实句 1 命中** → 重打包自检要加这条。
+
+**文档查不到、需用户/外部确认**：dSYM 上传符号、IPv6 NAT64 兼容、随包 SDK 隐私清单签名、ASC 后台实际状态
+（App 是否已建/商品/付费协议 Active/问卷/备案号字段/审核信息）、Apple 账号今日主体与 D-U-N-S、
+W-8BEN 与对公收款、Mac 上 Xcode 实际版本、备案待回填字段、「App 备案是否必须先有软著」法定口径、
+首发是否开 IAP、微信真实 AppID 是否启用。
+
+
+---
+
+## 0045 · App 内真删号（2026-11-07 下午 · A-5 整改详版）
+
+### 为什么改方案：上午预案 vs 下午实际
+
+上午报告写的是「新增网关删号端点 + 前端 + 生产部署（高风险）」。下午只读调研后**换了更安全的等价路线**，理由逐条有实测：
+
+- 生产 `app_users` 是 `FORCE ROW LEVEL SECURITY`，policy 只有 `gateway_ident_access TO dbee_app`，ACL = `postgres=arwdDxtm / dbee_gateway=arw / dbee_app=arw / dbee_admin=r` → **`dbee_app` 无 DELETE 权限**，网关连接角色物理上删不掉身份行。0031 的注释「刻意不给 DELETE：身份记录只应软失效」是当年的设计，不是今天的约束。
+- 生产网关 `/opt/dbee-gateway/lib/app.mjs` 是 **10-29 版本**（79 行路由、无 `login-wechat`），`auth.mjs` 10-29、`config.mjs` 11-01；本地已到 11-05。要新增端点就得整套 `lib/` 同步 + restart，风险远大于收益。
+- 项目本就有 **20+ 个 SECURITY DEFINER RPC**（`badge_stats` / `redeem_by_code` / `llm_gate` / `log_apple_notification` …）由前端经 `/.cloud/database/rest/rpc/<fn>` 调用，PostgREST 注入 `request.jwt.claims` → `auth.uid()`。这是既有范式。
+- `dbproxy.mjs` 的 `verifyAccess()` 验前端 JWT（含 `token_version` 比对）后，用 `tokenForPostgrest()` 给 PostgREST 重签或透传，**两条路径都带 sub** → 函数里 `auth.uid()` 可靠。
+
+✅ 净效果：**完全不碰 `/opt/dbee-gateway`**，不 restart、不 reload nginx、不跑 `deploy-gateway.sh`。部署后只读回归证据：`IDENT_PEPPER`/`JWT_SECRET` 两行 sha256 与部署前逐字一致（`aef9d66a…`）、`dbee-gateway` 进程 `ActiveEnterTimestamp` 仍是 `2026-11-02 15:53:12`、`app.mjs` sha256 仍是 `609b802f…`。
+
+### SQL 设计（0045-account-deletion.sql）
+
+- `public.delete_own_account(p_confirm text) RETURNS jsonb`，`LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public, pg_temp`，属主 postgres。
+- **不接受 owner_id 参数**：`v_owner := auth.uid()`，为空抛 `42501`。调用方无法指定删谁。
+- **`p_confirm` 服务端二次闸门**：必须逐字等于 `DELETE_MY_ACCOUNT`，否则抛 `22023`。前端两步确认 UI 不是安全边界。
+- **17 张业务表**（生产 `information_schema` 实测含 `owner_id` 的 18 张表减去 `app_users`）：
+  `ai_quota_claims, ai_usage, apple_transactions, badges, entitlements, exercise_logs, honey_ledger, invite_attempts, invite_links, meal_entries, payment_orders, profiles, quota_bonus, quota_bonus_newbie_retire_log, recipes, water_logs, weight_logs`。
+  用硬编码 `v_tables text[]` + `EXECUTE format('DELETE FROM public.%I WHERE owner_id = $1', v_tbl) USING v_owner`（表名非外部输入、owner_id 参数化），`GET DIAGNOSTICS` 累计行数。**新增含 owner_id 的表必须同步此数组**（护栏 9 快照会红）。
+- 最后 `DELETE FROM public.app_users WHERE owner_id = v_owner`（SECDEF 属主 postgres 绕过 FORCE RLS + 无 DELETE 授权）。
+- `REVOKE ALL ... FROM PUBLIC, anon; GRANT EXECUTE ... TO authenticated;`（PG 默认把新函数 EXECUTE 给 PUBLIC，必须显式收）；`NOTIFY pgrst, 'reload schema'`；登记 `schema_migrations` 0045。
+- 返回 `jsonb_build_object('ok',true,'deleted_rows',v_total,'identity_removed',v_ident)`，**不回传 owner_id**。
+
+### 前端
+
+`src/lib/api.ts` 新增 `deleteAccount()` → `callRpc('delete_own_account', { p_confirm:'DELETE_MY_ACCOUNT' })`；`ProfileScreen.tsx` 的 `doDeleteAccount()` 成功后**只** `onSignOut()`：
+🔴 绝不能再调 `clearAllRecords()` / `saveProfile()` —— 后者会 `INSERT` 一条新 `profiles` 档案，等于把刚删掉的账号重建回来。`onSignOut()` → `cloud.auth.signOut()` → 网关 `/user/signout` → `bumpTokenVersion` 对用户已删的行 UPDATE 0 行，不报错。
+
+### 生产实测（铁律 #13）
+
+`tools/apply-account-deletion-prod.py`（本地 SSH 驱动）+ `tools/server-apply-0045.sh`（服务器端，可重入）：
+
+- 备份 `/var/backups/dbee/backup-before-0045-20261107-115121.dump`（`pg_restore --list` TOC **315** 项）→ 应用 0045 → 幂等复跑 → 10 项标志位 → 11 项端到端验收。
+- 端到端走**真实公网链路** `POST https://d-bee.cn/.cloud/database/rest/rpc/delete_own_account`（不是服务器本机 psql 直调），用 `TEST-` 前缀临时账号 + 4 张业务表各 1 行，**绝不碰审核演示账户**。
+- 负向：未登录非 200、错误 `p_confirm` 非 200 **且数据仍在**（证明事务没误删）；正向：200 + `ok/identity_removed=true` + `app_users` 身份行与 4 张表数据全 0；回归守卫：其它账号 `app_users`/`profiles` 总数与基线一致、四服务 active、`healthz` ok。
+- JWT 由服务器本机 node 读 `/etc/dbee/gateway.env` 签 HS256（`sub + role:authenticated + ver:1`），`WB_PUBLISHABLE_KEY` 作 `x-wb-webapp-access-key`；两者写进 chmod600 临时文件、shell 读进变量、用完即删，**全程不回显、不进命令行参数**。
+- 部署后回归：线上 `index-677ckuM3.js` 与本地 `dist/` 逐字一致、产物含 `delete_own_account`/`DELETE_MY_ACCOUNT`/`p_confirm` 且「如需彻底注销账号」0 处、三法务页 200、`verify-legal` + `verify-live` 双 PASS、308=2/301=0、演示账户 `check` 200、`TEST-` 残留 0。
+
+### 本轮三个新坑（都写进可复用脚本了）
+
+1. **`/etc/dbee/gateway.env` 是 0640 root:dbee** → ubuntu 直接跑 node 读它报 `EACCES`。修法：`sudo -n /usr/local/bin/node ...`，但 stdout 重定向由普通用户 shell 完成，`.cred` 属主仍是 ubuntu（chmod 600）。首轮就是栽在这里，迁移已应用但验收早退。
+2. **早退必须 `trap cleanup EXIT`**：首轮早退把 `TEST-` 测试账号留在生产库、`.cred`/`mkjwt.mjs` 也没删。现在 `cleanup()` 同时清当前 OWNER 与所有历史 `TEST-%` 残留，并在取基线前先调一次，避免基线被脏数据抬高。
+3. **Windows 上 Python `subprocess` 调 `bash` 会解析到被安全策略禁止的 `wsl.exe`** → `deploy.sh` 那条路被拦。改用**纯 SFTP 增量上传** `dist/` → `/var/www/d-bee`（17 文件 / 1893.2 KB），不执行任何远程命令、不动 nginx、不需要 reload。`put_dir` 本来就是增量不删除，语义等价。
+4. 附带：`profile` 文件是 **CRLF**，红验证脚本里带 `\n` 的注入锚点会找不到 → 改单行注入（不改变行数，避免连带触发行号快照护栏）。
+
+### 护栏与基线变化
+
+- `tools/four-end-consistency.test.ts` 新增**护栏 9**（10 项）：表清单快照、删身份行、SECDEF、REVOKE、GRANT、`auth.uid()`、`p_confirm`、前端 RPC 调用、禁止重建档案、文案禁「转客服」。
+- 数值口径护栏的 `KNOWN` 行号快照 `ProfileScreen.tsx:168,169,510` → `169,170,514`（A-5 加 import + 改写函数体导致平移，**三行代码逐字未变**）。同步后做了红验证。
+- 红验证 **4/4 精准报红**（KNOWN 回退 / 表清单少一张 / 删号后又写档案 / 确认令牌改错），恢复后 31/31 绿。
+- 全量基线：**11 文件 / 229 项**（原 219 + 护栏 9 的 10 项），`Test Files` 数 == 实际文件数 11。
+
+### 明确未做 / 待拍板
+
+1. **隐私政策文案**：`src/content/legal.ts:304` 仍写「彻底注销账号请发送邮件与我们联系」。该文件注释明确「新增注销渠道必须刷新 `LEGAL_UPDATED`」，而 `LEGAL_UPDATED = UPDATED` 同时门控隐私同意 → 刷新会让**全体老用户重弹同意窗**，属产品决策，未擅自改。现状不构成虚假陈述（邮件渠道仍有效），只是没覆盖新的自助渠道。
+2. **iOS 包**：`ios/App/App/public/` 产物停在 11-04，不含 A-5；web 端已部署。**B 阶段 Mac 必须 `build:native` + `cap sync ios` 重打**。
+3. **IAP 权衡**：`apple_transactions` 行随删号一并删除 → 该用户历史 `transaction_id`（全服幂等键）被释放，理论上可用旧收据对新账号重新核销一次。当前 `APPLE_*` env 全缺、付费协议未 Active、IAP 未启用，风险为 0；**若首发启用 IAP，应改为「保留交易行 + owner_id 匿名化」**。
+4. **mini 端**仍是降级实现（用户 11-06 明确 mini 暂放），属刻意分叉，未改。

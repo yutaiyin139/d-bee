@@ -255,6 +255,13 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
 - 旧流程正式废弃：genie-baas MCP、`db/backups/YYYY-MM-DD.json`、`.parts/` 分片、`tool-results` 落盘转存——全部停用，勿再回退。
 - 本次附加：MEMORY.md 注入超限被截断，已瘦身 38.9KB → 8.7k 字符，迁出内容并入 REFERENCE.md 的「2026-11-06 迁入」章节；同时修正「三条主线·备份」的过时记载。
 
+### 2026-11-07 08:53（第 23 次）· 自建 PG 第 2 次
+- 结果：**成功**。`deploy/pull-latest-backup.py` 一次通过，exit=0，新拉 1 / 已最新 0 / 失败 0。
+- 拉取：`dbee-daily-20261107-033001.dump`，177,574 B（173.4 KB，较昨日 +6.2 KB），sha256 与服务器 SHA256SUMS 一致。
+- 保留：Python 按 mtime 清 >30 天（cutoff 2026-10-08），**移除 0 份**；`db/backups/offsite/` 存量 **3 份**（11-05 / 11-06 / 11-07）。
+- 安全：`git status --porcelain db/` 为空；`git check-ignore` 命中 `.gitignore:61 backups/`；未读 dump 正文。
+- 观察：服务器端现存备份 9 份（自 10 月底起累积，cron 滚动保留正常）。11-05 与 11-06 两份大小同为 171,220 B 但 sha 不同 = 正常（时间戳不同）。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。

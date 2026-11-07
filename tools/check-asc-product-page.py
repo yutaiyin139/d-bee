@@ -4,8 +4,12 @@
 App Store 产品页（iPhone / 中国区）填报包 · 字数实测校验
 只统计字符数并核对 Apple 官方上限，不生成/改写文案内容。
 文案正文见 docs/AppStore产品页-填报包-2026-10-28.md（人工撰写）。
+
+11-07 新增：法务 URL 护栏。原 IP 深链 http://150.158.51.106/legal/* 今日实测 404，
+照抄填 ASC 会触发 Guideline 2.1 拒审；三条必须为 HTTPS + d-bee.cn + 带尾斜杠。
 用法：python tools/check-asc-product-page.py
 """
+import re
 import sys
 
 LIMITS = {
@@ -23,8 +27,14 @@ LIMITS = {
     "IAP 终身买断显示名": 30,
 }
 
+LEGAL_URLS = (
+    "https://d-bee.cn/legal/privacy/",
+    "https://d-bee.cn/legal/terms/",
+    "https://d-bee.cn/legal/disclaimer/",
+)
+
 FIELDS = {
-    "App 名称": "自律蜜蜂 - 饮食热量记录",
+    "App 名称": "自律蜜蜂",
     "副标题": "拍照识别卡路里，AI 帮你吃对",
     "关键词": "饮食记录,卡路里,热量,减肥,减脂,AI识别,拍照识别,营养,体重记录,饮食日记,轻食,健身",
     "推广文本": (
@@ -63,10 +73,10 @@ FIELDS = {
 已购买的权益跟随账号，换设备后可通过付费墙内的「恢复购买」按钮取回。
 
 【隐私】
-你的记录数据存储在中国境内的云数据库中，不会出境。我们不会将你的个人信息用于广告投放，也不会出售。使用拍照识别时，照片仅用于该次识别，识别完成后不会长期保存。
-隐私政策：https://d-bee.cn/legal/privacy
-用户协议：https://d-bee.cn/legal/terms
-免责声明：https://d-bee.cn/legal/disclaimer""",
+你的记录数据存储在中国境内的自有服务器中，不会出境。我们不会将你的个人信息用于广告投放，也不会出售。使用拍照识别时，照片仅用于该次识别，识别完成后不会长期保存。
+隐私政策：https://d-bee.cn/legal/privacy/
+用户协议：https://d-bee.cn/legal/terms/
+免责声明：https://d-bee.cn/legal/disclaimer/""",
     "版权": "2026 北京迪蜂科技有限公司",
     "IAP 月订阅描述": "AI 拍照识别不限次、问答不限流、30 天报告与数据导出",
     "IAP 年订阅描述": "同月订阅权益，按年更划算（约 ¥10.7/月）",
@@ -75,6 +85,28 @@ FIELDS = {
     "IAP 年订阅显示名": "Pro 年订阅",
     "IAP 终身买断显示名": "D-Bee 终身会员",
 }
+
+
+def check_legal_urls(desc: str) -> int:
+    """11-07 护栏：三条法务 URL 必须是域名 + HTTPS + 尾斜杠，禁止已失效的 IP 深链。"""
+    bad = 0
+    if "150.158.51.106" in desc:
+        print("🔴 描述含已失效的 IP 深链（11-07 实测 404）")
+        bad += 1
+    if "http://" in desc:
+        print("🔴 描述含明文 HTTP 法务链接")
+        bad += 1
+    for url in LEGAL_URLS:
+        if url not in desc:
+            print(f"🔴 法务 URL 缺失或格式不符：{url}")
+            bad += 1
+    found = re.findall(r"https?://[^\s]+/legal/[a-z]+/?", desc)
+    if len(found) != len(LEGAL_URLS):
+        print(f"🔴 法务 URL 条数应为 {len(LEGAL_URLS)}，实测 {len(found)}")
+        bad += 1
+    if bad == 0:
+        print("✅ 三条法务 URL 均为 https://d-bee.cn/legal/*/（带尾斜杠，11-07 实测 200）")
+    return bad
 
 
 def main() -> int:
@@ -103,6 +135,10 @@ def main() -> int:
     for token in ("自动续订", "恢复购买", "管理或取消", "24 小时", "隐私政策", "用户协议"):
         mark = "✅" if token in FIELDS["描述"] else "🔴 缺失"
         print(f"{mark} 描述含审核必备要素：{token}")
+        if mark.startswith("🔴"):
+            bad += 1
+    print("-" * 74)
+    bad += check_legal_urls(FIELDS["描述"])
     print("-" * 74)
     print(f"结论：{'全部字段通过' if bad == 0 else f'{bad} 项需修正'}")
     return 1 if bad else 0

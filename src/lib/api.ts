@@ -583,6 +583,33 @@ export async function exportAllData(): Promise<ExportBundle> {
 }
 
 /** 清空全部记录（保留账号与身体档案）。按 id 分批删，避免无过滤 DELETE 的兼容性问题 */
+/**
+ * 永久删除当前账号（Apple Guideline 5.1.1(v) / PIPL 第 47 条删除权）。
+ *
+ * 走 0045 的 `delete_own_account` SECURITY DEFINER RPC，在**数据库一个事务内**
+ * 删除 17 张业务表的全部行 + `app_users` 身份行，因此：
+ *   · 中间失败会整体回滚，不会留下「删了一半」的半成品账号；
+ *   · 身份行删掉后，原手机号/邮箱可以重新注册，旧 JWT 的 sub 不再对应任何用户；
+ *   · 函数只信 PostgREST 由已验签 JWT 注入的 `auth.uid()`，**不接受调用方指定删谁**，
+ *     也不接受删别人的账号。
+ *
+ * 🔴 不要在此函数里再调 `clearAllRecords()` / `saveProfile()`：服务端已经删干净，
+ *    前者会做无谓的空查询，后者会 **INSERT 出一条新的 profiles 档案**（等于把刚删掉的
+ *    账号又重建回来）。删号成功后调用方只需 `onSignOut()` 清本地会话即可。
+ *
+ * `p_confirm` 是服务端的二次闸门（不信任前端确认 UI），值由本函数统一提供。
+ */
+export async function deleteAccount(): Promise<void> {
+  const { error } = await callRpc('delete_own_account', { p_confirm: 'DELETE_MY_ACCOUNT' })
+  if (error) throw new Error(zh(error.message, '注销失败，请重试'))
+}
+
+/**
+ * 清空当前账号的全部饮食 / 体重 / 饮水 / 运动记录（**保留账号与身体档案**）。
+ *
+ * 与 `deleteAccount()` 的区别：这里只删 4 张记录表，不碰 `app_users`，
+ * 是「我的 → 清空全部记录」那个常规入口，不是账号注销。
+ */
 export async function clearAllRecords(): Promise<void> {
   for (const table of ['meal_entries', 'weight_logs', 'water_logs', 'exercise_logs'] as const) {
     for (let guard = 0; guard < 500; guard++) {

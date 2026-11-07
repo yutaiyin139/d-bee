@@ -228,7 +228,11 @@ describe('护栏 3 · 数值口径禁止新增手写舍入（唯一权威 numfmt
       'mini/src/pages/onboarding/onboarding.tsx:88',
       'src/components/Charts.tsx:62',
       'src/pages/Onboarding.tsx:123',
-      'src/pages/ProfileScreen.tsx:168,169,510',
+      // 2026-11-07 A-5 真删号整改：ProfileScreen 顶部多 1 行 import，
+      // doDeleteAccount 注释/实现改写使后半段再平移 → 168,169,510 → 169,170,514。
+      // 三行**代码内容逐字未变**（仍是既有的 Math.round(x*10)/10 手写舍入），
+      // 这里同步的是行号快照，不是放宽基线；同步后已做红验证。
+      'src/pages/ProfileScreen.tsx:169,170,514',
     ]
 
     expect(
@@ -587,5 +591,115 @@ describe('护栏 8 · ICP 备案号单一真相源 + 后缀不得错配', () => 
       'shared 缺少 POLICE_BEIAN 常量（生效代码中）—— 两端 legal.ts 都引用它；' +
         '公安联网备案须在 ICP 下证后 30 日内办理（2026-12-06 前）',
     ).toBe(true)
+  })
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// 护栏 9 · App 内真删号（Apple 5.1.1(v) / PIPL 第 47 条）
+//
+// 起因（2026-11-07）：ProfileScreen 的「注销账号」是降级实现（清记录 + 登出 +
+// 提示联系客服），身份行仍在库里。整改落成 0045 SECURITY DEFINER RPC。
+// 这里守的是**三个最容易悄悄退化的点**：
+//   ① 新增含 owner_id 的表没同步 v_tables → 删号留下孤儿个人信息；
+//   ② 前端删号成功后又调 saveProfile() → 把刚删掉的 profiles 档案重建回来；
+//   ③ 权限被误放宽给 anon/PUBLIC，或删掉服务端 p_confirm 闸门。
+//
+// 🔴 快照基线来源：2026-11-07 生产 `information_schema` 实测 18 张含 owner_id 的表
+//    （17 业务表 + app_users，后者在函数末尾单独删）。**放宽基线前必须做红验证**。
+// ────────────────────────────────────────────────────────────────────────────
+describe('护栏 9 · App 内真删号（0045）', () => {
+  const MIG = 'db/migrations/0045-account-deletion.sql'
+  const sqlRaw = readFileSync(join(ROOT, 'db', 'migrations', '0045-account-deletion.sql'), 'utf8')
+  // SQL 只有行注释；逐行剥掉 -- 之后的内容，避免注释里的关键词造成假绿
+  const sqlCode = sqlRaw.split('\n').map((l) => l.replace(/--.*$/, '')).join('\n')
+  const apiCode = stripComments(readFileSync(join(ROOT, 'src', 'lib', 'api.ts'), 'utf8'))
+  const profileCode = stripComments(readFileSync(join(ROOT, 'src', 'pages', 'ProfileScreen.tsx'), 'utf8'))
+
+  const EXPECTED_TABLES = [
+    'ai_quota_claims', 'ai_usage', 'apple_transactions', 'badges',
+    'entitlements', 'exercise_logs', 'honey_ledger', 'invite_attempts',
+    'invite_links', 'meal_entries', 'payment_orders', 'profiles',
+    'quota_bonus', 'quota_bonus_newbie_retire_log', 'recipes',
+    'water_logs', 'weight_logs',
+  ].sort()
+
+  it('🔴 0045 的 v_tables 必须覆盖生产全部 17 张含 owner_id 的业务表', () => {
+    const arr = sqlCode.match(/v_tables\s+text\[\]\s*:=\s*ARRAY\[([\s\S]*?)\]/)?.[1] ?? ''
+    const got = [...arr.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).sort()
+    expect(
+      got,
+      `${MIG} 的 v_tables 与生产快照不一致。新增任何含 owner_id 的表都必须同步该数组，` +
+        '否则删号会留下孤儿个人信息；放宽基线前先做红验证',
+    ).toEqual(EXPECTED_TABLES)
+  })
+
+  it('🔴 0045 必须删掉 app_users 身份行（不能只清业务数据）', () => {
+    expect(
+      /DELETE\s+FROM\s+public\.app_users\s+WHERE\s+owner_id\s*=\s*v_owner/.test(sqlCode),
+      `${MIG} 未删除 app_users —— 只清数据不删身份不算「注销账号」，Apple 5.1.1(v) 仍不满足`,
+    ).toBe(true)
+  })
+
+  it('🔴 0045 必须是 SECURITY DEFINER（否则越不过 app_users 的 FORCE RLS + 无 DELETE 授权）', () => {
+    expect(
+      /SECURITY\s+DEFINER/.test(sqlCode),
+      `${MIG} 缺 SECURITY DEFINER：生产 app_users 是 FORCE RLS 且 dbee_app ACL=arw（无 d），` +
+        '只有属主 postgres 能删身份行',
+    ).toBe(true)
+  })
+
+  it('🔴 0045 必须收回 PUBLIC/anon 的 EXECUTE', () => {
+    expect(
+      /REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.delete_own_account\(text\)\s+FROM\s+PUBLIC,\s*anon/.test(sqlCode),
+      `${MIG} 未 REVOKE PUBLIC/anon —— PG 默认把新函数 EXECUTE 给 PUBLIC，未登录也能调`,
+    ).toBe(true)
+  })
+
+  it('🔴 0045 必须只授 authenticated EXECUTE', () => {
+    expect(
+      /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.delete_own_account\(text\)\s+TO\s+authenticated/.test(sqlCode),
+      `${MIG} 未把 EXECUTE 授给 authenticated —— PostgREST 以该角色调用，前端会 404/401`,
+    ).toBe(true)
+  })
+
+  it('🔴 0045 的身份必须只取自 auth.uid()（禁止接受调用方指定删谁）', () => {
+    expect(
+      /v_owner\s*:=\s*auth\.uid\(\)/.test(sqlCode),
+      `${MIG} 未用 auth.uid() 取身份。删号函数绝不能有 owner_id/p_owner 入参，` +
+        '否则会变成「传别人的 id 删别人」的越权面',
+    ).toBe(true)
+  })
+
+  it('🔴 0045 必须保留服务端 p_confirm 二次闸门', () => {
+    expect(
+      /p_confirm\s+IS\s+DISTINCT\s+FROM\s+'DELETE_MY_ACCOUNT'/.test(sqlCode),
+      `${MIG} 缺 p_confirm 校验：前端两步确认 UI 不是安全边界，误调/回放不可逆`,
+    ).toBe(true)
+  })
+
+  it('🔴 api.ts 的 deleteAccount() 必须调 delete_own_account RPC 并带确认令牌', () => {
+    expect(
+      /callRpc\('delete_own_account',\s*\{\s*p_confirm:\s*'DELETE_MY_ACCOUNT'\s*\}\)/.test(apiCode),
+      'src/lib/api.ts 的 deleteAccount() 未调用 0045 RPC（或确认令牌不符）—— ' +
+        '匹配的是剥离注释后的生效代码，仅注释里提到不算',
+    ).toBe(true)
+  })
+
+  it('🔴 ProfileScreen 注销成功后不得再写档案（否则删号后又重建 profiles）', () => {
+    const fn = profileCode.match(/async function doDeleteAccount\(\)[\s\S]*?\n  \}/)?.[0] ?? ''
+    expect(
+      /await deleteAccount\(\)/.test(fn) && !/saveProfile\(|clearAllRecords\(/.test(fn),
+      'doDeleteAccount() 必须调 deleteAccount()，且不得再调 clearAllRecords()/saveProfile()。' +
+        '服务端已事务删干净，saveProfile 会 INSERT 出一条新 profiles 档案 = 账号被重建',
+    ).toBe(true)
+  })
+
+  it('🔴 注销确认文案不得再把用户推给客服（App 内必须能真正删号）', () => {
+    const bad = hits(profileCode, /如需彻底注销账号|与客服联系/g)
+    expect(
+      bad,
+      `ProfileScreen 生效代码里仍有「转客服」文案（行 ${bad.join(',')}）：` +
+        'Apple 5.1.1(v) 要求 App 内完成账号删除，转客服通常不满足',
+    ).toEqual([])
   })
 })

@@ -82,3 +82,11 @@ native-plugins/*/ios/DerivedData/
 
 # 发布产物（APK/AAB 等）本地留存，不入库
 release/
+
+# App 备案签名证书：本地材料，不入库（signing/README.md 说明文件保留）
+signing/*.cer
+signing/*.crt
+signing/*.pem
+signing/*.p7b
+signing/*.p12
+signing/*.der

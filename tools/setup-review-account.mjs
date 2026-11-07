@@ -1,5 +1,6 @@
 /**
- * App Store 审核演示账户 —— 云端注册脚本。
+ * App Store 审核演示账户 —— 注册 / 复检脚本（默认端点：自建网关 https://d-bee.cn）。
+ * 注：以下背景说明写于云库时期；2026-11-07 起默认端点已切自建网关，check 实测通过。
  *
  * 为什么需要它：
  *   App 的邮箱登录是 OTP 制（sendOtp → verifyOtp），云端 signUp 必须带
@@ -32,8 +33,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
 const STATE_FILE = path.join(__dirname, '.review-otp.json')
 
-// 与 src/cloudConfig.ts 保持一致：原生端回退用的云端域名 + 公开 publishableKey
-const ENDPOINT = process.env.REVIEW_ENDPOINT || 'https://zilv-mifeng.app.workbuddy.host'
+// 2026-11-07 起默认指向自建网关：云库早已不是生产数据面，提审复检必须打 https://d-bee.cn，
+// 否则打到已废弃的云库会得到「既不能证明也不能否定」的假证据。
+// 自建网关兼容云库 SDK 的 signInWithPassword 调用，本轮实测 check 返回 200（见 §一 生产实测表）。
+// 仅复盘旧云库时才显式 REVIEW_ENDPOINT=https://zilv-mifeng.app.workbuddy.host 覆盖。
+const ENDPOINT = process.env.REVIEW_ENDPOINT || 'https://d-bee.cn'
 const PUBLISHABLE_KEY =
   process.env.REVIEW_PUBLISHABLE_KEY || 'wbpk_w6iIU6TqTyHvJxESPTxBTy_545Abmwi5Euln5uauP5Dp18ZpMvH2P4E'
 const OAUTH_RELAY = 'https://www.workbuddy.cn/v2/as/genie-baas/oauth'
@@ -159,6 +163,7 @@ else {
   node tools/setup-review-account.mjs verify --code N   # 用邮箱收到的码完成注册（密码 ${PASSWORD}）
   node tools/setup-review-account.mjs check             # 自检邮箱+密码可登录
 
+默认端点：https://d-bee.cn（自建网关）
 环境变量覆盖：REVIEW_EMAIL / REVIEW_PASSWORD / REVIEW_ENDPOINT`)
   process.exit(cmd ? 2 : 0)
 }
