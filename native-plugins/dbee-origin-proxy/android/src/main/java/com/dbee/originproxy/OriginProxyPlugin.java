@@ -29,12 +29,10 @@ import java.util.concurrent.Executors;
  * OriginProxy —— D-Bee 原生端「Origin 转发」插件（方案 B）。
  *
  * ── 为什么需要它 ────────────────────────────────────────────────────────────
- * WorkBuddy 云端按 **Origin 精确匹配** 校验客户端（设计文档 §5.2 / §7.3），
- * publishableKey 只标识应用、不带权限，安全性完全由来源匹配提供。
- *
- * Web 端能登录，靠的是本站 Nginx 反代里显式覆写的那两行：
- *     proxy_set_header Origin  "https://zilv-mifeng.app.workbuddy.host";
- *     proxy_set_header Referer "https://zilv-mifeng.app.workbuddy.host/";
+ * 【历史背景】早期 WorkBuddy 云端按 **Origin 精确匹配** 校验客户端，Web 端靠
+ * Nginx 反代覆写 Origin/Referer 绕过，原生端则靠本插件在原生层注入这两个头。
+ * 🔴 2026-11-08 云端库彻底废弃：自托管网关只校验 access-key、不校验来源；
+ *    本插件仍统一注入 https://d-bee.cn（与 endpoint 同源），保持四端请求头一致。
  *
  * 原生端没有 Nginx：请求由 WebView 的 fetch 发出，被 CapacitorHttp 插件接管后
  * 在**原生层**直发云端，而原生 HTTP 栈不会自己加 Origin。更糟的是 —— `Origin`
@@ -57,12 +55,11 @@ import java.util.concurrent.Executors;
 @CapacitorPlugin(name = "OriginProxy")
 public class OriginProxyPlugin extends Plugin {
 
-    /** 应用创建时预留的发布域名 —— 必须与 Nginx 里那两行的值保持一致。
-     * 🔒 仅作 JS 层未显式传 origin 时的兜底（src/lib/originProxy.ts 恒传
-     *    CLOUD_ORIGIN，正常链路不走此默认值）。它只是过云端白名单的 header，
-     *    不决定流量去向：endpoint 由 cloudConfig.ts 钉死（native-release =
-     *    https://d-bee.cn 自托管，网关不校验来源，此头被忽略）。 */
-    private static final String DEFAULT_ORIGIN = "https://zilv-mifeng.app.workbuddy.host";
+    /** 请求 Origin/Referer 头的兜底值（JS 层未显式传时）。
+     * 🔴 2026-11-08 云端库彻底废弃：统一为自建域名 https://d-bee.cn，与
+     *    src/lib/originProxy.ts 的 SELFHOST_ORIGIN、cloudConfig.ts 的 endpoint 三者同源。
+     *    该头不决定流量去向（endpoint 由 cloudConfig.ts 钉死），自托管网关不校验来源。 */
+    private static final String DEFAULT_ORIGIN = "https://d-bee.cn";
 
     private static final int CONNECT_TIMEOUT_MS = 15_000;
     /**

@@ -48,13 +48,16 @@ function resolveProductVersion(): string {
 }
 
 export default defineConfig<'webpack5'>(async (merge, { command, mode }) => {
-  // 后端接入点开关（见 mini/src/lib/backend.ts）。默认 selfhost = 自建库（2026-11-08 起云库废弃）。
-  // 必须用 defineConstants 显式注入，webpack5 才会把 process.env.D_BEE_* 替换成字面量：
-  // 小程序运行时没有 process.env，不注入则读出来恒为 undefined。虽然后端归一化会把
-  // undefined 当 selfhost 处理，但显式注入才能让产物里 grep 到实际连的后端，
-  // 也让下面这道构建期护栏拿到确定的值。
+  // 后端接入点（见 mini/src/lib/backend.ts）。2026-11-08 起云端库彻底废弃，
+  // selfhost 是**唯一**后端，不再有「切后端」这回事。
+  // 🔴 READY 默认 'true'：双确认门原本是防「误切到未就绪的自托管」，如今自托管链路
+  //    （ICP/DNS/HTTPS/login-wechat/ident_kind/legal）已生产实测就绪、且别无选择，
+  //    默认视为已确认，保证普通 `npm run build:weapp` 不带任何环境变量也能构建。
+  //    运行时护栏 resolveBackendTarget() 仍保留：显式传 cloud 或任何非法值一律 throw。
+  // 必须用 defineConstants 显式注入，webpack5 才会把 process.env.D_BEE_* 换成字面量：
+  // 小程序运行时没有 process.env；显式注入还能让产物里 grep 到实际连的后端。
   const backend = (process.env.D_BEE_BACKEND ?? 'selfhost').trim()
-  const selfhostReady = (process.env.D_BEE_SELFHOST_READY ?? '').trim()
+  const selfhostReady = (process.env.D_BEE_SELFHOST_READY ?? 'true').trim()
 
   // 产品版本号（见上方 resolveProductVersion 注释）。与主端 __APP_VERSION__ 同源同值。
   const appVersion = resolveProductVersion()

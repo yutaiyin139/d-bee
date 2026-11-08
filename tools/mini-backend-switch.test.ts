@@ -8,7 +8,6 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  CLOUD_HOST,
   SELFHOST_HOST,
   isSelfhostBackend,
   resolveBackendTarget,
@@ -32,12 +31,12 @@ describe('默认值：不设任何环境变量 = selfhost（2026-11-08 起云库
     })
   })
 
-  it('显式 cloud → cloud（历史回滚通道，须显式指定）', () => {
-    expect(resolveBackendTarget({ backend: 'cloud' }).endpoint).toBe(CLOUD_HOST)
+  it('🔴 显式 cloud → throw（云端库已彻底废弃，无代码回滚通道）', () => {
+    expect(() => resolveBackendTarget({ backend: 'cloud' })).toThrow(/云端库已彻底废弃/)
   })
 
-  it('🔴 云端 endpoint 逐字锁死（历史回滚通道，仅显式 cloud 才用）', () => {
-    expect(CLOUD_HOST).toBe('https://zilv-mifeng.app.workbuddy.host')
+  it('🔴 cloud 的 throw 文案给出微信后台回退预案（而非代码回滚）', () => {
+    expect(() => resolveBackendTarget({ backend: 'cloud' })).toThrow(/微信后台回退线上版本/)
   })
 
   it('🔴 自托管 endpoint 与主端 native-release 硬断言值逐字一致', () => {
@@ -48,8 +47,8 @@ describe('默认值：不设任何环境变量 = selfhost（2026-11-08 起云库
 })
 
 describe('大小写与空白容错（环境变量手填容易带这些）', () => {
-  it('CLOUD 与前后空格 → cloud', () => {
-    expect(resolveBackendTarget({ backend: '  CLOUD  ' }).kind).toBe('cloud')
+  it('CLOUD 与前后空格 → 归一化后仍被拒绝（云库已废弃）', () => {
+    expect(() => resolveBackendTarget({ backend: '  CLOUD  ' })).toThrow(/无法识别的 D_BEE_BACKEND/)
   })
 
   it('SelfHost + READY=True → selfhost', () => {

@@ -9,18 +9,18 @@ function validateNativeBuild(mode: string, env: Record<string, string>): void {
   if (mode !== 'native-release' && mode !== 'native-internal') return
 
   const endpoint = env.VITE_NATIVE_ENDPOINT?.trim() ?? ''
-  const allowInternalCloud = env.VITE_ALLOW_CLOUD_NATIVE === 'true'
+
+  // 🔴 2026-11-08 云端库彻底废弃：native-internal 也不再允许回退云库。
+  //    未给 endpoint 时统一走自建网关，与运行时 resolveNativeEndpoint() 同口径。
+  if (!endpoint && mode === 'native-internal') {
+    console.log(`[native-internal] 未设置 VITE_NATIVE_ENDPOINT，使用自建网关 ${PRODUCTION_NATIVE_ENDPOINT}`)
+    return
+  }
 
   if (!endpoint) {
-    if (mode === 'native-internal' && allowInternalCloud) {
-      console.warn('[native-internal] 显式允许使用 WorkBuddy 云库；此产物禁止上架。')
-      return
-    }
     throw new Error(
-      mode === 'native-release'
-        ? `[native-release] 必须设置 VITE_NATIVE_ENDPOINT=${PRODUCTION_NATIVE_ENDPOINT}。` +
-          '域名/HTTPS 未就绪时请改用 npm run native:sync:internal，不要发布内测包。'
-        : '[native-internal] 请设置 VITE_NATIVE_ENDPOINT，或显式设置 VITE_ALLOW_CLOUD_NATIVE=true 使用云库内测。',
+      `[native-release] 必须设置 VITE_NATIVE_ENDPOINT=${PRODUCTION_NATIVE_ENDPOINT}。` +
+        '域名/HTTPS 未就绪时请改用 npm run native:sync:internal，不要发布内测包。',
     )
   }
 

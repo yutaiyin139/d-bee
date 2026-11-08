@@ -1,21 +1,18 @@
-// 由 WorkBuddy 云服务返回的公开配置（前端初始化使用，不含任何密钥）。
+// 前端公开配置（不含任何密钥）。
+//
+// 🔴 2026-11-08 起云端库彻底废弃：四端唯一数据面 = 自建 PostgreSQL + 自建网关
+//    （https://d-bee.cn）。本文件不再保留任何云端域名或回退分支。
 //
 // Web 默认取 window.location.origin，由本站 Nginx 同源反代到自建网关；
-// VITE_CLOUD_ENDPOINT 仅用于 Web 排查问题时显式覆盖。
+// VITE_CLOUD_ENDPOINT 是历史命名，仅用于显式覆盖 Web endpoint（须指向自建网关）。
 //
 // 原生 WebView 没有本机 Nginx，必须显式使用绝对 HTTPS endpoint：
 // - native-release：只接受 https://d-bee.cn，构建期与运行时双重校验；
-// - native-internal：可使用 HTTPS 测试网关，或显式允许 WorkBuddy 云库内测；
-// - development：保留云库回退，方便本地开发。
+// - native-internal / development：未显式注入时同样回退 https://d-bee.cn（自建）。
 // 原生分支刻意优先于 VITE_CLOUD_ENDPOINT，避免 Web 的临时覆盖污染 App 数据面。
 //
-// 🔒 双后端口径（2026-10-31 核查确认）：
-//   CLOUD_HOST 回退只存在于 DEV 与 native-internal+VITE_ALLOW_CLOUD_NATIVE
-//   两个【显式内测口子】；Web 生产走 window.location.origin（自托管 nginx），
-//   native-release 走硬断言的 d-bee.cn。云库侧 7 个权益函数已于 2026-10-31
-//   通过 MCP 补齐 0039 闸门（db/cloud-patch-0039/，攻击路径全拦、正常放行），
-//   即使内测走云库也吃得到库内权益校验 —— 双后端不再是「闸门旁路」。
-const CLOUD_HOST = 'https://zilv-mifeng.app.workbuddy.host'
+// 📌 publicConfig.resourceId / publishableKey 是 SDK 初始化所需的公开标识，
+//    **不是云端连接**：真正决定流量去向的只有 endpoint 字段。
 const PRODUCTION_NATIVE_ENDPOINT = 'https://d-bee.cn'
 
 const fromEnv = (import.meta.env.VITE_CLOUD_ENDPOINT as string | undefined)?.trim()
@@ -127,17 +124,15 @@ function resolveNativeEndpoint(): string {
     return endpoint
   }
 
-  if (import.meta.env.DEV) return CLOUD_HOST
-  if (
-    import.meta.env.MODE === 'native-internal' &&
-    import.meta.env.VITE_ALLOW_CLOUD_NATIVE === 'true'
-  ) {
-    return CLOUD_HOST
+  // 🔴 2026-11-08 云库彻底废弃：DEV / native-internal 也一律走自建网关，
+  //    与 vite.config.ts 的构建期护栏同口径，不再保留任何云端回退口子。
+  if (import.meta.env.DEV || import.meta.env.MODE === 'native-internal') {
+    return PRODUCTION_NATIVE_ENDPOINT
   }
 
   throw new Error(
-    '原生生产构建缺少 VITE_NATIVE_ENDPOINT，已阻止静默回退云库。' +
-      '正式包请使用 npm run build:native；云库内测必须使用 native-internal 并显式授权。',
+    '原生生产构建缺少 VITE_NATIVE_ENDPOINT，已阻止静默回退。' +
+      '正式包请使用 npm run build:native（VITE_NATIVE_ENDPOINT=https://d-bee.cn）。',
   )
 }
 
@@ -170,5 +165,5 @@ export const publicConfig = {
   publishableKey: 'wbpk_w6iIU6TqTyHvJxESPTxBTy_545Abmwi5Euln5uauP5Dp18ZpMvH2P4E',
 } as const
 
-/** 云端原始地址，供构建日志/排查使用 */
-export const CLOUD_UPSTREAM = CLOUD_HOST
+/** 数据面上游（供构建日志 / NativeDiagnostics 使用）；2026-11-08 起恒为自建网关。 */
+export const SELFHOST_UPSTREAM = PRODUCTION_NATIVE_ENDPOINT

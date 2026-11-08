@@ -20,12 +20,12 @@
 
 - ✅ **WEB 完全上线** `https://d-bee.cn/` 200；入口 js `index-677ckuM3.js` 与本地 `dist/` 逐字一致；`verify-legal`+`verify-live` 双 PASS；三法务页 200；308=2 / 301=0；证书到期 **2027-02-04**。
 - ✅ **数据面 = 自建 PostgreSQL `dbee`**（`healthz` 实证），迁移 **0045**；审核演示账户 `dbeesupport@163.com` 实测 signin 200 + token（iOS 2.1 拒审风险解除）。
-- ✅✅ **云端库彻底废弃（11-08 用户指令）**：四端生产数据面全指自建 PG，云库不再写入、不再是生产依赖。mini `backend.ts` 默认 `cloud`→`selfhost`、`config/index.ts` 注入同步，`cloud` 仅显式回滚通道；selfhost 包产物实证返回 `d-bee.cn`；mini `legal.ts` 改自建库口径、`UPDATED` 刷 11-08。逐项证据 → `docs/待办清单-云库废弃收尾-2026-11-08.md` §一。
+- ✅✅ **云端库彻底废弃（11-08 用户指令）**：四端生产数据面全指自建 PG。**二次清理已把运行时云库残留清零**：mini 删 `CLOUD_HOST`/`cloud` 分支（显式 cloud 一律 throw）、主端删 `CLOUD_HOST` 与 DEV/native-internal 回退、`CLOUD_UPSTREAM`→`SELFHOST_UPSTREAM`、`CLOUD_ORIGIN`→`SELFHOST_ORIGIN=https://d-bee.cn`、iOS/Android 原生插件 `defaultOrigin` 同源、vite 构建期删云库内测口、诊断脚本不再打云库。**护栏 10**（`tools/no-cloud-runtime.test.ts`：209 文件扫描 + 5 处四端同源锚点，红验证 2/2 精准）；`npm run build:weapp` 不带变量即可构建、产物零云端域名。🔴 但**云库实例仍在线（探测 200）**，停用见下条。证据 → `docs/待办清单-云库废弃收尾-2026-11-08.md` §一/§七。
 - 🔴 **云库数据放弃迁移**（云库无身份表、owner_id 19 位数字 ≠ 自建库 `wx:<openid>` → 孤儿数据）；**云库实例未停用/未删除**（平台控制台、不可逆、须用户本人，建议 selfhost 版真机验收 T+7 后）。
-- 🔴 **mini 发版剩 2 项用户动作**：微信后台加 request 合法域名 `https://d-bee.cn`；确认备案期能否上传新版本。网关阶段 A 已就绪（`login-wechat` 404→401、`healthz` 200，工具 `deploy/apply-wechat-login-surgical.py`）。
+- 🔴 **「彻底释放」最后 3 项只能用户本人**：① 微信后台加 request 合法域名 `https://d-bee.cn` ② 确认备案期能否上传 mini 新版本（**线上旧包仍连旧云库、仍在写入**）③ 云库实例停用/删除（平台控制台，不可逆；本会话 `cloud_service inspect` 无关联应用、平台无停用接口）。网关阶段 A 已就绪（`login-wechat` 401、`healthz` 200、新 `Origin: https://d-bee.cn` 预检 204 + ACAO 回显）。
 - 🟠 尾巴：网关「模式=开发」（`DBEE_PROD` 未设，收紧前须先给本地开发换出路）、安全响应头、certbot renew 后复核 308、凭据轮换未执行、`APPLE_*` env 全缺、公安备案回填（12-06 前）。常规部署今后应设 `DBEE_DOMAIN=d-bee.cn`。
 - 🟠 **git 未 push**：`github.com` 域名级限制（代理 502 / 直连超时 / `ls-remote` OpenSSL eof，`api.github.com`=200 证非凭据问题）；离线兜底 `release/d-bee-main-20261107.bundle`（verify PASS）。恢复后 `git -c http.sslBackend=openssl push origin main` 或 `git fetch <bundle> main && git push origin FETCH_HEAD:main`。
-- 工程基线：`npm test` = **11 文件 / 231 项全绿**（跑完核对 `Test Files` 数 == 文件数）；跨端护栏 **9 道**。11-08 已修 `report-ratio.test.ts` 日期漂移。📄 待办清单 = `docs/待办清单-云库废弃收尾-2026-11-08.md`。
+- 工程基线：`npm test` = **12 文件 / 446 项全绿**（跑完核对 `Test Files` 数 == 文件数）；跨端护栏 **10 道**（护栏 10 = 运行时零云库域名 + 四端同源）。📄 待办清单 = `docs/待办清单-云库废弃收尾-2026-11-08.md`。
 
 ## 下一步 / 待拍板（详版 → REFERENCE.md）
 
@@ -48,7 +48,7 @@ Capacitor 8.5.3 混合壳；React18+Vite5+TS；Windows 出 Android、Mac mini M4
 ## 云数据库安全铁律（最高优先级）
 
 - 发权益函数必须 SECURITY DEFINER + 入参白名单；**涉权益表必须 REVOKE authenticated 的 INSERT/UPDATE/DELETE**（RLS 挡不住直写）。
-- **0039 闸门双库对齐**：新增/修改权益函数须双库同步打补丁（自建 migrations / 云库 MCP + `db/cloud-patch-0039/`；探针 `deploy/probe-0039-parity.sh`）。
+- **0039 闸门**：新增/修改权益函数只改自建 migrations 单库即可；🔴 云库废弃后**不再双库同步**，`db/cloud-patch-0039/`、`tools/split-*-for-cloud.py`、`deploy/probe-0039-parity.sh` 均仅历史存档，勿再执行。
 - nginx 唯一生效模板=`nginx.selfhost.conf.example`；改 nginx 只走 `deploy.sh APPLY_NGINX_CONF=1` 或 `switch-nginx-selfhost.sh`。
 - 单条 SELECT 求值顺序未定义：`set_config` 混函数须 `WITH s AS MATERIALIZED`。
 - 🔴 **删号/身份类改动走 PostgREST SECDEF RPC，别改网关**（`app_users` FORCE RLS + 无 DELETE，只有属主 postgres 能删）；0045 范式 = 不带 owner_id 参数、只信 `auth.uid()`、`p_confirm` 闸门、`REVOKE PUBLIC/anon` + `GRANT authenticated`。删号后前端禁调 `saveProfile()`；新增含 `owner_id` 的表须同步 0045 `v_tables`（护栏 9 拦）。详版 REFERENCE「0045」。

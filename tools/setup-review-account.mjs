@@ -36,8 +36,8 @@ const STATE_FILE = path.join(__dirname, '.review-otp.json')
 // 2026-11-07 起默认指向自建网关：云库早已不是生产数据面，提审复检必须打 https://d-bee.cn，
 // 否则打到已废弃的云库会得到「既不能证明也不能否定」的假证据。
 // 自建网关兼容云库 SDK 的 signInWithPassword 调用，本轮实测 check 返回 200（见 §一 生产实测表）。
-// 仅复盘旧云库时才显式 REVIEW_ENDPOINT=https://zilv-mifeng.app.workbuddy.host 覆盖。
-const ENDPOINT = process.env.REVIEW_ENDPOINT || 'https://d-bee.cn'
+// 🔴 2026-11-08 云库彻底废弃：不再提供云端覆盖口，固定打自建网关。
+const ENDPOINT = 'https://d-bee.cn'
 const PUBLISHABLE_KEY =
   process.env.REVIEW_PUBLISHABLE_KEY || 'wbpk_w6iIU6TqTyHvJxESPTxBTy_545Abmwi5Euln5uauP5Dp18ZpMvH2P4E'
 const OAUTH_RELAY = 'https://www.workbuddy.cn/v2/as/genie-baas/oauth'

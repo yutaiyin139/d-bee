@@ -45,8 +45,8 @@ curl -s -o /dev/null -w "apple verifyReceipt: %{http_code} (%{time_total}s)\n" -
 curl -s -o /dev/null -w "apple sandbox: %{http_code}\n" --max-time 12 https://sandbox.itunes.apple.com/verifyReceipt 2>&1 || echo "不可达"
 
 echo
-echo "══════════ 7. 云库是否仍可达（三端还依赖它）══════════"
-curl -s -o /dev/null -w "cloud endpoint: %{http_code}\n" --max-time 12 https://zilv-mifeng.app.workbuddy.host/ 2>&1
+echo "══════════ 7. 自建网关是否可达（2026-11-08 起云库已彻底废弃）══════════"
+curl -s -o /dev/null -w "selfhost healthz: %{http_code}\n" --max-time 12 https://d-bee.cn/.cloud/healthz 2>&1
 
 echo
 echo "═══ 结束 ═══"

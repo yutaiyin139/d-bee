@@ -2,11 +2,10 @@
  * 原生 Origin 转发抽象层（方案 B）。
  *
  * ── 它要解决什么 ────────────────────────────────────────────────────────────
- * 云端按 **Origin 精确匹配** 校验客户端。Web 端之所以能登录，是因为自托管站点的
- * Nginx 反代里显式覆写了两行：
- *
- *     proxy_set_header Origin  "https://zilv-mifeng.app.workbuddy.host";
- *     proxy_set_header Referer "https://zilv-mifeng.app.workbuddy.host/";
+ * 【历史背景】早期云端按 **Origin 精确匹配** 校验客户端，Web 端靠 Nginx 反代覆写
+ * Origin/Referer 头绕过；原生端没有 Nginx，故需要本插件在原生层注入这两个头。
+ * 🔴 2026-11-08 云端库已彻底废弃：自托管网关只校验 access-key、不校验来源，
+ *    但插件仍统一注入 https://d-bee.cn（与 endpoint 同源），保持四端请求头一致。
  *
  * 原生端没有 Nginx：请求在 WebView 里发出，`Origin` 属于 fetch 规范的
  * forbidden header name，**JS 侧再怎么设都会被 Request 构造过滤掉**（已实测）。
@@ -42,22 +41,17 @@
 import { isNative } from './platform'
 
 /**
- * 应用创建时预留的发布域名（applicationId = wbapp_w6iIU6TqTyHvJxESPTxBTy）。
- * 云端按它做精确匹配，**换域名等于登录失效**，不要随手改。
- * 若将来启用自有域名 d-bee.cn（双域名规划中 Web 端的正式域名），
- * 这里要与云端预留来源、Nginx 三处同步变更。
+ * 原生请求注入的 Origin/Referer 头。
  *
- * 🔒 职责边界（2026-10-31 澄清，防误读为「生产走云」）：
- *   本常量只是**注入给云端白名单校验的 Origin 头**，它【不决定流量去向】。
- *   真正决定 endpoint 的是 src/cloudConfig.ts：
- *     - native-release（正式包）：endpoint 被硬断言钉死 = https://d-bee.cn（自托管），
- *       请求根本不打云端，此 Origin 头被自托管网关忽略（网关只校验 access-key、不校验来源）；
- *     - Web 生产：endpoint = window.location.origin（自托管 nginx），createNativeFetch()
- *       在 Web 端返回 undefined，压根不注入本 Origin。
- *   因此本值只在【显式走云库的内测场景】（DEV / native-internal + VITE_ALLOW_CLOUD_NATIVE）
- *   才真正生效。叠加云库已补 0039 闸门，即便内测走云也吃得到权益校验（纵深防御）。
+ * 🔴 2026-11-08 云端库彻底废弃：统一为自建域名 https://d-bee.cn，与
+ *    cloudConfig.ts 的 endpoint、Swift/Java 插件的 defaultOrigin/DEFAULT_ORIGIN 三者同源。
+ *
+ * 🔒 职责边界：本常量只是**请求头**，【不决定流量去向】—— 真正决定 endpoint 的是
+ *    src/cloudConfig.ts（native-release 硬断言 https://d-bee.cn）。自托管网关只校验
+ *    access-key、不校验来源；Web 生产走 window.location.origin，createNativeFetch()
+ *    在 Web 端返回 undefined，压根不注入本头。
  */
-const CLOUD_ORIGIN = 'https://zilv-mifeng.app.workbuddy.host'
+const SELFHOST_ORIGIN = 'https://d-bee.cn'
 
 /** OriginProxy 插件的响应形状（见 native-plugins/dbee-origin-proxy） */
 interface OriginProxyResponse {
@@ -198,7 +192,7 @@ async function nativeFetch(input: RequestInfo | URL, init?: RequestInit): Promis
     headers,
     body,
     bodyEncoding,
-    origin: CLOUD_ORIGIN,
+    origin: SELFHOST_ORIGIN,
   }
 
   // ── 流式分支：LLM 的 SSE 请求（Accept: text/event-stream）走 requestStream ──

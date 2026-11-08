@@ -45,12 +45,11 @@ public class OriginProxyPlugin: CAPPlugin, CAPBridgedPlugin {
         call.resolve(["streamId": streamId, "cancelled": task != nil])
     }
 
-    /// 应用创建时预留的发布域名 —— 必须与 Nginx 里那两行的值保持一致。
-    /// 🔒 仅作 JS 层未显式传 origin 时的兜底（src/lib/originProxy.ts 恒传
-    ///    CLOUD_ORIGIN，正常链路不走此默认值）。它只是过云端白名单的 header，
-    ///    不决定流量去向：endpoint 由 cloudConfig.ts 钉死（native-release =
-    ///    https://d-bee.cn 自托管，网关不校验来源，此头被忽略）。
-    private static let defaultOrigin = "https://zilv-mifeng.app.workbuddy.host"
+    /// 请求 Origin/Referer 头的兜底值（JS 层未显式传时）。
+    /// 🔴 2026-11-08 云端库彻底废弃：统一为自建域名 https://d-bee.cn，与
+    ///    src/lib/originProxy.ts 的 SELFHOST_ORIGIN、cloudConfig.ts 的 endpoint 三者同源。
+    ///    该头不决定流量去向（endpoint 由 cloudConfig.ts 钉死），自托管网关不校验来源。
+    private static let defaultOrigin = "https://d-bee.cn"
 
     private static let connectTimeout: TimeInterval = 15
     /// LLM 流式响应可达 120s（网关 llmTimeoutMs），加余量设 180s。

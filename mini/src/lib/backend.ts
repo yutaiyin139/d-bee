@@ -10,11 +10,12 @@
  * （这个坑在 `tools/mini-invite-link.test.ts` 里踩过一次）。
  * 本文件**零依赖**（不 import 任何东西），解析逻辑可被直接单测。
  *
- * ## 开关语义（2026-11-08 起：默认 selfhost）
+ * ## 唯一后端（2026-11-08 起：云库彻底废弃，无回滚通道）
  *
- * 默认 `selfhost`（自托管 PG + 自建网关 = https://d-bee.cn）。**不设任何环境变量 = 连自建库**。
- * 🔴 云端库已按用户 11-08 指令「自今日起彻底废弃」，**不再是任何生产写入源**；
- *    `cloud` 分支仅作为历史回滚通道保留，须**显式** `D_BEE_BACKEND=cloud` 才生效。
+ * 🔴 自 2026-11-08 起**只接受 selfhost**（自托管 PG + 自建网关 = https://d-bee.cn）。
+ *    云端库已按用户指令彻底废弃：代码里不再保留云端域名、不再保留 `cloud` 分支。
+ *    显式传 `D_BEE_BACKEND=cloud` 或任何非 selfhost 值一律 throw —— 宁可构建失败，
+ *    也不允许「以为切了其实没切」的包被发出去。应急回滚改走微信后台回退线上版本。
  *
  * 切 `selfhost` 需要 `D_BEE_SELFHOST_READY=true` 的显式二次确认，否则构建期 throw：
  *   1. `D_BEE_BACKEND=selfhost`（或留空 = 默认 selfhost）
@@ -36,9 +37,6 @@
  * 共同点：endpoint 解析失败必须炸，绝不静默兜底到另一个后端，且都要构建期+运行时双层。
  */
 
-/** WorkBuddy 云（历史后端，已废弃，仅作回滚通道）。公开值，无密钥。 */
-export const CLOUD_HOST = 'https://zilv-mifeng.app.workbuddy.host'
-
 /**
  * 自托管后端（主端 Web/iOS/Android 原生包已连它，见 `src/cloudConfig.ts:19`）。
  * 🔴 2026-11-08 起为 mini 默认后端：域名已 ICP 下证（京ICP备2026075565号-2）、
@@ -46,7 +44,8 @@ export const CLOUD_HOST = 'https://zilv-mifeng.app.workbuddy.host'
  */
 export const SELFHOST_HOST = 'https://d-bee.cn'
 
-export type BackendKind = 'cloud' | 'selfhost'
+/** 2026-11-08 起只有一个合法值：云端库分支已整体移除。 */
+export type BackendKind = 'selfhost'
 
 export interface BackendTarget {
   kind: BackendKind
@@ -99,27 +98,22 @@ export function resolveBackendTarget(
     return { kind: 'selfhost', endpoint: SELFHOST_HOST }
   }
 
-  if (kind === 'cloud') {
-    return { kind: 'cloud', endpoint: CLOUD_HOST }
-  }
-
+  // 🔴 云端库已于 2026-11-08 彻底废弃：显式 cloud 与任何非 selfhost 值一律拒绝。
   throw new Error(
-    `无法识别的 D_BEE_BACKEND 值：${JSON.stringify(env.backend)}（只接受 'cloud' 或 'selfhost'）。` +
-      '刻意不兜底：静默兜底会让「以为切了其实没切」在运行时才暴露。',
+    `无法识别的 D_BEE_BACKEND 值：${JSON.stringify(env.backend)}（只接受 'selfhost'）。` +
+      (kind === 'cloud'
+        ? '云端库已彻底废弃，不再接受 cloud；请改用自托管后端，或在微信后台回退线上版本。'
+        : '刻意不兜底：静默兜底会让「以为切了其实没切」在运行时才暴露。'),
   )
 }
 
 /**
- * 当前是否为自托管后端。供 legal.ts 等需要区分公示口径的地方使用。
+ * 是否为自托管后端（2026-11-08 起恒为 true，只要没被 READY 门拦下）。
  *
- * 🔴 用它的地方必须两个分支都实现。回迁时 `legal.ts` 的 §三（信息的存储）与
- * §四（第三方服务与 SDK 目录）公示主体不同：
- *   · cloud    → 腾讯云计算（北京）有限责任公司（WorkBuddy 云服务）；AI 由平台侧
- *                按任务动态匹配模型，**我们不持有厂商密钥、也无法指定底层模型**
- *   · selfhost → 我们自己部署运维的数据库（云基础设施由腾讯云提供）；AI 直连
- *                DeepSeek（文本）+ 阿里云百炼 Qwen-VL（图像）；短信走阿里云
- * 把 selfhost 的公示文案抄进 cloud 分支 = 虚假公示（反之亦然）。
- * 主端 `src/content/legal.ts:205,215-219` 是 selfhost 口径的现成参照。
+ * 保留此函数是为了让依赖它的调用点与护栏不必跟着删改；云端库分支已整体移除，
+ * 故不再需要两个公示口径分支 —— `mini/src/content/legal.ts` 的 §三/§四 现为
+ * 单一自建库口径（存储=自建 PG、AI=DeepSeek + 阿里云百炼 Qwen-VL、短信=阿里云）。
+ * 主端 `src/content/legal.ts` 是同口径的参照。
  */
 export function isSelfhostBackend(): boolean {
   return resolveBackendTarget().kind === 'selfhost'

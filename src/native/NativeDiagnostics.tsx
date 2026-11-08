@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
-import { publicConfig, CLOUD_UPSTREAM } from '../cloudConfig'
+import { publicConfig, SELFHOST_UPSTREAM } from '../cloudConfig'
 import { cloud } from '../cloud'
 import { isNative, platformName } from '../lib/platform'
 
@@ -112,7 +112,7 @@ async function runChecks(): Promise<Check[]> {
     label: '接口地址',
     level: isLocalOrigin ? 'bad' : 'ok',
     value: publicConfig.endpoint,
-    hint: isLocalOrigin ? 'endpoint 指向本地来源 = 请求会打到 WebView 自己身上，必然失败' : `云端上游：${CLOUD_UPSTREAM}`,
+    hint: isLocalOrigin ? 'endpoint 指向本地来源 = 请求会打到 WebView 自己身上，必然失败' : `自建网关上游：${SELFHOST_UPSTREAM}`,
   })
 
   /* 4. 原生 HTTP 通道（成败关键） */
