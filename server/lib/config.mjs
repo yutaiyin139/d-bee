@@ -181,6 +181,52 @@ export function loadConfig(env = process.env) {
     wechatApiBase: (env.WECHAT_API_BASE?.trim() || 'https://api.weixin.qq.com').replace(/\/+$/, ''),
     wechatTimeoutMs: int(env.WECHAT_TIMEOUT_MS, 10000),
 
+    // ── 微信小程序虚拟支付 xpay（0046，2026-11-08）──────────────────────
+    // 🔴 为什么不是普通微信支付：会员订阅是**虚拟商品**，微信 2026-02-27 公告
+    //   明确 2026-04-01 起全终端强制走虚拟支付；用 wx.requestPayment(JSAPI)
+    //   卖虚拟商品会在真机报「小程序对应的支付能力已经被限制」且判定违规。
+    //   虚拟支付用**专用二级商户号**（offerId + AppKey），与普通商户号不通用，
+    //   签名是 HMAC-SHA256（非 RSA-SHA256 证书）。详见 db/migrations/0046 头注。
+    //
+    // 值只进服务器 /etc/dbee/gateway.env 或 deploy/gateway/.secrets.local，
+    //   不入库、不进日志、绝不下发前端。未配置 → 相关端点返回 503
+    //   （同 IAP/LLM/微信登录模式，不阻止网关启动）。
+    xpayOfferId: env.XPAY_OFFER_ID?.trim() || '',
+    // 虚拟支付归属的小程序 appid（= offerId 所在的那个小程序）。
+    // 🔴 只有「主动查单兜底」用到它：/xpay/query_order 需 access_token，
+    //   而 access_token 由 appid+secret 换取（secret 从 wechatMiniSecrets 查）。
+    //   下单签名与推送发货都**不需要** access_token，故此字段缺失只降级兜底能力。
+    //   未配时若 wechatMiniSecrets 恰好只有一组，则自动用那组（单小程序零额外配置）。
+    xpayAppid: env.XPAY_APPID?.trim() || '',
+    // 现网与沙箱是**两把不同的 AppKey**（MP 后台「虚拟支付→基本配置」可查），
+    // 按 xpayEnv 选：env=0 用现网，env=1 用沙箱。用错一把必然签名校验失败。
+    xpayAppKey: env.XPAY_APP_KEY?.trim() || '',
+    xpaySandboxAppKey: env.XPAY_SANDBOX_APP_KEY?.trim() || '',
+    // 🔴 沙箱默认值刻意与 Apple（appleSandbox 非生产默认 true）相反 —— 一律默认
+    //   现网(0)，须显式 XPAY_SANDBOX=1 才切沙箱。理由：iOS 端虚拟支付**不支持
+    //   沙箱**（官方原文「Apple 支付不支持使用沙箱环境，仅支持现网环境」），
+    //   若沿用 Apple 的「非生产默认沙箱」，iOS 真机调试会静默失败且极难排查。
+    //   validate() 另有兜底：prod 且显式开沙箱时给出致命拦截。
+    xpayEnv: bool(env.XPAY_SANDBOX, false) ? 1 : 0,
+    // 消息推送（发货/退款通知）验签：Token + EncodingAESKey。
+    //   加密方式建议「安全模式」→ 推送体是 AES 密文，需 aesKey 解密；
+    //   配了 aesKey 就按安全模式解，没配则按明文模式处理（两者都验 signature）。
+    xpayPushToken: env.XPAY_PUSH_TOKEN?.trim() || '',
+    xpayPushAesKey: env.XPAY_PUSH_AES_KEY?.trim() || '',
+    // session_key 加密密钥：64 位 hex（= 32 字节 AES-256 key）。
+    //   🔴 虚拟支付的 signature = HMAC-SHA256(session_key, signData)，服务端
+    //   必须持有 session_key —— 这与 auth.mjs 原「拿到即弃、不落库」纪律冲突，
+    //   折中方案是 AES-256-GCM 加密后存 app_users.wechat_session_key_enc
+    //   （0046），只在签名时于内存解密，绝不下发前端、绝不进日志。
+    //   未配置 → 不落库，微信登录照常可用，但 xpay/params 返回 503。
+    wechatSessionEncKey: env.WECHAT_SESSION_ENC_KEY?.trim() || '',
+    // session_key 可用时长（小时）。微信未承诺有效期，但重新登录会换发；
+    //   超期即视为不可用并要求重新登录，避免拿可能失效的密钥签名导致验签失败。
+    xpaySessionKeyTtlHours: int(env.XPAY_SESSION_KEY_TTL_HOURS, 72),
+    // 主动查单兜底（推送丢失时）：/xpay/query_order
+    xpayApiBase: (env.XPAY_API_BASE?.trim() || 'https://api.weixin.qq.com').replace(/\/+$/, ''),
+    xpayTimeoutMs: int(env.XPAY_TIMEOUT_MS, 10000),
+
     // ── database ───────────────────────────────────────────
     dbHost: env.DBEE_HOST?.trim() || '127.0.0.1',
     dbPort: int(env.DBEE_PORT, 5432),
@@ -436,6 +482,36 @@ export function validate(cfg) {
   //   用 APPLE_ALLOWED_ENVS=Sandbox,Production 显式表达意图，而非留 APPLE_SANDBOX=1。
   if (cfg.prod && cfg.appleSandbox) {
     problems.push('生产环境（DBEE_PROD=1）不应开启 APPLE_SANDBOX —— 沙盒收据可兑换真会员；确需双环境请显式设 APPLE_ALLOWED_ENVS=Sandbox,Production')
+  }
+  // ── 微信虚拟支付 xpay（0046）────────────────────────────────────────
+  // 🔴 生产开沙箱 = 资损级：沙箱环境不产生真实扣款，但 settle_xpay_purchase
+  //   照发权益 → 任何人切 XPAY_SANDBOX=1 就能白拿会员。与 appleSandbox 同类兜底。
+  if (cfg.prod && cfg.xpayEnv === 1) {
+    problems.push('生产环境（DBEE_PROD=1）不应开启 XPAY_SANDBOX —— 沙箱单不产生真实扣款却会发放权益（资损）')
+  }
+  if (cfg.xpayOfferId && !cfg.xpayAppKey) {
+    // 配了 offerId 说明有意开通，缺现网 AppKey 必然签名失败 —— 启动就拦下比运行时 503 好排查
+    problems.push('XPAY_OFFER_ID 已配但缺少 XPAY_APP_KEY（现网 AppKey）—— paySig 无法计算，虚拟支付不可用')
+  }
+  if (!cfg.xpayOfferId && (cfg.xpayAppKey || cfg.xpaySandboxAppKey)) {
+    problems.push('配了 XPAY_APP_KEY 但缺少 XPAY_OFFER_ID —— signData 缺 offerId，微信会直接拒单')
+  }
+  if (cfg.xpayEnv === 1 && !cfg.xpaySandboxAppKey) {
+    problems.push('XPAY_SANDBOX=1 但缺少 XPAY_SANDBOX_APP_KEY —— 沙箱与现网是两把不同 AppKey，用错必然签名失败')
+  }
+  if (cfg.xpayOfferId && !cfg.xpayPushToken) {
+    // 推送 Token 缺失 → 无法验签发货通知 → 只能靠主动查单兜底，可靠性大幅下降。
+    // 微信「发货推送配置」保存时会发 GET 握手，Token 必须与后端一致才能通过。
+    problems.push('XPAY_PUSH_TOKEN 未配置 —— 无法验签 xpay_goods_deliver_notify 发货推送（只剩主动查单兜底，推送会一直重试）')
+  }
+  if (cfg.wechatSessionEncKey && !/^[0-9a-fA-F]{64}$/.test(cfg.wechatSessionEncKey)) {
+    // AES-256-GCM 要求 32 字节密钥 = 64 位 hex。格式错会让每次签名都抛异常。
+    problems.push('WECHAT_SESSION_ENC_KEY 必须是 64 位十六进制（32 字节 AES-256 密钥）')
+  }
+  if (cfg.xpayOfferId && !cfg.wechatSessionEncKey) {
+    // signature = HMAC-SHA256(session_key, signData)：没有加密密钥就无法存 session_key，
+    // 也就无法算 signature → 虚拟支付必然失败。这是「配了商户号却漏了会话密钥」的典型漏配。
+    problems.push('XPAY_OFFER_ID 已配但缺少 WECHAT_SESSION_ENC_KEY —— session_key 无法落库，用户态签名 signature 算不出来')
   }
   return problems.filter(Boolean)
 }

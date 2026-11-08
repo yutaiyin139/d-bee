@@ -13,8 +13,23 @@
  * 本模块只做「判定」，不碰 UI、不发请求；是否弹、怎么弹由调用方决定。
  */
 
+import Taro from '@tarojs/taro'
 import { kvGet, kvSet } from './kv'
 import { FREE_DAILY_AI } from '@dbee/shared'
+
+/**
+ * 拉起付费墙（对齐主端 `usePlan().openPaywall(reason)` 的形状）。
+ *
+ * 主端弹 Sheet、小程序 navigateTo 页面，属平台适配；但「免费功能被拦下时要带出原因」
+ * 这个业务逻辑两端必须一致 —— 此前 mini 各处只弹 toast 或裸跳，用户不知道为什么点不动，
+ * 也没有转化入口。reason 经 query 传入，由 paywall 页渲染提示条。
+ */
+export const PAYWALL_PATH = '/pages/paywall/paywall'
+
+export async function openPaywall(reason?: string): Promise<void> {
+  const url = reason ? `${PAYWALL_PATH}?reason=${encodeURIComponent(reason)}` : PAYWALL_PATH
+  await Taro.navigateTo({ url })
+}
 
 /** 当前「周序号」（跨年用 ISO 周年份+周号，避免元旦周重复误判） */
 function isoWeekKey(): string {

@@ -5,6 +5,7 @@ import { IconBee } from '../../components/Icons'
 import { LegalLinks } from '../../components/LegalLinks'
 import { bindInvite } from '../../lib/api'
 import { cloud } from '../../lib/cloud'
+import { reportBootError } from '../../lib/bootReport'
 import {
   INVITE_CODE_MAX, clearPendingInvite, getPendingInvite, normalizeInviteCode,
 } from '../../lib/inviteLink'
@@ -58,8 +59,11 @@ export default function Login() {
       try {
         const s = await signIn()
         setSession(s)
-      } catch {
-        /* 静默失败，等待用户手动登录 */
+      } catch (e) {
+        // 🔴 2026-11-08 iOS 微信登录白屏：旧实现静默吞掉，真机上表现为「点了没反应/白屏」。
+        //    改为原生 Modal 自报（不依赖页面渲染层），并保留页面内错误文字。
+        reportBootError('登录页自动恢复会话', e)
+        setError(e instanceof Error ? e.message : '恢复登录态失败')
       }
     }
   })
@@ -116,6 +120,8 @@ export default function Login() {
       setSession(await signIn())
       await tryBindInvite()
     } catch (e) {
+      // 微信原生 Modal 在页面白屏时仍可显示，是 iOS 真机排障的唯一可见通道。
+      reportBootError('微信一键登录', e)
       setError(e instanceof Error ? e.message : '登录失败')
     } finally {
       setLoading(false)

@@ -22,6 +22,41 @@
     border-radius: $radius;
   }
 
+  // 从 openPaywall(reason) 带过来的 upsell 原因（对齐主端付费墙的提示条）
+  .notice.tip {
+    margin-bottom: 20px;
+    padding: 20px 24px;
+    font-size: 26px;
+    color: $ink-2;
+    background: $honey-soft;
+    border: 1px solid rgba(185, 116, 13, 0.18);
+    border-radius: $radius;
+  }
+
+  // 中性提示（settling「权益到账中」/ 宿主不支持支付的降级引导）。
+  // 🔴 与 .notice.ok（成功绿）和 .err-box（错误红）刻意分开：
+  //   「已扣款但权益在路上」不是错误，用红色会让用户以为钱白花了而发起投诉/退款。
+  .notice.info {
+    margin-bottom: 20px;
+    padding: 20px 24px;
+    font-size: 26px;
+    line-height: 1.6;
+    color: $info-ink;
+    background: $honey-soft;
+    border-radius: $radius;
+  }
+
+  // 全局错误提示（2026-11-08 提到页面顶部，不再埋在兑换码区块内）
+  .notice.err-box {
+    margin-bottom: 20px;
+    padding: 20px 24px;
+    font-size: 26px;
+    line-height: 1.6;
+    color: $risk-ink;
+    background: $red-soft;
+    border-radius: $radius;
+  }
+
   .pay-card {
     margin-bottom: 20px;
     padding: 28px;
@@ -98,6 +133,19 @@
         background: $honey-soft;
       }
 
+      // 选中态（2026-11-08 恢复三档售卖时补）：小程序是「先选档位再点购买」
+      // 两段式，选中必须有明确视觉反馈，否则用户不知道点哪个生效了。
+      &.is-sel {
+        border-color: $honey-dark;
+        background: $honey-soft-2;
+      }
+
+      // 支付进行中：整排档位禁用，避免用户重复点击造成重复下单
+      // （微信 outTradeNo 只能用一次，重复下单会 -15002）。
+      &.is-disabled {
+        opacity: 0.55;
+      }
+
       .pay-option-name {
         display: block;
         font-size: 28px;
@@ -122,6 +170,64 @@
         color: $honey-btn-ink;
         background: $honey;
         border-radius: 999px;
+      }
+    }
+  }
+
+  // ── 三档售卖区块（仅 XPAY_SALE_ENABLED 时渲染，见 paywall.tsx）──
+  .buy-card {
+    // 购买按钮：蜂蜜主色实底，是本页唯一的强行动号召
+    .buy-btn {
+      width: 100%;
+      height: 92px;
+      margin-top: 24px;
+      padding: 0;
+      font-size: 30px;
+      font-weight: 600;
+      line-height: 92px;
+      color: $honey-btn-ink;
+      background: $honey;
+      border: none;
+      border-radius: $radius;
+      text-align: center;
+
+      // disabled 由 Button 组件加 .btn-hover 之外的原生禁用态，
+      // 这里显式压暗，避免「处理中」看起来还能点。
+      &[disabled] {
+        color: $ink-3;
+        background: $bg-2;
+      }
+    }
+
+    .buy-hint {
+      display: block;
+      margin-top: 20px;
+      font-size: 24px;
+      text-align: center;
+      color: $ink-3;
+    }
+
+    // 购买说明：一次性购买 / 不自动续费的诚实披露（措辞纪律见 paywall.tsx 头注）
+    .buy-note {
+      margin-top: 24px;
+      padding: 20px 22px;
+      background: $bg;
+      border-radius: $radius;
+
+      .buy-note-title {
+        display: block;
+        margin-bottom: 10px;
+        font-size: 24px;
+        font-weight: 600;
+        color: $ink-2;
+      }
+
+      .buy-note-body {
+        display: block;
+        font-size: 22px;
+        line-height: 1.8;
+        color: $ink-3;
+        white-space: pre-line;
       }
     }
   }
@@ -207,6 +313,46 @@
       line-height: 1.8;
       color: $ink-2;
       white-space: pre-line;
+    }
+  }
+
+  // 「管理订阅」区块（一律可见，对齐主端付费墙 3.1.2 入口）
+  .manage-card {
+    .manage-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 14px 0;
+      border-bottom: 1px solid $line;
+    }
+
+    .manage-k {
+      flex-shrink: 0;
+      font-size: 24px;
+      color: $ink-3;
+    }
+
+    .manage-v {
+      flex: 1;
+      text-align: right;
+      font-size: 24px;
+      color: $ink;
+      word-break: break-all;
+    }
+
+    .manage-btn {
+      width: 100%;
+      margin-top: 20px;
+      font-size: 26px;
+    }
+
+    .manage-tip {
+      display: block;
+      margin-top: 16px;
+      font-size: 22px;
+      line-height: 1.7;
+      color: $ink-3;
     }
   }
 

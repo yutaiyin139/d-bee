@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { View, Text, Button, Input } from '@tarojs/components'
-import Taro, { useDidShow } from '@tarojs/taro'
+import { useDidShow } from '@tarojs/taro'
 import { BarChart, LineChart, RatioBar, C_HONEY, C_BLUE, C_GREEN } from '../../components/Charts'
 import { IconLock, IconWeight } from '../../components/Icons'
 import { generateReportInsight } from '../../lib/ai'
@@ -21,6 +21,7 @@ import {
 } from '../../lib/report'
 import { WEIGHT_LIMIT, checkNumber, clampNumeric, rangeText, sanitizeNumeric } from '../../lib/validate'
 import { FREE_REPORT_DAYS, PRO_REPORT_DAYS, isPro } from '@dbee/shared'
+import { openPaywall } from '../../lib/upsell'
 import './report.scss'
 
 const RANGES = [
@@ -142,7 +143,9 @@ export default function ReportPage() {
 
   function pickRange(next: number) {
     if (!pro && next > FREE_REPORT_DAYS) {
-      Taro.showToast({ title: `免费版可看近 ${FREE_REPORT_DAYS} 天，${PRO_REPORT_DAYS} 天是 Pro 功能`, icon: 'none' })
+      // 对齐主端 ReportScreen.tsx:169-170：免费档点 30 天要拉起付费墙并带出原因，
+      // 不能只弹 toast（既没有转化入口，也没解释为什么点不动）。
+      void openPaywall(`免费版可以看近 ${FREE_REPORT_DAYS} 天的报告，${PRO_REPORT_DAYS} 天趋势是 Pro 功能。`)
       return
     }
     setDays(next)
@@ -171,8 +174,7 @@ export default function ReportPage() {
   async function handleInsight() {
     // 长文本 AI 复盘（本期解读）为会员专属（对齐主工程 ReportScreen 的 pro 门控）
     if (!pro) {
-      Taro.showToast({ title: '「本期解读」是 Pro 会员专属功能', icon: 'none' })
-      Taro.navigateTo({ url: '/pages/paywall/paywall' })
+      void openPaywall('「本期解读」是 Pro 会员专属功能')
       return
     }
     setInsightBusy(true)
@@ -228,7 +230,8 @@ export default function ReportPage() {
             onClick={() => pickRange(r.days)}
           >
             {r.label}
-            {r.days > FREE_REPORT_DAYS ? <IconLock color='#a39c90' size={11} /> : null}
+            {/* 对齐主端 ReportScreen.tsx:244：Pro / 终身已解锁，不得再显示锁 */}
+            {!pro && r.days > FREE_REPORT_DAYS ? <IconLock color='#a39c90' size={11} /> : null}
           </Button>
         ))}
       </View>

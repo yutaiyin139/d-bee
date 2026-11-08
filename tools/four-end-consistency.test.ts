@@ -275,9 +275,11 @@ describe('护栏 4 · 会员状态文案必须由 shared memberSubText 统一产
 describe('护栏 5 · AI 同意门覆盖率快照（缺口 1 的量化跟踪）', () => {
   const AI_CALLS = ['generatePlan', 'generateReportInsight', 'askCoach', 'recognizeFoodFromImage']
 
-  /** 扫两端页面目录：哪些页面调了 AI，其中哪些没有 AiConsent 门。 */
+  /** 扫两端页面 + 组件目录：AI 逻辑下沉到组件后也要纳入同意门覆盖统计。 */
   function scanAiGates() {
-    const pages = LOADED.filter((f) => /(^src\/pages\/|^mini\/src\/pages\/)/.test(f.path))
+    const pages = LOADED.filter((f) =>
+      /(^src\/pages\/|^mini\/src\/pages\/|^src\/components\/|^mini\/src\/components\/)/.test(f.path),
+    )
     const withCall: string[] = []
     const withoutGate: string[] = []
     for (const f of pages) {
@@ -292,11 +294,13 @@ describe('护栏 5 · AI 同意门覆盖率快照（缺口 1 的量化跟踪）'
   it('🔴 无门清单必须等于已知缺口（多一个 = 新增违规，少一个 = 请更新快照）', () => {
     const { withCall, withoutGate } = scanAiGates()
 
-    // 2026-11-04 实测基线：**两端共 8 个页面**调用 AI（各端 4 个），其中 4 个无 AiConsent 门。
+    // 2026-11-04 实测基线：**两端共 8 个 AI 入口**，其中 4 个无 AiConsent 门。
     // 📌 注意口径：《小程序上线前缺口清单》§二 缺口 1 说的「4 处 AI 调用」是指 **mini 一端**；
-    //   本护栏扫的是**两端**，故有门的页面数是 4（CoachSheet/LogSheet/coach/scan）、
-    //   无门的是 4（见 KNOWN_WITHOUT_GATE）。新建时我把总数误写成 6（漏数了 CoachSheet 与
-    //   LogSheet 中的一个），护栏立刻红给我看 —— 快照式断言的价值正在于此。
+    //   本护栏扫的是**两端**，故有门的入口是 4（CoachSheet/LogSheet/coach/录入弹层）。
+    //   2026-11-08：mini 的 AI 拍照入口从 pages/scan 下沉为 components/LogSheet，
+    //   扫描范围同步扩到 components/，总数仍为 8、无门清单仍为 4。
+    //   新建时我曾把总数误写成 6（漏数了 CoachSheet 与 LogSheet 中的一个），
+    //   护栏立刻红给我看 —— 快照式断言的价值正在于此。
     //
     // 而 mini/src/content/legal.ts 向用户承诺「首次使用**任一** AI 功能前会单独征得同意」
     // → 承诺与实现不符（PIPL 单独同意）。
@@ -322,13 +326,33 @@ describe('护栏 5 · AI 同意门覆盖率快照（缺口 1 的量化跟踪）'
 })
 
 describe('护栏 6 · 刻意分叉清单必须有说明注释（防被「顺手抹平」）', () => {
-  it('mini 无支付入口是刻意设计，paywall 必须留有说明注释', () => {
-    const f = byPath('mini/src/pages/paywall/paywall.tsx')!
-    // 刻意分叉：主端有 IAP/微信/支付宝骨架，mini **刻意不展示价格、不提供任何支付入口**
-    // （与 legal.ts「不销售任何商品或服务」公示一致；接支付须等商户号 + 走小程序虚拟支付）。
+  it('🔴 mini 售卖能力必须由单一构建期开关驱动，且与 legal.ts 同源（2026-11-08 起）', () => {
+    // 历史（11-02 ~ 11-08）：mini 曾「刻意不展示价格、无任何支付入口」，legal.ts 写
+    //   「免费提供、不销售任何商品」。用户 11-08 指令改为小程序售卖会员（盈利核心）。
+    // 现状：售卖与否由 `lib/xpayEnabled.ts` 的**单一构建期常量** `XPAY_SALE_ENABLED` 决定，
+    //   它**同时**驱动付费墙售卖 UI 与 legal.ts 法务口径 —— 二者必须同源，因为微信审核
+    //   核「页面展示内容与用户协议是否一致」，一处卖钱一处写「免费提供」= 可判驳回。
+    // 本护栏钉死三件事：① paywall 与 legal 都引用同一常量；② 该常量出自 xpayEnabled.ts；
+    //   ③ paywall 留有「同开关 + 措辞纪律」说明注释（防后人只加价格不改协议）。
+    const paywall = byPath('mini/src/pages/paywall/paywall.tsx')!
+    const legal = byPath('mini/src/content/legal.ts')!
+    const enabled = byPath('mini/src/lib/xpayEnabled.ts')!
+
     expect(
-      /刻意|不渲染价格|免费提供|不销售/i.test(f.raw),
-      'mini paywall 缺少「刻意无支付入口」的说明注释 —— 该分叉是合规要求，不是待办',
+      /XPAY_SALE_ENABLED/.test(paywall.code) && /XPAY_SALE_ENABLED/.test(legal.code),
+      'paywall.tsx 与 legal.ts 必须都引用 XPAY_SALE_ENABLED —— 售卖 UI 与法务口径同源，' +
+        '否则一处卖钱一处写「免费提供」会被微信审核判「展示与协议不符」',
+    ).toBe(true)
+
+    expect(
+      /export const XPAY_SALE_ENABLED/.test(enabled.code),
+      'mini/src/lib/xpayEnabled.ts 缺少 XPAY_SALE_ENABLED 导出（售卖开关的唯一真相源）',
+    ).toBe(true)
+
+    expect(
+      /同源|同开关|措辞纪律|不自动续费/i.test(paywall.raw),
+      'mini paywall 缺少「售卖与 legal 同源 / 道具直购不自动续费」的说明注释 —— ' +
+        '后人只把价格加回来而漏改协议或误写「自动续费」都是合规事故',
     ).toBe(true)
   })
 
@@ -701,5 +725,464 @@ describe('护栏 9 · App 内真删号（0045）', () => {
       `ProfileScreen 生效代码里仍有「转客服」文案（行 ${bad.join(',')}）：` +
         'Apple 5.1.1(v) 要求 App 内完成账号删除，转客服通常不满足',
     ).toEqual([])
+  })
+})
+
+/**
+ * 护栏 9b · mini 端真删号必须对齐 0045（2026-11-08 新增）。
+ *
+ * 起因：四端一致性审计发现护栏 9 只扫主端两个文件，mini 的注销流程仍是
+ * 「clearAllRecords + saveProfile + signOut」降级实现，身份行永不删除，
+ * 确认文案还把用户推给客服 —— 即主端已修的能力缺口在 mini 端完整复发。
+ * 0045 RPC 在网关侧、四端共用，mini 无需改网关即可对齐。
+ */
+describe('护栏 9b · mini 端 App 内真删号对齐（0045）', () => {
+  const miniApiCode = stripComments(readFileSync(join(ROOT, 'mini', 'src', 'lib', 'api.ts'), 'utf8'))
+  const miniProfileCode = stripComments(readFileSync(join(ROOT, 'mini', 'src', 'pages', 'profile', 'profile.tsx'), 'utf8'))
+
+  it('🔴 mini api.ts 的 deleteAccount() 必须调 delete_own_account RPC 并带确认令牌', () => {
+    expect(
+      /callRpc\('delete_own_account',\s*\{\s*p_confirm:\s*'DELETE_MY_ACCOUNT'\s*\}\)/.test(miniApiCode),
+      'mini/src/lib/api.ts 的 deleteAccount() 未调用 0045 RPC（或确认令牌不符）—— ' +
+        '匹配剥离注释后的生效代码，仅注释里提到不算',
+    ).toBe(true)
+  })
+
+  it('🔴 mini doDeleteAccount() 不得再清记录/写档案（会在删号后重建 profiles）', () => {
+    const fn = miniProfileCode.match(/async function doDeleteAccount\(\)[\s\S]*?\n  \}/)?.[0] ?? ''
+    expect(
+      /await deleteAccount\(\)/.test(fn) && !/saveProfile\(|clearAllRecords\(/.test(fn),
+      'mini doDeleteAccount() 必须调 deleteAccount()，且不得再调 clearAllRecords()/saveProfile()',
+    ).toBe(true)
+  })
+
+  it('🔴 mini 注销确认文案不得再把用户推给客服', () => {
+    const bad = hits(miniProfileCode, /如需彻底注销账号|与客服联系/)
+    expect(
+      bad,
+      `mini profile 生效代码里仍有「转客服」文案（行 ${bad.join(',')}）：四端都应能 App 内真删号`,
+    ).toEqual([])
+  })
+})
+
+/**
+ * 护栏 11 · mini「记一餐」统一录入层（2026-11-08 重写）。
+ *
+ * 起因演进：先修了「三餐全落进加餐」（首页丢餐次 / scan 写死 snack / 返回不刷新），
+ * 随后核查发现真正的问题是 mini 把主端「单一 bottom sheet + 4 模式 + 统一草稿」
+ * 拆成了三块割裂容器：原生 showActionSheet 选模式、拍照跳独立 scan 页、手录内嵌首页 Sheet。
+ * 核查确认 mini 早已具备自定义 fixed 弹层、弹层内 Input、ScrollView、
+ * parseFoodFromText 与 @dbee/shared 判重纯函数 —— **不是平台能力限制，是移植走样**。
+ * 本护栏钉死统一组件的存在与关键语义，防止再次退回三套逻辑。
+ */
+describe('护栏 11 · mini 记一餐统一录入层（对齐主端 LogSheet）', () => {
+  const idx = byPath('mini/src/pages/index/index.tsx')!.code
+  const scan = byPath('mini/src/pages/scan/scan.tsx')!.code
+  const sheet = byPath('mini/src/components/LogSheet.tsx')?.code ?? ''
+  const miniAi = byPath('mini/src/lib/ai.ts')!.code
+  const mainAi = byPath('src/lib/ai.ts')!.code
+  const miniApi = byPath('mini/src/lib/api.ts')!.code
+
+  it('🔴 首页记一餐必须打开统一 LogSheet 并传餐次与日期，禁止原生菜单与跳页', () => {
+    expect(
+      /import \{ LogSheet \} from '\.\.\/\.\.\/components\/LogSheet'/.test(idx) &&
+        /openLogSheet\(m\)/.test(idx) && /openLogSheet\(\)/.test(idx) &&
+        /logDate=\{logDate\}/.test(idx) && /initialMeal=\{logSheetMeal\}/.test(idx) &&
+        !/showActionSheet/.test(idx) && !/pages\/scan\/scan/.test(idx),
+      '首页又退回 Taro.showActionSheet + navigateTo 三块割裂入口 → 界面像、逻辑差会复发',
+    ).toBe(true)
+  })
+
+  it('🔴 mini 必须存在统一录入组件 LogSheet.tsx', () => {
+    expect(sheet.length > 0, 'mini/src/components/LogSheet.tsx 被删了 → 记一餐逻辑再次分散').toBe(true)
+  })
+
+  it('🔴 统一录入层必须含主端 4 模式与草稿 / 判重 / hint / 自动保存链路', () => {
+    expect(
+      /type Mode = 'photo' \| 'text' \| 'manual' \| 'free'/.test(sheet) &&
+        /function settleDraft/.test(sheet) && /function buildRows/.test(sheet) &&
+        /isDuplicatePhoto\(/.test(sheet) && /summarizePhoto\(/.test(sheet) &&
+        /recognizeFoodFromImage\(dataUrl, hint\.trim\(\) \|\| undefined\)/.test(sheet) &&
+        /autoSaveRecognized\(drafts\)/.test(sheet),
+      '统一录入层缺了主端 LogSheet 的核心语义（草稿/判重/hint 透传/识别即保存）',
+    ).toBe(true)
+  })
+
+  it('🔴 scan 页必须复用统一录入层，不得再保留第二套落库 / 额度逻辑', () => {
+    expect(
+      /<LogSheet/.test(scan) && /initialMode='photo'/.test(scan) &&
+        !/insertMeals/.test(scan) && !/consumePhotoQuota/.test(scan),
+      'scan.tsx 又长出了独立的识别/落库实现 → 两套逻辑必然再次漂移',
+    ).toBe(true)
+  })
+
+  it('🔴 scan 兼容入口仍须读取路由参数中的餐次与日期', () => {
+    expect(
+      /router\.params\?\.meal/.test(scan) && /router\.params\?\.date/.test(scan),
+      '小程序码 / 分享直达链接的 meal/date 参数丢失 → 又会写死 snack 或今天',
+    ).toBe(true)
+  })
+
+  it('🔴 冲突三选一必须是内嵌横幅且取消后保留草稿，禁止原生 ActionSheet', () => {
+    expect(
+      /confirmOverride/.test(sheet) && /confirmAppend/.test(sheet) &&
+        /cancelOverride/.test(sheet) && !/showActionSheet/.test(sheet),
+      '冲突处理退回原生菜单会让「取消后草稿可再编辑」语义失效',
+    ).toBe(true)
+  })
+
+  it('🔴 首页 onShow 必须刷新记录（跨页写库后可见 + 积分结算）', () => {
+    const block = idx.match(/useDidShow\(async \(\) => \{[\s\S]*?\n  \}\)/)?.[0] ?? ''
+    expect(
+      /void load\(\)/.test(block),
+      'mini/index.tsx 的 useDidShow 未调 load() → 返回首页看不到记录且积分漏结算',
+    ).toBe(true)
+  })
+
+  it('🔴 两端拍照识别 prompt 必须同源', () => {
+    expect(
+      /不要漏掉任何一道菜/.test(miniAi) && /不要漏掉任何一道菜/.test(mainAi),
+      'mini 的识别 prompt 又被改成简化版 → 识别质量与置信度低于主端',
+    ).toBe(true)
+  })
+
+  it('🔴 mini consumePhotoQuota 必须保留 consumeAiQuota 回退', () => {
+    expect(
+      /return consumeAiQuota\(todayKey\(\), SCAN_FEATURE, FREE_DAILY_AI\)/.test(miniApi),
+      'mini 丢了主端 src/lib/api.ts:517-520 的回退 → RPC 抖动时 claim=null，下次必被网关 402 拦',
+    ).toBe(true)
+  })
+
+  it('🔴 内置食物库数据必须与主端逐字同源', () => {
+    const pairs = [
+      ['src/lib/foodsDataCore.ts', 'mini/src/lib/foodsDataCore.ts'],
+      ['src/lib/foodsDataFresh.ts', 'mini/src/lib/foodsDataFresh.ts'],
+      ['src/lib/foodsDataDishes.ts', 'mini/src/lib/foodsDataDishes.ts'],
+    ]
+    expect(
+      pairs.every(([a, b]) => readFileSync(join(ROOT, a), 'utf8') === readFileSync(join(ROOT, b), 'utf8')),
+      '食物库数据文件被单端改动 → 两端「食物库」模式给出的营养值不一致',
+    ).toBe(true)
+  })
+})
+
+/**
+ * 护栏 12 · 平台适配层里「只是没做」的部分必须补齐（2026-11-08 新增）。
+ *
+ * 用户要求支付 / HealthKit / SSE 传输层「尽可能和主端保持一致」。核查结论：
+ * 传输底座、真同步步数属平台必然差异（📌 收款原也列为平台差异，11-08 起 mini 已接
+ * 微信虚拟支付道具直购，见护栏 6 / tools/mini-xpay.test.ts，不再是「只是没做」）；
+ * 但下列三项 mini 只是漏实现，与平台能力无关，必须钉死：
+ *   1. mini SDK 0.1.3 已支持 signal → wx.request task.abort()（enableChunked 也能中断），
+ *      只差 collectText 一层透传（主端 src/lib/ai.ts:52-80 早已有）。
+ *   2. 主端已为 wechat-miniprogram 预留品牌识别与诚实降级分支，mini 却是恒 false 裸占位。
+ *   3. ACTIVITY_EATBACK_RATIO / DEFAULT_STEP_GOAL 两端各写一份副本，未下沉 shared。
+ */
+describe('护栏 12 · SSE 取消 / 健康门面 / 数值常量同源', () => {
+  const miniAi = byPath('mini/src/lib/ai.ts')!.code
+  const mainAi = byPath('src/lib/ai.ts')!.code
+  const miniHealth = byPath('mini/src/lib/health/index.ts')!.code
+  const mainHealth = byPath('src/lib/health/index.ts')!.code
+  const miniIndex = byPath('mini/src/pages/index/index.tsx')!.code
+  const sharedConstants = readFileSync(join(ROOT, 'packages/shared/src/constants/index.ts'), 'utf8')
+
+  it('🔴 mini collectText 必须与主端同签名并透传 signal', () => {
+    expect(
+      /signal\?: AbortSignal/.test(miniAi) && /signal\?: AbortSignal/.test(mainAi) &&
+        /\.\.\.\(signal \? \{ signal \} : \{\}\)/.test(miniAi),
+      'mini 的流式请求无法中断 → 页面退出/用户取消时 wx.request 仍在跑，与主端语义不一致',
+    ).toBe(true)
+  })
+
+  it('🔴 mini 健康门面必须与主端同形状（微信运动 / no_plugin / 诚实降级）', () => {
+    expect(
+      /wechat-miniprogram/.test(miniHealth) && /label: '微信运动'/.test(miniHealth) &&
+        /status: 'no_plugin'/.test(miniHealth) &&
+        /微信运动接入正在准备中，当前请先手动记录运动。/.test(miniHealth) &&
+        /isHealthConnectable\(\)[\s\S]{0,120}return true/.test(miniHealth),
+      'mini 健康门面又退回「恒 false + 裸占位」→ 四端降级措辞与入口显隐不一致',
+    ).toBe(true)
+  })
+
+  it('🔴 两端健康状态提示措辞必须同源', () => {
+    expect(
+      /接入正在申请资质，当前请先手动记录运动。/.test(miniHealth) &&
+        /接入正在申请资质，当前请先手动记录运动。/.test(mainHealth),
+      'healthStatusHint 被单端改写 → 用户会以为是两个不同问题',
+    ).toBe(true)
+  })
+
+  it('🔴 热量回补比例与步数目标默认值必须只在 shared 定义', () => {
+    expect(
+      /export const ACTIVITY_EATBACK_RATIO = 0\.5/.test(sharedConstants) &&
+        /export const DEFAULT_STEP_GOAL = 6000/.test(sharedConstants) &&
+        !/const ACTIVITY_EATBACK_RATIO\s*=/.test(miniIndex) &&
+        /ACTIVITY_EATBACK_RATIO/.test(miniIndex),
+      '两端又各写一份 0.5 / 6000 副本 → 数值口径重新分叉',
+    ).toBe(true)
+  })
+})
+
+/**
+ * 护栏 13 · iOS 微信小程序「白屏自报」不可删（2026-11-08 新增）。
+ *
+ * 实证：用户反馈 iOS 微信登录白屏，服务端该时段**零 login-wechat 请求**，
+ * 说明异常发生在发请求之前（cloud.ts 模块级 SDK 初始化 / 页面渲染期）。小程序
+ * 没有 DOM，无法像 iOS 原生端那样内联脚本画红屏；微信原生 Modal 是白屏时唯一
+ * 可靠的可见通道。删掉它 = 又回到「纯白屏、只能靠猜」的排障盲区。
+ */
+describe('护栏 13 · mini 启动/登录失败必须可自报', () => {
+  const boot = byPath('mini/src/lib/bootReport.ts')!.code
+  const miniCloud = byPath('mini/src/lib/cloud.ts')!.code
+  const login = byPath('mini/src/pages/login/login.tsx')!.code
+
+  it('🔴 bootReport 必须用微信原生 Modal 显示错误（页面白屏时仍可见）', () => {
+    expect(
+      /showModal\s*\(/.test(boot) && /reportBootError/.test(boot),
+      '自报改成了 setError/console 就失效了：页面渲染层崩溃时文字根本挂不出来；' +
+        '且必须走 globalThis.wx 原生 API，不能在模块求值期依赖 Taro 的 API 代理',
+    ).toBe(true)
+  })
+
+  it('🔴 cloud.ts 创建 SDK 客户端必须包 try/catch 并自报', () => {
+    expect(
+      /reportBootError\('云端客户端初始化失败', e\)/.test(miniCloud) &&
+        /createMiniProgramWorkBuddyCloud/.test(miniCloud),
+      '模块级 SDK 初始化抛错会让 common.js 求值中断 → 所有页面白屏且零请求',
+    ).toBe(true)
+  })
+
+  it('🔴 登录页微信一键登录 catch 必须自报', () => {
+    expect(
+      /reportBootError\('微信一键登录', e\)/.test(login),
+      '登录失败又变回「静默/纯文字」→ iOS 真机拿不到根因',
+    ).toBe(true)
+  })
+})
+
+/**
+ * 护栏 14 · iOS 启动期栈溢出：自报通道不得自递归 / 模块求值不得中断（2026-11-08 新增）。
+ *
+ * 实证：iOS 微信扫码真机调试 Console 报
+ *   `MiniProgramError: RangeError: Maximum call stack size exceeded`
+ *   堆栈全是同一帧 `app-service.js:16815:59` —— appservice 逻辑层的同步无限递归，
+ *   与「该时段零 login-wechat 请求」互相印证，异常发生在任何网络请求之前。
+ *
+ * 旧版自报在 cloud.ts 模块求值期（App 注册前）import Taro 并调 Taro.showModal，
+ * 而 Taro 的 API 代理层此时可能尚未初始化 —— 自报通道自身递归会把「静默白屏」
+ * 升级成「栈溢出白屏」。本护栏锁死四条结构性约束，禁止日后为了省事改回去。
+ */
+describe('护栏 14 · mini 启动期异常不得变成白屏/栈溢出', () => {
+  const boot = byPath('mini/src/lib/bootReport.ts')!.code
+  const miniCloud = byPath('mini/src/lib/cloud.ts')!.code
+  const app = byPath('mini/src/app.ts')!.code
+  const auth = byPath('mini/src/lib/auth.ts')!.code
+
+  it('🔴 bootReport 不得 import Taro（模块求值期 API 代理可能未就绪 → 自递归）', () => {
+    expect(
+      !/from\s+['"]@tarojs\/taro['"]/.test(boot) && /getWx\s*\(/.test(boot),
+      '自报必须只从 globalThis.wx 取原生 API；import Taro 会在 App 注册前踩代理层',
+    ).toBe(true)
+  })
+
+  it('🔴 bootReport 必须有函数级重入锁（自报自身绝不能参与递归）', () => {
+    expect(
+      /if\s*\(\s*reporting\s*\)\s*return/.test(boot) &&
+        /reporting\s*=\s*true/.test(boot) && /reporting\s*=\s*false/.test(boot),
+      '去掉重入锁后，showModal / console 抛错会把白屏变成 RangeError 栈溢出',
+    ).toBe(true)
+  })
+
+  it('🔴 cloud.ts 初始化失败绝不能 rethrow（会中断 common.js 求值 → 全站白屏）', () => {
+    expect(
+      !/throw\s+e\b/.test(miniCloud) && /initError\s*=\s*e/.test(miniCloud),
+      'rethrow 会让 App 都注册不上，Modal 来不及弹，用户只能看到纯白屏',
+    ).toBe(true)
+  })
+
+  it('🔴 app.ts 必须在模块顶层注册全局错误监听（覆盖 try/catch 之外的异常）', () => {
+    expect(
+      app.indexOf('installGlobalErrorReporter()') > -1 &&
+        app.indexOf('installGlobalErrorReporter()') < app.indexOf('function App'),
+      '放到 useLaunch 里注册太晚：模块求值期的异常根本不会走到 App 生命周期',
+    ).toBe(true)
+  })
+
+  it('🔴 auth.ts 必须把空壳 cloud 转成可读错误（否则只报 undefined TypeError）', () => {
+    expect(
+      /assertCloudReady\s*\(/.test(auth) && /cloudInitError\s*\(/.test(auth),
+      'cloud.ts 不 rethrow 后 cloud 是空壳，登录入口必须带出真实初始化失败原因',
+    ).toBe(true)
+  })
+})
+
+/**
+ * 护栏 15 · 「我的」统计卡「碳水 / 脂肪」双值不得折行（2026-11-08 新增）。
+ *
+ * 实证：iOS 微信小程序**体验版**可用，但 `254g / 56g` 被拆成两行。根因是 mini 用
+ * `<Text>` 嵌 `<Text>` 再夹裸文本 ` / `：小程序 text 组件把每个嵌套节点与空格都当成
+ * 断行机会；主端是 DOM div，无此行为。修复 = 外层 View(flex nowrap) + 三个独立
+ * token（数字组 / 分隔符 / 数字组），分隔符间距交给 CSS margin，不再用空格断行。
+ *
+ * 16:22 追加：四格必须统一「label 第一行 / 数值第二行」。mini 的 `.stat-l/.stat-v`
+ * 是 `<text>`（inline），不锁纵向布局时短值（当前体重 / 蛋白质目标）会与 label
+ * 挤在同一行，只有长值才折到第二行；主端是 div，天然块级，无需额外规则。
+ */
+describe('护栏 15 · 统计卡布局：双值不折行 + 四格统一两行', () => {
+  const profile = byPath('mini/src/pages/profile/profile.tsx')!.code
+  const scss = readFileSync(join(ROOT, 'mini/src/pages/profile/profile.scss'), 'utf8')
+  const mainCss = readFileSync(join(ROOT, 'src/styles.css'), 'utf8')
+
+  it('🔴 双值必须用 View + stat-v--pair 容器（Text 嵌套会把 / 变成断行点）', () => {
+    expect(
+      /<View className='stat-v stat-v--pair'>/.test(profile) &&
+        /className='stat-sep'/.test(profile),
+      '改回 <Text> 嵌套 + 裸空格分隔符 → iOS 小程序 text 组件重新折行',
+    ).toBe(true)
+  })
+
+  it('🔴 分隔符不得再用带空格的裸文本（空格本身就是断行机会）', () => {
+    expect(
+      !/<Text className='stat-v'>\{target\.carb_g\}/.test(profile) &&
+        !/<\/Text>\s*\/\s*\{target\.fat_g\}/.test(profile),
+      '把 ` / ` 写回 JSX 文本节点会重新引入断行机会',
+    ).toBe(true)
+  })
+
+  it('🔴 stat-v--pair 必须同时锁 flex-wrap 与 white-space', () => {
+    expect(
+      /\.stat-v--pair\s*\{[^}]*flex-wrap:\s*nowrap[^}]*\}/s.test(scss) &&
+        /\.stat-v--pair\s*\{[^}]*white-space:\s*nowrap[^}]*\}/s.test(scss),
+      '只锁一个不够：小程序 View 走 flex，内部 text 节点走 white-space',
+    ).toBe(true)
+  })
+
+  it('🔴 主端同位置统计值也必须有 nowrap 防护（四端一致）', () => {
+    expect(
+      /\.stat \.v\s*\{[^}]*white-space:\s*nowrap[^}]*\}/s.test(mainCss),
+      '主端删掉 nowrap 后窄屏 WebView 也会折行，两端表现重新分叉',
+    ).toBe(true)
+  })
+
+  it('🔴 四格必须统一纵向两行（短值不得与 label 挤在同一行）', () => {
+    expect(
+      /\.stat\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column/s.test(scss) &&
+        /\.stat-l\s*\{[^}]*display:\s*block/s.test(scss),
+      '小程序 <text> 是 inline：去掉 .stat 的 flex column 后，当前体重 / 蛋白质目标的短值会回到第一行，四格高度与对齐重新分叉',
+    ).toBe(true)
+  })
+})
+
+/**
+ * 护栏 16 · 微信运动 / 管理订阅 / 免费·订阅权益逻辑四端同源（2026-11-08 新增）。
+ *
+ * 用户要求「mini 端微信运动、管理订阅严格参考主端实现；免费和订阅逻辑与三端一致」。
+ * 平台 API 适配（wx.getWeRunData 需运动健康类目资质 + 服务端 session_key 解密；
+ * 支付通道两端不同 —— 主端 iOS 走 StoreKit 订阅、mini 走微信虚拟支付道具直购，
+ * 售卖口径由构建期开关驱动，见护栏 6）保留诚实降级，但**业务逻辑 / 状态机 /
+ * 门控 / 权益文案**不允许分叉。本护栏逐条钉死 11-08 修掉的真实分叉，防止「修完又漂回去」。
+ */
+describe('护栏 16 · 微信运动 / 管理订阅 / 免费·订阅逻辑四端同源', () => {
+  const mainManage = byPath('src/lib/manageSubscription.ts')!.code
+  const miniManage = byPath('mini/src/lib/manageSubscription.ts')!.code
+  const mainReport = byPath('src/pages/ReportScreen.tsx')!.code
+  const miniReport = byPath('mini/src/pages/report/report.tsx')!.code
+  const mainPaywall = byPath('src/pages/PaywallSheet.tsx')!.code
+  const miniPaywall = byPath('mini/src/pages/paywall/paywall.tsx')!.code
+  const mainProfile = byPath('src/pages/ProfileScreen.tsx')!.code
+  const miniProfile = byPath('mini/src/pages/profile/profile.tsx')!.code
+  const mainDashboard = byPath('src/pages/Dashboard.tsx')!.code
+  const miniIndex = byPath('mini/src/pages/index/index.tsx')!.code
+  const mainHealth = byPath('src/lib/health/index.ts')!.code
+  const miniHealth = byPath('mini/src/lib/health/index.ts')!.code
+  const miniUpsell = byPath('mini/src/lib/upsell.ts')!.code
+  const sharedConstants = readFileSync(join(ROOT, 'packages/shared/src/constants/index.ts'), 'utf8')
+
+  it('🔴 报告页 30 天锁图标两端都必须只在免费档显示', () => {
+    expect(
+      /!pro\s*&&\s*r\.days\s*>\s*FREE_REPORT_DAYS/.test(miniReport) &&
+        /!pro\s*&&\s*r\.days\s*>\s*FREE_REPORT_DAYS/.test(mainReport),
+      'mini 漏掉 !pro → Pro 用户看 30 天报告仍显示锁图标（免费/订阅逻辑分叉）',
+    ).toBe(true)
+  })
+
+  it('🔴 免费档点 30 天必须拉起付费墙（两端 openPaywall，不得只弹 toast）', () => {
+    expect(
+      /openPaywall\s*\(/.test(miniReport) && /openPaywall\s*\(/.test(mainReport) &&
+        !/showToast\(\{\s*title:\s*`免费版可看近/.test(miniReport),
+      '改回只弹 toast → 免费档点 30 天既没解释也没有转化入口',
+    ).toBe(true)
+  })
+
+  it('🔴 mini 的 openPaywall 门面必须带 reason（对齐主端 usePlan().openPaywall）', () => {
+    expect(
+      /export async function openPaywall\(reason\?: string\): Promise<void>/.test(miniUpsell) &&
+        /encodeURIComponent\(reason\)/.test(miniUpsell),
+      '丢了 reason 就退化成裸跳，用户不知道自己为什么被拦下',
+    ).toBe(true)
+  })
+
+  it('🔴 管理订阅两端同名门面，且 mini 区块一律可见（不得放进 !pro 分支）', () => {
+    expect(
+      /export async function openManageSubscriptions\(\): Promise<boolean>/.test(mainManage) &&
+        /export async function openManageSubscriptions\(\): Promise<boolean>/.test(miniManage) &&
+        /pay-card manage-card/.test(miniPaywall) &&
+        miniPaywall.indexOf("className='pay-card manage-card'") < miniPaywall.indexOf('{!pro ? ('),
+      '把管理订阅塞进 {!pro} → 非订阅态演示账户看不到，主端 3.1.2 明确禁止',
+    ).toBe(true)
+  })
+
+  it('🔴 「我的」页必须有管理订阅的可达入口', () => {
+    expect(
+      /openManageSubscriptions\s*\(/.test(miniProfile),
+      '入口只在付费墙里 → 从「我的」页无法到达会员权益管理',
+    ).toBe(true)
+  })
+
+  it('🔴 健康数据源页必须有连接状态机（已连接 / 重连 / 解除连接）', () => {
+    expect(
+      /healthConnected\s*=\s*profile\?\.health_connected/.test(miniProfile) &&
+        /handleDisconnectHealth\s*\(/.test(miniProfile) &&
+        /handleConnectHealth\s*\(/.test(miniProfile),
+      '退回「只有一个连接按钮 + 一句占位」→ 与主端 ProfileScreen:578-604 状态机分叉',
+    ).toBe(true)
+  })
+
+  it('🔴 步数换算两端同源，同步间隔必须来自 shared（不得各写 60_000 副本）', () => {
+    expect(
+      /export function estimateActivityKcal\(/.test(mainHealth) &&
+        /export function estimateActivityKcal\(/.test(miniHealth) &&
+        /HEALTH_SYNC_INTERVAL_MS\s*=\s*60_000/.test(sharedConstants) &&
+        !/const HEALTH_SYNC_INTERVAL_MS\s*=/.test(mainDashboard) &&
+        !/const HEALTH_SYNC_INTERVAL_MS\s*=/.test(miniIndex),
+      '同步间隔两端各写一份必然漂 → 步数刷新速度出现端间差异',
+    ).toBe(true)
+  })
+
+  it('🔴 首页必须自动同步健康数据，且有效消耗取「手动 / 健康」较大者', () => {
+    expect(
+      /syncFromHealth\s*\(/.test(miniIndex) && /isHealthConnected\s*\(/.test(miniIndex) &&
+        /Math\.max\(burnKcal,\s*activityKcal\)/.test(miniIndex) &&
+        /Math\.max\(burnKcal,\s*activityKcal\)/.test(mainDashboard),
+      '退回 effectiveBurnKcal = burnKcal → 微信运动同步的数据完全不参与净摄入计算',
+    ).toBe(true)
+  })
+
+  it('🔴 免费权益文案「文字描述识别」两端逐字一致', () => {
+    expect(
+      /'文字描述识别、手动录入、体重饮水运动记录全部免费'/.test(miniPaywall) &&
+        /'文字描述识别、手动录入、体重饮水运动记录全部免费'/.test(mainPaywall),
+      '11-08 统一录入层已补齐 text 模式，付款墙文案不能停在旧版「只有手动录入」',
+    ).toBe(true)
+  })
+
+  it('🔴 数据导出必须有 Pro 门控，且非 Pro 仍保留 PIPL 邮箱兜底', () => {
+    expect(
+      /guardExport\(\)/.test(miniProfile) &&
+        /数据导出是 Pro 功能，升级后可随时打包带走全部记录/.test(miniProfile) &&
+        /数据导出是 Pro 功能，升级后可随时打包带走全部记录/.test(mainProfile) &&
+        /EXPORT_UNAVAILABLE_MESSAGE/.test(miniProfile),
+      '只加 Pro 门控却删掉邮箱兜底 → 小程序导出未实装时用户的数据复制权入口被藏掉',
+    ).toBe(true)
   })
 })

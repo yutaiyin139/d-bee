@@ -13,6 +13,7 @@ import { createAuthHandlers } from './auth.mjs'
 import { createDbProxy } from './dbproxy.mjs'
 import { createLlmHandlers } from './llm.mjs'
 import { createIapHandlers } from './iap.mjs'
+import { createXpayHandlers } from './xpay.mjs'
 
 /**
  * @param {object} deps
@@ -66,6 +67,13 @@ export function createApp(deps) {
     ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
     ...(deps.verifyJwsImpl ? { verifyJwsImpl: deps.verifyJwsImpl } : {}),
   })
+  // 微信虚拟支付（0046）：核销函数只授 dbee_app EXECUTE（同 IAP 格局）；
+  // session_key 密文在 gatewayPool（app_users 属身份面）。未配 XPAY_OFFER_ID
+  // 时端点自返 503（同 notConfigured 模式），无需条件装配。
+  const xpay = deps.enableXpay === false ? null : createXpayHandlers({
+    cfg, pool, logger, gatewayPool,
+    ...(deps.xpayFetchImpl ? { fetchImpl: deps.xpayFetchImpl } : {}),
+  })
 
   const router = new Router()
   const A = '/.cloud/auth/v1'
@@ -104,6 +112,21 @@ export function createApp(deps) {
     router.on('POST', '/.cloud/payment/apple/verify', wrap(iap.verify))
     // App Store Server Notifications V2（Apple 直发，无 Bearer，靠 JWS x5c 验签）
     router.on('POST', '/.cloud/payment/apple/notifications', wrap(iap.notifications))
+  }
+
+  if (xpay) {
+    const W = '/.cloud/payment/wechat'
+    // 下单签名（需 Bearer）：返回 wx.requestVirtualPayment 的 {mode,signData,paySig,signature}
+    router.on('POST', `${W}/params`, wrap(xpay.params))
+    // 主动查单兜底（需 Bearer）：推送丢失时客户端轮询，服务端外呼 /xpay/query_order
+    router.on('POST', `${W}/query`, wrap(xpay.query))
+    // 推送配置 URL 握手（微信直发 GET，无 Bearer，sha1(token,ts,nonce) 验签 → 原样回 echostr）
+    router.on('GET', `${W}/notify`, (req, res, ctx) => xpay.notifyVerify(req, res, ctx))
+    // 🔴 发货/退款推送（微信直发 POST，无 Bearer）**不走 wrap()**：
+    //   wrap 会对 POST 调 readJson() 把请求流消费掉，notify 内部再 readBody
+    //   就只能读到空 body → 验签必失败。notify 自己读原始字节、自己写响应
+    //   （响应格式须与推送格式一致：XML→XML / JSON→JSON，见 xpay.mjs）。
+    router.on('POST', `${W}/notify`, (req, res, ctx) => xpay.notify(req, res, ctx))
   }
 
   // 探活：不鉴权。返回各依赖可达性，供 nginx/systemd/deploy 脚本判活
@@ -167,7 +190,11 @@ export function createApp(deps) {
     const ipKey = clientIp(req, { trustedProxies: cfg.trustedProxyIps })
     const rateLimitExempt =
       pathname === '/.cloud/healthz' ||
-      pathname === '/.cloud/payment/apple/notifications'
+      pathname === '/.cloud/payment/apple/notifications' ||
+      // 微信虚拟支付推送（0046）：来源是微信的少数固定 IP，且失败会重试最多
+      // 15 次 —— 按 IP 限流会把重试风暴误伤成 429，而 429 又触发更多重试。
+      // 安全不靠限流，靠 sha1(msg_signature) + AES 解密 + appid 校验（见 xpay.mjs）。
+      pathname === '/.cloud/payment/wechat/notify'
     if (!rateLimitExempt) {
       const rl = limiterApi.hit(ipKey)
       if (!rl.ok) {
@@ -207,7 +234,7 @@ export function createApp(deps) {
   })
 
   return {
-    server, router, otp, auth, llm, dbProxy, iap,
+    server, router, otp, auth, llm, dbProxy, iap, xpay,
     limiters: { limiterIdent, limiterIp, limiterApi, usageLimiter },
   }
 }

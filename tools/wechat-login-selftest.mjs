@@ -19,12 +19,14 @@
  *   · sub = owner_id = 'wx:'+openid；JWT 可被网关验签、含 ver
  *   · AppSecret 绝不进日志、不进响应体
  *   · /user/me 能读回微信用户；token refresh 可用
+ *   · 0046 · session_key 经 AES-256-GCM 加密落库（密文可解密回原值，明文不落库不进日志）
  *
  * 运行：node tools/wechat-login-selftest.mjs
  */
 import { createApp } from '../server/lib/app.mjs'
 import { verifyJwt } from '../server/lib/jwt.mjs'
 import { identHash } from '../server/lib/identity.mjs'
+import { decryptSessionKey } from '../server/lib/wechatSession.mjs'
 import { createWorkBuddyCloud, createMemoryStorage } from '@tencent-ai/workbuddy-cloud-sdk'
 
 let failed = 0
@@ -77,6 +79,13 @@ function createMockPool() {
           if (r) r.token_version = (r.token_version ?? 1) + 1
           return { rowCount: r ? 1 : 0, rows: r ? [{ token_version: r.token_version }] : [] }
         }
+        // 0046 · wechatSession.saveSessionKey 的加密落库（必须在 touchLogin 兜底分支之前
+        // 拦下，否则会被误当成登录更新而虚增 login_count）
+        if (/wechat_session_key_enc/i.test(s)) {
+          const [ownerId, enc, appid] = params
+          if (r) { r.wechat_session_key_enc = enc; r.wechat_appid = appid; r.wechat_session_key_at = new Date().toISOString() }
+          return { rowCount: r ? 1 : 0, rows: [] }
+        }
         if (r) { r.last_login_at = new Date().toISOString(); r.login_count += 1 }
         return { rowCount: r ? 1 : 0, rows: [] }
       }
@@ -124,6 +133,9 @@ const PEPPER = 'test-pepper-0123456789abcdef0123456789abcdef'
 const JWT_SECRET = 'test-jwt-secret-0123456789abcdef0123456789abcdef'
 const WX_APPID = 'wxb7c7122de9c3ab1f' // mini/project.config.json 的真实 appid 形态
 const WX_SECRET = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4' // 32 位 hex，模拟 AppSecret
+// 0046 · session_key 加密密钥（64 位 hex = 32 字节，生产由 openssl rand -hex 32 生成）
+const SESSION_ENC_KEY = 'f'.repeat(63) + 'e' // 刻意用非平凡值，防「全 0 密钥」类巧合通过
+const MOCK_SESSION_KEY = 'sk-mock-should-never-leak'
 const cfg = {
   prod: false,
   host: '127.0.0.1',
@@ -146,6 +158,9 @@ const cfg = {
   wechatMiniSecrets: new Map([[WX_APPID, WX_SECRET]]),
   wechatApiBase: 'https://api.weixin.qq.com',
   wechatTimeoutMs: 5000,
+  // 0046：配了加密密钥 → loginWechat 会真正执行 saveSessionKey 加密落库（否则静默跳过，
+  // 新代码一行都跑不到 = 假绿）。自测据此断言密文可解密回原值。
+  wechatSessionEncKey: SESSION_ENC_KEY,
   trustedProxyIps: new Set(),
   llmApiKey: '', llmBaseUrl: 'http://127.0.0.1:1/v1',
   llmModelText: 'x', llmModelVision: 'x', llmTimeoutMs: 5000,
@@ -298,6 +313,38 @@ section('安全 · AppSecret 与 session_key 绝不外泄')
   const text = await r.text()
   assert('响应体不含 AppSecret', !text.includes(WX_SECRET))
   assert('响应体不含 session_key', !text.includes('sk-mock-should-never-leak') && !text.includes('session_key'))
+}
+
+section('0046 · session_key AES-256-GCM 加密落库（虚拟支付签名前置）')
+{
+  // 用全新 code 触发一次登录，确认 saveSessionKey 真正写入了密文
+  const r = await post(LW, { code: 'CODE_xpay_sk_001', appid: WX_APPID })
+  const j = await r.json()
+  assert('登录 200', r.status === 200, `实际 ${r.status}`)
+  const row = mockPool.rows.get(j.sub)
+  const enc = row?.wechat_session_key_enc
+  assert('app_users.wechat_session_key_enc 已写入', typeof enc === 'string' && enc.length > 0)
+  assert('密文带 v1: 前缀', typeof enc === 'string' && enc.startsWith('v1:'), String(enc).slice(0, 6))
+  assert('落库的是密文而非明文', typeof enc === 'string' && !enc.includes(MOCK_SESSION_KEY))
+  // 用同一密钥能解密回原 session_key —— 证明「服务端下单时可现算 signature」
+  assert('密文可解密回原 session_key', decryptSessionKey(enc, SESSION_ENC_KEY) === MOCK_SESSION_KEY,
+    decryptSessionKey(enc, SESSION_ENC_KEY) || '<null>')
+  // appid 与 session_key 绑定（试用/正式两套小程序不可跨用）
+  assert('wechat_appid 同步落库', row?.wechat_appid === WX_APPID, String(row?.wechat_appid))
+  assert('wechat_session_key_at 已记录', !!row?.wechat_session_key_at)
+  // 错误密钥解不出（换密钥 = 存量密文作废，前端提示重新登录）
+  assert('错误密钥 → 解密返回 null', decryptSessionKey(enc, 'a'.repeat(64)) === null)
+  // 篡改密文（GCM tag 认证）→ 解密返回 null 而非垃圾
+  //   🔴 必须篡改 ct 段的**首字符**：base64 每 4 字符解 3 字节，首字符的 6 位全部
+  //      进入第一个字节；若改末字符，其低位可能是 base64 填充位，解码字节不变 →
+  //      密文实际没被改 → GCM 反而校验通过（这是测试写法的坑，不是代码 bug）。
+  if (typeof enc === 'string' && enc.startsWith('v1:')) {
+    const parts = enc.split(':')
+    const ct = parts[3]
+    const flip = (c) => (c === 'A' ? 'B' : 'A') // 首字符必为 [A-Za-z0-9+/]，翻转必改变解码字节
+    const tampered = [parts[0], parts[1], parts[2], flip(ct[0]) + ct.slice(1)].join(':')
+    assert('密文被篡改 → 解密返回 null（GCM 认证）', decryptSessionKey(tampered, SESSION_ENC_KEY) === null)
+  }
 }
 
 section('login-wechat · /user/me 读回微信用户 + token refresh')

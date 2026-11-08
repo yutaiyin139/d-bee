@@ -26,7 +26,7 @@ import {
 } from '../lib/api'
 import type { CoachContext } from '../lib/ai'
 import { STREAK_BADGES } from '../lib/badge'
-import { AI_REDEEM_DAILY_LIMIT, FREE_DAILY_AI } from '../lib/entitlement'
+import { AI_REDEEM_DAILY_LIMIT, FREE_DAILY_AI, HEALTH_SYNC_INTERVAL_MS } from '../lib/entitlement'
 import { categoryOf } from '../lib/foods'
 import { LEVEL_LABELS, levelOfScore, nextMealAdvice, summarizeEntries } from '../lib/foodInsight'
 import { ACTIVITY_EATBACK_RATIO, connectHealth, DEFAULT_STEP_GOAL, estimateActivityKcal, getHealthVendor, healthStatusHint, isHealthConnectable, isHealthConnected, isUsableHealthStatus, syncFromHealth } from '../lib/health'
@@ -61,8 +61,7 @@ const MACRO_META = [
 
 const STREAK_WINDOW_DAYS = 185
 
-// 健康数据自动同步间隔：已连接 Apple 健康后，每 60s 拉一次当天步数/活动能量
-const HEALTH_SYNC_INTERVAL_MS = 60_000
+// 健康数据自动同步间隔已下沉 @dbee/shared（HEALTH_SYNC_INTERVAL_MS），四端同源。
 
 export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   const { pro, aiRemaining, openPaywall, grantStreakBonus } = usePlan()

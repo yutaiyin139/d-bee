@@ -12,10 +12,11 @@ import {
   listMealsByDate, listLoggedMeals, listWaterByDate, listExerciseByDate,
   addWater, addExercise, deleteExercise, deleteMeal, updateMealGrams, undoLastWater,
   getProfile, grantHoney, refundCheckinHoney, refundCheckinWater, refundCheckinExercise,
-  settleInviteCheckin, unlockBadge, grantPhotoBonus, getMyInviteCode, listRecentMeals, insertMeals,
+  settleInviteCheckin, unlockBadge, grantPhotoBonus, getMyInviteCode,
+  getEntitlement,
   type MealEntry, type MealSlim, type WaterLog, type ExerciseLog, type Profile,
 } from '../../lib/api'
-import { Sheet } from '../../components/Sheet'
+import { LogSheet } from '../../components/LogSheet'
 import { AiLabel } from '../../components/AiLabel'
 import { LegalLinks } from '../../components/LegalLinks'
 import {
@@ -33,66 +34,23 @@ import {
 import { STREAK_BADGES } from '../../lib/badge'
 import { isSignedIn } from '../../lib/auth'
 import {
+  syncFromHealth, isHealthConnected, isUsableHealthStatus, healthStatusHint,
+  estimateActivityKcal, getHealthVendor, HEALTH_SYNC_INTERVAL_MS,
+} from '../../lib/health'
+import {
   consumePendingInvite, getPendingInvite, readInviteFromEnterOptions,
   readInviteFromParams, setPendingInvite,
 } from '../../lib/inviteLink'
-import { STREAK_BONUS_AMOUNT, fmtNum, roundTo } from '@dbee/shared'
+import { STREAK_BONUS_AMOUNT, fmtNum, isPro, ACTIVITY_EATBACK_RATIO, DEFAULT_STEP_GOAL } from '@dbee/shared'
+import { GRAMS_LIMIT, checkNumber } from '../../lib/validate'
 import './index.scss'
 
 const MEAL_LABELS = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' } as const
 const MEAL_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'] as const
 type MealType = (typeof MEAL_ORDER)[number]
 
-/** 手动录入的「最近吃过」快捷项（对齐主工程 LogSheet.tsx 的 RecentFood） */
-interface RecentFood {
-  name: string
-  kcal: number
-  grams: number | null
-  protein_g: number
-  carb_g: number
-  fat_g: number
-  count: number
-  lastEaten: string
-}
-
-/**
- * 从历史记录聚合「最近吃过」：按食物名去重，取最近一次的营养值，按频次排序。
- * 与主工程 src/pages/LogSheet.tsx aggregateRecent 同口径（小程序额外带上
- * 热量与三大营养素，方便一键回填整条记录）。
- */
-function aggregateRecent(list: MealEntry[]): RecentFood[] {
-  const map = new Map<string, RecentFood>()
-  for (const m of list) {
-    const name = (m.food_name || '').trim()
-    if (!name) continue
-    const prev = map.get(name)
-    if (prev) {
-      prev.count += 1
-      if ((m.created_at ?? '') > prev.lastEaten) {
-        prev.lastEaten = m.created_at ?? ''
-        prev.kcal = Number(m.calories) || 0
-        prev.grams = m.grams ?? prev.grams
-        prev.protein_g = Number(m.protein_g) || 0
-        prev.carb_g = Number(m.carb_g) || 0
-        prev.fat_g = Number(m.fat_g) || 0
-      }
-    } else {
-      map.set(name, {
-        name,
-        kcal: Number(m.calories) || 0,
-        grams: m.grams ?? null,
-        protein_g: Number(m.protein_g) || 0,
-        carb_g: Number(m.carb_g) || 0,
-        fat_g: Number(m.fat_g) || 0,
-        count: 1,
-        lastEaten: m.created_at ?? '',
-      })
-    }
-  }
-  return Array.from(map.values())
-    .sort((a, b) => b.count - a.count || (b.lastEaten > a.lastEaten ? 1 : -1))
-    .slice(0, 12)
-}
+// 记录饮食的全部逻辑（最近吃过聚合、草稿、判重、冲突保存）已下沉到
+// components/LogSheet.tsx，与主工程 src/pages/LogSheet.tsx 同源。
 
 const MACRO_META = [
   { key: 'protein_g', label: '蛋白质', color: '#3f9463', icon: IconPea },
@@ -101,7 +59,6 @@ const MACRO_META = [
 ] as const
 
 const STREAK_WINDOW_DAYS = 185
-const ACTIVITY_EATBACK_RATIO = 0.5
 
 export default function Index() {
   const [loggedIn, setLoggedIn] = useState(false)
@@ -119,27 +76,64 @@ export default function Index() {
   // 原位编辑与删除确认
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editGrams, setEditGrams] = useState('')
+  // 对齐主端 Dashboard 的 savingEdit：防止连点触发多次 updateMealGrams
+  const [savingEdit, setSavingEdit] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null)
 
   // 运动录入
   const [exName, setExName] = useState(EXERCISES[0].name)
   const [exMinutes, setExMinutes] = useState('30')
 
-  // 手动记一餐（P0-D）：对齐主工程 LogSheet 的 manual 模式。
-  // 付费墙宣传「手动录入、体重饮水运动记录全部免费」，此前小程序端手动录入
-  // 只存在于无入口的孤儿页 checkin.tsx，承诺不成立；现在首页可直接手动记。
-  const [manualOpen, setManualOpen] = useState(false)
-  const [manualMeal, setManualMeal] = useState<MealType>('snack')
-  const [manualName, setManualName] = useState('')
-  const [manualKcal, setManualKcal] = useState('')
-  const [manualGrams, setManualGrams] = useState('')
-  const [manualProtein, setManualProtein] = useState('')
-  const [manualCarb, setManualCarb] = useState('')
-  const [manualFat, setManualFat] = useState('')
-  const [manualSaving, setManualSaving] = useState(false)
-  const [recentFoods, setRecentFoods] = useState<RecentFood[]>([])
+  // 健康数据源同步（对齐主端 Dashboard 的 healthSteps / healthActiveKcal / healthSyncHint）
+  const [healthSteps, setHealthSteps] = useState(0)
+  const [healthActiveKcal, setHealthActiveKcal] = useState(0)
+  const [healthSyncHint, setHealthSyncHint] = useState('')
+
+  // 「记一餐」统一录入弹层：对齐主端 Dashboard 的 setSheetMeal + LogSheet。
+  // 旧实现把入口拆成「原生 ActionSheet 二选一 + 跳 scan 独立页 + 首页内嵌手录 Sheet」
+  // 三块割裂容器，是移植时走平台原生捷径造成的走样，并非平台能力限制。
+  const [logSheetMeal, setLogSheetMeal] = useState<MealType | null>(null)
 
   const today = todayKey()
+
+  /* ── 健康数据源自动同步（严格对齐主端 Dashboard:125-165）── */
+  useEffect(() => {
+    let alive = true
+    let timer: ReturnType<typeof setInterval> | undefined
+    const vendor = getHealthVendor()
+
+    /** 只有可用状态才写回数值：授权被拒 / 查询报错时返回的 0 会抹掉已有步数 */
+    function applySync(data: Awaited<ReturnType<typeof syncFromHealth>>) {
+      if (!alive) return
+      if (isUsableHealthStatus(data.status)) {
+        setHealthSteps(data.steps)
+        setHealthActiveKcal(data.activeKcal)
+        setHealthSyncHint('')
+      } else {
+        setHealthSyncHint(healthStatusHint(data.status, vendor.label))
+      }
+    }
+
+    async function refreshHealth() {
+      const connected = await isHealthConnected()
+      if (!alive || !connected) return
+      applySync(await syncFromHealth())
+    }
+
+    void refreshHealth()
+    // 仅在已连接时轮询：未连接时无数据可拉，避免空跑云端请求
+    timer = setInterval(() => {
+      void isHealthConnected().then((connected) => {
+        if (!alive || !connected) return
+        void syncFromHealth().then(applySync)
+      })
+    }, HEALTH_SYNC_INTERVAL_MS)
+
+    return () => {
+      alive = false
+      if (timer) clearInterval(timer)
+    }
+  }, [])
 
   // 分享卡片落地：从 query 读邀请码（?invite=CODE，兼容旧版 ?inviter=CODE）。
   // router.params 只在冷启动可靠；热启动（后台时点新卡片）只触发 onShow，
@@ -198,18 +192,30 @@ export default function Index() {
   // 卡在 auth gate（必须杀掉小程序重进）。onShow 在返回栈弹出时必触发。
   // 同时这里也是**热启动**的唯一入口：小程序在后台时用户点了新的分享卡片，
   // onLoad 不重跑、router.params 还是旧值，只有 getEnterOptionsSync 能拿到新码。
+  // 🔴 跨页返回必须刷新（2026-11-08 生产实证修复）：
+  //   scan / recipes / checkin 是独立页面，写库后本页 entries 不会自动更新，
+  //   用户点「早餐/午餐/晚餐」拍照后返回首页看不到记录；且 entries.length 不变
+  //   会让下面 4 个积分 useEffect 全部漏结算（打卡积分/里程碑/徽章/受邀结算）。
+  //   主端 LogSheet 靠 onSaved() → Dashboard.load() 完成同一职责，小程序多页
+  //   结构没有回调，只能由 onShow 承担。首次 onShow 由 [loggedIn, logDate] 的
+  //   useEffect 负责加载，这里跳过以免双请求。
+  const shownOnceRef = useRef(false)
+
   useDidShow(async () => {
-    if (loggedIn) {
-      // 已在首页态下的热启动（如从聊天卡片直接切回）：只需补读落地码
+    if (!loggedIn) {
+      const ok = await isSignedIn()
+      if (!ok) return
+      setLoggedIn(true)
+      // 登录页已绑过码则这里是空操作；若当时会话未就绪（非终态）留了码，
+      // 回首页这一刻会话通常已稳定，补一次消费。
       captureLandedInvite(true)
+      shownOnceRef.current = true
       return
     }
-    const ok = await isSignedIn()
-    if (!ok) return
-    setLoggedIn(true)
-    // 登录页已绑过码则这里是空操作；若当时会话未就绪（非终态）留了码，
-    // 回首页这一刻会话通常已稳定，补一次消费。
+    // 热启动（从聊天卡片切回）也要补读落地码
     captureLandedInvite(true)
+    if (shownOnceRef.current) void load()
+    shownOnceRef.current = true
   })
 
   // 删除确认 3 秒自动复位
@@ -295,8 +301,14 @@ export default function Index() {
 
   const waterMl = useMemo(() => water.reduce((s, w) => s + (Number(w.amount_ml) || 0), 0), [water])
   const burnKcal = useMemo(() => exercise.reduce((s, x) => s + (Number(x.calories) || 0), 0), [exercise])
-  // 小程序暂无健康步数接入，有效消耗 = 手动运动（后续微信 getWeRunData 资质就绪后补充）
-  const effectiveBurnKcal = burnKcal
+  // 对齐主端 Dashboard:108-109 / 265-267：健康数据源是手动运动的有效补充，不是替代。
+  // 活动能量已含全天活动（含手动运动），若叠加会重复计 → 二者取较大者，保守不虚高。
+  const stepGoal = profile?.step_goal && profile.step_goal > 0 ? profile.step_goal : DEFAULT_STEP_GOAL
+  const activityKcal = useMemo(() => {
+    if (healthActiveKcal > 0) return healthActiveKcal
+    return estimateActivityKcal(healthSteps, profile?.current_weight_kg, profile?.height_cm)
+  }, [healthActiveKcal, healthSteps, profile?.current_weight_kg, profile?.height_cm])
+  const effectiveBurnKcal = Math.max(burnKcal, activityKcal)
   const netKcal = Math.round(totals.kcal - effectiveBurnKcal * ACTIVITY_EATBACK_RATIO)
   const remain = Math.round(target.calories - netKcal)
   const over = remain < 0
@@ -326,7 +338,13 @@ export default function Index() {
   // 连续打卡每满 7 天 → 自动发放识别次数奖励（7/14/21…各送 2 次识别）。
   // 以「当前连续段满周那天的日期」作 grant_key，每满一周发一次。
   useEffect(() => {
-    if (streak.streak7Date) void grantPhotoBonus('streak7', streak.streak7Date, STREAK_BONUS_AMOUNT)
+    if (!streak.streak7Date) return
+    // 对齐主端 Dashboard:278-281：Pro 会员无限次识别，不再发放识别次数奖励
+    void (async () => {
+      const ent = await getEntitlement()
+      if (isPro(ent)) return
+      void grantPhotoBonus('streak7', streak.streak7Date!, STREAK_BONUS_AMOUNT)
+    })()
   }, [streak.streak7Date])
 
   // 每日打卡积分：记餐 +5 / 饮水达标 +2 / 运动 +2（仅「今天」结算，历史补记不发）。
@@ -411,10 +429,12 @@ export default function Index() {
     if (pendingDeleteId !== id) { setPendingDeleteId(id); return }
     setPendingDeleteId(null)
     setError('')
+    // 对齐主端 Dashboard:388-393：以**被删记录自身**的 log_date 为准，
+    // 而非页面当前选中日期（补记历史日期时两者不同，用后者会误收/漏收积分）。
+    const recordDate = entries.find((e) => e.id === id)?.log_date
     try {
       await deleteMeal(id)
-      // 删除今日记录后收回当日打卡积分（幂等，防刷）
-      if (logDate === today) void refundCheckinHoney(logDate)
+      if (recordDate && recordDate === today) void refundCheckinHoney(recordDate)
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : '删除失败')
@@ -428,16 +448,20 @@ export default function Index() {
   }
 
   async function saveEdit() {
-    if (editingId == null) return
-    const g = Math.round(Number(editGrams) || 0)
-    if (g < 1 || g > 2000) { setError('请输入 1–2000 克之间的份量'); return }
+    if (editingId == null || savingEdit) return
+    // 对齐主端 Dashboard:401-426：走 GRAMS_LIMIT（1–5000 整数）而非硬编码 2000
+    const checked = checkNumber(editGrams, GRAMS_LIMIT)
+    if (!checked.ok || checked.value == null) { setError(checked.error); return }
+    setSavingEdit(true)
     setError('')
     try {
-      await updateMealGrams(editingId, g)
+      await updateMealGrams(editingId, checked.value)
       setEditingId(null)
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : '修改失败')
+    } finally {
+      setSavingEdit(false)
     }
   }
 
@@ -448,74 +472,7 @@ export default function Index() {
 
   /* ── 手动记一餐（P0-D）── */
 
-  /**
-   * 打开手动录入弹层。餐次默认按当前时间推断（guessMealType），
-   * 补记历史日期时同样用时间推断，用户可在弹层内切换。
-   * 「最近吃过」懒加载：只在打开弹层时拉一次 30 天记录，不拖慢首屏。
-   */
-  function openManualSheet(meal?: MealType) {
-    setManualMeal(meal ?? guessMealType())
-    setManualName(''); setManualKcal(''); setManualGrams('')
-    setManualProtein(''); setManualCarb(''); setManualFat('')
-    setError('')
-    setManualOpen(true)
-    if (recentFoods.length === 0) {
-      void listRecentMeals(30, 200)
-        .then((list) => setRecentFoods(aggregateRecent(list)))
-        .catch(() => { /* 拉取失败不阻塞手动录入 */ })
-    }
-  }
 
-  /** 点「最近吃过」快捷项 → 回填整条记录（名称/热量/克数/三大营养素） */
-  function pickRecent(f: RecentFood) {
-    setManualName(f.name)
-    setManualKcal(f.kcal ? String(Math.round(f.kcal)) : '')
-    setManualGrams(f.grams ? String(Math.round(f.grams)) : '')
-    setManualProtein(f.protein_g ? String(f.protein_g) : '')
-    setManualCarb(f.carb_g ? String(f.carb_g) : '')
-    setManualFat(f.fat_g ? String(f.fat_g) : '')
-  }
-
-  /**
-   * 保存手动记录。source='manual'（与主端 LogSheet 一致 → 报告与 AI 标识
-   * 判定都不把它当 AI 生成内容）。营养字段可选，缺省 0；只强制名称与热量>0。
-   */
-  async function handleManualSave() {
-    const name = manualName.trim()
-    if (!name) { setError('请输入食物名称'); return }
-    const kcal = Math.round(Number(manualKcal) || 0)
-    if (kcal <= 0) { setError('请输入本份热量（kcal）'); return }
-    if (kcal > 5000) { setError('单条热量过高，请核对是否填错'); return }
-    const gramsRaw = Number(manualGrams) || 0
-    const grams = gramsRaw > 0 ? Math.round(gramsRaw) : null
-    const num = (s: string) => {
-      const v = Number(s) || 0
-      // 克数类营养素写库保留 2 位小数（与主端 LogSheet.tsx:233-238 同口径）
-      return v > 0 ? roundTo(v, 2) : 0
-    }
-    setManualSaving(true)
-    setError('')
-    try {
-      await insertMeals([{
-        log_date: logDate,
-        meal_type: manualMeal,
-        food_name: name,
-        quantity_text: grams ? `${grams} 克` : null,
-        grams,
-        calories: kcal,
-        protein_g: num(manualProtein),
-        carb_g: num(manualCarb),
-        fat_g: num(manualFat),
-        source: 'manual',
-      }])
-      setManualOpen(false)
-      await load()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '保存失败')
-    } finally {
-      setManualSaving(false)
-    }
-  }
 
   async function handleWaterUndo() {
     setError('')
@@ -549,19 +506,14 @@ export default function Index() {
   }
 
   function goLogin() { Taro.navigateTo({ url: '/pages/login/login' }) }
-  function goScan() { Taro.navigateTo({ url: '/pages/scan/scan' }) }
 
   /**
-   * 「记一餐」双路入口（P0-D）：拍照识别（消耗额度）或手动录入（永久免费）。
-   * 对齐主工程 LogSheet 的 photo/manual 模式选择。
+   * 「记一餐」入口：对齐主端 Dashboard 的 setSheetMeal(m) / guessMealType()。
+   * 打开同一个 LogSheet 弹层并传入餐次与日期，弹层内 4 模式共用草稿与保存链路。
+   * 不再使用 Taro.showActionSheet + navigateTo，餐次 chip 在弹层内可再切换。
    */
-  function openAddMenu(meal?: MealType) {
-    Taro.showActionSheet({ itemList: ['拍照识别', '手动录入'] })
-      .then((res) => {
-        if (res.tapIndex === 0) goScan()
-        else if (res.tapIndex === 1) openManualSheet(meal)
-      })
-      .catch(() => { /* 用户取消 */ })
+  function openLogSheet(meal?: MealType) {
+    setLogSheetMeal(meal ?? guessMealType())
   }
   function goReport() { Taro.navigateTo({ url: '/pages/report/report' }) }
   function goProfile() { Taro.navigateTo({ url: '/pages/profile/profile' }) }
@@ -839,6 +791,22 @@ export default function Index() {
           ) : null}
         </View>
 
+        {/* 健康数据源步数条（对齐主端 Dashboard:870-890）：
+            微信运动真同步待类目资质，当前 no_plugin 返回 0 步，不打扰用户。 */}
+        <View className='ex-step-row'>
+          <View className='ex-step-head'>
+            <Text className='ex-step-label'>步数</Text>
+            <Text className='water-val'>{fmtNum(healthSteps, 0)} / {fmtNum(stepGoal, 0)}</Text>
+          </View>
+          <View className='macro-track'>
+            <View
+              className='macro-fill'
+              style={{ width: `${Math.min(100, Math.round((healthSteps / stepGoal) * 100))}%`, background: '#3f9463' }}
+            />
+          </View>
+          {healthSyncHint ? <Text className='ex-step-hint'>{healthSyncHint}</Text> : null}
+        </View>
+
         {exercise.length > 0 ? (
           <View className='ex-list'>
             {exercise.map((x) => (
@@ -890,7 +858,7 @@ export default function Index() {
                 </View>
                 <View className='meal-right'>
                   <Text className='meal-kcal'>{list.length ? `${kcal} kcal` : ''}</Text>
-                  <Button className='meal-add' onClick={() => openAddMenu(m)}>+</Button>
+                  <Button className='meal-add' onClick={() => openLogSheet(m)}>+</Button>
                 </View>
               </View>
               {list.length === 0 ? (
@@ -905,7 +873,7 @@ export default function Index() {
                         <View className='entry-edit'>
                           <Input type='number' value={editGrams} onInput={(ev) => setEditGrams(ev.detail.value)} />
                           <Text>g</Text>
-                          <Button className='btn-text' onClick={() => void saveEdit()}>保存</Button>
+                          <Button className='btn-text' disabled={savingEdit} onClick={() => void saveEdit()}>保存</Button>
                           <Button className='btn-text' onClick={() => setEditingId(null)}>取消</Button>
                         </View>
                       ) : (
@@ -973,69 +941,18 @@ export default function Index() {
 
       <View className='bottom-space' />
 
-      {/* 手动记一餐弹层（P0-D）：对齐主工程 LogSheet manual 模式。
-          手动录入永久免费、不消耗任何额度，source='manual' 不算 AI 生成。 */}
-      {manualOpen && (
-        <Sheet title='手动记一餐' onClose={() => setManualOpen(false)}>
-          <View className='manual-form'>
-            <View className='chips'>
-              {MEAL_ORDER.map((m) => (
-                <Button key={m} className={`chip ${manualMeal === m ? 'active' : ''}`} onClick={() => setManualMeal(m)}>
-                  {MEAL_LABELS[m]}
-                </Button>
-              ))}
-            </View>
-            <View className='mf-row'>
-              <Input className='mf-input' placeholder='食物名称，如：燕麦粥' value={manualName} onInput={(e) => setManualName(e.detail.value)} />
-            </View>
-            <View className='mf-row'>
-              <View className='mf-field'>
-                <Input className='mf-input' type='number' placeholder='热量 kcal *' value={manualKcal} onInput={(e) => setManualKcal(e.detail.value)} />
-                <Text className='mf-unit'>kcal</Text>
-              </View>
-              <View className='mf-field'>
-                <Input className='mf-input' type='number' placeholder='份量（可选）' value={manualGrams} onInput={(e) => setManualGrams(e.detail.value)} />
-                <Text className='mf-unit'>克</Text>
-              </View>
-            </View>
-            <View className='mf-row'>
-              <View className='mf-field'>
-                <Input className='mf-input' type='digit' placeholder='蛋白质' value={manualProtein} onInput={(e) => setManualProtein(e.detail.value)} />
-                <Text className='mf-unit'>g</Text>
-              </View>
-              <View className='mf-field'>
-                <Input className='mf-input' type='digit' placeholder='碳水' value={manualCarb} onInput={(e) => setManualCarb(e.detail.value)} />
-                <Text className='mf-unit'>g</Text>
-              </View>
-              <View className='mf-field'>
-                <Input className='mf-input' type='digit' placeholder='脂肪' value={manualFat} onInput={(e) => setManualFat(e.detail.value)} />
-                <Text className='mf-unit'>g</Text>
-              </View>
-            </View>
-            {recentFoods.length > 0 && (
-              <View className='mf-recent'>
-                <Text className='mf-recent-title'>最近吃过（点按回填）</Text>
-                <View className='mf-recent-list'>
-                  {recentFoods.map((f) => (
-                    <Button key={f.name} className='mf-recent-item' onClick={() => pickRecent(f)}>
-                      <Text className='mf-rf-name'>{f.name}</Text>
-                      <Text className='mf-rf-kcal'>{Math.round(f.kcal)} kcal</Text>
-                    </Button>
-                  ))}
-                </View>
-              </View>
-            )}
-            {error && <Text className='mf-error'>{error}</Text>}
-            <Button className='btn-primary mf-save' loading={manualSaving} disabled={manualSaving} onClick={() => void handleManualSave()}>
-              {manualSaving ? '保存中…' : `记到${isToday ? '今天' : formatDateShort(logDate)} · ${MEAL_LABELS[manualMeal]}`}
-            </Button>
-            <Text className='mf-note'>手动录入永久免费，不消耗识别次数</Text>
-          </View>
-        </Sheet>
+      {/* 统一「记一餐」弹层：单一 bottom sheet，对齐主工程 LogSheet */}
+      {logSheetMeal && (
+        <LogSheet
+          logDate={logDate}
+          initialMeal={logSheetMeal}
+          onClose={() => { setLogSheetMeal(null); void load() }}
+          onSaved={() => { setLogSheetMeal(null); void load() }}
+        />
       )}
 
-      {/* 主操作「记一餐」吸底悬浮（P0-D：拍照识别 / 手动录入 双路） */}
-      <Button className='btn fab-meal' onClick={() => openAddMenu()}>
+      {/* 主操作「记一餐」吸底悬浮：打开统一录入弹层 */}
+      <Button className='btn fab-meal' onClick={() => openLogSheet()}>
         <IconPlus color='#4a3208' />
         <Text>记一餐</Text>
       </Button>

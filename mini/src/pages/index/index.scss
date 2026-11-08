@@ -585,6 +585,29 @@
   }
 }
 
+// 健康数据源步数条（对齐主端 Dashboard 的「步数 / 目标」行）
+.ex-step-row {
+  margin-top: 20px;
+
+  .ex-step-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .ex-step-label {
+    font-size: 27px;
+    color: $ink;
+  }
+
+  .ex-step-hint {
+    display: block;
+    font-size: 23px;
+    line-height: 1.6;
+    color: $ink-3;
+  }
+}
+
 .macro-track {
   height: 14px;
   border-radius: 99px;

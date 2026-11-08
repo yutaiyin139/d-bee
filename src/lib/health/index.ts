@@ -270,7 +270,6 @@ export function estimateActivityKcal(
  * 依据：手环/步数普遍高估消耗 20% 左右，若 100% 回补会让人越减越肥
  * （Cal AI 用 80%、自律茄子用 100%，均被第三方评测点名）。50% 是安全折中。
  */
-export const ACTIVITY_EATBACK_RATIO = 0.5
-
-/** 每日步数目标默认值（用户未在「我的」里自定义时使用） */
-export const DEFAULT_STEP_GOAL = 6000
+// 🔴 2026-11-08：值已下沉 @dbee/shared（四端单一真相源），此处保留同名导出，
+//    Dashboard 的 import 路径不变，避免改动无关页面。
+export { ACTIVITY_EATBACK_RATIO, DEFAULT_STEP_GOAL } from '@dbee/shared'

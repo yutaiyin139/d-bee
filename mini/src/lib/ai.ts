@@ -24,6 +24,7 @@ export interface DetectedFood {
   added_sugar_g?: number
   note?: string
   health_score?: number
+  confidence?: number
 }
 
 const MODEL_CACHE_KEY = 'zm_model_cache'
@@ -70,8 +71,11 @@ interface ChatMessage {
 async function collectText(
   messages: ChatMessage[],
   temperature = 0.2,
+  signal?: AbortSignal,
   onDelta?: (delta: string) => void,
 ): Promise<string> {
+  // 🔴 与主工程 src/lib/ai.ts:52-80 同签名同语义：mini SDK 0.1.3 已支持
+  //    signal → wx.request task.abort()（enableChunked 流式也能中断），此前只差这一层透传。
   const needVision = messages.some(
     (m) => Array.isArray(m.content) && m.content.some((part) => part.type === 'image_url'),
   )
@@ -83,6 +87,7 @@ async function collectText(
     messages,
     stream: true,
     temperature,
+    ...(signal ? { signal } : {}),
   })) {
     const delta = chunk.choices?.[0]?.delta
     if (delta?.content) {
@@ -137,6 +142,9 @@ function normalizeItems(raw: unknown): DetectedFood[] {
         note: it.note ? String(it.note) : undefined,
         health_score: Number.isFinite(num(it.health_score)) && num(it.health_score) > 0
           ? Math.min(100, Math.round(num(it.health_score)))
+          : undefined,
+        confidence: Number.isFinite(num(it.confidence)) && num(it.confidence) > 0
+          ? Math.min(100, Math.round(num(it.confidence)))
           : undefined,
       } as DetectedFood
     })
@@ -303,6 +311,7 @@ export async function askCoach(
       { role: 'user', content: user },
     ],
     0.55,
+    undefined,
     onDelta,
   )
 }
@@ -313,9 +322,20 @@ export async function askCoach(
  *   小程序 chooseImage 返回 tempFilePath（本地路径），需先转 base64 再传。
  */
 export async function recognizeFoodFromImage(imageUrl: string, hint?: string): Promise<DetectedFood[]> {
-  const prompt = `这是用户拍的一餐照片，请识别画面中所有食物，估算每种食物的分量与营养数据。${
-    hint ? `\n用户补充说明：${hint}` : ''
-  }\n严格按约定的 JSON 格式输出。`
+  // 🔴 与主工程 src/lib/ai.ts:157-166 逐字一致（2026-11-08 对齐）。
+  //    此前 mini 是简化版：丢了「不漏菜 / 中餐易混淆项 / 分量按可见量 /
+  //    confidence 调低 / 必须返回 confidence」5 条约束，识别质量与置信度
+  //    明显低于主端。四端逻辑必须同源，不得再维护第二套 prompt。
+  const prompt = `这是用户拍的一餐照片，请识别画面中**所有**食物并估算营养数据。${
+    hint ? `\n用户补充说明：${hint}（用户描述优先于你的猜测）` : ''
+  }
+识别要求：
+1. 不要漏掉任何一道菜/主食/配菜/饮品，盘子边缘被遮挡的也要尽量识别。
+2. 中餐易混淆项要仔细区分：红烧肉 vs 糖醋排骨、白米饭 vs 粥、清炒 vs 油炸、面条 vs 米粉。
+3. 分量按盘中实际可见量估算，结合餐具大小（碗/盘）判断，不要按整盘假设。
+4. 若画面不清晰导致某道菜拿不准，food_name 用最接近的常见菜名，confidence 相应调低，但不要省略。
+5. 每项都返回 confidence（0-100 整数，表示识别把握）。
+严格按约定的 JSON 格式输出。`
   const reply = await collectText([
     { role: 'system', content: NUTRITION_SYSTEM },
     {

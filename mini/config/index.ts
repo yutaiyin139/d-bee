@@ -59,6 +59,13 @@ export default defineConfig<'webpack5'>(async (merge, { command, mode }) => {
   const backend = (process.env.D_BEE_BACKEND ?? 'selfhost').trim()
   const selfhostReady = (process.env.D_BEE_SELFHOST_READY ?? 'true').trim()
 
+  // 虚拟支付售卖开关（见 mini/src/lib/xpayEnabled.ts）。🔴 **默认 false**：
+  // 未显式设 D_BEE_XPAY_ENABLED=true 时，构建出的包不展示任何价格与购买按钮，
+  // legal.ts 保持「免费提供」口径 —— 与 backend.ts 的 READY 门同一思路（默认安全值），
+  // 但方向相反：READY 默认 true 是因为自托管已是唯一选择，这里默认 false 是因为
+  // 开启售卖还需微信后台的道具发布 / 进件 / 推送配置（平台侧人工操作，代码无法验证）。
+  const xpayEnabled = (process.env.D_BEE_XPAY_ENABLED ?? 'false').trim()
+
   // 产品版本号（见上方 resolveProductVersion 注释）。与主端 __APP_VERSION__ 同源同值。
   const appVersion = resolveProductVersion()
 
@@ -70,6 +77,32 @@ export default defineConfig<'webpack5'>(async (merge, { command, mode }) => {
   // 这里复用 resolveBackendTarget 本身而非另写一份判断，保证两层逻辑不会漂移。
   // 对齐主端的双层护栏思路（vite.config.ts:14-25 构建期 + cloudConfig.ts:109-112 运行时）。
   resolveBackendTarget({ backend, selfhostReady })
+
+  // 🔴 售卖开关的构建期校验：只接受 true / false，其余一律 throw。
+  // 为什么不兜底成 false：`D_BEE_XPAY_ENABLED=1` / `=yes` 这类写法很常见，
+  // 若静默当成 false，构建出的包「以为在卖其实没卖」—— 和 backend.ts 里
+  // 「以为切了其实没切」是同一种病，都在运行时才暴露，且这次暴露方式是
+  // 「用户点购买没反应」。宁可构建失败，让人当场改对。
+  const xpayNorm = xpayEnabled.toLowerCase()
+  if (xpayNorm !== 'true' && xpayNorm !== 'false') {
+    throw new Error(
+      `[mini/config] D_BEE_XPAY_ENABLED 只接受 'true' / 'false'，收到 ${JSON.stringify(process.env.D_BEE_XPAY_ENABLED)}。` +
+        '该开关同时决定「付费墙是否展示三档价格与购买按钮」与「legal.ts 的法务口径」，' +
+        '两者必须一致，故不允许含糊取值。开启前请先确认 xpayEnabled.ts 文件头列出的' +
+        '平台侧前置条件（虚拟支付进件、道具发布、消息推送配置）已全部就绪。',
+    )
+  }
+  if (xpayNorm === 'true') {
+    // 构建日志留痕：产物是否售卖是发布决策，必须在构建输出里看得见
+    // （产物里 grep 中文会因 \uXXXX 转义假阴性，日志是唯一可靠提示位）。
+    console.warn(
+      '[mini/config] ⚠️ 已开启虚拟支付售卖（D_BEE_XPAY_ENABLED=true）：' +
+        '付费墙将展示三档价格与购买按钮，legal.ts 同步切换为收费口径。' +
+        '发布前请确认微信后台已完成：虚拟支付进件、三档道具发布（productId 与 PRODUCT_IDS 一致）、' +
+        '消息推送配置（URL=https://d-bee.cn/.cloud/payment/wechat/notify）；' +
+        '且服务端 0046 迁移已应用、XPAY_* 与 WECHAT_SESSION_ENC_KEY 已配齐。',
+    )
+  }
 
   const baseConfig: UserConfigExport<'webpack5'> = {
     projectName: 'd-bee-mini',
@@ -87,6 +120,9 @@ export default defineConfig<'webpack5'>(async (merge, { command, mode }) => {
     defineConstants: {
       'process.env.D_BEE_BACKEND': JSON.stringify(backend),
       'process.env.D_BEE_SELFHOST_READY': JSON.stringify(selfhostReady),
+      // 注入**归一化后**的值（'true'/'false'），运行时 isXpaySaleEnabled 再判一次，
+      // 两层用同一份字面量，不会出现「构建期认为是 true、运行时认为是 false」。
+      'process.env.D_BEE_XPAY_ENABLED': JSON.stringify(xpayNorm),
       // 🔴 标识符刻意与主端 vite.config.ts:64 **完全同名**（__APP_VERSION__），
       // 值也同源同格式（`v` + 根 package.json version）。同名是为了让
       // 「四端版本号同源」这件事可被一致性护栏直接比对，而不是靠两份注释互相承诺。

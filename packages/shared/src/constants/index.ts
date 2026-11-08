@@ -151,3 +151,21 @@ export const CHECKIN_REMINDER_MINUTE = 0
 export const WATER_REMINDER_START_HOUR = 9
 export const WATER_REMINDER_END_HOUR = 21
 export const WATER_REMINDER_INTERVAL_HOURS = 2
+
+/* ── 健康 / 热量口径（四端单一真相源，2026-11-08 下沉）───────────── */
+/**
+ * 活动消耗计入「可吃回」额度的比例（50%）。
+ * 依据：手环/步数普遍高估消耗 20% 左右，100% 回补会让人越减越肥；50% 为安全折中。
+ * 此前主端在 src/lib/health/index.ts、mini 在 pages/index/index.tsx 各写一份 0.5 副本。
+ */
+export const ACTIVITY_EATBACK_RATIO = 0.5
+
+/** 每日步数目标默认值（用户未在「我的」里自定义时使用） */
+export const DEFAULT_STEP_GOAL = 6000
+
+/**
+ * 健康数据自动同步间隔（ms）。已连接健康数据源后按此频率拉当天步数 / 活动能量。
+ * 🔴 2026-11-08 下沉：此前主端 Dashboard 与小程序首页各写一份 60_000 副本，
+ *    四端同步节奏必须同源，改一处漏一处会让「步数刷新速度」出现端间差异。
+ */
+export const HEALTH_SYNC_INTERVAL_MS = 60_000

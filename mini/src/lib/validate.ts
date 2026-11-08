@@ -20,6 +20,14 @@ export const AGE_LIMIT: NumLimit = { label: '年龄', min: 1, max: 120, int: tru
 export const HEIGHT_LIMIT: NumLimit = { label: '身高', min: 100, max: 250, decimals: 1, unit: 'cm' }
 export const WEIGHT_LIMIT: NumLimit = { label: '体重', min: 20, max: 300, decimals: 1, unit: 'kg' }
 export const STEP_GOAL_LIMIT: NumLimit = { label: '步数目标', min: 1000, max: 50000, int: true, unit: '步' }
+/** 食物份量：1–5000 g（整数）—— 与 DB 0016 CHECK 及主工程 GRAMS_LIMIT 同源 */
+export const GRAMS_LIMIT: NumLimit = { label: '份量', min: 1, max: 5000, int: true, unit: 'g' }
+/** 摄入热量：1–10000 kcal（整数）—— 与 DB 0016 CHECK 及主工程 KCAL_LIMIT 同源 */
+export const KCAL_LIMIT: NumLimit = { label: '热量', min: 1, max: 10000, int: true, unit: 'kcal' }
+/** 运动时长：5–300 分钟（整数） */
+export const MINUTES_LIMIT: NumLimit = { label: '运动时长', min: 5, max: 300, int: true, unit: '分钟' }
+/** 饮水量：50–3000 ml（整数） */
+export const WATER_ML_LIMIT: NumLimit = { label: '饮水量', min: 50, max: 3000, int: true, unit: 'ml' }
 
 /* ── 文本规则 ── */
 

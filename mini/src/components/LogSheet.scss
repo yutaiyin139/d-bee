@@ -1,0 +1,364 @@
+// 记录饮食弹层（对齐主工程 src/styles.css .sheet-mask / .sheet / .sheet-body）
+// tokens.scss 已全局注入，颜色一律取 token，禁止硬编码。
+// 与旧 Sheet.tsx 的 .sheet-* 前缀隔离：本弹层内容更长，需要固定高度 + ScrollView。
+
+.ls-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(30, 26, 20, 0.42);
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.ls-sheet {
+  width: 100%;
+  max-width: 960px;
+  height: 86vh;
+  background: $bg;
+  border-radius: 44px 44px 0 0;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+  box-shadow: $shadow;
+}
+
+.ls-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 32px 36px 20px;
+  flex-shrink: 0;
+  border-bottom: 1px solid $line;
+
+  .ls-head-left {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .ls-title {
+    font-size: 34px;
+    font-weight: 600;
+    color: $ink;
+  }
+
+  .ls-sub {
+    font-size: 22px;
+    color: $ink-3;
+  }
+
+  .ls-close {
+    font-size: 44px;
+    color: $ink-3;
+    line-height: 1;
+    padding: 16px 22px;
+    margin: -16px -22px;
+  }
+}
+
+// 🔴 ScrollView 必须有确定高度才能滚动（旧 Sheet 的 .sheet-body 只有 padding，
+//    长内容会溢出——这是 mini 之前没做的样式，不是平台限制）
+.ls-body {
+  flex: 1;
+  height: 0;
+  padding: 24px 36px 60px;
+  box-sizing: border-box;
+}
+
+.ls-chips,
+.ls-conflict-actions,
+.ls-recent-list,
+.ls-draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.ls-chip {
+  font-size: 24px;
+  color: $ink-2;
+  background: $surface;
+  border: 1px solid $line-2;
+
+  &.active {
+    background: $honey-soft;
+    border-color: $honey;
+    color: $honey-dark;
+  }
+}
+
+.ls-stat {
+  display: flex;
+  justify-content: space-between;
+  padding: 18px 0;
+  font-size: 24px;
+  color: $ink-2;
+}
+
+.ls-seg {
+  display: flex;
+  background: $bg-2;
+  border-radius: $radius;
+  padding: 6px;
+  margin-bottom: 24px;
+
+  .ls-seg-item {
+    flex: 1;
+    text-align: center;
+    padding: 16px 0;
+    font-size: 24px;
+    color: $ink-2;
+    border-radius: 10px;
+
+    &.active {
+      background: $surface;
+      color: $honey-dark;
+      font-weight: 600;
+      box-shadow: $shadow;
+    }
+  }
+}
+
+.ls-block {
+  margin-bottom: 24px;
+}
+
+.ls-block-title {
+  display: block;
+  font-size: 26px;
+  font-weight: 600;
+  color: $ink;
+  margin-bottom: 12px;
+}
+
+.ls-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: $surface;
+  border: 1px solid $line-2;
+  border-radius: $radius;
+  padding: 20px 22px;
+  font-size: 26px;
+  color: $ink;
+  margin-bottom: 16px;
+}
+
+.ls-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.flex1 { flex: 1; min-width: 0; }
+
+.ls-btn {
+  width: 100%;
+  height: 88px;
+  line-height: 88px;
+  font-size: 30px;
+  background: $honey;
+  color: $honey-btn-ink;
+  border-radius: $radius;
+  border: none;
+  margin-bottom: 16px;
+
+  &.ghost {
+    background: $surface;
+    color: $ink-2;
+    border: 1px solid $line-2;
+    height: 76px;
+    line-height: 76px;
+    font-size: 26px;
+  }
+
+  &.save {
+    margin-top: 28px;
+    height: 96px;
+    line-height: 96px;
+    font-size: 32px;
+    font-weight: 600;
+  }
+}
+
+.ls-photo {
+  width: 100%;
+  height: 300px;
+  border-radius: $radius;
+  margin-bottom: 16px;
+  background: $bg-2;
+}
+
+.ls-helper {
+  display: block;
+  font-size: 22px;
+  line-height: 1.7;
+  color: $ink-3;
+  margin: 8px 0;
+}
+
+.ls-cats {
+  white-space: nowrap;
+  margin-bottom: 16px;
+
+  .ls-cat {
+    display: inline-block;
+    padding: 10px 20px;
+    margin-right: 12px;
+    font-size: 22px;
+    color: $ink-2;
+    background: $surface;
+    border: 1px solid $line;
+    border-radius: 99px;
+
+    &.active {
+      background: $honey-soft;
+      color: $honey-dark;
+      border-color: $honey;
+    }
+  }
+}
+
+.ls-food {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 0;
+  border-bottom: 1px solid $line;
+
+  .ls-food-name {
+    flex: 1;
+    font-size: 26px;
+    color: $ink;
+  }
+
+  .ls-food-meta {
+    font-size: 22px;
+    color: $ink-3;
+  }
+
+  .ls-food-add {
+    font-size: 36px;
+    color: $honey-dark;
+    padding: 0 10px;
+  }
+}
+
+.ls-recent {
+  margin-top: 24px;
+}
+
+.ls-recent-item {
+  font-size: 22px;
+  color: $ink-2;
+  background: $surface;
+  border: 1px solid $line;
+}
+
+.ls-notice {
+  background: $honey-soft;
+  border: 1px solid rgba(150, 96, 10, 0.25);
+  border-radius: $radius;
+  padding: 20px 24px;
+  margin-bottom: 20px;
+  font-size: 24px;
+  line-height: 1.7;
+  color: $info-ink;
+
+  &.err {
+    background: $red-soft;
+    border-color: rgba(143, 56, 45, 0.25);
+    color: $risk-ink;
+  }
+
+  &.conflict {
+    background: $honey-soft-2;
+  }
+
+  .ls-conflict-title {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+}
+
+.ls-drafts {
+  margin-top: 28px;
+}
+
+.ls-drafts-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ls-draft {
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: $radius;
+  padding: 22px;
+  margin-bottom: 16px;
+
+  .ls-draft-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .ls-draft-name {
+    font-size: 28px;
+    font-weight: 600;
+    color: $ink;
+  }
+
+  .ls-draft-del {
+    margin-left: auto;
+    font-size: 36px;
+    color: $ink-3;
+    padding: 0 12px;
+  }
+
+  .ls-draft-meta {
+    display: block;
+    font-size: 24px;
+    color: $ink-2;
+    margin-top: 10px;
+  }
+}
+
+.ls-grams {
+  width: 120px;
+  background: $bg-2;
+  border: 1px solid $line-2;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 24px;
+  color: $ink;
+  text-align: center;
+}
+
+.ls-unit {
+  font-size: 22px;
+  color: $ink-3;
+}
+
+.ls-total {
+  padding: 20px;
+  background: $bg-2;
+  border-radius: $radius;
+  font-size: 24px;
+  color: $ink-2;
+  line-height: 1.6;
+}
+
+.ls-redeem {
+  margin-top: 36px;
+  padding-top: 24px;
+  border-top: 1px solid $line;
+}

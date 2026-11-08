@@ -1264,6 +1264,7 @@ select {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 14px;
+  min-width: 0;
 }
 
 .stat .l {
@@ -1276,6 +1277,8 @@ select {
   font-weight: 600;
   margin-top: 4px;
   font-variant-numeric: tabular-nums;
+  /* 与 mini 同位置保持一致：双值「254g / 56g」窄屏也不得折行 */
+  white-space: nowrap;
 }
 
 .stat .v small {

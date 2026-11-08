@@ -48,6 +48,9 @@ import {
 } from './identity.mjs'
 import { sendCode } from './sms.mjs'
 import { cloudError, clientIp, RateLimiter } from './http.mjs'
+// 0046：虚拟支付 signature 必须用 session_key，故此处引入「加密落库」（见 wechatSession.mjs 头部
+// 关于与原纪律②冲突的说明）。saveSessionKey 失败绝不抛 —— 登录是主路径，支付是增值能力。
+import { saveSessionKey } from './wechatSession.mjs'
 
 /**
  * 密码登录的暴力破解防护阈值（独立于发码限流 —— 发码是「同标识 60 秒 1 次」，
@@ -291,12 +294,16 @@ export function createAuthHandlers(deps) {
    *   ① AppSecret 只在 URL query 里出现（微信官方接口形态，无 POST 替代）。
    *      → **本函数与其调用方一律不记 URL**，日志只落 appid 与 errcode。
    *      若将来加请求日志中间件，必须把 /sns/jscode2session 的 query 脱敏。
-   *   ② session_key 是微信侧的会话密钥（可解密手机号等敏感数据），
-   *      拿到即弃：本函数**只返回 openid**，不把 session_key 传出、不落库、不记日志。
+   *   ② session_key 是微信侧的会话密钥（可解密手机号等敏感数据），也是虚拟支付
+   *      用户态签名（signature = hmac_sha256(session_key, signData)）的密钥。
+   *      🔴 0046 起不再「拿到即弃」：本函数返回 sessionKey，由 loginWechat 经
+   *      wechatSession.saveSessionKey() **AES-256-GCM 加密后落库**，下单时再解密现算。
+   *      仍然死守的底线：绝不下发前端、绝不进日志（本函数不打值，只打 appid/长度）。
+   *      未配 WECHAT_SESSION_ENC_KEY 时 saveSessionKey 静默跳过 → 登录照常、仅支付降级。
    *   ③ appid → secret 的查表本身就是白名单：客户端传来的 appid 若不在
    *      WECHAT_MINI_SECRETS 里，直接 503，绝不拿它去外呼（防 SSRF/凭据试探）。
    *
-   * @returns {Promise<{ok:true, openid:string}|{ok:false, status:number, message:string, code:string, errcode?:number}>}
+   * @returns {Promise<{ok:true, openid:string, sessionKey:string}|{ok:false, status:number, message:string, code:string, errcode?:number}>}
    */
   async function exchangeWechatCode({ code, appid }) {
     const secret = cfg.wechatMiniSecrets?.get(appid)
@@ -360,7 +367,9 @@ export function createAuthHandlers(deps) {
       logger.error(`[auth] jscode2session 返回畸形 openid appid=${appid} len=${data.openid.length}`)
       return { ok: false, status: 502, message: '微信登录失败，请重试', code: 'wechat_bad_openid' }
     }
-    return { ok: true, openid: data.openid }
+    // session_key 可能缺失（极老客户端或微信异常）：按空串返回，saveSessionKey 会跳过存储。
+    const sessionKey = typeof data.session_key === 'string' ? data.session_key : ''
+    return { ok: true, openid: data.openid, sessionKey }
   }
 
   return {
@@ -582,6 +591,18 @@ export function createAuthHandlers(deps) {
         fixedOwnerId: ownerId,
       })
       await touchLogin(pool, r.ownerId)
+
+      // 🔴 0046：加密落库 session_key 供虚拟支付签名（xpay.mjs 下单时解密现算 signature）。
+      //   saveSessionKey 内部三重保护：未配 WECHAT_SESSION_ENC_KEY → 静默跳过；
+      //   写库失败（如 0046 未应用）→ 只 warn 不抛；值绝不进日志。
+      //   → 登录主路径绝不会因支付凭据不全而挂掉。
+      await saveSessionKey(pool, {
+        ownerId: r.ownerId,
+        appid,
+        sessionKey: exchanged.sessionKey,
+        keyHex: cfg.wechatSessionEncKey,
+        logger,
+      })
 
       // token_version：新建为 1；老用户读库内当前值（缺失按 1，与 signin 一致）
       const ver = r.created ? 1 : (await getTokenVersion(pool, r.ownerId)) ?? 1

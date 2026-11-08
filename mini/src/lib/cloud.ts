@@ -48,6 +48,7 @@
 //    微信体验版 JSCore 无此全局 → 记一餐等所有流式 AI 功能抛
 //    「TextDecoder is not defined」(2026-11-08 实测)。详见 ./textDecoderPolyfill.ts。
 import { ensureTextDecoder } from './textDecoderPolyfill'
+import { reportBootError } from './bootReport'
 import { createMiniProgramWorkBuddyCloud } from '@tencent-ai/workbuddy-cloud-sdk/miniprogram'
 import { resolveBackendTarget } from './backend'
 
@@ -82,7 +83,35 @@ export const BACKEND_KIND = target.kind
  *  - 用 wx.setStorageSync 做本地存储（登录态持久化）
  *  - 挂载微信虚拟模块（登录 code 换 openid 等）
  */
-export const cloud = createMiniProgramWorkBuddyCloud({
-  endpoint: publicConfig.endpoint,
-  publishableKey: publicConfig.publishableKey,
-})
+/**
+ * 🔴 2026-11-08 iOS 微信登录白屏排障：本对象是**模块级常量**，创建失败会让整个
+ * common.js 求值中断 → 所有页面白屏且不会发出任何请求（服务端实证零 login-wechat）。
+ * 小程序无 DOM 可画红屏，这里用微信原生 Modal 自报，把静默白屏变成可读错误。
+ *
+ * 🔴 14:5x 二次加固：iOS 真机调试出现 `RangeError: Maximum call stack size exceeded`
+ * （appservice 同一栈帧无限重复）。**绝不再 `throw e`** —— rethrow 会直接中断
+ * common.js 求值，App 都注册不上，Modal 也来不及显示；错误只留在 Console 里，
+ * 用户看到的就是纯白屏。改为：自报 + 保存错误 + 返回空壳，让 App 与页面正常挂出，
+ * 后续任何 cloud.* 调用由 ./auth.ts 转成可读错误并再次自报。
+ * 正常路径零副作用。详见 ./bootReport.ts 文件头。
+ */
+let initError: unknown = null
+
+/** 启动期 SDK 初始化失败的真实原因（正常路径恒为 null）。 */
+export function cloudInitError(): unknown {
+  return initError
+}
+
+export const cloud = (() => {
+  try {
+    return createMiniProgramWorkBuddyCloud({
+      endpoint: publicConfig.endpoint,
+      publishableKey: publicConfig.publishableKey,
+    })
+  } catch (e) {
+    initError = e
+    reportBootError('云端客户端初始化失败', e)
+    // 🔴 不 rethrow：保住 App 注册与页面渲染，把「白屏」降级为「可读错误弹窗」。
+    return {} as ReturnType<typeof createMiniProgramWorkBuddyCloud>
+  }
+})()

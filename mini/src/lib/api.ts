@@ -11,19 +11,25 @@
  *   resourceId 不同 —— 所以「看起来像同一个后端」是最容易踩的坑。
  *   写任何跨端同步假设前，务必先读 `./cloud.ts` 顶部 2026-10-29 的更正说明。
  *
+ * 🔴 2026-11-08 更正：上面「两套互不相通的后端」是云库时期的历史记录，**现已失效**。
+ *    四端数据面统一为 https://d-bee.cn → 自建网关 → 自建 PostgreSQL（迁移 0045），
+ *    本端与主工程共用同一套表与 RPC、数据互通；云库常量与分支已整体删除。
+ *    保留原文只为历史追溯，写跨端同步假设请以本段和 `./cloud.ts` 顶部说明为准。
+ *
  * 与主工程 src/lib/api.ts 的功能面对齐（档案 / 饮食 / 饮水 / 运动 / 体重 /
  * 食谱 / 会员权益与 AI 用量 / 拍照额度 / 邀请 / 蜜糖积分 / 徽章 / 数据导出清理），
  * 便于同一套业务规则在两端保持一致。
  *
- * ⚠️ 「统一支付」(createPaymentOrder / verifyPaymentOrder) 在本端**是预留死代码**：
- *   全仓无任何调用点，且小程序 legal.ts §一 明确「不销售任何商品或服务、不涉及
- *   在线支付」，会员权益只通过兑换码解锁。企业资质（商户号）就绪前**禁止**接入，
- *   接入须同步改 legal.ts 口径并满足微信小程序虚拟支付合规要求（详见 paywall.tsx 头注）。
+ * 🔴 2026-11-08 更新：「统一支付」已在本端接线（虚拟商品走微信虚拟支付 xpay），
+ *    不再是预留死代码。下单仍走 `create_payment_order` RPC，但支付拉起与核销
+ *    由 `./xpay.ts` 负责（provider 固定 `wechat_xpay`，对应 0046 的查单语义分支）。
+ *    是否展示售卖 UI 由 `./xpayEnabled.ts` 的构建期开关决定，与 legal.ts 口径同开关。
  *
  * owner_id 一律不传，由数据库 DEFAULT auth.uid() 填充，RLS 负责隔离（与主工程一致）。
  */
 import { cloud } from './cloud'
-import { FREE_DAILY_AI, BONUS_TTL_DAYS, roundTo, type Entitlement, type UserPlan } from '@dbee/shared'
+import { FREE_DAILY_AI, BONUS_TTL_DAYS, SCAN_FEATURE, roundTo, type Entitlement, type UserPlan } from '@dbee/shared'
+import { zh } from './errmsg'
 
 /* ── 类型（与主工程 src/types.ts 一致，这里精简内联）──────────────── */
 
@@ -272,7 +278,7 @@ export async function listMealsByDate(logDate: string): Promise<MealEntry[]> {
 export async function insertMeals(list: Omit<MealEntry, 'id'>[]): Promise<MealEntry[]> {
   if (list.length === 0) return []
   const { data, error } = await db('meal_entries').insert(list as unknown as Row[]).select()
-  if (error) throw new Error(`保存饮食记录失败：${error.message ?? ''}`)
+  if (error) throw new Error(zh(error.message, '保存饮食记录失败'))
   return rows<MealEntry>(data)
 }
 
@@ -358,6 +364,8 @@ export async function updateMealGrams(id: number, grams: number): Promise<MealEn
     sodium_mg: existing.sodium_mg != null ? roundTo((Number(existing.sodium_mg) || 0) * scale, 0) : null,
     fiber_g: existing.fiber_g != null ? roundTo((Number(existing.fiber_g) || 0) * scale, 2) : null,
     added_sugar_g: existing.added_sugar_g != null ? roundTo((Number(existing.added_sugar_g) || 0) * scale, 2) : null,
+    // 对齐主工程 src/lib/api.ts:206：meal_entries 无 updated_at 触发器，靠前端写入维护
+    updated_at: new Date().toISOString(),
   }
 
   const { data, error } = await db('meal_entries').update(patch).eq('id', id).select()
@@ -675,19 +683,28 @@ export async function getTodayPhotoCount(): Promise<number> {
  * 与主工程 src/lib/api.ts:495-520 同口径（主端是回退到同样 fail-closed 的 consumeAiQuota）。
  */
 export async function consumePhotoQuota(): Promise<QuotaResult> {
-  const { data, error } = await callRpc('consume_photo_quota', {
-    p_usage_date: todayKey(),
-    p_base_limit: FREE_DAILY_AI,
-  })
-  if (error) return { allowed: false, used: 0, remaining: 0, degraded: true }
-  const row = (Array.isArray(data) ? data[0] : data) as { allowed?: boolean; token?: string; used?: number; remaining?: number } | null
-  if (!row || typeof row.allowed !== 'boolean') return { allowed: false, used: 0, remaining: 0, degraded: true }
-  const used = Number(row.used ?? 0)
-  return {
-    allowed: row.allowed === true,
-    used,
-    remaining: Number.isFinite(Number(row.remaining)) ? Number(row.remaining) : Math.max(0, FREE_DAILY_AI - used),
-    token: row.token ?? null,
+  try {
+    const { data, error } = await callRpc('consume_photo_quota', {
+      p_usage_date: todayKey(),
+      p_base_limit: FREE_DAILY_AI,
+    })
+    if (error) throw new Error(zh(error.message, '配额函数调用失败'))
+    const row = (Array.isArray(data) ? data[0] : data) as { allowed?: boolean; token?: string; used?: number; remaining?: number } | null
+    if (!row || typeof row.allowed !== 'boolean') throw new Error('配额函数返回格式异常')
+    const used = Number(row.used ?? 0)
+    return {
+      allowed: row.allowed === true,
+      used,
+      remaining: Number.isFinite(Number(row.remaining)) ? Number(row.remaining) : Math.max(0, FREE_DAILY_AI - used),
+      token: row.token ?? null,
+    }
+  } catch {
+    // 🔴 2026-11-08 对齐主工程 src/lib/api.ts:517-520：RPC 不可用/格式异常时
+    //    回退到基础额度 consume_ai_quota（无 token、奖励额度一并失效），
+    //    而不是直接把异常抛穿到页面 catch。此前 mini 缺此回退，callRpc reject
+    //    会让 scan 页 claim=null，下一次 LLM 请求必被网关 402 quota_not_claimed 拦住。
+    //    consumeAiQuota 自身仍是 fail-closed，不会造成额度超发。
+    return consumeAiQuota(todayKey(), SCAN_FEATURE, FREE_DAILY_AI)
   }
 }
 
@@ -971,6 +988,21 @@ export async function exportAllData(): Promise<ExportBundle> {
   }
 }
 
+/**
+ * 永久删除当前账号（对齐主工程 src/lib/api.ts deleteAccount，0045 SECURITY DEFINER RPC）。
+ *
+ * 网关侧 PostgREST `delete_own_account` 在一个事务内删除 17 张业务表 + `app_users`
+ * 身份行，身份只取 `auth.uid()`，调用方无法指定删谁。小程序与主工程打同一网关、
+ * 同一套 RPC，故无需改网关（A-5 纪律）。
+ *
+ * 🔴 成功后调用方只需清本地会话：绝不能再调 `clearAllRecords()` / `saveProfile()`，
+ *    后者会 INSERT 出新的 profiles 档案 = 把刚删掉的账号又重建回来。
+ */
+export async function deleteAccount(): Promise<void> {
+  const { error } = await callRpc('delete_own_account', { p_confirm: 'DELETE_MY_ACCOUNT' })
+  if (error) throw new Error(`注销失败：${error.message ?? ''}`)
+}
+
 /** 清空全部记录（保留账号与身体档案）。按 id 分批删 */
 export async function clearAllRecords(): Promise<void> {
   for (const table of ['meal_entries', 'weight_logs', 'water_logs', 'exercise_logs'] as const) {
@@ -1017,18 +1049,22 @@ export interface PaymentOrder {
 }
 
 /**
- * 创建支付订单（服务端查价，客户端只传 product_id + provider）。
+ * 🔴 2026-11-08 起「统一支付」在本端**已接线**（不再是预留死代码）：
+ *   `./xpay.ts` 的 `buyProduct()` 会调 `createPaymentOrder(realProductId, 'wechat_xpay')`
+ *   下单，再走网关 `/.cloud/payment/wechat/params` 取签名、`wx.requestVirtualPayment`
+ *   拉起收银台，权益由服务端推送 / 查单落地（推模式，见 xpay.ts 文件头）。
  *
- * 🔴 合规警示：本函数在小程序端**当前无任何调用点**（预留死代码）。
- *   mini/src/content/legal.ts §一 与 paywall.tsx 已声明「本小程序免费提供，
- *   不销售任何商品或服务，不涉及在线支付」，会员只走兑换码。
- *   企业资质（微信支付商户号）就绪前**不要**给它接 UI；真要接入必须：
- *   ① 同步改 legal.ts §一 口径 ② 满足微信小程序虚拟支付合规要求
- *   ③ 走微信虚拟支付/小游戏虚拟支付通道，不得直接调起普通商户支付。
+ *   `verifyPaymentOrder` 仍**不由客户端上传凭证**：0046 已把 `verify_payment_order`
+ *   的 wechat_xpay 分支改成「查订单是否已 paid」语义，真正的验签与发放在网关，
+ *   客户端回传的任何值都不作为信任依据（P1-D §二 决策 B）。本函数因此只作
+ *   兼容保留，xpay 链路不调它。
+ *
+ *   售卖 UI 与法务口径由 `./xpayEnabled.ts` 的单一构建期开关同时驱动 ——
+ *   未开时 legal.ts 保持「免费提供」，本函数虽存在但无任何调用点。
  */
 export async function createPaymentOrder(
   productId: string,
-  provider: 'apple' | 'google' | 'wechat' | 'alipay',
+  provider: 'apple' | 'google' | 'wechat' | 'wechat_xpay' | 'alipay',
 ): Promise<PaymentOrder> {
   const { data, error } = await callRpc('create_payment_order', {
     p_product_id: productId,

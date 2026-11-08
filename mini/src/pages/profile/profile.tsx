@@ -2,7 +2,7 @@
  * 我的页（对齐主工程 src/pages/ProfileScreen.tsx）。
  *
  * 差异点（小程序端能力诚实降级）：
- *  - 健康数据源：isHealthConnectable() 恒 false → 隐藏该区块
+ *  - 健康数据源：微信运动门面与主端同形状，真同步待类目资质（诚实降级）
  *  - 体重趋势图：主工程用 SVG LineChart，小程序端以列表形式展示（图表统一在报告页处理）
  *  - 数据导出：走 share.ts 占位（返回「正在接入」提示）
  *  - 会员升级：点「升级」跳 pages/paywall（兑换码解锁；小程序端无内购/微信外支付）
@@ -16,7 +16,7 @@ import { View, Text, Button, Input, Switch } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { IconCrown, IconDownload, IconTrash } from '../../components/Icons'
 import {
-  listWeightLogs, saveProfile, saveWeight, clearAllRecords,
+  listWeightLogs, saveProfile, saveWeight, clearAllRecords, deleteAccount,
   exportAllData, listMealsBetween, buildMealsCsv,
   getProfile, getEntitlement, getPhotoQuota,
   type Entitlement, type Profile, type WeightLog,
@@ -28,9 +28,11 @@ import {
   clampNumeric, firstError, rangeText, sanitizeNumeric,
 } from '../../lib/validate'
 import { exportJSON, exportText, isExportAvailable, EXPORT_UNAVAILABLE_MESSAGE } from '../../lib/share'
-import { isHealthConnectable } from '../../lib/health'
+import { isHealthConnectable, getHealthVendor, connectHealth, disconnectHealth } from '../../lib/health'
+import { openPaywall } from '../../lib/upsell'
+import { openManageSubscriptions } from '../../lib/manageSubscription'
 import { HONEY_PRICE } from '../../lib/invite'
-import { isPro, isLifetime, memberSubText } from '@dbee/shared'
+import { isPro, isLifetime, memberSubText, DEFAULT_STEP_GOAL } from '@dbee/shared'
 import { signOut } from '../../lib/auth'
 import { SITE } from '../../content/legal'
 import { copyText } from '../../lib/clipboard'
@@ -117,7 +119,41 @@ export default function ProfilePage() {
   const [height, setHeight] = useState('165')
   const [weight, setWeight] = useState('62')
   const [targetWeight, setTargetWeight] = useState('55')
-  const [stepGoal, setStepGoal] = useState('6000')
+  const [stepGoal, setStepGoal] = useState(String(DEFAULT_STEP_GOAL))
+  const [healthMsg, setHealthMsg] = useState('')
+  const [healthBusy, setHealthBusy] = useState(false)
+
+  // 健康数据源状态机（严格对齐主端 ProfileScreen:76-137 / 578-604）
+  const healthVendor = useMemo(() => getHealthVendor(), [])
+  const healthConnected = profile?.health_connected === true
+
+  async function handleConnectHealth() {
+    if (healthBusy) return
+    setHealthBusy(true)
+    try {
+      const r = await connectHealth()
+      setHealthMsg(r.message)
+      if (r.ok) setProfile((p) => (p ? { ...p, health_connected: true } : p))
+    } catch {
+      setHealthMsg('连接失败，请稍后重试。')
+    } finally {
+      setHealthBusy(false)
+    }
+  }
+
+  async function handleDisconnectHealth() {
+    if (healthBusy) return
+    setHealthBusy(true)
+    try {
+      await disconnectHealth()
+      setProfile((p) => (p ? { ...p, health_connected: false } : p))
+      setHealthMsg('已解除连接，步数不再自动同步。')
+    } catch {
+      setHealthMsg('解除连接失败，请稍后重试。')
+    } finally {
+      setHealthBusy(false)
+    }
+  }
   const [activity, setActivity] = useState<keyof typeof ACTIVITY_LABELS>('light')
   const [goal, setGoal] = useState<'lose' | 'keep' | 'gain'>('lose')
   const [saving, setSaving] = useState(false)
@@ -147,7 +183,7 @@ export default function ProfilePage() {
         setHeight(String(p.height_cm ?? 165))
         setWeight(String(p.current_weight_kg ?? 62))
         setTargetWeight(String(p.target_weight_kg ?? 55))
-        setStepGoal(String(p.step_goal ?? 6000))
+        setStepGoal(String(p.step_goal ?? DEFAULT_STEP_GOAL))
         setActivity((p.activity_level as keyof typeof ACTIVITY_LABELS) ?? 'light')
         setGoal(p.goal ?? 'lose')
         setWeightInput(String(p.current_weight_kg ?? ''))
@@ -274,7 +310,7 @@ export default function ProfilePage() {
         activity_level: activity, goal, weekly_rate_kg: weeklyRate,
         daily_calorie_target: t.calories, protein_target_g: t.protein_g,
         carb_target_g: t.carb_g, fat_target_g: t.fat_g,
-        step_goal: num(stepGoal, 6000),
+        step_goal: num(stepGoal, DEFAULT_STEP_GOAL),
       })
       setProfile(saved)
       setWeightInput(String(w))
@@ -310,15 +346,30 @@ export default function ProfilePage() {
     }
   }
 
+  /**
+   * 数据导出门控：对齐主端 ProfileScreen:646/664「非 Pro → 提示并拉付费墙」。
+   * 🔴 本端导出尚未实装，故非 Pro 提示里**保留** PIPL 第 45 条邮箱兜底路径 ——
+   *    不能因为补了 Pro 门控就把数据复制权入口藏掉；Pro 用户仍走 share.ts 诚实占位。
+   */
+  function guardExport(): boolean {
+    if (!pro) {
+      setDataMsg(`数据导出是 Pro 功能，升级后可随时打包带走全部记录。${EXPORT_UNAVAILABLE_MESSAGE}`)
+      void openPaywall('数据导出是 Pro 功能，升级后可随时打包带走全部记录。')
+      return false
+    }
+    if (!isExportAvailable) {
+      setDataMsg(EXPORT_UNAVAILABLE_MESSAGE)
+      return false
+    }
+    return true
+  }
+
   async function doExport() {
     setDataErr('')
     setDataMsg('')
     // 🔴 导出未实装时**不发网络请求**：exportAllData() 会拉全量数据再被占位丢弃，
     //   白跑一次请求还显示「导出中…」转圈，属「可见但不可用」误导（P2-A）。
-    if (!isExportAvailable) {
-      setDataMsg(EXPORT_UNAVAILABLE_MESSAGE)
-      return
-    }
+    if (!guardExport()) return
     setExporting(true)
     try {
       const bundle = await exportAllData()
@@ -334,10 +385,7 @@ export default function ProfilePage() {
   async function doExportCsv() {
     setDataErr('')
     setDataMsg('')
-    if (!isExportAvailable) {
-      setDataMsg(EXPORT_UNAVAILABLE_MESSAGE)
-      return
-    }
+    if (!guardExport()) return
     setExporting(true)
     try {
       const meals = await listMealsBetween('1970-01-01', '2999-12-31')
@@ -371,17 +419,20 @@ export default function ProfilePage() {
     }
   }
 
+  /**
+   * 永久注销账号（2026-11-08 对齐主工程 A-5 整改）。
+   * 此前是降级实现：只清 4 张记录表 + 清空档案字段 + 登出，`app_users` 身份行仍在，
+   * 用户重新登录即可复活账号。现改调 `deleteAccount()` → 0045 RPC，服务端事务内
+   * 删净 17 张业务表 + 身份行。成功后🔴**只**清本地会话，绝不能再调
+   * `clearAllRecords()` / `saveProfile()`（后者会重建 profiles = 账号复活）。
+   * 失败时保持登录态如实报错，不假装已注销。
+   */
   async function doDeleteAccount() {
     setDeletingAcct(true)
     setDataErr('')
     setDataMsg('')
     try {
-      await clearAllRecords()
-      try {
-        await saveProfile({ nickname: null, barriers: null, plan_summary: null })
-      } catch {
-        /* 档案清理失败不阻断登出 */
-      }
+      await deleteAccount()
       setConfirmDeleteAcct(false)
       await doSignOut()
     } catch (e) {
@@ -462,10 +513,24 @@ export default function ProfilePage() {
           </View>
         </View>
         {!pro && (
-          <Button className='member-btn' onClick={() => Taro.navigateTo({ url: '/pages/paywall/paywall' })}>
+          <Button className='member-btn' onClick={() => void openPaywall()}>
             升级
           </Button>
         )}
+      </View>
+
+      {/* 管理订阅：对齐主端 PaywallSheet 3.1.2「一律可见」纪律，免费 / Pro / 终身均可达 */}
+      <View className='card' onClick={() => {
+        void openManageSubscriptions().then((ok) => {
+          if (!ok) Taro.showToast({ title: '暂时打不开会员与订阅，请稍后重试', icon: 'none' })
+        })
+      }}>
+        <View className='list-line'>
+          <Text className='line-label'>👑 会员与订阅</Text>
+          <Text className='line-val'>
+            管理权益 <Text className='arrow'>›</Text>
+          </Text>
+        </View>
       </View>
 
       {/* 蜜糖积分入口 */}
@@ -510,7 +575,13 @@ export default function ProfilePage() {
         </View>
         <View className='stat'>
           <Text className='stat-l'>碳水 / 脂肪</Text>
-          <Text className='stat-v'>{target.carb_g}<Text className='stat-unit'>g</Text> / {target.fat_g}<Text className='stat-unit'>g</Text></Text>
+          {/* 🔴 小程序 <text> 会把每个嵌套 Text / 裸空格当断行机会，iOS 上 254g / 56g 会折行。
+              改成 View(flex nowrap) + 三个独立 token，分隔符间距交给 CSS margin。 */}
+          <View className='stat-v stat-v--pair'>
+            <Text className='stat-pair'>{target.carb_g}<Text className='stat-unit'>g</Text></Text>
+            <Text className='stat-sep'>/</Text>
+            <Text className='stat-pair'>{target.fat_g}<Text className='stat-unit'>g</Text></Text>
+          </View>
         </View>
       </View>
 
@@ -534,7 +605,7 @@ export default function ProfilePage() {
         </View>
         <View className='list-line'>
           <Text className='line-label'>每日步数目标</Text>
-          <Text className='line-val'>{profile?.step_goal ?? 6000} 步</Text>
+          <Text className='line-val'>{profile?.step_goal ?? DEFAULT_STEP_GOAL} 步</Text>
         </View>
       </View>
 
@@ -584,7 +655,26 @@ export default function ProfilePage() {
         <>
           <View className='section-title'><Text>健康数据源</Text></View>
           <View className='card'>
-            <Text className='hint'>小程序端暂不支持连接健康数据</Text>
+            {/* 对齐主端 ProfileScreen:578-604：连接 / 已连接重连 / 解除连接 / 状态提示 */}
+            <View className='list-line' onClick={() => void handleConnectHealth()}>
+              <View className='line-label-wrap'>
+                <Text className='line-label'>{healthVendor.label}</Text>
+              </View>
+              <Text className='line-val'>
+                {healthBusy ? '处理中…' : healthConnected ? '已连接 · 点击重新授权' : healthVendor.canSync ? '连接' : '查看'}
+                <Text className='arrow'>›</Text>
+              </Text>
+            </View>
+            {healthConnected ? (
+              <View className='list-line' onClick={() => void handleDisconnectHealth()}>
+                <View className='line-label-wrap'>
+                  <Text className='line-label'>解除连接</Text>
+                </View>
+                <Text className='arrow'>›</Text>
+              </View>
+            ) : null}
+            {healthMsg ? <Text className='hint'>{healthMsg}</Text> : null}
+            <Text className='hint'>{healthVendor.tip}</Text>
           </View>
         </>
       ) : null}
@@ -617,27 +707,32 @@ export default function ProfilePage() {
       {/* 数据与隐私 */}
       <View className='section-title'><Text>数据与隐私</Text></View>
       <View className='card'>
-        {/* 🔴 P2-A：导出未实装时置灰 + 「即将上线」角标，与 legal.ts §五 的
-            「当前版本暂不可用」声明口径一致。刻意**不禁用点击** —— 点下去会给出
-            「可通过邮箱申请副本」的提示，那是 PIPL 第 45 条复制权的真实兜底路径，
-            彻底禁用反而把这条权利入口也藏掉了。 */}
-        <View className={isExportAvailable ? 'list-line' : 'list-line list-line-muted'} onClick={() => void doExport()}>
+        {/* 🔴 P2-A + 11-08 四端对齐：非 Pro 显示「Pro ›」并在点击时拉付费墙
+            （与主端 ProfileScreen 一致）；Pro 且导出未实装时置灰 + 「即将上线」角标，
+            与 legal.ts §五口径一致。刻意**不禁用点击** —— 点下去仍会给出「可通过邮箱
+            申请副本」的提示，那是 PIPL 第 45 条复制权的真实兜底路径，不能因补了
+            Pro 门控反而把这条权利入口藏掉。 */}
+        <View className={pro && !isExportAvailable ? 'list-line list-line-muted' : 'list-line'} onClick={() => void doExport()}>
           <View className='line-label-wrap'>
             <IconDownload size={16} />
             <Text className='line-label'>导出全部数据（JSON）</Text>
           </View>
-          {isExportAvailable
-            ? <Text className='line-val'>{exporting ? '导出中…' : '导出'}</Text>
-            : <Text className='line-badge'>即将上线</Text>}
+          {!pro
+            ? <Text className='line-val'>Pro <Text className='arrow'>›</Text></Text>
+            : isExportAvailable
+              ? <Text className='line-val'>{exporting ? '导出中…' : '导出'}</Text>
+              : <Text className='line-badge'>即将上线</Text>}
         </View>
-        <View className={isExportAvailable ? 'list-line' : 'list-line list-line-muted'} onClick={() => void doExportCsv()}>
+        <View className={pro && !isExportAvailable ? 'list-line list-line-muted' : 'list-line'} onClick={() => void doExportCsv()}>
           <View className='line-label-wrap'>
             <IconDownload size={16} />
             <Text className='line-label'>导出饮食记录（CSV）</Text>
           </View>
-          {isExportAvailable
-            ? <Text className='line-val'>{exporting ? '导出中…' : '导出'}</Text>
-            : <Text className='line-badge'>即将上线</Text>}
+          {!pro
+            ? <Text className='line-val'>Pro <Text className='arrow'>›</Text></Text>
+            : isExportAvailable
+              ? <Text className='line-val'>{exporting ? '导出中…' : '导出'}</Text>
+              : <Text className='line-badge'>即将上线</Text>}
         </View>
         <View className='list-line' onClick={() => !confirmClear && setConfirmClear(true)}>
           <View className='line-label-wrap'>
@@ -694,6 +789,8 @@ export default function ProfilePage() {
           提示文案（下方 confirmDeleteAcct 分支）与 legal.ts 正文都指引用户
           「通过『关于 → 联系我们』与客服联系」—— 而该入口在两端都**不存在**，
           属四端共有的失实指引（web 端连「关于」区块都没有）。本次两端一并补齐。
+          🔴 2026-11-08 更正：注销已改为 App 内真删号（0045 RPC），本行邮箱现在**只作
+          公示联系方式**，不再是注销的替代路径；下方注销提示不得再引导用户转客服。
 
           邮箱刻意**默认直接显示**在行内而非点击后才弹出：法律要求公示联系方式应
           「以显著方式」呈现，藏在交互后面等于没公示。点击整行 = 复制到剪贴板
@@ -729,7 +826,7 @@ export default function ProfilePage() {
           </Text>
         </View>
         {confirmDeleteAcct ? (
-          <View className='helper danger'><Text>⚠️ 将删除你的全部记录与身体档案并退出登录，不可恢复。如需彻底注销账号，请通过「联系我们」与客服联系。</Text></View>
+          <View className='helper danger'><Text>⚠️ 将永久删除你的账号及全部记录、身体档案与权益，并退出登录，操作不可恢复。</Text></View>
         ) : null}
       </View>
 

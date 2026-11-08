@@ -168,8 +168,14 @@
     border: 1px solid $line;
     border-radius: $radius-lg;
     padding: 28px 32px;
+    min-width: 0;
+    // 🔴 小程序 <text> 是 inline：不锁纵向布局时，短值（当前体重 / 蛋白质目标）
+    // 会和 label 挤在同一行，只有长值才折到第二行 → 四格视觉不齐。对齐主端 div 的块级行为。
+    display: flex;
+    flex-direction: column;
 
     .stat-l {
+      display: block;
       font-size: 24px;
       color: $ink-3;
     }
@@ -180,6 +186,7 @@
       font-weight: 700;
       color: $ink;
       line-height: 1.2;
+      white-space: nowrap;
     }
 
     .stat-unit {
@@ -187,6 +194,32 @@
       font-weight: 400;
       color: $ink-2;
       margin-left: 4px;
+    }
+
+    // 双值格（碳水 / 脂肪）：内容最长，锁死单行并留足余量，避免 iOS 小程序 text 折行。
+    .stat-v--pair {
+      display: flex;
+      flex-direction: row;
+      align-items: baseline;
+      flex-wrap: nowrap;
+      white-space: nowrap;
+      font-size: 36px;
+
+      .stat-pair {
+        white-space: nowrap;
+      }
+
+      .stat-sep {
+        margin: 0 8px;
+        font-size: 28px;
+        font-weight: 400;
+        color: $ink-3;
+      }
+
+      .stat-unit {
+        font-size: 22px;
+        margin-left: 2px;
+      }
     }
   }
 }
