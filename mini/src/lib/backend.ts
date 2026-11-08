@@ -10,45 +10,39 @@
  * （这个坑在 `tools/mini-invite-link.test.ts` 里踩过一次）。
  * 本文件**零依赖**（不 import 任何东西），解析逻辑可被直接单测。
  *
- * ## 开关语义
+ * ## 开关语义（2026-11-08 起：默认 selfhost）
  *
- * 默认 `cloud`（WorkBuddy 云），即当前线上行为，**不设任何环境变量 = 零改变**。
+ * 默认 `selfhost`（自托管 PG + 自建网关 = https://d-bee.cn）。**不设任何环境变量 = 连自建库**。
+ * 🔴 云端库已按用户 11-08 指令「自今日起彻底废弃」，**不再是任何生产写入源**；
+ *    `cloud` 分支仅作为历史回滚通道保留，须**显式** `D_BEE_BACKEND=cloud` 才生效。
  *
- * 切 `selfhost`（自托管 PG + 自建网关）需要**同时**满足两个条件，否则构建期 throw：
- *   1. `D_BEE_BACKEND=selfhost`
+ * 切 `selfhost` 需要 `D_BEE_SELFHOST_READY=true` 的显式二次确认，否则构建期 throw：
+ *   1. `D_BEE_BACKEND=selfhost`（或留空 = 默认 selfhost）
  *   2. `D_BEE_SELFHOST_READY=true`  ← 显式二次确认
  *
- * 第 2 条不是形式主义。自托管域名 `d-bee.cn` 目前 **无 A 记录、未备案、无 HTTPS**
- * （依据：`docs/备案材料清单.md` §0「`d-bee.com.cn` 当前本就无 A 记录，线上一直走 IP
- * 直连」；ICP 企业备案在办，北京不在「个人→企业」直接变更白名单，须注销重备）。
- * 若只认一个变量，任何人手滑设成 selfhost 就会得到一个「小程序请求全部失败」的包，
- * 而错误现象（网络不通）离原因（域名未就绪）很远，排查成本高。
- * 强制二次确认 + throw 文案里写明全部前置条件。
+ * 第 2 条不是形式主义。自托管链路（备案 + DNS + HTTPS + 网关 login-wechat +
+ * ident_kind wechat + legal 口径）任何一环缺位，小程序都会全线失败，而错误现象
+ * （网络不通 / 登录 404）离原因很远，排查成本高。强制二次确认 + throw 文案写明全部前置条件。
  *
  * ## 🔴 两层拦截（实测校准过，别只依赖本文件的 throw）
  *
  * 本文件是**运行时**护栏：`resolveBackendTarget()` 在小程序启动、`cloud.ts` 顶层
  * import 它时执行，误配则启动即崩。但 webpack **不执行**被打包的模块代码 —— 所以
- * 光有本文件的 throw，误切的包照样能 `build:weapp` 成功（实测：D_BEE_BACKEND=selfhost
- * 且缺 READY 时构建仍 exit=0），等到发出去、用户打开才发现，太晚。
+ * 光有本文件的 throw，误切的包照样能 `build:weapp` 成功，等到发出去、用户打开才发现，太晚。
  *
  * 因此 `mini/config/index.ts` 里**额外调用了一次同一个 `resolveBackendTarget()`**：
- * 那个文件由 Node 在构建期执行，throw 能真正中断构建（实测 exit=1）。两层复用同一
- * 函数而非各写一份判断，逻辑不会漂移。实测四场景：默认→构建成功；selfhost 缺
- * READY→构建失败；不认识的值→构建失败；selfhost+READY=true→构建成功且产物 endpoint
- * 指向 d-bee.cn。
- *
- * 对齐主端思路：主端 `vite.config.ts:14-25` 构建期 throw + `src/cloudConfig.ts:109-112`
- * 运行时 throw 是**防静默回退云库**；本文件方向相反，是**防误连未就绪的自托管**。
- * 两者共同点：endpoint 解析失败必须炸，绝不静默兜底到另一个后端，且都要构建期+运行时双层。
+ * 那个文件由 Node 在构建期执行，throw 能真正中断构建。两层复用同一函数而非各写一份判断，
+ * 逻辑不会漂移。对齐主端思路：主端 `vite.config.ts:14-25` 构建期 + `cloudConfig.ts` 运行时。
+ * 共同点：endpoint 解析失败必须炸，绝不静默兜底到另一个后端，且都要构建期+运行时双层。
  */
 
-/** WorkBuddy 云（当前线上后端）。公开值，无密钥。 */
+/** WorkBuddy 云（历史后端，已废弃，仅作回滚通道）。公开值，无密钥。 */
 export const CLOUD_HOST = 'https://zilv-mifeng.app.workbuddy.host'
 
 /**
  * 自托管后端（主端 Web/iOS/Android 原生包已连它，见 `src/cloudConfig.ts:19`）。
- * 🔴 该域名当前不可用（无 DNS / 未备案 / 无 HTTPS），故被 READY 门拦住。
+ * 🔴 2026-11-08 起为 mini 默认后端：域名已 ICP 下证（京ICP备2026075565号-2）、
+ *    DNS + HTTPS 已就绪、网关 login-wechat 已部署、ident_kind 已扩 wechat。
  */
 export const SELFHOST_HOST = 'https://d-bee.cn'
 
@@ -74,8 +68,8 @@ function normalize(value: string | undefined): string {
  *
  * @param env 开关值，默认从 `process.env` 读（构建期由 defineConstants 替换成字面量）。
  *            显式传参仅用于测试。
- * @throws 设了 selfhost 但缺 READY 确认、或值不认识时抛出。
- *         🔴 **不认识的 backend 值一律 throw**，不兜底成 cloud —— 静默兜底会让
+ * @throws 设了 selfhost（含默认）但缺 READY 确认、或值不认识时抛出。
+ *         🔴 **不认识的 backend 值一律 throw**，不兜底 —— 静默兜底会让
  *         「以为切了其实没切」这类问题在运行时才暴露。
  */
 export function resolveBackendTarget(
@@ -86,32 +80,32 @@ export function resolveBackendTarget(
 ): BackendTarget {
   const kind = normalize(env.backend)
 
-  // 未设置 = 当前线上行为
-  if (kind === '' || kind === 'cloud') {
-    return { kind: 'cloud', endpoint: CLOUD_HOST }
-  }
-
-  if (kind === 'selfhost') {
+  // 未设置 = 默认 selfhost（2026-11-08 起，云库已废弃）
+  if (kind === '' || kind === 'selfhost') {
     if (normalize(env.selfhostReady) !== 'true') {
       throw new Error(
-        '小程序后端已设为 selfhost，但缺少 D_BEE_SELFHOST_READY=true 的显式确认。' +
-          '自托管域名 d-bee.cn 目前无 A 记录、未完成 ICP 备案、无 HTTPS 证书，' +
-          '切过去会导致小程序所有网络请求失败。' +
-          '前置条件（见 docs/小程序回迁自托管-切换清单-2026-11-03.md）：' +
-          '① ICP 企业备案下证；② d-bee.cn 配 A 记录并签发 HTTPS 证书；' +
+        '小程序后端为 selfhost（默认），但缺少 D_BEE_SELFHOST_READY=true 的显式确认。' +
+          '自托管链路任何一环缺位，小程序都会全线失败。' +
+          '前置条件（见 docs/小程序回迁自托管-数据处置与执行手册-2026-11-07.md）：' +
+          '① ICP 企业备案下证（京ICP备2026075565号-2）；' +
+          '② d-bee.cn 配 A 记录并签发 HTTPS 证书；' +
           '③ 微信后台把该域名加入 request 合法域名；' +
-          '④ 网关补 /.cloud/auth/v1/login-wechat 路由；' +
-          '⑤ app_users 的 ident_kind 扩展 wechat；' +
-          '⑥ mini/src/content/legal.ts §三/§四 改为自托管公示口径。' +
+          '④ 网关已部署 /.cloud/auth/v1/login-wechat 路由；' +
+          '⑤ app_users 的 ident_kind 已扩 wechat；' +
+          '⑥ mini/src/content/legal.ts §三/§四 已改自托管公示口径。' +
           '全部就绪后再设 D_BEE_SELFHOST_READY=true。',
       )
     }
     return { kind: 'selfhost', endpoint: SELFHOST_HOST }
   }
 
+  if (kind === 'cloud') {
+    return { kind: 'cloud', endpoint: CLOUD_HOST }
+  }
+
   throw new Error(
     `无法识别的 D_BEE_BACKEND 值：${JSON.stringify(env.backend)}（只接受 'cloud' 或 'selfhost'）。` +
-      '刻意不兜底为 cloud：静默兜底会让「以为切了其实没切」在运行时才暴露。',
+      '刻意不兜底：静默兜底会让「以为切了其实没切」在运行时才暴露。',
   )
 }
 

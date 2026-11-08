@@ -19,10 +19,22 @@
  * 运行：npx vitest run tools/report-ratio.test.ts
  */
 import { describe, expect, it } from 'vitest'
-import { computeReport } from '../src/lib/report'
+import { computeReport, rangeDays } from '../src/lib/report'
+import { todayKey } from '../src/lib/nutrition'
 import type { MealEntry } from '../src/types'
 
-const D = '2026-11-01'
+/**
+ * 🔴 必须用「今天」而非硬编码日期（2026-11-08 修）。
+ *
+ * `computeReport` 的统计窗口 = `rangeDays(7)`，即含 `todayKey()` 的连续 7 天；
+ * 只有落在窗口内的记录才计入 sum。此前写死 `const D = '2026-11-01'`，提交当天
+ * （11-02）尚在窗口内故全绿，但日期一推进，窗口滑走后所有记录被 `inRange.has()`
+ * 静默过滤 → sum 全 0 → 6 项供能比断言集体假红。这类「随时间自动失效」的测试
+ * 比显式失败更危险：它会让人误以为生产代码坏了。
+ *
+ * 用生产侧 `todayKey()` 保证与 `rangeDays` 同一时间源，格式与时区不会漂移。
+ */
+const D = todayKey()
 
 function meal(p: number, c: number, f: number, kcal: number): MealEntry {
   return {
@@ -48,6 +60,11 @@ const PROFILE = {
 } as never
 
 describe('computeReport · 三大营养素供能比', () => {
+  it('🔴 护栏：测试日期恒等于今天且落在统计窗口内（防日期漂移假红）', () => {
+    expect(D).toBe(todayKey())
+    expect(rangeDays(7)).toContain(D)
+  })
+
   it('🔴 合计恒等于 100（旧逻辑在这组数据上得 101）', () => {
     // 日均 23 / 47 / 26 —— 旧逻辑实测 18 + 37 + 46 = 101
     const report = computeReport([meal(23, 47, 26, 570)], [], PROFILE, 7)

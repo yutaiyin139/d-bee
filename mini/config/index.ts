@@ -48,12 +48,12 @@ function resolveProductVersion(): string {
 }
 
 export default defineConfig<'webpack5'>(async (merge, { command, mode }) => {
-  // 后端接入点开关（见 mini/src/lib/backend.ts）。默认 cloud = 当前线上行为，零改变。
+  // 后端接入点开关（见 mini/src/lib/backend.ts）。默认 selfhost = 自建库（2026-11-08 起云库废弃）。
   // 必须用 defineConstants 显式注入，webpack5 才会把 process.env.D_BEE_* 替换成字面量：
   // 小程序运行时没有 process.env，不注入则读出来恒为 undefined。虽然后端归一化会把
-  // undefined 当 cloud 处理（不会炸），但显式注入才能让产物里 grep 到实际连的后端，
+  // undefined 当 selfhost 处理，但显式注入才能让产物里 grep 到实际连的后端，
   // 也让下面这道构建期护栏拿到确定的值。
-  const backend = (process.env.D_BEE_BACKEND ?? 'cloud').trim()
+  const backend = (process.env.D_BEE_BACKEND ?? 'selfhost').trim()
   const selfhostReady = (process.env.D_BEE_SELFHOST_READY ?? '').trim()
 
   // 产品版本号（见上方 resolveProductVersion 注释）。与主端 __APP_VERSION__ 同源同值。

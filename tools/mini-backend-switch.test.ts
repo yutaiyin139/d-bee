@@ -14,20 +14,29 @@ import {
   resolveBackendTarget,
 } from '../mini/src/lib/backend'
 
-describe('默认值：不设任何环境变量 = 当前线上行为（零改变）', () => {
-  it('空对象 → cloud + WorkBuddy 云域名', () => {
-    expect(resolveBackendTarget({})).toEqual({ kind: 'cloud', endpoint: CLOUD_HOST })
+describe('默认值：不设任何环境变量 = selfhost（2026-11-08 起云库废弃）', () => {
+  it('空对象 → 缺 READY 确认则 throw（默认 selfhost 需显式二次确认）', () => {
+    expect(() => resolveBackendTarget({})).toThrow(/D_BEE_SELFHOST_READY/)
   })
 
-  it('undefined → cloud（小程序运行时没有 process.env，这条必须成立）', () => {
-    expect(resolveBackendTarget({ backend: undefined, selfhostReady: undefined }).kind).toBe('cloud')
+  it('undefined → 默认 selfhost（小程序运行时没有 process.env，仍须 READY 门）', () => {
+    expect(() =>
+      resolveBackendTarget({ backend: undefined, selfhostReady: undefined }),
+    ).toThrow(/D_BEE_SELFHOST_READY/)
   })
 
-  it('显式 cloud → cloud', () => {
+  it('默认 selfhost + READY=true → selfhost', () => {
+    expect(resolveBackendTarget({ selfhostReady: 'true' })).toEqual({
+      kind: 'selfhost',
+      endpoint: SELFHOST_HOST,
+    })
+  })
+
+  it('显式 cloud → cloud（历史回滚通道，须显式指定）', () => {
     expect(resolveBackendTarget({ backend: 'cloud' }).endpoint).toBe(CLOUD_HOST)
   })
 
-  it('🔴 云端 endpoint 逐字锁死（被换掉会静默改变全量小程序流量走向）', () => {
+  it('🔴 云端 endpoint 逐字锁死（历史回滚通道，仅显式 cloud 才用）', () => {
     expect(CLOUD_HOST).toBe('https://zilv-mifeng.app.workbuddy.host')
   })
 
@@ -76,13 +85,14 @@ describe('🔴 selfhost 的双确认门（防误连未就绪的自托管）', ()
       message = e instanceof Error ? e.message : String(e)
     }
     expect(message).toContain('ICP 企业备案')
+    expect(message).toContain('京ICP备')
     expect(message).toContain('A 记录')
     expect(message).toContain('HTTPS')
     expect(message).toContain('request 合法域名')
     expect(message).toContain('login-wechat')
     expect(message).toContain('ident_kind')
     expect(message).toContain('legal.ts')
-    expect(message).toContain('小程序回迁自托管-切换清单')
+    expect(message).toContain('数据处置与执行手册')
   })
 
   it('双确认齐备 → selfhost', () => {
@@ -93,7 +103,7 @@ describe('🔴 selfhost 的双确认门（防误连未就绪的自托管）', ()
   })
 })
 
-describe('🔴 不认识的值一律 throw，绝不静默兜底成 cloud', () => {
+describe('🔴 不认识的值一律 throw，绝不静默兜底', () => {
   it.each([
     ['self-host'],
     ['self_host'],
@@ -114,9 +124,8 @@ describe('🔴 不认识的值一律 throw，绝不静默兜底成 cloud', () =>
 })
 
 describe('isSelfhostBackend()', () => {
-  it('默认进程环境未设开关 → false', () => {
-    // 测试进程里 D_BEE_BACKEND 未设置（若被外部设了 selfhost，resolveBackendTarget
-    // 会因缺 READY 而 throw，这条断言会失败并提示环境污染 —— 是有意的）
-    expect(isSelfhostBackend()).toBe(false)
+  it('默认进程环境未设开关 → 缺 READY 会 throw（默认已是 selfhost）', () => {
+    // 测试进程里 D_BEE_BACKEND 未设置，默认 selfhost 但缺 READY → 应 throw
+    expect(() => isSelfhostBackend()).toThrow(/D_BEE_SELFHOST_READY/)
   })
 })
