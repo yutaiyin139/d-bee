@@ -867,3 +867,61 @@ Capacitor 8.5.3 混合壳；React18+Vite5+TS；Windows 出 Android、Mac mini M4
 - 🔴 **产物里 grep 中文必假阴性**（转义 `\uXXXX`），日期正则要容 `\s*`；判断数据面必须追「哪个常量真正被 `resolveEndpoint` 返回」，不能 grep 到域名就下结论。
 
 ````
+
+## 2026-11-08 晚间由 MEMORY.md 迁入（xpay 售卖 + Web 定价引导 · 详版逐字归档）
+
+> 来源：当日日志 `2026-11-08.md` 的「21:18 mini 微信虚拟支付售卖全链路」与「23:02 Web 端定价展示 + 小程序下单引导」两节，**逐字归档**；MEMORY.md 只保留结论与指针。
+
+## 21:18 · mini 微信虚拟支付售卖全链路（0046 + 网关 xpay + 前端适配器 + 付费墙三档 + 法务同开关）
+
+- 🔴 **用户指令推翻 16:48 口径**：「微信小程序端当然要展示三档价格并售卖订阅，这才是我们盈利的核心点；走微信支付！」实证确认会员属**虚拟商品** → 必须走微信虚拟支付（`wx.requestVirtualPayment` / 米大师 xpay），**不是**普通 `wx.requestPayment`（那是实物+商户号）。三个裁决问题（虚拟支付资质 / iOS 是否开通 / 法务口径）用户跳过未答，按最稳妥工程口径推进：**全链路代码就绪 + 构建期开关默认关闭**（凭据与平台侧未就绪前发出的包不展示售卖）。
+- **数据库 0046**（`db/migrations/0046-wechat-xpay-settlement.sql`）：`xpay_transactions` 表 + `payment_orders` 补 `provider_txn_id`；三个 SECDEF 函数 `settle_xpay_purchase`/`revoke_xpay_purchase`/`log_xpay_notification`（REVOKE PUBLIC/anon/authenticated，只 GRANT dbee_app）；`verify_payment_order` 补 `provider='wechat_xpay'` 分支 —— **推模式**下退化为「查订单是否已 paid」，真正验签与发放在网关推送处理器（不把验签塞进 plpgsql，10-22 决策 #6）。🔴 **0046 尚未应用到生产库**。
+- **网关 `server/lib/xpay.mjs`**：双签名（前端 `paySig=hmac(appKey,'requestVirtualPayment&'+signData)`、`signature=hmac(session_key,signData)`；服务端接口 `pay_sig=hmac(appKey,uri+'&'+body)`，uri 不带 query、body 与实际字节逐字一致）；推送 sha1 验签 + AES 解密（iv=key 前 16 字节）；access_token 缓存 + 40001/42001 强刷重试**一次**（防死循环）；路由 `/.cloud/payment/wechat/{params,query,notify}`，notify **不走 wrap()**（wrap 会消费请求流 → 验签读到空 body 必失败）。`server/lib/wechatSession.mjs` 加密存 session_key。
+- 🔴🔴 **资损级缺口（本轮最重要发现）**：官方原文「正常通过 `xpay_goods_deliver_notify` 推送返回成功就**不需要**调 `notify_provide_goods`；该接口用于**推送不成功时**手动改已发货」+ 社区官方答复「不发货会影响结算状态」→ **推送丢失时查单兜底补发权益后必须调 `/xpay/notify_provide_goods`**，否则平台订单停在「已支付待发货」= 用户拿到会员、我方收不到钱。已补：抽通用外呼 `callXpayApi(uri,body,env)` + `callNotifyProvideGoods`，query 路径在 `st∈{2,3}` 且 `order_type≠7`（Apple 单官方限定不可调）时调用；失败只 `logger.error` 留痕**不抛**（权益已落库，不能把成功支付报成失败），下次 reconcile 再试。
+- **前端 `mini/src/lib/xpay.ts`**（~500 行）：`isXpaySupported()`（TARO_ENV=weapp + 全局 wx 鸭子探测 + `typeof requestVirtualPayment==='function'` 最终防线 + `compareVersion(SDKVersion,'2.19.2')>=0` **或** `canIUse`，官方两条件取「或」）；`requestVirtualPayment` **手工 Promise 包装回调**（官方明文「Promise 风格调用：不支持」）；🔴 **`signData` 原样透传字符串**（parse+stringify 会改字段顺序 → -15005/-15006）；`xpayFailMessage` 全错误码中文映射（**-2 取消 → 空串静默**、-15007 引导重登、-15008/10/14 平台配置类说「暂不可用」不引导重试）；`buyProduct` 五态（ok/cancelled/**settling**/error/unsupported，对齐主端 `CheckoutResult`）；🔴 **先 `savePending` 落盘再轮询**（顺序不能反：iOS 支付回来小程序常被杀），`pollUntilSettled` 1.5s×4 **保证不 reject**，窗口内未到账 → settling「权益正在到账（通常 1 分钟内）」**绝不报 error**（钱已扣，报错=重复购买+客诉）；`recoverPending` 进付费墙/启动自愈，每单只查一次，settled/refunded 终态才清、TTL 7 天、最多 20 笔、串行写队列。
+- 🔴 **措辞纪律（虚假宣传红线）**：`short_series_goods` 是**预付费时长、不自动续费**（多方核实不支持连续包月自动扣款）。付费墙与 legal **绝不照抄主端 iOS 的「到期前 24 小时自动续订扣款/取消订阅」**——那是 StoreKit 订阅合规文案，本端无自动扣款，写上即虚假宣传（用户以为不取消会一直被扣）。正面明示「一次性购买，不自动续费、不自动扣款，无需取消」。兑换码保持**「免费获得」**（P1-E 红线：付费买码触发小米「引导异常交易」+ 华为「切支付」= 下架级）。
+- **单一构建期开关 `D_BEE_XPAY_ENABLED`（默认 false）**：`mini/src/lib/xpayEnabled.ts` 导出 `XPAY_SALE_ENABLED`，**同时驱动付费墙售卖 UI 与 legal.ts 法务口径**（微信审核核「页面展示与用户协议一致」，两者必须同源；若运行时问服务端则法务文本随网络结果漂移，而用户同意过的是**构建时确定的字符串**）。`mini/config/index.ts` 构建期校验：非 `'true'/'false'` 一律 **throw**（防 `=1`/`=yes` 被静默忽略 =「以为开了其实没开」，与 backend.ts READY 门同病），为 true 时 `console.warn` 留痕（产物中文 `\uXXXX` 转义，日志是唯一可靠提示位）。
+- **legal.ts 法务口径同开关**：§一「服务内容」两分支（开→三档会员可选付费、微信虚拟支付一次性购买、不自动续费、价格以付费墙为准；关→原「免费提供、不销售任何商品或服务」逐字不动）；《免责声明》§五首句同源（「本服务的基础记录功能免费提供」vs「本服务为个人免费提供」），后半段可用性/免责表述两分支一致；档位名取 shared `PRODUCTS`（月订阅/年订阅/终身买断，单一真相源）。`UPDATED` 仍 `2026 年 11 月 8 日`（两分支共用：开关开的包正文实质改动日即今天；开关关的包正文与 11-08 整改版逐字相同）。📌 **mini 无 LEGAL_UPDATED 同意窗机制**（主端 `src/lib/privacyConsent.ts` 有），重确认机制留用户拍板。
+- **测试**：`tools/xpay-selftest.mjs` 86→**96 项**（新增「资金结算闸门」10 项：status=2 调一次、body=`{order_id,env}`、pay_sig 用自己 uri 复算、status=4 不重复调、Apple 单不调但权益照发 channel='apple'、接口报错仍回 `settled:true`、失败有 error 留痕）；`tools/mini-xpay.test.ts` **68 项**（开关只认 true、compareVersion、isXpaySupported、错误码翻译、signData 原样透传、buyProduct 五态、先落盘后轮询顺序、recoverPending 不 reject、TTL 过滤）；**护栏 17 `tools/xpay-consistency.test.ts` 27 项**（端点路径两端逐字一致、4 条路由、notify 不走 wrap、provider 前后端同值、notify_provide_goods 闸门、signData 无 parse、签名公式锚点、settling 语义、1.5s×4、措辞纪律零订阅式披露、开关校验与注入、三档 productId/价格与 0030+0038 种子一致）；**修正护栏 6 第一条**（旧断言「mini 无支付入口是刻意设计」已过时 → 改钉「paywall 与 legal 都引用同一 `XPAY_SALE_ENABLED` + 留有同源与措辞纪律注释」）+ 护栏 12/16 头注同步去掉「小程序无在线支付」降级表述。
+- **红验证**（护栏铁律）：mini-xpay 注入 4 处破坏（signData 重序列化 / settling 改 error / provider 写 `wechat` / 开关改宽松布尔）→ **9 红精准**；xpay-consistency 注入 4 处（provider / 删 notify_provide_goods / POLL_ATTEMPTS 改 2 / 付费墙写入「连续包月+24 小时扣款+取消订阅」）→ **4 红精准**；xpay-selftest 关发货确认 → 4 红（并修好「数组为空时脚本中途崩溃掩盖其余红灯」的健壮性问题）。全部已还原。
+- **验证**：`npm test` **15 文件 / 691 项全绿**（13→15 文件、592→691 项）；mini tsc `src/` 零错误；🔴 **两种构建变体实测开关真有效**：默认构建 `dist/common.js` 偏移 236638 = `enabled:"false"`，`D_BEE_XPAY_ENABLED=true` 构建同偏移 = `enabled:"true"`（长度差恰 -1），且 true 构建日志打出开启警告 → **开关不是恒 false**。`paywall.js` 两版逐字节相同（`XPAY_SALE_ENABLED` 是函数调用结果，terser 不做跨函数折叠 → 三元分支保留为运行时判断，正确行为）。产物零 `D_BEE_XPAY_ENABLED`/`isXpaySaleEnabled` 标识符（defineConstants 已替换）。构建后**已恢复 dist 为安全的默认 false 构建**。
+- 🔴 **开启前置条件（缺一不可，详见 `xpayEnabled.ts` 文件头）**：代码侧 = 0046 应用到生产库 + 网关部署含 xpay.mjs + env 配齐（`XPAY_OFFER_ID`/`XPAY_APP_KEY`/`XPAY_PUSH_TOKEN`/`XPAY_PUSH_AES_KEY`/`WECHAT_SESSION_ENC_KEY`，加 env 走 `deploy/apply-vision-key-update.py`，**绝不跑 `deploy-gateway.sh`**）；平台侧 = 虚拟支付进件（否则 -15008）+ 三档道具发布（productId 与 `PRODUCT_IDS` 逐字一致、价格与 `payment_products` 一致 1800/12800/29800 分，未发布 -15010、刚发布约 10 分钟 -15014、价格不符 -15013）+ 消息推送配置 `https://d-bee.cn/.cloud/payment/wechat/notify` 且**发货推送必须开启**。**先配平台，再开开关。**
+- 费率备查（未落代码）：iOS 标准 17%（Apple 12% + 腾讯 5% 限时减免）、安卓主动支付标准 10%（限时 1%）、T+3 结算（iOS Apple 侧自然月后 45~60 天）。
+- 🔴 边界：工作区未提交；**0046 未应用生产库**、网关未部署、凭据未配、平台侧三件未做 → **当前不具备开启条件**；mini 产物未上传；未做任何生产侧实测（铁律 #13）。
+
+## 23:02 · Web 端定价展示 + 小程序下单引导（改造方案阶段 1+2，已 commit + push）
+
+用户指令：执行《Web端定价展示与小程序下单-现状梳理与改造方案》阶段 1（Web 侧）+ 阶段 2（跳转凭证），要求**不改四端业务实现逻辑**、重点在 Web 定价展示与「从小程序下单」引导、**前提合法合规**。
+
+### 🔴 本轮最重要的合规发现（11-07 方案的口径缺陷）
+11-07 版阶段 1 把「去微信小程序下单」引导写成**无条件展示**。11-08 勘察发现它与 mini 实际状态**不同源**：mini 售卖由 `D_BEE_XPAY_ENABLED` 构建期开关驱动、**默认关闭**，线上 mini 仍公示「免费提供、不销售任何商品」。Web 无条件引导 = 把用户导向买不到东西的小程序 = **虚假宣传（《广告法》第 4 条）**，与「合法合规」前提直接冲突。→ 改为**与 mini 同源开关门控**。
+
+### 同源开关设计（关键架构决策）
+Web 侧**复用 mini 的 `D_BEE_XPAY_ENABLED`**（不另起 `VITE_MINI_SALE_ENABLED`），经 `vite.config.ts` 的 `resolveXpaySaleFlag()` 注入为构建期布尔常量 `__XPAY_SALE_ENABLED__`（与 `__APP_VERSION__` 四端同名做法一致）。**一个环境变量同时决定两端**卖不卖 / 引不引导 → 运维不可能只开一端导致口径漂移。非法取值（`=1`）构建期 throw；`=true` 构建日志 warn 留痕。
+
+### 改动清单（全部只碰 Web 展示层，四端业务逻辑零改动）
+- 新建 `src/lib/miniOrderGuide.ts`：配置真源。`XPAY_SALE_ENABLED`（typeof 兜底 → 安全默认 false）+ `MINI_APP_NAME`/`MINI_ORDER_QR`/`MINI_ORDER_LINK`；`sanitizeMiniOrderLink()` 抽成**纯函数**（https 白名单）以便单测。
+- 新建 `src/components/MiniOrderGuide.tsx`：付费墙与定价页**共用**引导区块。「网页不收款」声明在门控外恒展示；「去小程序下单」包在 `canGuideToMiniSale()` 内；三形态（QR/LINK/纯文字兜底），绝不渲染死按钮。
+- 新建 `src/pages/PricingSheet.tsx`：公开定价页（未登录可见，解决差距 #1）。复用 `PRODUCTS`+`priceTag`，三档用 `div`、**整页零 `<button>`**。入口挂 `SiteFooter`（登录页/今日页/我的页共用 → 一处接入全站可达），🔴 **仅 Web 渲染**（iOS 只能用 App Store 真实价，展示本地价属违规），portal 到 body 规避 `.app-shell(overflow-x:hidden)` 裁剪。
+- 新建 `src/content/membership.ts`：`FREE_ITEMS`/`PRO_ITEMS` 从 PaywallSheet 抽出共用，配额数字插值自 shared，零副本。
+- `src/content/legal.ts` §六：把「网页版」从「Android 一次性预付购买」渠道摘出 → 按 `XPAY_SALE_ENABLED` **双分支**（ON=引导去小程序 / OFF=不提供任何购买入口），两分支都明示「不提供在线支付、不会通过网页收取任何费用」；`UPDATED` **未动**（刷新 = 全体老用户重弹同意窗，留拍板）。
+- `src/pages/PaywallSheet.tsx`：Web 引导改用 `<MiniOrderGuide showRedeemHint />`；`buyProduct` Web 拦截提示去掉「下单」字样；iOS/Android 分支、checkout、adapter、server、DB **一律未动**。
+- `tools/web-no-payment.test.ts`（新建，护栏 18，**31 项**，W1~W8）+ `tools/four-end-consistency.test.ts` 护栏 16 主端断言随真源迁址改查 membership.ts。
+
+### 验证（红验证 + 构建变体实证）
+- 红验证：4 处破坏（定价页加购买按钮+createPaymentOrder / 引导去门控 / legal 去开关分支 / 付费墙复活 FREE_ITEMS 副本）→ **6 红**全精准，还原回绿。
+- `npm test` **16 文件 / 731 项全绿**；typecheck rc=0。
+- 默认构建产物探针：`下单`=0、`在微信中搜索小程序`=0、`会员定价`/`网页版仅展示价格`/`统一定价`/`免费获得` 均 >0；terms 静态页 OFF 分支「不提供任何购买入口」→ **零引导字样**。
+- 开启构建（`=true`）：`内完成下单`>0、`下单`=4，terms 2422→2449 字切 ON 分支。`=1` → 构建 throw。QR 注入 → 产物含 `/mini-order-qr.png`。
+- `dist/` 已恢复默认安全构建。
+
+### 🔴 产物解码纪律修订（既有记忆只适用 mini）
+**Web 主端产物 = UTF-8 直存中文**（非 ASCII 字节 ~7 万，字面 `\u` 仅 54），直接 UTF-8 读；**mini（Taro/webpack）才是纯 ASCII `\uXXXX`**（需 unicode_escape）。两条工具链形态不同，套用同一管道会全假阴性（本轮实测：用 unicode_escape 读 Web 产物，连「统一定价」都 0 命中）。
+
+### 文档
+- 改造方案文档追加「阶段 1+2 执行记录（11-08）」+ 口径修订横幅（历史正文按纪律不改）。
+- 新建 `docs/Web端跳转小程序-静态码操作手册-2026-11-08.md`（阶段 2：MP 后台生成码 5 步、三件外部依赖、发布前置 6 项）。
+
+### 边界
+改动已 commit + push（见下方 git 记录）；**未部署生产**（线上仍旧产物，零生产变更口径）。开启引导需备案通过 + 小程序发布 + 静态码 + mini 同值上传 + `LEGAL_UPDATED` 拍板，当前默认构建（零引导）本身即合规状态。
+

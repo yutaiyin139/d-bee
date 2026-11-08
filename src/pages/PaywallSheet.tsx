@@ -2,18 +2,8 @@ import { useEffect, useState } from 'react'
 import { IconCrown, IconGift } from '../components/Icons'
 import { Sheet } from '../components/Sheet'
 import type { DocId } from '../content/legal'
-import {
-  AI_REDEEM_DAILY_LIMIT,
-  FREE_DAILY_AI,
-  FREE_HONEY_PRO_ITEM,
-  FREE_NO_ADS_ITEM,
-  FREE_REPORT_DAYS,
-  PRO_REPORT_DAYS,
-  PRODUCTS,
-  priceTag,
-  proNoticeText,
-  type ProductId,
-} from '../lib/entitlement'
+import { FREE_ITEMS, PRO_ITEMS } from '../content/membership'
+import { PRODUCTS, priceTag, proNoticeText, type ProductId } from '../lib/entitlement'
 import { REDEEM_CODE_RULE } from '../lib/validate'
 import { usePlan } from '../state/plan'
 import { errText } from '../lib/errmsg'
@@ -22,30 +12,21 @@ import { openManageSubscriptions } from '../lib/manageSubscription'
 import { isAlipayAvailable } from '../lib/payment/alipay'
 import { isWechatPayAvailable } from '../lib/payment/wechatPay'
 import { isIOS, isWeb } from '../lib/platform'
+import { MiniOrderGuide } from '../components/MiniOrderGuide'
 
 /**
- * Web → 微信小程序下单（ICP 经营许可证绕行口径，2026-11-07）。
+ * Web → 微信小程序下单（ICP 经营许可证绕行口径，2026-11-07；2026-11-08 收敛到真源模块）。
  *
  * Web 端只展示定价，**绝不收款、绝不创建订单**；交易闭环放在微信小程序内。
- * 两个配置都为空时只显示文字引导（让用户在微信内搜索小程序），
- * 绝不渲染一个点了没反应的「下单」按钮。配置在构建期注入，缺失不影响其它端。
- *   · VITE_MINI_ORDER_QR   —— MP 后台生成的静态小程序码（放 public/，零 AppSecret，推荐）
- *   · VITE_MINI_ORDER_LINK —— URL Link（需服务端用 AppSecret 签发，二期）
- * 名称默认 A1 定案值，可用 VITE_MINI_APP_NAME 覆盖，避免再写一份名称副本。
+ * 名称与跳转凭证（小程序码 / URL Link）、以及「引不引导去下单」的售卖开关
+ * 全部收敛在 `lib/miniOrderGuide.ts`，展示由 `components/MiniOrderGuide.tsx` 承担；
+ * 权益清单收敛在 `content/membership.ts` —— 公开定价页与本付费墙共用同一实现，
+ * 不再各写一份（改口径必漏改的源头）。
+ *
+ * 🔴 售卖开关与 mini 端 `D_BEE_XPAY_ENABLED` **同源同值**：默认关闭时本页零处
+ * 「去小程序下单」字样，与线上 mini「免费提供、不销售任何商品」的公示一致；
+ * 开启后两端同一次发版一起生效。详见 miniOrderGuide.ts 文件头。
  */
-const MINI_APP_NAME = (import.meta.env.VITE_MINI_APP_NAME as string | undefined)?.trim() || '自律蜜蜂'
-const MINI_ORDER_QR = (import.meta.env.VITE_MINI_ORDER_QR as string | undefined)?.trim() || ''
-// href 只接受 https 绝对地址：构建期配置写错（如 javascript:）也不把可执行协议渲染进 DOM
-const MINI_ORDER_LINK = (() => {
-  const raw = (import.meta.env.VITE_MINI_ORDER_LINK as string | undefined)?.trim() || ''
-  if (!raw) return ''
-  try {
-    const u = new URL(raw)
-    return u.protocol === 'https:' ? u.toString() : ''
-  } catch {
-    return ''
-  }
-})()
 
 /**
  * 付费墙。
@@ -56,33 +37,10 @@ const MINI_ORDER_LINK = (() => {
  * 权益写入云端 entitlements，换设备同样生效。资质未就绪时 checkout 诚实降级提示。
  */
 
-const FREE_ITEMS = [
-  `每日 ${FREE_DAILY_AI} 次免费 AI 拍照识别（识别成功才扣次数）`,
-  `积分可再兑换拍照识别，每日最多 ${AI_REDEEM_DAILY_LIMIT} 次（50 积分/次）`,
-  FREE_HONEY_PRO_ITEM,
-  '扫条码不限次数永久免费',
-  '文字描述识别、手动录入、体重饮水运动记录全部免费',
-  'AI 问答不限次数（每分钟限 3 次防刷）',
-  `饮食报告看近 ${FREE_REPORT_DAYS} 天`,
-  '连续打卡 7 天再送拍照次数',
-  FREE_NO_ADS_ITEM,
-]
-// 🔴 「完善资料再送拍照次数」删去（2026-11-03，P2-D 同步小程序端 P0-C 结论）：
-//   完善资料实际发的是**蜜糖积分**而非识别次数 —— src/state/plan.tsx:185
-//   `grantHoney('newbie', 'newbie', NEWBIE_BONUS_AMOUNT, ...)`，代码注释原文
-//   「发蜜糖积分，不再发识别次数」。全仓 `grantPhotoBonus(` 仅 'streak7' 一处调用，
-//   签名里的 'newbie' 分支从无调用方。原文案属虚假承诺，且小程序端已于 P0-C
-//   （commit 07a46ca）删除同一句，此处为主端漏改导致的四端文案分叉。
-//   新手积分本身已由上面「积分可再兑换拍照识别」一条如实覆盖。
-
-const PRO_ITEMS = [
-  'AI 拍照识别不限次数',
-  'AI 问答不限流',
-  '长文本 AI 复盘（本期解读）无限次',
-  '个性化完整膳食计划、长期 AI 膳食规划',
-  '宏量营养素深度分析',
-  `饮食报告扩展到 ${PRO_REPORT_DAYS} 天 + 数据导出`,
-]
+// 🔴 FREE_ITEMS / PRO_ITEMS 已抽到 `content/membership.ts`（2026-11-08）：
+//   公开定价页（PricingSheet）要展示同一份清单，两处各写一份必然漂移 ——
+//   而权益文案漂移 = 「宣传的权益与实际不符」，属虚假宣传风险，不是排版问题。
+//   清单里的配额数字全部插值自 @dbee/shared 常量，本文件不再出现第二个副本。
 
 // 🔴 此处曾有一份硬编码的 PRICE_TAG（{ proMonthly: '¥18 / 月', ... }），2026-11-03 删除：
 //   它与 shared 的 PRICE_* 常量、PRODUCTS[].price 构成**三份互相独立的价格副本**，
@@ -196,8 +154,10 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
     setHint('')
     // 🔴 Web 侧永不发起支付：即使将来误把支付插件注册到 Web 或误加购买按钮，也在此拦住，
     //    保证「Web 只展示定价、不收款、不创建订单」不被后续改动破坏（ICP 证绕行口径）。
+    //    提示文案不写「下单」二字 —— 售卖开关关闭时 mini 根本不卖，写「去小程序下单」
+    //    就是引导到一个买不到东西的入口（与 MiniOrderGuide 的门控口径保持一致）。
     if (isWeb() && noPayChannel) {
-      setErr(`网页版仅展示价格，请在微信小程序「${MINI_APP_NAME}」内下单。`)
+      setErr('网页版仅展示价格，不提供在线支付，也不会通过网页收取任何费用。')
       return
     }
     setPayingId(id)
@@ -366,46 +326,11 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
             </div>
           )}
           {/* 🔴 无可用支付通道：如实告知，不渲染点了必失败的按钮。
-              Web（ICP 证绕行口径）：只展示定价 + 引导微信小程序下单，网页绝不收款；
-              Android 无插件时仍引导去 App 内开通 / 兑换码。 */}
+              Web（ICP 证绕行口径）：只展示定价 + 按售卖开关决定是否引导去小程序，网页绝不收款；
+              Android 无插件时仍引导去 App 内开通 / 兑换码。
+              引导区块与公开定价页共用 components/MiniOrderGuide.tsx（口径单一真源）。 */}
           {noPayChannel && (isWeb() ? (
-            <div className="notice info" style={{ marginTop: 14 }}>
-              <div>
-                网页版仅展示价格，不提供在线支付，也不会在网页端收取任何费用。
-                购买请在微信小程序「{MINI_APP_NAME}」内完成，实际档位与价格以小程序内展示为准。
-              </div>
-              {MINI_ORDER_QR && (
-                <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <img
-                    src={MINI_ORDER_QR}
-                    alt={`${MINI_APP_NAME}小程序码`}
-                    style={{ width: 132, height: 132, borderRadius: 8, flexShrink: 0 }}
-                  />
-                  <span style={{ fontSize: 12.5, lineHeight: 1.7 }}>
-                    用微信「扫一扫」打开小程序，进入后选择档位下单。
-                  </span>
-                </div>
-              )}
-              {MINI_ORDER_LINK && (
-                <a
-                  className="btn"
-                  href={MINI_ORDER_LINK}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ display: 'inline-block', marginTop: 10 }}
-                >
-                  在手机微信中打开小程序下单
-                </a>
-              )}
-              {!MINI_ORDER_QR && !MINI_ORDER_LINK && (
-                <div style={{ marginTop: 8, fontSize: 12.5, lineHeight: 1.7 }}>
-                  在微信中搜索小程序「{MINI_APP_NAME}」，进入后选择档位下单。
-                </div>
-              )}
-              <div style={{ marginTop: 8, fontSize: 12.5, lineHeight: 1.7 }}>
-                也可在下方输入兑换码解锁（兑换码由邀请、活动等渠道免费获得，同样立即生效）。
-              </div>
-            </div>
+            <MiniOrderGuide showRedeemHint />
           ) : (
             <div className="notice info" style={{ marginTop: 14 }}>
               当前暂无可用支付通道。你可以在 iOS / Android App 内开通会员，

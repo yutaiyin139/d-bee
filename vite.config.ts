@@ -4,6 +4,52 @@ import pkg from './package.json'
 
 const PRODUCTION_NATIVE_ENDPOINT = 'https://d-bee.cn'
 
+/**
+ * 🔴 小程序售卖开关（与 mini 端**同名同值**，2026-11-08）。
+ *
+ * 变量名刻意复用 mini 的 `D_BEE_XPAY_ENABLED`（不是另起 `VITE_MINI_SALE_ENABLED`）：
+ * 一个环境变量同时决定「小程序卖不卖」与「Web 引不引导去小程序下单」。
+ * 若两端各用一个变量，运维极可能只开一端 —— 那就是「Web 引导用户去小程序，
+ * 进去却发现不卖」的虚假宣传（或反向：小程序在卖而 Web 说没有），
+ * 属《消费者权益保护法》与《广告法》层面的风险，而非纯 UI 问题。
+ *
+ * 取值校验与 `mini/config/index.ts:86-94` 逐字同口径：只接受 'true' / 'false'，
+ * 其余（含 '1' / 'yes' / 拼写错误）一律 throw 中断构建 —— 宁可构建失败，
+ * 也不要发出一个「以为在引导其实没引导」的包。
+ *
+ * 默认 'false'：未显式开启时 Web 只展示价格、明示网页不收款，**不出现任何
+ * 「去小程序下单」字样**，与 mini 默认「免费提供、不销售」口径一致。
+ *
+ * 读取方式与 mini 相同（只读 `process.env`，不读 .env 文件）：两端同一条命令
+ * 前缀即可同时构建，例如
+ *   D_BEE_XPAY_ENABLED=true npm run build      # Web
+ *   D_BEE_XPAY_ENABLED=true npm run build:weapp # mini（在 mini/ 下）
+ */
+function resolveXpaySaleFlag(): 'true' | 'false' {
+  const raw = process.env.D_BEE_XPAY_ENABLED ?? 'false'
+  const norm = raw.trim().toLowerCase()
+  if (norm !== 'true' && norm !== 'false') {
+    throw new Error(
+      `[vite] D_BEE_XPAY_ENABLED 只接受 'true' / 'false'，收到 ${JSON.stringify(process.env.D_BEE_XPAY_ENABLED)}。` +
+        '该开关同时决定「小程序是否售卖虚拟商品」与「Web 是否引导去小程序下单」，' +
+        '两端必须同值，故不允许含糊取值。开启前请确认 mini/src/lib/xpayEnabled.ts 文件头' +
+        '列出的平台侧前置条件（虚拟支付进件、道具发布、消息推送）已全部就绪，' +
+        '否则用户会被引导到一个买不到东西的小程序。',
+    )
+  }
+  if (norm === 'true') {
+    // 构建日志留痕：产物是否引导下单是发布决策，必须在构建输出里看得见
+    // （产物 grep 中文因 \uXXXX 转义会假阴性，日志是唯一可靠提示位）。
+    console.warn(
+      '[vite] ⚠️ 已开启小程序售卖引导（D_BEE_XPAY_ENABLED=true）：' +
+        'Web 付费墙与公开定价页将展示「去微信小程序下单」引导，legal.ts 同步切换为收费口径。' +
+        '发布前请确认：① mini 端已用同一变量构建并上传（否则引导指向一个不卖东西的小程序）；' +
+        '② 静态小程序码已放 public/ 且 VITE_MINI_ORDER_QR 已配置。',
+    )
+  }
+  return norm
+}
+
 /** 原生包必须在构建期确定数据面，不能把 Web 产物静默同步成云库正式包。 */
 function validateNativeBuild(mode: string, env: Record<string, string>): void {
   if (mode !== 'native-release' && mode !== 'native-internal') return
@@ -57,11 +103,16 @@ function validateNativeBuild(mode: string, env: Record<string, string>): void {
  * 避免发版时出现「package.json 已升版、界面还显示旧版本」的不一致。
  */
 export default defineConfig(({ mode }) => {
-  validateNativeBuild(mode, loadEnv(mode, process.cwd(), 'VITE_'))
+  const env = loadEnv(mode, process.cwd(), 'VITE_')
+  validateNativeBuild(mode, env)
 
   return {
     define: {
       __APP_VERSION__: JSON.stringify(`v${pkg.version}`),
+      // 🔴 注入**布尔字面量**（不是字符串 'true'），故产物里可直接 grep
+      //    `__XPAY_SALE_ENABLED__` 被替换后的 `true`/`false`，用于核对
+      //    「发出去的 Web 包到底引不引导下单」——与 mini 的 defineConstants 同理。
+      __XPAY_SALE_ENABLED__: resolveXpaySaleFlag() === 'true' ? 'true' : 'false',
     },
     plugins: [react()],
     server: {

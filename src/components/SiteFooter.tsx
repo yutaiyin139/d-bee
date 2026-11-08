@@ -1,5 +1,9 @@
+import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { DocId } from '../content/legal'
 import { SITE } from '../content/legal'
+import { isWeb } from '../lib/platform'
+import { PricingSheet } from '../pages/PricingSheet'
 
 /**
  * 站点页脚：法律文档入口 + 联系方式 + 备案号。
@@ -23,9 +27,31 @@ import { SITE } from '../content/legal'
  * 另：邮箱默认直接显示而非点击后才出现 —— 法律要求公示联系方式应「以显著方式」呈现。
  */
 export function SiteFooter({ onOpen }: { onOpen: (id: DocId) => void }) {
+  /**
+   * 公开定价页（未登录可见）。
+   *
+   * 🔴 入口**只在 Web 渲染**：iOS 的合法成交价是 App Store 本地化价格，
+   * 既有纪律「绝不回退硬编码价」（PaywallSheet 的 iosPriceState）——
+   * 在 iOS 上展示一份本地生成的价格属价格展示违规，也会与商店价不一致。
+   * Android 有原生支付通道，走付费墙即可，不需要「仅展示」的第二入口。
+   *
+   * 放在页脚是因为它同时出现在登录页、今日页、我的页 —— 一处接入即全站可达
+   * （含未登录访客），无需给三个页面各加 prop。
+   */
+  const [pricingOpen, setPricingOpen] = useState(false)
+  const showPricingEntry = isWeb()
+
   return (
     <footer className="site-footer">
       <div className="site-footer-links">
+        {showPricingEntry && (
+          <>
+            <button className="btn-text" onClick={() => setPricingOpen(true)}>
+              会员定价
+            </button>
+            <span className="dot">·</span>
+          </>
+        )}
         <button className="btn-text" onClick={() => onOpen('terms')}>
           用户协议
         </button>
@@ -68,6 +94,11 @@ export function SiteFooter({ onOpen }: { onOpen: (id: DocId) => void }) {
           )}
         </div>
       )}
+
+      {/* portal 挂到 body：`.sheet-mask` 虽是 fixed，但页脚在 .app-shell(overflow-x:hidden)
+          内，portal 到根可彻底规避祖先 overflow / 层叠上下文对弹层的裁剪与压层。 */}
+      {pricingOpen &&
+        createPortal(<PricingSheet onClose={() => setPricingOpen(false)} />, document.body)}
     </footer>
   )
 }

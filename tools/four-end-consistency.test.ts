@@ -1087,7 +1087,8 @@ describe('护栏 16 · 微信运动 / 管理订阅 / 免费·订阅逻辑四端�
   const miniManage = byPath('mini/src/lib/manageSubscription.ts')!.code
   const mainReport = byPath('src/pages/ReportScreen.tsx')!.code
   const miniReport = byPath('mini/src/pages/report/report.tsx')!.code
-  const mainPaywall = byPath('src/pages/PaywallSheet.tsx')!.code
+  // 主端会员权益清单真源（2026-11-08 从 PaywallSheet 抽出，付费墙与公开定价页共用）
+  const mainMembership = byPath('src/content/membership.ts')!.code
   const miniPaywall = byPath('mini/src/pages/paywall/paywall.tsx')!.code
   const mainProfile = byPath('src/pages/ProfileScreen.tsx')!.code
   const miniProfile = byPath('mini/src/pages/profile/profile.tsx')!.code
@@ -1169,9 +1170,13 @@ describe('护栏 16 · 微信运动 / 管理订阅 / 免费·订阅逻辑四端�
   })
 
   it('🔴 免费权益文案「文字描述识别」两端逐字一致', () => {
+    // 📌 2026-11-08 主端真源迁址：FREE_ITEMS 从 PaywallSheet.tsx 抽到 content/membership.ts
+    //   （公开定价页 PricingSheet 要复用同一份清单，两处各写一份必然漂移）。
+    //   故本断言的主端侧改为查 membership.ts；PaywallSheet 确实渲染这份清单由
+    //   tools/web-no-payment.test.ts 的「付费墙必须 import membership 清单」钉住。
     expect(
       /'文字描述识别、手动录入、体重饮水运动记录全部免费'/.test(miniPaywall) &&
-        /'文字描述识别、手动录入、体重饮水运动记录全部免费'/.test(mainPaywall),
+        /'文字描述识别、手动录入、体重饮水运动记录全部免费'/.test(mainMembership),
       '11-08 统一录入层已补齐 text 模式，付款墙文案不能停在旧版「只有手动录入」',
     ).toBe(true)
   })
