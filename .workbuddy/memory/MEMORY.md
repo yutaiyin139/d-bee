@@ -22,10 +22,10 @@
 - ✅ **数据面 = 自建 PostgreSQL `dbee`**（`healthz` 实证），迁移 **0045**；审核演示账户 `dbeesupport@163.com` 实测 signin 200 + token（iOS 2.1 拒审风险解除）。
 - ✅✅ **云端库彻底废弃（11-08 用户指令）**：四端生产数据面全指自建 PG。**二次清理已把运行时云库残留清零**：mini 删 `CLOUD_HOST`/`cloud` 分支（显式 cloud 一律 throw）、主端删 `CLOUD_HOST` 与 DEV/native-internal 回退、`CLOUD_UPSTREAM`→`SELFHOST_UPSTREAM`、`CLOUD_ORIGIN`→`SELFHOST_ORIGIN=https://d-bee.cn`、iOS/Android 原生插件 `defaultOrigin` 同源、vite 构建期删云库内测口、诊断脚本不再打云库。**护栏 10**（`tools/no-cloud-runtime.test.ts`：209 文件扫描 + 5 处四端同源锚点，红验证 2/2 精准）；`npm run build:weapp` 不带变量即可构建、产物零云端域名。🔴 但**云库实例仍在线（探测 200）**，停用见下条。🆕 10:40 补：mini `cloud.ts` 移除 `oauthRelayBaseUrl`（产物零 `www.workbuddy.cn`，主端保留该字段不动）、新增护栏 10b（mini 专项零平台域名，红验证 1 红/283 绿精准）；**B1 微信后台 request 合法域名用户已完成**。证据 → `docs/待办清单-云库废弃收尾-2026-11-08.md` §一/§七/§八。
 - 🔴 **云库数据放弃迁移**（云库无身份表、owner_id 19 位数字 ≠ 自建库 `wx:<openid>` → 孤儿数据）；**云库实例未停用/未删除**（平台控制台、不可逆、须用户本人，建议 selfhost 版真机验收 T+7 后）。
-- 🔴 **「彻底释放」剩余 2 项只能用户本人**（B1 ✅ 已完成）：① **上传 mini 新版本**（**线上旧包仍连旧云库、仍在写入**）——我无法代做：开发者工具 CLI 已装但报 `IDE service port disabled`，须本人 GUI 开启「设置→安全设置→服务端口」并登录；无 `miniprogram-ci` 上传密钥。开端口后跑 `bash deploy/upload-mini.sh <版本号>`（脚本校验产物零云端域名 + endpoint）；上传≠发布，之后仍需设体验版→真机全链路→提审发布。② 云库实例停用/删除（平台控制台、不可逆，真机验收 T+7 后；本会话 `cloud_service inspect` 无关联应用、平台无停用接口）。网关阶段 A 已就绪（`login-wechat` 401、`healthz` 200、新 `Origin` 预检 204 + ACAO 回显）。🆕 11:04 实证：**用户 10:56 微信真机调试跑的是新版 selfhost 包** —— `login-wechat` 200、`app_users` wechat 0→1 且 last_login 与请求逐秒一致、数据面/AI 全 200，B1 合法域名生效（清单 §八 8.5）。但**真机调试 ≠ 上传开发版本**，且近 3h `meal_entries=0` 说明全链路 6 项只跑了登录+AI，须补齐后才算 T+7 起点。
+- 🔴 **「彻底释放」仍差 2 步，均需用户本人**：① **重新上传 mini 体验版** —— B1 合法域名 ✅、开发版本/体验版已上传 ✅，但 11:33 体验版记一餐报 `TextDecoder is not defined`（SDK SSE 解析器缺该 Web API，SDK 自带 polyfill 只补 Headers/ReadableStream）；已在 `mini/src/lib/textDecoderPolyfill.ts` 补全局实现并重建产物，**修复只在源码/产物，须重新上传+重设体验版才生效**。② 云库实例停用（平台控制台、不可逆，真机全链路 T+7 后；`cloud_service` 无停用接口、inspect count=0）。🆕 11:52 服务端实证：体验版请求全打 `d-bee.cn`（`chat/completions` **200 / 26356B**、`release_photo_quota` 200），故障在前端解析、额度已退还、`ai_usage=1`、`meal_entries=0`（清单 §九）。**真机调试通过 ≠ 体验版通过**（调试会话注入 Web API），旧包仍连旧云库、真实用户仍在写入。
 - 🟠 尾巴：网关「模式=开发」（`DBEE_PROD` 未设，收紧前须先给本地开发换出路）、安全响应头、certbot renew 后复核 308、凭据轮换未执行、`APPLE_*` env 全缺、公安备案回填（12-06 前）。常规部署今后应设 `DBEE_DOMAIN=d-bee.cn`。
 - 🟠 **git 未 push**：`github.com` 域名级限制（代理 502 / 直连超时 / `ls-remote` OpenSSL eof，`api.github.com`=200 证非凭据问题）；离线兜底 `release/d-bee-main-20261107.bundle`（verify PASS）。恢复后 `git -c http.sslBackend=openssl push origin main` 或 `git fetch <bundle> main && git push origin FETCH_HEAD:main`。
-- 工程基线：`npm test` = **12 文件 / 515 项全绿**（跑完核对 `Test Files` 数 == 文件数）；跨端护栏 **10 道**（护栏 10 扩至 284 项，含 10b mini 平台域名专项）。📄 待办清单 = `docs/待办清单-云库废弃收尾-2026-11-08.md`；🆕 发版脚本 `deploy/upload-mini.sh`。
+- 工程基线：`npm test` = **13 文件 / 538 项全绿**（跑完核对 `Test Files` 数 == 文件数）；跨端护栏 **10 道**（护栏 10 = 289 项，含 10b mini 平台域名 + 10c 发版校验不许删；`deploy/upload-mini.sh` 属反向检测脚本，列 `CHECK_ONLY` 白名单）。📄 待办清单 = `docs/待办清单-云库废弃收尾-2026-11-08.md`（§九 = TextDecoder 修复回执）；🆕 发版脚本 `deploy/upload-mini.sh`。
 
 ## 下一步 / 待拍板（详版 → REFERENCE.md）
 
@@ -68,7 +68,8 @@ Capacitor 8.5.3 混合壳；React18+Vite5+TS；Windows 出 Android、Mac mini M4
 - 🔴🔴 **测试 = vitest**（`npm test` = `vitest run tools/`），`vite.config.ts` 强制串行（并行会静默丢文件＝假绿）；跑完必核对文件数。**mini 类型检查须单独跑**；构建期护栏必须写在构建配置里（webpack 不执行被打包模块顶层代码）。
 - 🔴 **测试禁止硬编码日期**：被测函数用 `rangeDays(N)`／`todayKey()` 圈定窗口时，`log_date` 必须同源取 `todayKey()`，否则窗口滑走 → 被 `inRange.has()` 静默过滤 → 集体假红（11-08 `report-ratio.test.ts` 6 项踩坑）。加防漂移护栏并做红验证。
 - 🔴 **MAPE 达标 ≠ 无需处理**：四指标并报，实测需真机+样本餐（≥20 条、4 热量档），此前不得对外表述任何精度数字。
-- 🔴🔴 **护栏断言三条铁律**：①一个 `it()` 只一条断言 ②匹配「实际使用」非「标识符出现」 ③断言在 `stripComments()` 后的代码上做。新增护栏 / 放宽快照基线**必须红验证**。
+- 🔴🔴 **护栏断言三条铁律**：①一个 `it()` 只一条断言 ②匹配「实际使用」非「标识符出现」 ③断言在 `stripComments()` 后的代码上做。新增护栏 / 放宽快照基线**必须红验证**。「反向检测」脚本里的禁用域名是**判据不是依赖**，须白名单 + 正向断言补上（护栏 10c），不能硬删字符串骗绿。
+- 🔴 **小程序验收一律以体验版为准**：真机调试会话会注入 `TextDecoder` 等 Web API，掩盖 JSCore 缺口；开发者工具 `urlCheck=false` 还掩盖合法域名问题。11-08 体验版 `TextDecoder is not defined` 即因此漏过（SDK SSE 解析链 `stream:true`→`LineDecoder`→`new TextDecoder`），补 `mini/src/lib/textDecoderPolyfill.ts` 幂等注入修复。
 - 🔴 **产物里 grep 中文必假阴性**（`\uXXXX` 转义，须解码）；判断数据面要追「哪个常量真正被 `resolveEndpoint` 返回」，不能 grep 到域名就下结论。
 - 🔴 git push 遇 `schannel: failed to receive handshake` → 单次 `git -c http.sslBackend=openssl push origin main`，别反复重试当成网络不通。
 - 🔴 **数值口径唯一权威 `src/lib/numfmt.ts`**（计算层全精度、只在展示层插值那一刻舍入），禁止自写 `toFixed` / `Math.round(n*f)/f`。

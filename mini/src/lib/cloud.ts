@@ -43,6 +43,11 @@
  *      小程序走云库的流量同样吃到库内闸门校验（grant_honey 验事实、限额库内化、
  *      redeem_honey 加锁）。回迁与否已不再是「有无闸门」的安全问题，而是数据归属问题。
  */
+// 🔴 必须在创建 cloud 客户端之前补 TextDecoder：SDK 的 SSE 解析器会
+//    `new TextDecoder('utf-8')`，但它自带的 ensureMiniProgramPolyfills 漏了这一项，
+//    微信体验版 JSCore 无此全局 → 记一餐等所有流式 AI 功能抛
+//    「TextDecoder is not defined」(2026-11-08 实测)。详见 ./textDecoderPolyfill.ts。
+import { ensureTextDecoder } from './textDecoderPolyfill'
 import { createMiniProgramWorkBuddyCloud } from '@tencent-ai/workbuddy-cloud-sdk/miniprogram'
 import { resolveBackendTarget } from './backend'
 
@@ -56,6 +61,9 @@ import { resolveBackendTarget } from './backend'
  * `oauthRelayBaseUrl` 已于 11-08 移除（mini 不用网页扫码登录，理由见文件头）。
  * 真正的成本在网关侧（见 backend.ts 注释列出的前置条件），现已全部就绪。
  */
+// 幂等安装，且必须早于 createMiniProgramWorkBuddyCloud（后者会注册流式 fetch）。
+ensureTextDecoder()
+
 const target = resolveBackendTarget()
 
 export const publicConfig = {

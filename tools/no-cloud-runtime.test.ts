@@ -24,7 +24,7 @@
  * （已标注「⚠️已废弃·仅存档」且不被任何脚本渲染，deploy.sh 另有守卫校验）。
  */
 import { describe, expect, it } from 'vitest'
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 const ROOT = join(__dirname, '..')
@@ -41,6 +41,13 @@ const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', 'build', 'coverage'])
 const SCAN_DIRS = ['src', 'mini/src', 'mini/config', 'native-plugins', 'deploy']
 const EXT = /\.(ts|tsx|js|mjs|java|swift|sh|example|conf)$/
 const ARCHIVED = new Set(['deploy/nginx.conf.example'])
+
+/**
+ * 「反向检测」型运维脚本：里面出现云端域名是**禁止出现的判据**（grep 模式），
+ * 不是可回连云库的依赖，语义与本护栏相反。排除出零残留扫描，但下方另有
+ * 正向断言钉死这道检测不许被删 —— 否则排除就变成了漏洞。
+ */
+const CHECK_ONLY = new Set(['deploy/upload-mini.sh'])
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const ent of readdirSync(dir, { withFileTypes: true })) {
@@ -59,7 +66,9 @@ const RUNTIME_FILES = [
   ...SCAN_DIRS.flatMap((d) => walk(join(ROOT, d))),
   'vite.config.ts',
   '.env.example',
-].sort()
+]
+  .filter((rel) => !CHECK_ONLY.has(rel))
+  .sort()
 
 /** 出现在可执行代码里即视为「仍可回连云库」。 */
 const FORBIDDEN = [
@@ -80,6 +89,26 @@ describe('护栏 10 · 运行时代码零云端库残留（2026-11-08 彻底废�
   it.each(RUNTIME_FILES)('%s → 可执行代码零云端库残留', (rel) => {
     const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'))
     expect(FORBIDDEN.filter((needle) => code.includes(needle))).toEqual([])
+  })
+})
+
+/**
+ * 护栏 10c：CHECK_ONLY 排除不能成为漏洞 —— 被排除的文件必须确实在做「禁止上传
+ * 含云端域名产物」的校验。删掉校验或改坏 endpoint 判据，这里就报红。
+ */
+describe('护栏 10c · 发版脚本的产物校验不许被删', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'deploy/upload-mini.sh'), 'utf8'))
+
+  it('CHECK_ONLY 白名单里的文件都真实存在（防止乱加白名单缩小扫描面）', () => {
+    expect([...CHECK_ONLY].every((f) => existsSync(join(ROOT, f)))).toBe(true)
+  })
+
+  it('upload-mini.sh 必须在上传前检查产物零云端域名', () => {
+    expect(code).toMatch(/grep\s+-rl\s+'workbuddy\.host/)
+  })
+
+  it('upload-mini.sh 必须在上传前检查产物指向 d-bee.cn', () => {
+    expect(code).toMatch(/grep\s+-rq\s+'d-bee\.cn'/)
   })
 })
 
