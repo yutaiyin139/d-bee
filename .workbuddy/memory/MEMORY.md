@@ -20,17 +20,17 @@
 
 - ✅ **WEB 完全上线** `https://d-bee.cn/` 200；入口 js `index-677ckuM3.js` 与本地 `dist/` 逐字一致；`verify-legal`+`verify-live` 双 PASS；三法务页 200；308=2 / 301=0；证书到期 **2027-02-04**。
 - ✅ **数据面 = 自建 PostgreSQL `dbee`**（`healthz` 实证），迁移 **0045**；审核演示账户 `dbeesupport@163.com` 实测 signin 200 + token（iOS 2.1 拒审风险解除）。
-- ✅✅ **云端库彻底废弃（11-08 用户指令）**：四端生产数据面全指自建 PG。**二次清理已把运行时云库残留清零**：mini 删 `CLOUD_HOST`/`cloud` 分支（显式 cloud 一律 throw）、主端删 `CLOUD_HOST` 与 DEV/native-internal 回退、`CLOUD_UPSTREAM`→`SELFHOST_UPSTREAM`、`CLOUD_ORIGIN`→`SELFHOST_ORIGIN=https://d-bee.cn`、iOS/Android 原生插件 `defaultOrigin` 同源、vite 构建期删云库内测口、诊断脚本不再打云库。**护栏 10**（`tools/no-cloud-runtime.test.ts`：209 文件扫描 + 5 处四端同源锚点，红验证 2/2 精准）；`npm run build:weapp` 不带变量即可构建、产物零云端域名。🔴 但**云库实例仍在线（探测 200）**，停用见下条。证据 → `docs/待办清单-云库废弃收尾-2026-11-08.md` §一/§七。
+- ✅✅ **云端库彻底废弃（11-08 用户指令）**：四端生产数据面全指自建 PG。**二次清理已把运行时云库残留清零**：mini 删 `CLOUD_HOST`/`cloud` 分支（显式 cloud 一律 throw）、主端删 `CLOUD_HOST` 与 DEV/native-internal 回退、`CLOUD_UPSTREAM`→`SELFHOST_UPSTREAM`、`CLOUD_ORIGIN`→`SELFHOST_ORIGIN=https://d-bee.cn`、iOS/Android 原生插件 `defaultOrigin` 同源、vite 构建期删云库内测口、诊断脚本不再打云库。**护栏 10**（`tools/no-cloud-runtime.test.ts`：209 文件扫描 + 5 处四端同源锚点，红验证 2/2 精准）；`npm run build:weapp` 不带变量即可构建、产物零云端域名。🔴 但**云库实例仍在线（探测 200）**，停用见下条。🆕 10:40 补：mini `cloud.ts` 移除 `oauthRelayBaseUrl`（产物零 `www.workbuddy.cn`，主端保留该字段不动）、新增护栏 10b（mini 专项零平台域名，红验证 1 红/283 绿精准）；**B1 微信后台 request 合法域名用户已完成**。证据 → `docs/待办清单-云库废弃收尾-2026-11-08.md` §一/§七/§八。
 - 🔴 **云库数据放弃迁移**（云库无身份表、owner_id 19 位数字 ≠ 自建库 `wx:<openid>` → 孤儿数据）；**云库实例未停用/未删除**（平台控制台、不可逆、须用户本人，建议 selfhost 版真机验收 T+7 后）。
-- 🔴 **「彻底释放」最后 3 项只能用户本人**：① 微信后台加 request 合法域名 `https://d-bee.cn` ② 确认备案期能否上传 mini 新版本（**线上旧包仍连旧云库、仍在写入**）③ 云库实例停用/删除（平台控制台，不可逆；本会话 `cloud_service inspect` 无关联应用、平台无停用接口）。网关阶段 A 已就绪（`login-wechat` 401、`healthz` 200、新 `Origin: https://d-bee.cn` 预检 204 + ACAO 回显）。
+- 🔴 **「彻底释放」剩余 2 项只能用户本人**（B1 ✅ 已完成）：① **上传 mini 新版本**（**线上旧包仍连旧云库、仍在写入**）——我无法代做：开发者工具 CLI 已装但报 `IDE service port disabled`，须本人 GUI 开启「设置→安全设置→服务端口」并登录；无 `miniprogram-ci` 上传密钥。开端口后跑 `bash deploy/upload-mini.sh <版本号>`（脚本校验产物零云端域名 + endpoint）；上传≠发布，之后仍需设体验版→真机全链路→提审发布。② 云库实例停用/删除（平台控制台、不可逆，真机验收 T+7 后；本会话 `cloud_service inspect` 无关联应用、平台无停用接口）。网关阶段 A 已就绪（`login-wechat` 401、`healthz` 200、新 `Origin` 预检 204 + ACAO 回显）。
 - 🟠 尾巴：网关「模式=开发」（`DBEE_PROD` 未设，收紧前须先给本地开发换出路）、安全响应头、certbot renew 后复核 308、凭据轮换未执行、`APPLE_*` env 全缺、公安备案回填（12-06 前）。常规部署今后应设 `DBEE_DOMAIN=d-bee.cn`。
 - 🟠 **git 未 push**：`github.com` 域名级限制（代理 502 / 直连超时 / `ls-remote` OpenSSL eof，`api.github.com`=200 证非凭据问题）；离线兜底 `release/d-bee-main-20261107.bundle`（verify PASS）。恢复后 `git -c http.sslBackend=openssl push origin main` 或 `git fetch <bundle> main && git push origin FETCH_HEAD:main`。
-- 工程基线：`npm test` = **12 文件 / 446 项全绿**（跑完核对 `Test Files` 数 == 文件数）；跨端护栏 **10 道**（护栏 10 = 运行时零云库域名 + 四端同源）。📄 待办清单 = `docs/待办清单-云库废弃收尾-2026-11-08.md`。
+- 工程基线：`npm test` = **12 文件 / 515 项全绿**（跑完核对 `Test Files` 数 == 文件数）；跨端护栏 **10 道**（护栏 10 扩至 284 项，含 10b mini 平台域名专项）。📄 待办清单 = `docs/待办清单-云库废弃收尾-2026-11-08.md`；🆕 发版脚本 `deploy/upload-mini.sh`。
 
 ## 下一步 / 待拍板（详版 → REFERENCE.md）
 
 - 🔴 **主线 = iOS 上线**，权威 `docs/iOS上线依赖全景与实施步骤-2026-11-07.md`；中国区正式上架卡软著（30–60 工作日）/ App 备案（7–20）/ Mac 签名，最大交付物 = **TestFlight 内部测试**（Mac + Xcode≥26 + Team + 重打包）。ASC 填报面几乎空白（逐字段答案 `docs/ASC表单填报答案-2026-11-07.md`）；Apple 硬闸门：Xcode 26 + iOS 26 SDK（2026-04-28 生效）、新年龄分级问卷必答（2026-01-31）。壳内产物停在 11-04，重打包前必须重打。
-- 🔴 **只有用户本人能做**：软著 AI 条款口径回填、Mac 选 `DEVELOPMENT_TEAM`、iOS/鸿蒙签名证书入 `signing/`、mini 发版 2 项、云库实例停用、公安备案回填、ASC 表单填报。✅ 11-07 已定案 App 名称 `自律蜜蜂`。
+- 🔴 **只有用户本人能做**：软著 AI 条款口径回填、Mac 选 `DEVELOPMENT_TEAM`、iOS/鸿蒙签名证书入 `signing/`、mini 发版（开服务端口→上传→体验版验收→提审）、云库实例停用、公安备案回填、ASC 表单填报。✅ 11-07 已定案 App 名称 `自律蜜蜂`。
 - 🟠 **待拍板**：隐私政策 §五 + `LEGAL_UPDATED` 刷新（**会让全体老用户重弹同意窗**）、凭据轮换、网关模式收紧、Android vc15 公网分发渠道、护栏 A9/A10、一致性第三类「功能覆盖差异 ≠ 分叉」、Apple 个人主体 vs 备案企业主体、P1-D 核销时序坑。
 - ⚠️ 已决不再讨论：ICP 经营许可暂不办 / 云库去留=回迁自托管 / 老用户不迁移数据 / 存量 7 行 newbie bonus / 演示数据两套面互不相通 / App 名称=`自律蜜蜂` / 凭据不打进终端。
 - 三条主线：**开发**（看板=本文件「现状」，自动化「D-Bee 开发进度盘点」每日收敛）；**备份两层**（cron 03:30 `pg_dump -Fc` + 异地副本 `deploy/pull-latest-backup.py`，含真实健康数据**严禁 git add**；旧云库 JSON 备份 11-05 废弃）；**运营**（彩页、社群，自动化每周提醒）。

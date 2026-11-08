@@ -8,8 +8,19 @@
  *    createMiniProgramWorkBuddyCloud 内部用 wx.request 做 fetch polyfill，
  *    无需 OriginProxy。
  *
- * 公开配置（endpoint / publishableKey / oauthRelayBaseUrl）与主工程
- * cloudConfig.ts 完全一致，属公开值（无密钥）。
+ * 公开配置（endpoint / publishableKey）与主工程 cloudConfig.ts 对齐，属公开值（无密钥）。
+ * 🔴 2026-11-08 云库彻底废弃后，mini **不再传 `oauthRelayBaseUrl`**：该字段只服务
+ *    `signInWithOAuth` 的网页扫码/统一登录，小程序只用 `signInWithWechat`
+ *    （SDK 内 `postForSession(AUTH_PATHS.loginWechat)` 直接打 endpoint）。
+ *    留着它虽不会被请求，但会在小程序产物里残留平台域名 `www.workbuddy.cn`，
+ *    让「只需配一个 request 合法域名」这件事变得不确定。主工程 Web 端仍保留该字段
+ *    （网页扫码登录可能用到），不受本变更影响。
+ *
+ * 🔴 2026-11-08 现状更正（下文 10-29 / 11-03 段落是历史记录，结论已过时）：
+ *   四端已统一到自托管 PG（d-bee.cn），云端库彻底废弃、不再是任何生产依赖。
+ *   mini 的 endpoint 由 ./backend.ts 决定，默认 **selfhost**；显式 `cloud` 一律 throw。
+ *   legal.ts 的 §三/§四 也已改为自建库口径。下文凡写「默认 cloud / 双后端 /
+ *   公示主体不同」处，均只作历史追溯，不代表当前行为。
  *
  * 🔴⚠️ 2026-10-29 更正：本文件此前写「三端共用同一云端」，**该说法不成立**，
  *   已导致 mini/src/content/legal.ts 出现与实际链路不符的第三方公示。事实是：
@@ -36,25 +47,20 @@ import { createMiniProgramWorkBuddyCloud } from '@tencent-ai/workbuddy-cloud-sdk
 import { resolveBackendTarget } from './backend'
 
 /**
- * 后端接入点由 `./backend.ts` 统一决策（开关默认 cloud，即当前线上行为）。
+ * 后端接入点由 `./backend.ts` 统一决策（2026-11-08 起默认 selfhost，云库已废弃）。
  *
- * 🔴 回迁自托管时**只换 endpoint，其余三项不动** —— 这是核对主端得出的结论：
- * `src/cloudConfig.ts:133-138` 切到 d-bee.cn 后，resourceId / oauthRelayBaseUrl /
- * publishableKey 三个字段的值与云库版**逐字相同**。原因：
- *   · resourceId / publishableKey 是 SDK 的资源标识与公开访问键，网关按
- *     `WB_PUBLISHABLE_KEY` 校验 access-key（`server/lib/config.mjs:111-114,407`），
- *     沿用同值即可，不必换；
- *   · oauthRelayBaseUrl 只服务 `signInWithOAuth` 的网页扫码/统一登录，小程序走
- *     `signInWithWechat`（`/v1/login-wechat`），**用不到这个字段**。
- * 所以「回迁」在配置层就是改一个 endpoint，真正的成本在网关侧（见 backend.ts
- * 的 throw 文案列的 6 项前置条件）。
+ * 🔴 回迁自托管时**只换 endpoint** —— 这是核对主端得出的结论：
+ * `src/cloudConfig.ts` 切到 d-bee.cn 后，resourceId / publishableKey 的值与云库版
+ * **逐字相同**：它们是 SDK 的资源标识与公开访问键，网关按 `WB_PUBLISHABLE_KEY`
+ * 校验 access-key（`server/lib/config.mjs`），沿用同值即可，不必换。
+ * `oauthRelayBaseUrl` 已于 11-08 移除（mini 不用网页扫码登录，理由见文件头）。
+ * 真正的成本在网关侧（见 backend.ts 注释列出的前置条件），现已全部就绪。
  */
 const target = resolveBackendTarget()
 
 export const publicConfig = {
   resourceId: 'wbcs_45DQ4I52Uv2NUAKAJkWdq1',
   endpoint: target.endpoint,
-  oauthRelayBaseUrl: 'https://www.workbuddy.cn/v2/as/genie-baas/oauth',
   publishableKey: 'wbpk_w6iIU6TqTyHvJxESPTxBTy_545Abmwi5Euln5uauP5Dp18ZpMvH2P4E',
 } as const
 
@@ -70,6 +76,5 @@ export const BACKEND_KIND = target.kind
  */
 export const cloud = createMiniProgramWorkBuddyCloud({
   endpoint: publicConfig.endpoint,
-  oauthRelayBaseUrl: publicConfig.oauthRelayBaseUrl,
   publishableKey: publicConfig.publishableKey,
 })

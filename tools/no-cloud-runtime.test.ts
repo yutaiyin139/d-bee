@@ -109,3 +109,33 @@ describe('🔴 四端 endpoint / Origin 常量同源', () => {
     expect(hit?.[1]).toBe('https://d-bee.cn')
   })
 })
+
+/**
+ * 🔴 护栏 10b（2026-11-08 B1 完成后补）：小程序运行时零 WorkBuddy 平台域名。
+ *
+ * 微信合法域名是按「实际发请求的域名」逐个配的。旧版 `cloud.ts` 给 SDK 传了
+ * `oauthRelayBaseUrl: https://www.workbuddy.cn/...`，虽只服务网页扫码登录
+ * （`signInWithOAuth`）、小程序走 `signInWithWechat` 用不到，但产物里留着这个域名
+ * 会让「只需配一个 request 合法域名」变成靠推断而非可验证的事实。
+ * 本断言把它钉死为「mini 侧绝不能出现」。
+ *
+ * ⚠️ 射程**只限 mini/**：主工程 `src/cloudConfig.ts` 仍保留该字段（网页扫码登录
+ * 可能用到），全仓禁止会误伤 Web 端。同样在 `stripComments()` 后的代码上做。
+ */
+const MINI_FILES = RUNTIME_FILES.filter((rel) => rel.startsWith('mini/'))
+const MINI_FORBIDDEN = [
+  'www.workbuddy.cn',
+  'oauthRelayBaseUrl',
+  'genie-baas/oauth',
+]
+
+describe('护栏 10b · 小程序运行时零 WorkBuddy 平台域名', () => {
+  it('扫描面非空（防止 mini 目录改名后护栏空跑＝假绿）', () => {
+    expect(MINI_FILES.length).toBeGreaterThan(10)
+  })
+
+  it.each(MINI_FILES)('%s → 无平台 OAuth relay 残留', (rel) => {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'))
+    expect(MINI_FORBIDDEN.filter((needle) => code.includes(needle))).toEqual([])
+  })
+})
