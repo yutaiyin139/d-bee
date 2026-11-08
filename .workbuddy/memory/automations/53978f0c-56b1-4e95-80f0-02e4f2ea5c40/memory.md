@@ -262,6 +262,12 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
 - 安全：`git status --porcelain db/` 为空；`git check-ignore` 命中 `.gitignore:61 backups/`；未读 dump 正文。
 - 观察：服务器端现存备份 9 份（自 10 月底起累积，cron 滚动保留正常）。11-05 与 11-06 两份大小同为 171,220 B 但 sha 不同 = 正常（时间戳不同）。
 
+### 2026-11-08 09:13（第 24 次）· 自建 PG 第 3 次
+- 结果：**成功**。`deploy/pull-latest-backup.py` 一次通过，exit=0，新拉 1 / 已最新 0 / 失败 0。
+- 拉取：`dbee-weekly-20261108-033001.dump`（周日跑出周备份，cron 滚动保留正常产物），176.9 KB，sha256 与服务器 SHA256SUMS 一致。
+- 保留：Python 按 mtime 清 >30 天 `.dump`，**移除 0 份**；`db/backups/offsite/` 存量 **4 份**（11-05/11-06/11-07 daily + 11-08 weekly）。
+- 安全：`git status --porcelain db/` 为空；未读 dump 正文；未跑 deploy-gateway.sh。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。

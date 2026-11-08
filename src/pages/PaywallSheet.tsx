@@ -21,7 +21,31 @@ import { checkout, getAdapter, restorePurchases, type PayProvider } from '../lib
 import { openManageSubscriptions } from '../lib/manageSubscription'
 import { isAlipayAvailable } from '../lib/payment/alipay'
 import { isWechatPayAvailable } from '../lib/payment/wechatPay'
-import { isIOS } from '../lib/platform'
+import { isIOS, isWeb } from '../lib/platform'
+
+/**
+ * Web → 微信小程序下单（ICP 经营许可证绕行口径，2026-11-07）。
+ *
+ * Web 端只展示定价，**绝不收款、绝不创建订单**；交易闭环放在微信小程序内。
+ * 两个配置都为空时只显示文字引导（让用户在微信内搜索小程序），
+ * 绝不渲染一个点了没反应的「下单」按钮。配置在构建期注入，缺失不影响其它端。
+ *   · VITE_MINI_ORDER_QR   —— MP 后台生成的静态小程序码（放 public/，零 AppSecret，推荐）
+ *   · VITE_MINI_ORDER_LINK —— URL Link（需服务端用 AppSecret 签发，二期）
+ * 名称默认 A1 定案值，可用 VITE_MINI_APP_NAME 覆盖，避免再写一份名称副本。
+ */
+const MINI_APP_NAME = (import.meta.env.VITE_MINI_APP_NAME as string | undefined)?.trim() || '自律蜜蜂'
+const MINI_ORDER_QR = (import.meta.env.VITE_MINI_ORDER_QR as string | undefined)?.trim() || ''
+// href 只接受 https 绝对地址：构建期配置写错（如 javascript:）也不把可执行协议渲染进 DOM
+const MINI_ORDER_LINK = (() => {
+  const raw = (import.meta.env.VITE_MINI_ORDER_LINK as string | undefined)?.trim() || ''
+  if (!raw) return ''
+  try {
+    const u = new URL(raw)
+    return u.protocol === 'https:' ? u.toString() : ''
+  } catch {
+    return ''
+  }
+})()
 
 /**
  * 付费墙。
@@ -170,6 +194,12 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
   async function buyProduct(id: ProductId, provider: PayProvider) {
     setErr('')
     setHint('')
+    // 🔴 Web 侧永不发起支付：即使将来误把支付插件注册到 Web 或误加购买按钮，也在此拦住，
+    //    保证「Web 只展示定价、不收款、不创建订单」不被后续改动破坏（ICP 证绕行口径）。
+    if (isWeb() && noPayChannel) {
+      setErr(`网页版仅展示价格，请在微信小程序「${MINI_APP_NAME}」内下单。`)
+      return
+    }
     setPayingId(id)
     setPayingProvider(provider)
     try {
@@ -270,6 +300,11 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
     <Sheet title={title} onClose={closePaywall}>
       {paywall.reason && <div className="notice info">{paywall.reason}</div>}
       {hint && <div className="notice info">{hint}</div>}
+      {/* 🔴 2026-11-07 修：err / ok 原先只渲染在下方「兑换码」区块内，而该区块
+          在 iOS 下被刻意隐藏（Apple 3.1.1）→ iOS 上购买失败、恢复购买失败、
+          管理订阅失败全部静默无任何提示。提示与支付链路无关，必须全局可见。 */}
+      {err && <div className="err">{err}</div>}
+      {ok && <div className="ok-msg">购买成功，会员已生效 🐝</div>}
       {pro && (
         <div className="notice ok">
           {/* 2026-11-03 四端一致性：整句收到 shared proNoticeText，与小程序端共用同一实现。
@@ -330,14 +365,53 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
               </button>
             </div>
           )}
-          {/* 🔴 无可用支付通道（web 端现状）：如实告知，不再让用户点了才知道失败。
-              引导两条真实可行的路：去 App 内开通，或用兑换码（下方入口始终可用）。 */}
-          {noPayChannel && (
+          {/* 🔴 无可用支付通道：如实告知，不渲染点了必失败的按钮。
+              Web（ICP 证绕行口径）：只展示定价 + 引导微信小程序下单，网页绝不收款；
+              Android 无插件时仍引导去 App 内开通 / 兑换码。 */}
+          {noPayChannel && (isWeb() ? (
             <div className="notice info" style={{ marginTop: 14 }}>
-              网页版暂不支持在线支付。你可以在 iOS / Android App 内开通会员，
+              <div>
+                网页版仅展示价格，不提供在线支付，也不会在网页端收取任何费用。
+                购买请在微信小程序「{MINI_APP_NAME}」内完成，实际档位与价格以小程序内展示为准。
+              </div>
+              {MINI_ORDER_QR && (
+                <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <img
+                    src={MINI_ORDER_QR}
+                    alt={`${MINI_APP_NAME}小程序码`}
+                    style={{ width: 132, height: 132, borderRadius: 8, flexShrink: 0 }}
+                  />
+                  <span style={{ fontSize: 12.5, lineHeight: 1.7 }}>
+                    用微信「扫一扫」打开小程序，进入后选择档位下单。
+                  </span>
+                </div>
+              )}
+              {MINI_ORDER_LINK && (
+                <a
+                  className="btn"
+                  href={MINI_ORDER_LINK}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ display: 'inline-block', marginTop: 10 }}
+                >
+                  在手机微信中打开小程序下单
+                </a>
+              )}
+              {!MINI_ORDER_QR && !MINI_ORDER_LINK && (
+                <div style={{ marginTop: 8, fontSize: 12.5, lineHeight: 1.7 }}>
+                  在微信中搜索小程序「{MINI_APP_NAME}」，进入后选择档位下单。
+                </div>
+              )}
+              <div style={{ marginTop: 8, fontSize: 12.5, lineHeight: 1.7 }}>
+                也可在下方输入兑换码解锁（兑换码由邀请、活动等渠道免费获得，同样立即生效）。
+              </div>
+            </div>
+          ) : (
+            <div className="notice info" style={{ marginTop: 14 }}>
+              当前暂无可用支付通道。你可以在 iOS / Android App 内开通会员，
               或在下方输入兑换码解锁（同样立即生效）。
             </div>
-          )}
+          ))}
           {/* 商品选择：iOS 点商品直接内购；Android/Web 先选中商品，再在下方选微信/支付宝 */}
           <div className="pay-grid" style={{ marginTop: 18 }}>
             {PRODUCTS.map((p) => (
@@ -466,8 +540,6 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
                   {busy ? <span className="spinner" /> : <><IconGift size={16} /> 兑换</>}
                 </button>
               </div>
-              {err && <div className="err">{err}</div>}
-              {ok && <div className="ok-msg">购买成功，会员已生效 🐝</div>}
             </div>
           )}
 
