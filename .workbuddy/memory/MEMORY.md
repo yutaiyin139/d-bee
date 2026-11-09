@@ -1,35 +1,35 @@
 # D-Bee（自律蜜蜂）· 项目长期记忆（核心版）
 
-> 📚 **全部详版在 `REFERENCE.md`**。本文件只留决策、铁律结论与指针，按需读详版。
-> 🔴 **体积 ≤9k 字符**（口径＝**字符数**，非字节）。超限旧版全文已逐字归档进 `REFERENCE.md`。
+> 📚 **全部详版在 `REFERENCE.md`**。本文件只留决策、铁律结论与指针。
+> 🔴 **体积 ≤9k 字符**（非字节）；超限旧版已归档进 `REFERENCE.md`。
 > 状态默认写保守态，确证后才写完成态；commit 查 `git log`，同步态查 `git status -sb`，**勿写死哈希与「待推 N 个」**。
-> 🔴 协作：不乱增加复杂度，**做任何决策前先征求用户同意**（尤其生产变更）；同一任务只在一个会话执行。
+> 🔴 协作：不乱增加复杂度，**决策前先征求用户同意**（尤其生产变更）；同一任务只在一个会话执行。
 
 ## 权威口径（勿再改动；详版 → REFERENCE.md）
 
-- **Bundle ID = `cn.com.dbee.app`**（iOS+Android 同值）；**版本 1.7.3**（Android vc15 / iOS build 12 / mini 0.1.0）。
+- **Bundle ID = `cn.com.dbee.app`**（iOS/Android 同值）；**版本 1.7.3**（Android vc16 / iOS build 12 / mini 0.1.0）。
 - **域名**：`d-bee.cn` = 自律蜜蜂 Web（隐私政策 / Apple webhook / Universal Link / 原生 endpoint）；`d-bee.com.cn` = 公司官网静态页。
-- 🟢 **ICP 已下证（11-06）**：`-1`=官网、`-2`=自律蜜蜂。🔴 生效代码任何位置**不得出现 `-1`**。真相源 = `packages/shared` 的 `ICP_BEIAN_D_BEE_CN`；`POLICE_BEIAN` 仍空（不渲染＝合规），公安备案 11-07 已启动、拿到号回填（法定 **2026-12-06 前**）。
+- 🟢 **ICP 已下证（11-06）**：`-1`=官网、`-2`=自律蜜蜂。🔴 生效代码任何位置**不得出现 `-1`**。真相源 = `packages/shared` 的 `ICP_BEIAN_D_BEE_CN`；`POLICE_BEIAN` 仍空（不渲染＝合规），公安备案已启动、拿到号回填（法定 **2026-12-06 前**）。
 - 🔴 **公开公示信息不得只放 `.env`**（备案号/主体名/资质号）：被 gitignore → 换机器/CI 静默产出无备案号页面。
 - 🔴 **原生包禁用 `npm run build`**（白屏）：内测 `npm run build:native:internal`；上架 `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native`。
 - 🔴 **产物自检以 `index.html` 引用的入口 js 为唯一真源**：干净构建本就有 2 个 `index-*.js`，「>1 个＝残留」是错误判据。
 - 🔴🔴 **铁律 #13：「已完成」必须附生产侧实测证据**。**本地绿 ≠ 线上绿**，中间隔「提交→构建→部署」。取证 5 法见 REFERENCE.md。
 - 📄 **隐私政策静态页**：`npm run build` 自动生成 `dist/legal/`（零 JS 可爬，OPPO 硬要求）；**别用 `build:web`**（会删掉 `dist/legal/`）。
 
-## 现状（2026-11-08 上午 · 云端库彻底废弃；详版/旧快照 → REFERENCE.md）
+## 现状（2026-11-09 · Web 含定价页已上线 + Android vc16；详版 → REFERENCE）
 
-- ✅ **WEB 完全上线** `https://d-bee.cn/` 200；入口 js `index-677ckuM3.js` 与本地 `dist/` 逐字一致；双验收 PASS；三法务页 200；308=2 / 301=0；证书到期 **2027-02-04**。
+- ✅ **WEB 完全上线** `https://d-bee.cn/` 200；**11-09 已重部署含定价页**，入口 js `index-677ckuM3.js`→`index-Bm9H-Xgy.js`（线上/本地 sha256 逐字一致）；三法务页 200、308=2/301=0；证书到期 **2027-02-04**。
 - ✅ **数据面 = 自建 PostgreSQL `dbee`**（`healthz` 实证），生产迁移水位 **0045**（🔴 0046 xpay 迁移**已写未应用**）；审核演示账户 `dbeesupport@163.com` 实测 signin 200 + token。
-- ✅✅ **云端库彻底废弃（11-08 用户指令）**：四端生产数据面全指自建 PG，**运行时云库残留已清零**（mini 删 `CLOUD_HOST`/`cloud` 分支、显式 cloud 一律 throw；`CLOUD_*`→`SELFHOST_*`；原生插件同源；vite 删云库内测口；mini `oauthRelayBaseUrl` 移除）。**护栏 10/10b** 红验证精准；产物零云端域名。证据链 → 清单 §一/§七/§八。
+- ✅✅ **云端库彻底废弃（11-08 用户指令）**：四端生产数据面全指自建 PG，**运行时云库残留已清零**（mini 删 `CLOUD_HOST`/`cloud` 分支、显式 cloud 一律 throw；`CLOUD_*`→`SELFHOST_*`；原生插件同源；vite 删云库内测口）。**护栏 10/10b** 红验证精准；产物零云端域名。逐项 → 清单 §一/§七/§八。
 - 🔴 **云库数据放弃迁移**（云库无身份表、owner_id 19 位数字 ≠ `wx:<openid>` → 孤儿数据）；**实例仍在线未停用**（平台控制台、不可逆、须用户本人，建议 selfhost 真机验收 T+7 后）。
-- 🔴 **「彻底释放」仍差 2 步，均需用户本人**：① **重新上传 mini 体验版**（11:33 版报 `TextDecoder is not defined`，已在 `mini/src/lib/textDecoderPolyfill.ts` 修好并重建 —— **修复只在源码/产物，须重新上传新版本号 + 重设体验版才生效**）；② 云库实例停用。🔴 **线上旧包仍连旧云库、真实用户仍在写入**。**真机调试通过 ≠ 体验版通过**（调试会话注入 Web API）。详见清单 §九/§十。
-- 🟠 尾巴：网关「模式=开发」（`DBEE_PROD` 未设，收紧前须先给本地开发换出路）、安全响应头、certbot renew 后复核 308、凭据轮换、`APPLE_*` env 全缺、公安备案回填（12-06 前）。常规部署应设 `DBEE_DOMAIN=d-bee.cn`。
-- ✅ **git push 已恢复**（11-08 晚普通 push 成功，此前 `github.com` 域名级限制已解除；复发 schannel 报错走环境备忘预案）。
-- ✅ 11-08 白天 mini 三连对齐：14:10 统一录入层（LogSheet 4 模式/草稿/判重）、16:01 iOS 栈溢出结案（仅真机调试通道）、16:48 权益/订阅/健康对齐主端（护栏 16）。详版 → 当日日志。
-- 🔴 **21:18 mini 微信虚拟支付售卖**（用户指令推翻 16:48「不引入在线支付」）：会员属**虚拟商品** → `wx.requestVirtualPayment`（米大师 xpay），非 `wx.requestPayment`。全链路代码就绪（0046 + `server/lib/xpay.mjs` + `mini/src/lib/xpay.ts` + 付费墙三档 + legal 同开关），**构建期开关 `D_BEE_XPAY_ENABLED` 默认 false**，同时驱动售卖 UI 与法务口径（法务文本必须构建时确定）。**开启前置 6 项清单在 `mini/src/lib/xpayEnabled.ts` 文件头**。**先配平台，再开开关。**详版 → REFERENCE「11-08 晚间迁入」。
-- 🔴🔴 **xpay 资损铁律**（详版 → REFERENCE「11-08 晚间迁入」）：① 推送丢失查单兜底补权益后**必须调 `/xpay/notify_provide_goods`**（Apple 单 `order_type=7` 不调），否则订单停在「已支付待发货」→ **资金不结算**；失败只留痕不抛。② 已扣款未确认到账 → **`settling`，绝不报 error**（= 重复购买+客诉）；`savePending` 必须**早于**轮询。③ `signData` **原样透传**，改字段顺序 → -15005/-15006。④ 措辞：道具直购 = 预付费时长、**不自动续费**，绝不照抄 iOS「24 小时自动续订」（= 虚假宣传）；兑换码必须保持「免费获得」。⑤ 下单 provider 必须 `'wechat_xpay'`。
-- 🔴 **23:02 Web 定价展示 + 小程序下单引导**（改造方案阶段 1+2，已 commit+push，**未部署**；详版 → REFERENCE「11-08 晚间迁入」）：新建公开定价页 `PricingSheet`（未登录可见、零 `<button>`、入口挂 `SiteFooter` 仅 Web）+ `MiniOrderGuide` + 配置真源 `lib/miniOrderGuide.ts` + 权益清单 `content/membership.ts`。🔴 **Web 引导复用 mini 的 `D_BEE_XPAY_ENABLED`**（vite 注入 `__XPAY_SALE_ENABLED__`），一个变量同决定两端，默认关闭时 Web **零「下单」字样**（防引导到不卖东西的小程序 = 虚假宣传）；legal §六 双分支、`UPDATED` 未动。四端业务逻辑零改动。护栏 18（31 项，红验证 4 破坏→6 红）。开启前置 → `docs/Web端跳转小程序-静态码操作手册-2026-11-08.md` §三。
-- 工程基线：`npm test` = **16 文件 / 731 项全绿**；跨端护栏 **18 道**（17 = xpay-consistency 27 项；18 = web-no-payment 31 项：定价页零收款/价格单一真源/引导与 mini 同源门控/legal 同源/权益清单单一真源/付费墙 Web 拦截/入口仅 Web/link https 白名单）。🔴 改 `packages/shared/src` 后**必须** `cd packages/shared && npm run build`。🔴 **开关构建变体自检**：mini grep `dist/common.js` 的 `enabled:"true"/"false"`；Web grep「下单」字样（默认构建必须 0）。📄 清单 `docs/待办清单-云库废弃收尾-2026-11-08.md`。
+- 🔴 **「彻底释放」仍差 2 步，均需用户本人**：① **重新上传 mini 体验版**（11:33 版报 `TextDecoder is not defined`，已在 `mini/src/lib/textDecoderPolyfill.ts` 修好并重建 —— **须重新上传新版本号 + 重设体验版才生效**）；② 云库实例停用。🔴 **线上旧包仍连旧云库、真实用户仍在写入**。**真机调试通过 ≠ 体验版通过**。详见清单 §九/§十。
+- 🟠 尾巴：网关「模式=开发」（`DBEE_PROD` 未设）、安全响应头、certbot renew 后复核 308、凭据轮换、`APPLE_*` env 全缺、公安备案回填（12-06 前）。常规部署应设 `DBEE_DOMAIN=d-bee.cn`；git push 已恢复（复发 schannel 走环境备忘预案）。
+- ✅ 11-08 mini 三连对齐（统一录入层 / iOS 栈溢出结案 / 权益订阅健康对齐主端，护栏 16）。详版 → 当日日志。
+- 🔴 **21:18 mini 微信虚拟支付售卖**（用户指令推翻 16:48「不引入在线支付」）：会员属**虚拟商品** → `wx.requestVirtualPayment`（米大师 xpay）。全链路代码就绪（0046 + `server/lib/xpay.mjs` + `mini/src/lib/xpay.ts` + 付费墙三档 + legal 同开关），**构建期开关 `D_BEE_XPAY_ENABLED` 默认 false**，同时驱动售卖 UI 与法务口径（法务文本必须构建时确定）。**开启前置 6 项清单在 `mini/src/lib/xpayEnabled.ts` 文件头**。**先配平台，再开开关。**详版 → REFERENCE「11-08 晚间迁入」。
+- 🔴🔴 **xpay 资损铁律**（详版 → REFERENCE「11-08 晚间迁入」）：① 推送丢失查单兜底补权益后**必须调 `/xpay/notify_provide_goods`**（Apple 单 `order_type=7` 不调），否则订单停在「已支付待发货」→ **资金不结算**；失败只留痕不抛。② 已扣款未确认到账 → **`settling`，绝不报 error**；`savePending` 必须**早于**轮询。③ `signData` **原样透传**，改字段顺序 → -15005/-15006。④ 道具直购 = 预付费时长、**不自动续费**，绝不照抄 iOS「24 小时自动续订」（= 虚假宣传）；兑换码必须「免费获得」。⑤ provider 必须 `'wechat_xpay'`。
+- 🔴 **Web 定价展示 + 小程序下单引导**（阶段 1+2；**11-09 已部署上线**，详版 → REFERENCE「11-08 晚间迁入」）：公开定价页 `PricingSheet`（未登录可见、零 `<button>`、入口挂 `SiteFooter` 仅 Web）+ `MiniOrderGuide` + 配置真源 `lib/miniOrderGuide.ts` + 权益清单 `content/membership.ts`。🔴 **Web 引导复用 mini 的 `D_BEE_XPAY_ENABLED`**（vite 注入 `__XPAY_SALE_ENABLED__`），一个变量同决定两端，默认关闭时 Web **零「下单」字样**（防引导到不卖东西的小程序 = 虚假宣传）；legal §六 双分支、`UPDATED` 未动。四端业务逻辑零改动。护栏 18（31 项，红验证 4 破坏→6 红）。开启前置 → `docs/Web端跳转小程序-静态码操作手册-2026-11-08.md` §三。
+- ✅ **11-09 Android vc16 正式包**（vc15→16 重打含定价页；详版 → 当日日志）：三步实证 = aapt vc16 / apksigner MD5 `0abe7fc5...45fb9dc9` 与备案逐字一致 / APK 内 `index-DdEPR-Bn.js` 零云库+零下单+含 `delete_own_account`。归档 `release/D-Bee-1.7.3-vc16-dbee.cn-FORMAL-20261109.apk`。🔴 打包后已 `npm run build` 恢复 web dist（native 会删 `dist/legal/`）。🟠 **公网分发待批准**（清单 A7）。
+- 工程基线：`npm test` = **16 文件 / 731 项全绿**；跨端护栏 **18 道**（17 = xpay-consistency 27 项；18 = web-no-payment 31 项，断言项见该文件头）。🔴 改 `packages/shared/src` 后**必须** `cd packages/shared && npm run build`。🔴 **开关构建变体自检**：mini grep `dist/common.js` 的 `enabled:"true"/"false"`；Web grep「下单」字样（默认构建必须 0）。📄 清单 `docs/待办清单-云库废弃收尾-2026-11-08.md`。
 
 ## 下一步 / 待拍板（详版 → REFERENCE.md）
 
@@ -42,7 +42,7 @@
 ## 已定技术路线（勿再讨论）
 
 Capacitor 8.5.3 混合壳；React18+Vite5+TS；Windows 出 Android、Mac mini M4 出 iOS；Node≥22 / JDK21 / Xcode≥26。健康数据源只读系统平台（HealthKit / Health Connect / 华为需先上架华为市场 / 小米官方 SDK）。
-**6 项决策（10-22）**：①主体=有限责任公司 ②未提交产物入库 ③LLM=DeepSeek ④短信=aliyun 真短信 ⑤网关=Node（`server/index.mjs`）⑥Apple 验签放 Node 网关（弃 pg_net）。凭据只存本地 `.env`。🆕 11-08 ⑦ **小程序会员售卖走微信虚拟支付**，售卖能力与法务口径由构建期开关 `D_BEE_XPAY_ENABLED` 同源驱动（详见现状 21:18）。
+**6 项决策（10-22）**：①主体=有限责任公司 ②未提交产物入库 ③LLM=DeepSeek ④短信=aliyun 真短信 ⑤网关=Node（`server/index.mjs`）⑥Apple 验签放 Node 网关（弃 pg_net）。凭据只存本地 `.env`。🆕 11-08 ⑦ **小程序会员售卖走微信虚拟支付**，售卖能力与法务口径由 `D_BEE_XPAY_ENABLED` 同源驱动（见现状 21:18）。
 
 ## 架构铁律（12 条全文 → REFERENCE.md）
 
