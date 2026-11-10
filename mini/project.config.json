@@ -5,10 +5,10 @@
   "appid": "wxb7c7122de9c3ab1f",
   "setting": {
     "urlCheck": false,
-    "es6": true,
+    "es6": false,
     "enhance": true,
     "postcss": false,
-    "minified": false,
+    "minified": true,
     "compileHotReLoad": true,
     "babelSetting": {
       "ignore": [],
@@ -17,7 +17,7 @@
     },
     "compileWorklet": false,
     "uglifyFileName": false,
-    "uploadWithSourceMap": true,
+    "uploadWithSourceMap": false,
     "packNpmManually": false,
     "packNpmRelationList": [],
     "minifyWXSS": true,
