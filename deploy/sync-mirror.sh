@@ -20,7 +20,12 @@ DIR="$(cd "$(dirname "$0")/.." && pwd -W 2>/dev/null || cygpath -w "$(cd "$(dirn
 PY="${PY:-C:/Users/yuty/.workbuddy/binaries/python/envs/default/Scripts/python.exe}"
 LOCAL_SQL="$DIR/db/migrations/$FILE"
 REMOTE_SQL="/tmp/dbee-mirror-$FILE"
-RUNNER="$(mktemp -t dbee-mirror-XXXXXX.sh)"
+# 🔴 mktemp 产物必须过 cygpath -m（与 run-migration-audit.sh 同法，2026-11-10 修）：
+#    裸 mktemp 在 Git Bash 给 `C:\Users\...\Temp/dbee-mirror-XXXX.sh` 混合形态，
+#    末尾 `rm -f "$RUNNER"` 会被 safe-delete 判「embedded drive prefix」拒绝 →
+#    迁移其实已成功、脚本却以非 0 退出并留下临时文件，极易被误读成「迁移失败」。
+RUNNER="$(cygpath -m "$(mktemp -t dbee-mirror-XXXXXX.sh)")"
+trap 'rm -f "$RUNNER"' EXIT
 
 [ -f "$LOCAL_SQL" ] || { echo "找不到迁移文件: $LOCAL_SQL" >&2; exit 1; }
 
