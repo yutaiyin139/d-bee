@@ -108,3 +108,22 @@ export function proNoticeText(iso: string | null | undefined): string {
   const until = formatCnDate(iso)
   return until ? `你已是 Pro 会员，有效期至 ${until}。` : '你已是 Pro 会员，所有功能已解锁。'
 }
+
+/**
+ * 距 Pro 到期还剩多少天（整数，向下取整到整天）。
+ *
+ * 用于「续费提醒」触点：临到期（如 ≤7 天）时在首页/Dashboard 展示续费入口，
+ * 把「一次性卖」转成「持续收」。这属于转化触点，非会员判定 —— 会员是否有效
+ * 仍由 rules 的 isPro() 以 `pro_until > now` 为准，本函数只做「还剩几天」的展示计算。
+ *
+ * @param iso  pro_until（lifetime 恒为 null）
+ * @returns    距到期整天数；iso 缺失/非法/已过期返回 null（调用方据此不展示提醒）
+ */
+export function proDaysLeft(iso: string | null | undefined): number | null {
+  if (typeof iso !== 'string' || iso.trim() === '') return null
+  const t = new Date(iso).getTime()
+  if (!Number.isFinite(t)) return null
+  const diff = t - Date.now()
+  if (diff <= 0) return null // 已过期（或恰在到期瞬间）：不展示「还剩 X 天」
+  return Math.floor(diff / 86_400_000)
+}

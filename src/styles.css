@@ -1831,6 +1831,22 @@ select {
   font-size: 18px;
 }
 
+/* 升级会员 / 续费提醒条：盈利转化触点，用实底金色突出「行动」感，
+   区别于邀请（蜂蜜软底）、榜单（绿软底）的浅色信息条。 */
+.invite-strip.upgrade-strip {
+  background: var(--honey);
+  color: var(--honey-btn-ink);
+}
+
+.invite-strip.upgrade-strip .is-text small {
+  color: var(--honey-btn-ink);
+  opacity: 0.82;
+}
+
+.invite-strip.upgrade-strip .arrow {
+  color: var(--honey-btn-ink);
+}
+
 /* ── 会员卡 ── */
 
 .member-card {

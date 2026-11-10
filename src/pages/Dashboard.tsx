@@ -26,7 +26,7 @@ import {
 } from '../lib/api'
 import type { CoachContext } from '../lib/ai'
 import { STREAK_BADGES } from '../lib/badge'
-import { AI_REDEEM_DAILY_LIMIT, FREE_DAILY_AI, HEALTH_SYNC_INTERVAL_MS } from '../lib/entitlement'
+import { AI_REDEEM_DAILY_LIMIT, FREE_DAILY_AI, HEALTH_SYNC_INTERVAL_MS, proDaysLeft } from '../lib/entitlement'
 import { categoryOf } from '../lib/foods'
 import { LEVEL_LABELS, levelOfScore, nextMealAdvice, summarizeEntries } from '../lib/foodInsight'
 import { ACTIVITY_EATBACK_RATIO, connectHealth, DEFAULT_STEP_GOAL, estimateActivityKcal, getHealthVendor, healthStatusHint, isHealthConnectable, isHealthConnected, isUsableHealthStatus, syncFromHealth } from '../lib/health'
@@ -64,7 +64,7 @@ const STREAK_WINDOW_DAYS = 185
 // 健康数据自动同步间隔已下沉 @dbee/shared（HEALTH_SYNC_INTERVAL_MS），四端同源。
 
 export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
-  const { pro, aiRemaining, openPaywall, grantStreakBonus } = usePlan()
+  const { pro, lifetime, entitlement, aiRemaining, openPaywall, grantStreakBonus } = usePlan()
   const [logDate, setLogDate] = useState(todayKey())
   const [entries, setEntries] = useState<MealEntry[]>([])
   const [water, setWater] = useState<WaterLog[]>([])
@@ -1072,6 +1072,17 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
           <div className="helper" style={{ textAlign: 'center', marginTop: 6 }}>
             免费版每日 {FREE_DAILY_AI} 次拍照识别，今日还剩 {aiRemaining ?? 0} 次，可用积分再兑 {AI_REDEEM_DAILY_LIMIT} 次
           </div>
+          {/* 转化触点①：额度耗尽时埋「升级会员」入口 —— 功能被卡住的瞬间付费意愿最强，
+              点开付费墙。引导开关（xpay/apppay）关闭时付费墙只展示价格与兑换码，零引导字眼，
+              不触碰「零引导」合规红线。 */}
+          <button className="invite-strip upgrade-strip" onClick={() => openPaywall('quota')}>
+            <span className="is-ico">⚡</span>
+            <span className="is-text">
+              升级会员，无限次拍照识别
+              <small>解锁不限次 AI 识别 + 完整报告</small>
+            </span>
+            <span className="arrow">›</span>
+          </button>
           {/* 拉新入口：首页直达，不再只藏在「我的」二级页 */}
           <button className="invite-strip" onClick={() => setInviteOpen(true)}>
             <span className="is-ico">🍯</span>
@@ -1083,6 +1094,23 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
           </button>
         </>
       )}
+
+      {/* 转化触点②：Pro 临到期续费提醒（一次性卖 → 持续收）。仅 pro 且非 lifetime、
+          且距到期 ≤7 天时展示；点开付费墙引导续费。 */}
+      {pro && !lifetime && (() => {
+        const daysLeft = proDaysLeft(entitlement?.pro_until)
+        if (daysLeft == null || daysLeft > 7) return null
+        return (
+          <button className="invite-strip upgrade-strip" onClick={() => openPaywall('renew')}>
+            <span className="is-ico">⏳</span>
+            <span className="is-text">
+              {`会员还剩 ${daysLeft} 天到期`}
+              <small>续费继续享无限次识别，别让进度中断</small>
+            </span>
+            <span className="arrow">›</span>
+          </button>
+        )
+      })()}
 
       {pickerOpen && (
         <MonthPicker

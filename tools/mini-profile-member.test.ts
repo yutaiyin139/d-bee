@@ -38,6 +38,7 @@ import {
   formatCnDate,
   proUntilText,
   proNoticeText,
+  proDaysLeft,
   memberSubText,
   isPro,
   type Entitlement,
@@ -271,5 +272,42 @@ describe('memberSubText：会员状态副标题四档（两端同一函数）', 
     for (const n of [0, 1, 2, 3]) {
       expect(memberSubText(free, n)).toBe(`今日剩拍照 ${n} 次 · 报告看近 ${days} 天`)
     }
+  })
+})
+
+describe('proDaysLeft：距 Pro 到期天数（续费提醒触点）', () => {
+  // 相对当前时间构造，避免固定日期随时间失效
+  const daysFromNow = (n: number): string => {
+    const d = new Date(Date.now() + n * 86_400_000)
+    return d.toISOString()
+  }
+
+  it('未来 N 天 → 返回 N（向下取整到整天）', () => {
+    // 实现内部会重新取 Date.now()，与构造时间戳存在毫秒级差，floor 后可能是 N-1，
+    // 故用 [N-1, N] 区间断言而非精确 N，避免时间边界抖动。
+    expect(proDaysLeft(daysFromNow(7))).toBeGreaterThanOrEqual(6)
+    expect(proDaysLeft(daysFromNow(7))).toBeLessThanOrEqual(7)
+    expect(proDaysLeft(daysFromNow(3))).toBeGreaterThanOrEqual(2)
+    expect(proDaysLeft(daysFromNow(3))).toBeLessThanOrEqual(3)
+    expect(proDaysLeft(daysFromNow(1))).toBeGreaterThanOrEqual(0)
+    expect(proDaysLeft(daysFromNow(1))).toBeLessThanOrEqual(1)
+  })
+
+  it('不足一整天 → 向下取整为 0，而非 1', () => {
+    const inHalfDay = new Date(Date.now() + 12 * 3_600_000).toISOString()
+    expect(proDaysLeft(inHalfDay)).toBe(0)
+  })
+
+  it('已过期 → null（不展示「还剩 X 天」）', () => {
+    expect(proDaysLeft(daysFromNow(-1))).toBe(null)
+    expect(proDaysLeft(daysFromNow(-30))).toBe(null)
+  })
+
+  it('null / 空串 / 非法 → null（lifetime 与坏数据都不触发提醒）', () => {
+    expect(proDaysLeft(null)).toBe(null)
+    expect(proDaysLeft(undefined)).toBe(null)
+    expect(proDaysLeft('')).toBe(null)
+    expect(proDaysLeft('  ')).toBe(null)
+    expect(proDaysLeft('garbage')).toBe(null)
   })
 })
