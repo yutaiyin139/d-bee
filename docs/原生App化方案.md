@@ -321,7 +321,7 @@ export default config
 现在 Pro 解锁靠 `src/lib/entitlement.ts:22` 的**硬编码兑换码**：
 
 ```ts
-export const REDEEM_CODES = ['DBEE-PRO-2026', 'MIFENG-VIP', 'BEE2026']
+export const REDEEM_CODES = ['[已吊销-2026-11-10]', '[已吊销-2026-11-10]', '[已吊销-2026-11-10]']
 ```
 
 苹果审核指南 3.1.1 要求：**应用内解锁数字功能/订阅，必须走 Apple 内购（IAP）**，并明确点名禁止"自建机制，如许可证密钥（licence keys）或二维码"。
