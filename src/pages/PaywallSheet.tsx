@@ -11,7 +11,8 @@ import { checkout, getAdapter, restorePurchases, type PayProvider } from '../lib
 import { openManageSubscriptions } from '../lib/manageSubscription'
 import { isAlipayAvailable } from '../lib/payment/alipay'
 import { isWechatPayAvailable } from '../lib/payment/wechatPay'
-import { isIOS, isWeb } from '../lib/platform'
+import { isIOS, isWeb, isAndroid } from '../lib/platform'
+import { APPPAY_SALE_ENABLED } from '../lib/miniOrderGuide'
 import { MiniOrderGuide } from '../components/MiniOrderGuide'
 
 /**
@@ -31,10 +32,32 @@ import { MiniOrderGuide } from '../components/MiniOrderGuide'
 /**
  * 付费墙。
  * 三档：免费 / Pro（月·年订阅）/ 终身买断。
- * 支付渠道（2026-10-25 拍板）：
- *   · iOS      → App 内购（StoreKit 2，点商品直接内购）
- *   · Android/Web → 微信支付 + 支付宝（先选商品，再选支付方式）
- * 权益写入云端 entitlements，换设备同样生效。资质未就绪时 checkout 诚实降级提示。
+ *
+ * 支付渠道（2026-11-09 用户定案：政策允许的端都要能收款，以盈利为目标；
+ *          Web 暂不收费，靠引导到微信端 / App 端闭环）：
+ *   · iOS      → App 内购（StoreKit 2），自动续期订阅（Apple 3.1.1 强制 IAP）
+ *   · Android  → 微信 / 支付宝 APP 支付，**工程链路已实装**（见
+ *                `docs/Web引导闭环与Android收款实装-2026-11-09.md`）
+ *   · Web      → 暂不收款，只展示定价 + 引导去微信端 / App 端（护栏 18 + 20）
+ * 权益写入服务端 entitlements，换设备同样生效。
+ */
+
+/**
+ * 🔴 第三方收银台（Android APP 支付）门控 = `APPPAY_SALE_ENABLED`（构建期常量，
+ *   来源 `D_BEE_APPPAY_ENABLED`，与 Web「去 App 购买」引导**同源同值**）。
+ *
+ * 为什么必须同源：Web 引导用户去 App 买 ↔ Android 付费墙是否渲染支付按钮，
+ * 若各用一个开关，运维极可能只开一端 —— 「Web 说去 App 买，App 里却没有支付按钮」
+ * 或反之，都属《广告法》第 4 条引人误解宣传。同一条 vite define 杜绝该分叉。
+ *
+ * 为什么必须有这道门：`isWechatPayAvailable()` 只探测「AppID + 原生插件是否齐备」，
+ * Android 包里 `.env` 有 `VITE_WECHAT_APPID`、插件也在白名单 → 探测可能为 true，
+ * 就会渲染「微信支付」按钮；但平台侧（商户号 / 证书 / env / 0047 / 网关部署）未就绪时
+ * 点下去必然报错，同时法务公示「尚未开放」→ 页面可点、协议说没开放，属审核驳回项。
+ *
+ * 🔴 默认 false（未设 `D_BEE_APPPAY_ENABLED=true`）：Android 零支付按钮、Web 零 App
+ *   引导。开启前置五步见 `docs/Web引导闭环与Android收款实装-2026-11-09.md` §五。
+ *   护栏 19-C / 20 钉死「门控值 ↔ 法务口径 ↔ 实装登记」三者一致。
  */
 
 // 🔴 FREE_ITEMS / PRO_ITEMS 已抽到 `content/membership.ts`（2026-11-08）：
@@ -89,7 +112,15 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
   const [payChannels, setPayChannels] = useState({ wechat: false, alipay: false })
   useEffect(() => {
     if (!paywall.open || isIOS()) return
-    setPayChannels({ wechat: isWechatPayAvailable(), alipay: isAlipayAvailable() })
+    // 🔴 三道门必须全过才渲染支付按钮（缺一即「可点但收不到钱」= 引人误解宣传）：
+    //    ① APPPAY_SALE_ENABLED —— 构建期开关，与 Web「去 App 购买」引导同源同值；
+    //    ② isAndroid() —— **仅 Android**：Web 暂不收费是 11-09 用户定案，即便 Web
+    //       产物里带了 VITE_WECHAT_APPID 使 isWechatPayAvailable() 为 true，也在此
+    //       排除，杜绝 Web 出现任何收款入口（护栏 18 的运行时兜底）。
+    //    ③ isWechatPayAvailable()/isAlipayAvailable() —— AppID + 原生插件齐备探测。
+    setPayChannels(APPPAY_SALE_ENABLED && isAndroid()
+      ? { wechat: isWechatPayAvailable(), alipay: isAlipayAvailable() }
+      : { wechat: false, alipay: false })
   }, [paywall.open])
   const noPayChannel = !isIOS() && !payChannels.wechat && !payChannels.alipay
 
@@ -219,6 +250,10 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
 
   /** 管理订阅（仅 iOS，3.1.2）：跳系统订阅管理页，可查看/取消全部订阅 */
   async function manageSubscriptions() {
+    // 🔴 阶段 0 分端门控（总纲 L3 #7）：openManageSubscriptions() 只有 iOS 的
+    //    StoreKit 实现，非 iOS 调用会走进「无法打开订阅管理页」的误导提示。
+    //    按钮已由 isIOS() 包住，这里是第二道防御，防止后续复用时漏掉门控。
+    if (!isIOS()) return
     setErr('')
     setHint('')
     const done = await openManageSubscriptions()
@@ -486,7 +521,10 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
             >
               《隐私政策》
             </button>
-            。订阅可随时在系统设置中取消。
+            {/* 🔴 阶段 0 分端口径（总纲 L3 #7）：Android/Web 是一次性预付或根本不收款，
+                「系统设置中取消订阅」只适用于 iOS 的 App Store 自动续期订阅，
+                在非 iOS 端展示属误导性表述。 */}
+            {isIOS() ? '。订阅可随时在系统设置中取消。' : '。一次性购买不自动续费，无需取消。'}
           </div>
 
           {/* 透明定价承诺：对标 Cal AI 动态定价/试用陷阱的差异化武器 */}
@@ -494,7 +532,9 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--honey-dark)', marginBottom: 6 }}>我们的承诺</div>
             <div style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.8 }}>
               · 统一定价，对所有人一样，永不杀熟<br />
-              · 订阅可随时取消，无隐藏扣费、无自动续费陷阱<br />
+              {isIOS()
+                ? '· 订阅可随时取消，无隐藏扣费、无自动续费陷阱'
+                : '· 一次性购买，不自动续费、不自动扣款'}<br />
               · 免费版永久可用，不逼你付费
             </div>
           </div>

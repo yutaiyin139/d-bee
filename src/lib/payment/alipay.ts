@@ -8,6 +8,16 @@
  *   Android / Web 支持「微信 + 支付宝」双渠道；本文件是支付宝分支。
  *   checkout.ts 的 getAdapter('alipay') 会路由到这里。
  *
+ * ✅ 2026-11-09 用户定案后**工程链路已实装**（Android (A)，取代阶段 0 的 (B)）：
+ *   `fetchPrepayParams()` 已接网关 `/.cloud/payment/apppay/prepay`，
+ *   服务端补了统一下单 / 异步通知验签 / 主动查单 / 幂等结算。
+ *
+ * 🔴 与微信通道共用同一道构建期开关 `D_BEE_APPPAY_ENABLED`（默认 false）。
+ *    开启前置：支付宝企业应用签约 + `ALIPAY_*` env + 0047 上生产 +
+ *    `apppay.mjs` 部署 + 真机 1 分钱联调。渠道可独立由服务端 env 决定是否投放，
+ *    但任何一个未就绪时都不得渲染「可点但收不到钱」的按钮。
+ *    详见 `docs/Web引导闭环与Android收款实装-2026-11-09.md` §五。
+ *
  * ── 支付宝链路（与苹果 IAP 的「下单→支付→回传凭证→核销」同构）────────────
  *   ① 服务端统一下单（支付宝 App 支付 / 手机网站支付，返回 orderStr）—— 服务端能力，待商户号后接
  *   ② 客户端原生 SDK 拉起收银台（支付宝 SDK 的 payV2(orderStr)）
@@ -26,6 +36,7 @@
 
 import { PRODUCT_IDS, type ProductId } from '../entitlement'
 import { isAndroid, isWeb } from '../platform'
+import { requestAppPrepay } from './apppayClient'
 import type { PaymentAdapter, ProductInfo, PurchaseResult } from './types'
 
 /**
@@ -98,12 +109,11 @@ export function createAlipayAdapter(): PaymentAdapter | null {
       return []
     },
 
-    async purchase(productId: ProductId): Promise<PurchaseResult> {
-      // ① 服务端统一下单（资质就绪后接入；当前占位抛出「暂未开通」）
-      const prepay = await fetchPrepayParams(PRODUCT_IDS[productId])
-      if (!prepay) {
-        throw new Error('支付宝支付正在接入中，请稍后重试')
-      }
+    async purchase(productId: ProductId, orderNo?: string): Promise<PurchaseResult> {
+      // ① 服务端统一下单：复用 checkout 已建的 order_no 作为 out_trade_no，
+      //    金额由服务端查 payment_products 决定，客户端不参与算价。
+      if (!orderNo) throw new Error('支付订单未创建，请重试')
+      const prepay = await fetchPrepayParams(productId, orderNo)
 
       // ② 拉起收银台（用户取消/失败会 reject，由 checkout 统一转 cancelled/error）
       const res = await plugin.pay({ orderStr: prepay.orderStr })
@@ -112,7 +122,9 @@ export function createAlipayAdapter(): PaymentAdapter | null {
       if (res.resultStatus === '6001') {
         throw new Error('取消支付')
       }
-      if (res.resultStatus !== '9000') {
+      // 8000 = 支付宝正在处理中，绝不报错（可能已扣款）；与 9000 一样返回凭证，
+      // 交服务端异步通知 + verifyPaymentOrder 网关查单兜底确认，同微信 settling 防线。
+      if (res.resultStatus !== '9000' && res.resultStatus !== '8000') {
         throw new Error(`支付宝支付未完成（${res.resultStatus || '未知状态'}）`)
       }
 
@@ -134,13 +146,23 @@ export function createAlipayAdapter(): PaymentAdapter | null {
 }
 
 /**
- * 服务端统一下单（占位）。
+ * 服务端统一下单（已接线，2026-11-09）。
  *
- * 资质就绪后：调用网关 /.cloud/payment/alipay/prepay（或云端 RPC），
- * 服务端用商户号 + 签名生成 orderStr 返回。当前未接，返回 null 让
- * purchase 抛出「正在接入中」的诚实提示。
+ * 网关 `/.cloud/payment/apppay/prepay` 用商户私钥对支付宝
+ * `alipay.trade.app.pay` 的请求参数做 RSA2 签名，返回可直接喂给
+ * SDK payV2 的完整 orderStr。客户端不算价、不签名。
  */
-async function fetchPrepayParams(_storeProductId: string): Promise<AlipayPrepayParams | null> {
-  // TODO(资质就绪后补)：调用服务端支付宝统一下单接口，返回 orderStr。
-  return null
+async function fetchPrepayParams(
+  productId: ProductId,
+  orderNo: string,
+): Promise<AlipayPrepayParams> {
+  const prepay = await requestAppPrepay({
+    orderNo,
+    productId: PRODUCT_IDS[productId],
+    provider: 'alipay',
+  })
+  if (prepay.provider !== 'alipay') {
+    throw new Error('支付渠道与订单不一致，请重试')
+  }
+  return { orderStr: prepay.alipay.orderStr, orderNo: prepay.orderNo }
 }

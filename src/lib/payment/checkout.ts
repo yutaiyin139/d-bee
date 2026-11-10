@@ -7,6 +7,13 @@ import { kvGetJSON, kvSetJSON } from '../kv'
 import { platformName } from '../platform'
 import type { CheckoutResult, PaymentAdapter, PurchaseResult } from './types'
 
+/**
+ * 🔴 'google' 不是「已实装的支付渠道」（阶段 0 复核，总纲 L3 #11 结论修正）：
+ *   `getAdapter()` 从未处理 'google'，Google Play Billing 也没有任何实现；
+ *   但 `src/lib/api.ts` / `mini/src/lib/api.ts` 的**支付订单 provider 协议字段**
+ *   同样枚举了 'google' —— 那是服务端协议枚举，只删这里会制造两端类型分叉。
+ *   故保留并注明：这是协议字段，**不代表 Google Play 收费已支持**，勿当作已实现。
+ */
 export type PayProvider = 'apple' | 'google' | 'wechat' | 'alipay'
 
 const PENDING_KEY = 'dbee.iap.pending-settlements.v1'
@@ -156,7 +163,9 @@ export async function checkout(
     }
 
     const order = await createPaymentOrder(PRODUCT_IDS[productId], provider)
-    const result = await adapter.purchase(productId)
+    // 第三方收银台需要复用这同一笔 order_no 作为平台商户单号（见 types.ts 注释）；
+    // iOS IAP 忽略该参数。业务流程「下单 → 支付 → 核销」不变。
+    const result = await adapter.purchase(productId, order.order_no)
     const ok = await settlePurchase(adapter, result, order.order_no, ownerId)
     if (!ok) {
       return adapter.finishPurchase

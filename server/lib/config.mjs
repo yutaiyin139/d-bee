@@ -227,6 +227,29 @@ export function loadConfig(env = process.env) {
     xpayApiBase: (env.XPAY_API_BASE?.trim() || 'https://api.weixin.qq.com').replace(/\/+$/, ''),
     xpayTimeoutMs: int(env.XPAY_TIMEOUT_MS, 10000),
 
+    // ── Android APP 支付（D，0047 / apppay.mjs）────────────────────────
+    // 🔴 回调通知的公网基础 URL：微信 V3 / 支付宝的 notify_url 必须是平台可回达的
+    //   https 绝对地址。默认取项目统一域名 https://d-bee.cn（与四端 endpoint 同源），
+    //   可用 PUBLIC_BASE_URL 覆盖（如灰度域名）。**不含末尾斜杠**（拼接处补路径）。
+    publicBaseUrl: (env.PUBLIC_BASE_URL?.trim() || 'https://d-bee.cn').replace(/\/+$/, ''),
+    //
+    // 微信 APP 支付（V3，普通商户号）。值只进 /etc/dbee/gateway.env 或
+    //   deploy/gateway/.secrets.local，不入库、不进日志、绝不下发前端。
+    //   未配齐 → prepay/notify 对 wechat 渠道返回 503（同 IAP/xpay notConfigured 模式）。
+    wechatPayAppId: env.WECHAT_PAY_APPID?.trim() || '',       // 开放平台「移动应用」AppID
+    wechatPayMchid: env.WECHAT_PAY_MCHID?.trim() || '',       // 商户号
+    wechatPaySerialNo: env.WECHAT_PAY_SERIAL_NO?.trim() || '', // 商户 API 证书序列号
+    // 商户 API 私钥（PKCS#8 PEM）。支持 \n 转义的单行写法（同 JWT PrivateKey 惯例）。
+    wechatPayPrivateKey: (env.WECHAT_PAY_PRIVATE_KEY || '').replace(/\\n/g, '\n').trim(),
+    wechatPayApiV3Key: env.WECHAT_PAY_APIV3_KEY?.trim() || '', // APIv3 密钥（32 字节，回调 AES-GCM 解密）
+    // 微信支付平台证书公钥（PEM，验回调签名）。🔴 缺失 → 回调验签必失败 → 拒发权益（安全默认）。
+    wechatPayPlatformCert: (env.WECHAT_PAY_PLATFORM_CERT || '').replace(/\\n/g, '\n').trim(),
+    //
+    // 支付宝 App 支付（RSA2）。同样未配齐 → alipay 渠道 503。
+    alipayAppId: env.ALIPAY_APP_ID?.trim() || '',             // 支付宝开放平台应用 AppID
+    alipayPrivateKey: (env.ALIPAY_PRIVATE_KEY || '').replace(/\\n/g, '\n').trim(), // 应用私钥（PKCS8）
+    alipayPublicKey: (env.ALIPAY_PUBLIC_KEY || '').replace(/\\n/g, '\n').trim(),   // 支付宝公钥（验异步通知）
+
     // ── database ───────────────────────────────────────────
     dbHost: env.DBEE_HOST?.trim() || '127.0.0.1',
     dbPort: int(env.DBEE_PORT, 5432),
@@ -513,6 +536,39 @@ export function validate(cfg) {
     // 也就无法算 signature → 虚拟支付必然失败。这是「配了商户号却漏了会话密钥」的典型漏配。
     problems.push('XPAY_OFFER_ID 已配但缺少 WECHAT_SESSION_ENC_KEY —— session_key 无法落库，用户态签名 signature 算不出来')
   }
+  // ── Android APP 支付（0047 / apppay.mjs）半配状态拦截 ────────────────
+  // 微信 APP 支付：五项缺一即「下单能起、回调必失败」或「签名必错」，启动就拦下比运行时 503 好排查。
+  const wechatPayKeys = [
+    ['wechatPayAppId', 'WECHAT_PAY_APPID'],
+    ['wechatPayMchid', 'WECHAT_PAY_MCHID'],
+    ['wechatPaySerialNo', 'WECHAT_PAY_SERIAL_NO'],
+    ['wechatPayPrivateKey', 'WECHAT_PAY_PRIVATE_KEY'],
+    ['wechatPayApiV3Key', 'WECHAT_PAY_APIV3_KEY'],
+  ]
+  const wechatPaySet = wechatPayKeys.filter(([k]) => cfg[k])
+  if (wechatPaySet.length > 0 && wechatPaySet.length < wechatPayKeys.length) {
+    const missing = wechatPayKeys.filter(([k]) => !cfg[k]).map(([, e]) => e)
+    problems.push(`微信 APP 支付配置不完整：已配 ${wechatPaySet.length}/5 项，缺 ${missing.join(', ')} —— 半配状态下单会签名失败或回调无法验签`)
+  }
+  if (cfg.wechatPayApiV3Key && Buffer.byteLength(cfg.wechatPayApiV3Key, 'utf8') !== 32) {
+    problems.push('WECHAT_PAY_APIV3_KEY 必须是 32 字节（AES-256-GCM 回调解密要求）')
+  }
+  if (cfg.wechatPayMchid && !cfg.wechatPayPlatformCert) {
+    // 平台证书缺失 → 回调验签必失败 → 权益永远发不出（用户付了钱拿不到会员）。
+    // 这是资损级漏配，必须启动即拦（而非运行时静默 400）。
+    problems.push('WECHAT_PAY_MCHID 已配但缺少 WECHAT_PAY_PLATFORM_CERT —— 支付回调无法验签，用户付款后权益发不出（资损）')
+  }
+  // 支付宝 App 支付：三项缺一即半配。
+  const alipayKeys = [
+    ['alipayAppId', 'ALIPAY_APP_ID'],
+    ['alipayPrivateKey', 'ALIPAY_PRIVATE_KEY'],
+    ['alipayPublicKey', 'ALIPAY_PUBLIC_KEY'],
+  ]
+  const alipaySet = alipayKeys.filter(([k]) => cfg[k])
+  if (alipaySet.length > 0 && alipaySet.length < alipayKeys.length) {
+    const missing = alipayKeys.filter(([k]) => !cfg[k]).map(([, e]) => e)
+    problems.push(`支付宝 App 支付配置不完整：已配 ${alipaySet.length}/3 项，缺 ${missing.join(', ')} —— 半配状态下单或回调验签必失败`)
+  }
   return problems.filter(Boolean)
 }
 
@@ -522,6 +578,8 @@ export function warnings(cfg) {
   if (!cfg.llmApiKey) w.push('LLM_API_KEY 未配置 —— A3 的 LLM 代理将返回 503')
   if (!cfg.publishableKey) w.push('WB_PUBLISHABLE_KEY 未配置 —— 跳过 access-key 校验（内网部署可接受）')
   if (!cfg.appleBundleId) w.push('APPLE_BUNDLE_ID 未配置 —— C1 的 IAP 验签不可用')
+  if (!cfg.wechatPayMchid) w.push('WECHAT_PAY_MCHID 未配置 —— Android 微信 APP 支付不可用（/.cloud/payment/apppay 对该渠道返回 503）')
+  if (!cfg.alipayAppId) w.push('ALIPAY_APP_ID 未配置 —— Android 支付宝 App 支付不可用（/.cloud/payment/apppay 对该渠道返回 503）')
   if (cfg.appleBundleId && !cfg.appleSharedSecret) {
     w.push('APPLE_SHARED_SECRET 未配置 —— 自动续期订阅商品验签会返回 21004（买断商品不受影响）')
   }

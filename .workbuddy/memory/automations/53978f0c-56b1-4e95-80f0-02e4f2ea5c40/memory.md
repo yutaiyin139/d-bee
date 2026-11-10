@@ -274,6 +274,14 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
 - 保留：Python 按 mtime 清 >30 天（cutoff 2026-10-10 07:51），**移除 0 份**；`db/backups/offsite/` 存量 **5 份**（11-05/06/07 daily + 11-08 weekly + 11-09 daily）。
 - 安全：`git status --porcelain db/` 为空；未读 dump 正文；未跑 deploy-gateway.sh。
 
+### 2026-11-10 09:15（第 26 次）· 自建 PG 第 5 次
+- 结果：**成功**。`deploy/pull-latest-backup.py` 一次通过，exit=0，服务器 10 份 → 新拉 1 / 已最新 0 / 失败 0。
+- 拉取：`dbee-daily-20261110-033001.dump`，184,775 B（180.4 KB，较 11-09 +517 B），sha256 `02a5e663d2240c40…` 与服务器 SHA256SUMS 一致（脚本逐字节校验）。
+- 保留：Python 按 mtime 清 >30 天（cutoff 2026-10-11 09:15），**移除 0 份**；`db/backups/offsite/` 存量 **6 份**（11-05/06/07/09 daily + 11-08 weekly + 11-10 daily）。
+- 安全：`git status --porcelain db/` 仅 `?? db/migrations/0047-app-payment-settlement.sql`（**历史既存未跟踪文件，非本次产物**）；`git check-ignore` 命中 `.gitignore:61 backups/`；未读 dump 正文；未跑 deploy-gateway.sh。
+- 注意：11-08 起 cron 会在周日产出 `dbee-weekly-*`，异地目录同时保留 daily 与 weekly，属正常。
+- **同日 09:16 重复触发**（距上次仅 1 分钟）：复跑脚本走幂等分支——`已最新 1 份`、新拉 0、失败 0，exit=0；未新建文件、未改动既有 dump。保留策略复核 cutoff 2026-10-11 09:16、移除 0 份、存量仍 6 份。**后续同日重复触发直接复跑脚本取幂等结论，勿重建备份。**
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。

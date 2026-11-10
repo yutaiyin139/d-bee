@@ -50,6 +50,46 @@ function resolveXpaySaleFlag(): 'true' | 'false' {
   return norm
 }
 
+/**
+ * 🔴 App 端（Android 原生包）第三方支付售卖开关（2026-11-09 用户定案）。
+ *
+ * 与 `D_BEE_XPAY_ENABLED` 完全同构，但两者**各自独立**：mini 走微信虚拟支付、
+ * App 走微信/支付宝 APP 支付，是两条互不依赖的收款通道，不应互相牵连。
+ *
+ * 一个环境变量同时决定两件事：
+ *   ① Android 付费墙是否渲染可点的支付按钮（`PaywallSheet` 的渠道门）；
+ *   ② Web 是否引导访客「去 App 内购买」（`MiniOrderGuide` 的 App 分支）。
+ * 若 Web 单方面开引导而 App 还没开放收款，就是「引导到一个买不到东西的入口」，
+ * 属《广告法》第 4 条引人误解宣传；反向（App 在卖但 Web 说没有购买渠道）则是
+ * 口径不一致。故与 mini 一样强制**同源同值**，且非法取值构建期 throw。
+ *
+ * 默认 'false'：平台侧（商户号、证书、env、0047 迁移、网关部署）未就绪时，
+ * Android 零支付按钮、Web 零 App 引导，杜绝「展示价格却必然支付失败」。
+ *
+ * 开启前置（详见 `docs/Web引导闭环与Android收款实装-2026-11-09.md` §五）：
+ *   微信支付商户号 + APP 支付权限 / 支付宝企业应用、`APPPay_*` env 齐备、
+ *   0047 迁移上生产、`apppay.mjs` 已部署、App 备案下证、真机 1 分钱联调通过。
+ */
+function resolveApppaySaleFlag(): 'true' | 'false' {
+  const raw = process.env.D_BEE_APPPAY_ENABLED ?? 'false'
+  const norm = raw.trim().toLowerCase()
+  if (norm !== 'true' && norm !== 'false') {
+    throw new Error(
+      `[vite] D_BEE_APPPAY_ENABLED 只接受 'true' / 'false'，收到 ${JSON.stringify(process.env.D_BEE_APPPAY_ENABLED)}。` +
+        '该开关同时决定「Android 是否可发起支付」与「Web 是否引导去 App 购买」，两端必须同值。',
+    )
+  }
+  if (norm === 'true') {
+    console.warn(
+      '[vite] ⚠️ 已开启 App 售卖（D_BEE_APPPAY_ENABLED=true）：Android 付费墙将展示支付按钮，' +
+        'Web 付费墙与公开定价页将展示「去 App 内购买」引导。' +
+        '发布前请确认：① 网关 0047 + apppay.mjs 已部署且支付 env 齐备；' +
+        '② 原生包用同一变量构建；③ VITE_APP_DOWNLOAD_LINK 或二维码已配置。',
+    )
+  }
+  return norm
+}
+
 /** 原生包必须在构建期确定数据面，不能把 Web 产物静默同步成云库正式包。 */
 function validateNativeBuild(mode: string, env: Record<string, string>): void {
   if (mode !== 'native-release' && mode !== 'native-internal') return
@@ -113,6 +153,10 @@ export default defineConfig(({ mode }) => {
       //    `__XPAY_SALE_ENABLED__` 被替换后的 `true`/`false`，用于核对
       //    「发出去的 Web 包到底引不引导下单」——与 mini 的 defineConstants 同理。
       __XPAY_SALE_ENABLED__: resolveXpaySaleFlag() === 'true' ? 'true' : 'false',
+      // App 端售卖（同上面一样注入**布尔字面量**，可被 terser 死代码折叠）：
+      // 默认 false 时 Android 支付按钮与 Web 的 App 引导一起被折叠掉，
+      // 产物里 grep 不到「去 App 内购买」即为验证通过。
+      __APPPAY_SALE_ENABLED__: resolveApppaySaleFlag() === 'true' ? 'true' : 'false',
     },
     plugins: [react()],
     server: {

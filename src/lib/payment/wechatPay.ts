@@ -10,6 +10,18 @@
  *   checkout.ts 的 getAdapter() 默认（不传 provider）路由到这里，
  *   支付宝走 alipay.ts（getAdapter('alipay')）。
  *
+ * ✅ 2026-11-09 用户定案后**工程链路已实装**（(A)，取代阶段 0 的 (B) 不收款）：
+ *   `fetchPrepayParams()` 已接网关 `/.cloud/payment/apppay/prepay`，
+ *   服务端补了统一下单 / 回调验签 / 主动查单 / 幂等结算（见 `server/lib/apppay.mjs`
+ *   与 `db/migrations/0047-app-payment-settlement.sql`）。
+ *
+ * 🔴 但「代码就绪」≠「已经能收到钱」：付费墙仍由构建期开关
+ *   `D_BEE_APPPAY_ENABLED` 门住（默认 false）。开启前必须完成平台侧五步：
+ *   微信支付商户号 + APP 支付权限、`WECHAT_PAY_*` env、0047 上生产、
+ *   `apppay.mjs` 部署、**真机 1 分钱联调**。缺任一项就开按钮 = 展示价格却
+ *   必然支付失败（《广告法》第 4 条 /《网络交易监督管理办法》第 14、19 条）。
+ *   详见 `docs/Web引导闭环与Android收款实装-2026-11-09.md` §五。
+ *
  * ── 微信支付链路（与苹果 IAP 的「下单→支付→回传凭证→核销」同构）────────────
  *   ① 服务端统一下单（微信支付 V3 JSAPI，返回 prepay 参数）—— 服务端能力，待商户号后接
  *   ② 客户端原生 SDK 拉起收银台（@capgo/capacitor-wechat 的 sendPaymentRequest）
@@ -29,6 +41,7 @@
 
 import { PRODUCT_IDS, type ProductId } from '../entitlement'
 import { isAndroid, isWeb } from '../platform'
+import { requestAppPrepay } from './apppayClient'
 import type { PaymentAdapter, ProductInfo, PurchaseResult } from './types'
 
 /**
@@ -116,7 +129,7 @@ export function createWechatPayAdapter(): PaymentAdapter | null {
       return []
     },
 
-    async purchase(productId: ProductId): Promise<PurchaseResult> {
+    async purchase(productId: ProductId, orderNo?: string): Promise<PurchaseResult> {
       const appId = wechatAppId()
       // 移动应用走原生 SDK：初始化后确认微信已安装，再拉起收银台
       if (isAndroid()) {
@@ -127,11 +140,10 @@ export function createWechatPayAdapter(): PaymentAdapter | null {
         }
       }
 
-      // ① 服务端统一下单（资质就绪后接入；当前占位抛出「暂未开通」）
-      const prepay = await fetchPrepayParams(PRODUCT_IDS[productId])
-      if (!prepay) {
-        throw new Error('微信支付正在接入中，请稍后重试')
-      }
+      // ① 服务端统一下单：复用 checkout 已建的 order_no 作为 out_trade_no，
+      //    金额由服务端查 payment_products 决定，客户端传的 product_id 只作校验。
+      if (!orderNo) throw new Error('支付订单未创建，请重试')
+      const prepay = await fetchPrepayParams(productId, orderNo)
 
       // ② 拉起收银台（用户取消/失败会 reject，由 checkout 统一转 cancelled/error）
       await plugin.sendPaymentRequest({
@@ -161,13 +173,27 @@ export function createWechatPayAdapter(): PaymentAdapter | null {
 }
 
 /**
- * 服务端统一下单（占位）。
+ * 服务端统一下单（已接线，2026-11-09）。
  *
- * 资质就绪后：调用网关 /.cloud/payment/wechat/prepay（或云端 RPC），
- * 服务端用商户号 + 签名生成 prepay 参数返回。当前未接，返回 null 让
- * purchase 抛出「正在接入中」的诚实提示。
+ * 网关 `/.cloud/payment/apppay/prepay` 用商户私钥调微信支付 V3
+ * `POST /v3/pay/transactions/app`，再做 APP 拉起的二次签名后返回参数。
+ * 这里只做「渠道一致性校验 + 字段映射」，不拼价格、不算签名 ——
+ * 四端业务逻辑与信任边界都不在客户端。
+ *
+ * 🔴 网关未配齐商户号/env 时会返回 503，客户端转成「支付服务尚未开通」，
+ *    绝不谎报成功；此时构建开关本就应为 false，按钮根本不会渲染。
  */
-async function fetchPrepayParams(_storeProductId: string): Promise<WechatPrepayParams | null> {
-  // TODO(资质就绪后补)：调用服务端微信统一下单接口，返回 prepay 参数。
-  return null
+async function fetchPrepayParams(
+  productId: ProductId,
+  orderNo: string,
+): Promise<WechatPrepayParams> {
+  const prepay = await requestAppPrepay({
+    orderNo,
+    productId: PRODUCT_IDS[productId],
+    provider: 'wechat',
+  })
+  if (prepay.provider !== 'wechat') {
+    throw new Error('支付渠道与订单不一致，请重试')
+  }
+  return { ...prepay.wechat, orderNo: prepay.orderNo }
 }

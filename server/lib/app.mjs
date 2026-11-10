@@ -14,6 +14,7 @@ import { createDbProxy } from './dbproxy.mjs'
 import { createLlmHandlers } from './llm.mjs'
 import { createIapHandlers } from './iap.mjs'
 import { createXpayHandlers } from './xpay.mjs'
+import { createAppPayHandlers } from './apppay.mjs'
 
 /**
  * @param {object} deps
@@ -74,6 +75,16 @@ export function createApp(deps) {
     cfg, pool, logger, gatewayPool,
     ...(deps.xpayFetchImpl ? { fetchImpl: deps.xpayFetchImpl } : {}),
   })
+  // Android APP 支付（0047）：微信 APP 支付 V3 + 支付宝 App 支付，与 xpay（米大师
+  // 虚拟支付）并列两套商户体系。核销/撤销/留痕函数只授 dbee_app EXECUTE → 走业务池
+  // pool；token_version 校验走 gatewayPool。未配商户凭据时端点自返 503
+  // （同 notConfigured 模式），无需条件装配。fetchImpl 供自测注入外呼。
+  const apppay = deps.enableAppPay === false ? null : createAppPayHandlers({
+    cfg, pool, logger, gatewayPool,
+    ...(deps.appPayFetchImpl ? { fetchImpl: deps.appPayFetchImpl } : {}),
+    ...(deps.appPayClock ? { clock: deps.appPayClock } : {}),
+    ...(deps.appPayNonce ? { nonceImpl: deps.appPayNonce } : {}),
+  })
 
   const router = new Router()
   const A = '/.cloud/auth/v1'
@@ -127,6 +138,19 @@ export function createApp(deps) {
     //   就只能读到空 body → 验签必失败。notify 自己读原始字节、自己写响应
     //   （响应格式须与推送格式一致：XML→XML / JSON→JSON，见 xpay.mjs）。
     router.on('POST', `${W}/notify`, (req, res, ctx) => xpay.notify(req, res, ctx))
+  }
+
+  if (apppay) {
+    const P = '/.cloud/payment/apppay'
+    // 统一下单（需 Bearer）：返回微信 APP 拉起参数或支付宝 orderStr（服务端本地签名）
+    router.on('POST', `${P}/prepay`, wrap(apppay.prepay))
+    // 主动查单兜底（需 Bearer）：回调丢失时客户端轮询，服务端外呼平台查单 → 补发权益
+    router.on('POST', `${P}/query`, wrap(apppay.query))
+    // 🔴 两个异步通知（平台直发 POST，无 Bearer）**不走 wrap()**：理由同 xpay notify
+    //   （wrap 的 readJson 会消费请求流，验签需逐字原始字节）。处理器自读自写响应。
+    //   路径与 apppay.mjs 头注 / cfg.publicBaseUrl 拼出的 notify_url 逐字一致。
+    router.on('POST', '/.cloud/payment/wechat-app/notify', (req, res) => apppay.wechatNotify(req, res))
+    router.on('POST', '/.cloud/payment/alipay/notify', (req, res) => apppay.alipayNotify(req, res))
   }
 
   // 探活：不鉴权。返回各依赖可达性，供 nginx/systemd/deploy 脚本判活
@@ -194,7 +218,13 @@ export function createApp(deps) {
       // 微信虚拟支付推送（0046）：来源是微信的少数固定 IP，且失败会重试最多
       // 15 次 —— 按 IP 限流会把重试风暴误伤成 429，而 429 又触发更多重试。
       // 安全不靠限流，靠 sha1(msg_signature) + AES 解密 + appid 校验（见 xpay.mjs）。
-      pathname === '/.cloud/payment/wechat/notify'
+      pathname === '/.cloud/payment/wechat/notify' ||
+      // Android APP 支付异步通知（0047）：同理豁免 —— 微信 V3 回调失败会按
+      // 15s/15s/30s/…退避重试最长 24h，支付宝重试 8 次；平台出口 IP 集中，
+      // 按 IP 限流会把重试打成 429 并诱发更多重试。安全不靠限流，靠
+      // 平台证书 RSA 验签 + AES-256-GCM 解密 + 金额校验（见 apppay.mjs）。
+      pathname === '/.cloud/payment/wechat-app/notify' ||
+      pathname === '/.cloud/payment/alipay/notify'
     if (!rateLimitExempt) {
       const rl = limiterApi.hit(ipKey)
       if (!rl.ok) {
@@ -234,7 +264,7 @@ export function createApp(deps) {
   })
 
   return {
-    server, router, otp, auth, llm, dbProxy, iap, xpay,
+    server, router, otp, auth, llm, dbProxy, iap, xpay, apppay,
     limiters: { limiterIdent, limiterIp, limiterApi, usageLimiter },
   }
 }

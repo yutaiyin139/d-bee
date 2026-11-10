@@ -46,8 +46,17 @@ export interface PurchaseResult {
 export interface PaymentAdapter {
   /** 拉取商品（含价格，用于展示付费墙） */
   fetchProducts(): Promise<ProductInfo[]>
-  /** 发起购买，返回平台凭证 */
-  purchase(productId: ProductId): Promise<PurchaseResult>
+  /**
+   * 发起购买，返回平台凭证。
+   *
+   * `orderNo` 是 checkout 已创建的服务端订单号（可选上下文，2026-11-09 加）：
+   * 第三方收银台（微信 / 支付宝 APP 支付）需要把**同一笔订单号**作为商户单号
+   * `out_trade_no` 传给平台，回调验签后才能精确置 paid + 发权益。若 adapter
+   * 自己再建一单，checkout 手里的 order_no 会变成永不核销的孤儿单，且
+   * verifyPaymentOrder 查的是孤儿单 → 支付成功却报失败。
+   * iOS IAP 不需要（凭证自带交易号），实现可忽略此参数。
+   */
+  purchase(productId: ProductId, orderNo?: string): Promise<PurchaseResult>
   /** 恢复购买（iOS/Google 订阅必需；微信支付宝一次性支付无需实现，返回空数组） */
   restore(): Promise<PurchaseResult[]>
   /** iOS：启动时取得已扣款但尚未 finish 的交易 */

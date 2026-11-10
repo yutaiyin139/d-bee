@@ -925,3 +925,116 @@ Web 侧**复用 mini 的 `D_BEE_XPAY_ENABLED`**（不另起 `VITE_MINI_SALE_ENAB
 ### 边界
 改动已 commit + push（见下方 git 记录）；**未部署生产**（线上仍旧产物，零生产变更口径）。开启引导需备案通过 + 小程序发布 + 静态码 + mini 同值上传 + `LEGAL_UPDATED` 拍板，当前默认构建（零引导）本身即合规状态。
 
+---
+
+## 11-09 盘点：从 MEMORY.md 压出的详版（零信息丢失归档）
+
+> 触发：11-09 两轮自动化盘点 + 四端收费总纲撰写后 MEMORY.md 触顶 9881 字符（>9k 铁律），
+> 按纪律把详版逐字迁到本文件，MEMORY 只留结论与指针。压缩前字符 9881 → 达标 ≤9k。
+
+### A. 算法备案三连落地（11-09，全部 E:\ 目录 docx，不进 git）
+- 10:31《拟公示内容》已填：算法名 = `自律蜜蜂饮食识别与营养建议生成合成算法`，类型=生成合成（深度合成）类，角色=服务提供者；6 字段（名称/基本原理/运行机制/应用场景/目的意图/公示情况）按官方模板填写，原模板未动，另存 `拟公示内容-自律蜜蜂.docx`。要点：多模态大模型识别餐食照片 + 本地食物营养库换算 + LLM「问问小蜜」问答；本地规则库优先、未命中才调云端；AI 结果显式标注「AI 估算，请按实际核对」，不构成医疗建议。
+- 14:50 系统填报 9 字段文本 + 自评估报告起草：交付 `算法备案-系统填报字段与自评估报告-2026-11-09.docx`。盘点结论 = 承诺书（`commitment_letter.docx` + 盖章扫描 PDF）、主体责任（精炼版 v1.1 + 20MB 盖章汇总 PDF）、`制度文件/` 8 项制度**均已完成**，唯一缺失 = 算法安全自评估报告。核实口径：主体北京迪蜂科技有限公司（91110119MAKQGYG92T，法定代表人于太印）；文本生成=DeepSeek、图像识别=阿里云百炼 Qwen-VL，均经自建网关代理；自建食物库 1,175 条；公开数据源 Open Food Facts；腾讯云轻量服务器（境内，nginx + Node 网关 8080 + 自建 PG）；JWT 30 分钟；fail-closed；免费 3 次/日。两条填报铁律：精度数字一律不写（MAPE 须真机 + ≥20 样本餐 + 4 热量档实测）、定位「个人记录/自我管理工具」无舆论属性/不涉医疗/数据不出境。
+- 15:47 官方《算法安全自评估报告（生成合成类-服务提供者）》模板逐字段填写：删「填报说明」页 15 段 + 全部【】占位与（）说明，保留全部固定章节；替换 65 段 + 补第六章空段 + 补全封面 5 格（自评估时间 2026-11-09、☑首次备案、评估算法描述 6 方面、盖章日期）。正文六章：算法流程 / 数据（训练数据「不涉及」）/ 模型（Qwen-VL + DeepSeek + 本地规则引擎，无自研无微调）/ 干预策略 / 结果标识 / 服务情况 + 风险研判 6 类 + 防控 6 维 + 结论「通过」。经本地 editor_sdk MCP 批量完成（`doc_replace_text` 65 次 + `doc_set_table_cells` + `doc_delete_paragraph` ×15 + `save_file` 另存），原模板未动。成品 98 段 / 约 10,774 字 / 33 KB，残留【】/填报说明/（请/（描述/（包括/（应/（根据/（以流程图 全部 0。交付 `算法安全自评估报告（生成合成类-服务提供者）-已填写.docx`。
+- 🔴 三项须用户核实/补正：①封面「算法上线情况=未上线，正在内测阶段」与 Web 已完全上线 `https://d-bee.cn` 事实冲突（正文已标注，未擅改用户已填值）②算法安全负责人口径冲突（封面/主体责任=周子森 18101357167，制度文件第四条=于太印任责任人、周子森任技术负责人）③评估算法描述第 5 项服务器机房省份须依腾讯云控制台资源地域核实。提交前待办：补内容审核与显式/隐式标识截图佐证、完成 AI 问答气泡逐条显式标识整改、承诺书与主体责任盖章、备案通过后公示编号。周期 2–3 个月，法定「提供服务起 10 个工作日内」办理。
+
+### B. 备案链现状（11-09 用户口径，用于四端收费总纲 §3.1）
+域名/ICP 备案 ✅ 已下证（11-06，`京ICP备2026075565号-2`）；**App 备案 / 微信小程序备案 / 算法备案 / 公安备案 均管局审核中**。依赖：App 备案硬阻断 Android 各商店上架与 iOS 中国区备案号；小程序备案硬阻断 mini 发版与虚拟支付开通；公安备案法定 2026-12-06 前完成，拿号回填 `packages/shared` 的 `POLICE_BEIAN`（现空＝不渲染合规）。
+
+### C. 11-09 四端收费总纲（权威载体 `docs/四端收费一致性核验与合规实施总纲-2026-11-09.md`）
+297 行 / 30.6 KB。核心结论：业务代码 **2 套**（`src/` 供 Web+Android+iOS + `mini/src/`）、支付通道 **3 套**、法务文本 2 套；「完全一致」应定义为权益/定价/口径/数据面一致，支付链路按平台法规必然分叉。一致性分 L1 已一致（护栏保障）/ L2 刻意分叉（Apple 3.1.1、虚拟道具不自动续费等，必须保留）/ L3 真实缺口 12 条。护栏 18 道 731 项全为源码静态扫描，9 类零自动断言（平台侧商品、结算运行时、迁移水位、网关部署/env、StoreKit/adapter 收银台、退款权益回收、LEGAL_UPDATED、构建产物、双库 DDL）。🔴 提出旧决策「11-06 ICP 经营许可暂不办」在收费后需重新拍板（独立 Web + 独立 APP 不满足「仅依托小程序、无独立平台」豁免；B25 门槛注册资本≥100 万 + 3 人社保 + 60–90 工作日；仅作风险提示，须属地通管局书面确认）。实施阶段 0~5：0 一致性收口（零生产风险）/1 备案等待/2 mini 首发/3 iOS IAP/4 Android/5 Web 永久不收款。
+
+### D. 被压缩条目的详版载体索引（MEMORY 只留结论）
+| 条目 | 详版权威位置 |
+| --- | --- |
+| Web 定价展示 + 下单引导（开关同源、护栏 18、零下单字样） | 本文件「11-08 晚间迁入」+ `docs/Web端定价展示与小程序下单-现状梳理与改造方案-2026-11-07.md` |
+| mini xpay 售卖全链路 + 开启 6 前置 + 资损铁律 | 本文件「11-08 晚间迁入」+ `mini/src/lib/xpayEnabled.ts:26-52` + `docs/待办清单-云库废弃收尾-2026-11-08.md` §十一 + 总纲 §2.2 |
+| Android vc16 三步实证（aapt / apksigner MD5 `0abe7fc5...45fb9dc9` / 产物探针） | `2026-11-09.md` 日志 08:00 段 |
+| 工程基线 731 项构成与开关构建变体自检 | `tools/*.test.ts` 文件头 + 总纲 §1.4 |
+| 云库彻底释放剩 2 步 | `docs/待办清单-云库废弃收尾-2026-11-08.md` §九/§十 |
+
+
+---
+
+## 2026-11-09 晚 · Web 引导闭环 + Android 收款实装（由 MEMORY.md 压出的详版，零信息丢失归档）
+
+> 权威交付文档：`docs/Web引导闭环与Android收款实装-2026-11-09.md`（四端职责矩阵 / Web 三层防御 / Android 实装 / 法务口径 / 开启前置清单 / 验证结果 / 护栏覆盖 / 改动清单 / 未决）。
+> 🔴 用户逐字最终定案（推翻当日 20:20「Web 办 ICP 经营许可证后可独立收款」的二次改判）：
+> 「**web端暂不收费，引导进入微信端和app端收费，即可完成所有逻辑；android端支付能力即可完善，达到能够支付收款的目的；4端业务逻辑仍然不变。**」
+> → ① Web **暂不收费且不为收费办证**，落地为「展示定价 → 引导到 mini / App 付费」；② 「立即启动 ICP 经营许可证办证」**不再是前置**（该证只在未来 Web 自行收款时才必要）；③ Android 从「盘点堵点」进入「**已实装可收款**」；④ **四端业务逻辑零改动**（定价/权益/免费额度/数据面/核销编排均未动，`checkout.ts` 仅一行 `adapter.purchase(productId, order.order_no)`）。
+
+### 一、服务端结算底座（新增）
+
+- `server/lib/apppay.mjs`（715 行）：导出密码学纯函数（`rsaSign`/`rsaVerify`/`buildWechatV3AuthHeader`/`wechatAppPaySignMessage`/`verifyWechatNotifySignature`/`decryptWechatNotifyResource`/`encryptWechatNotifyResource`/`alipaySignContent`/`buildAlipayOrderStr`/`verifyAlipayNotifySignature`）+ handlers（`prepay`/`query`/`wechatNotify`/`alipayNotify`）。**零依赖密码学**：`node:crypto` 手写微信 V3（RSA-SHA256 + AES-256-GCM，🔴 **authTag = ciphertext 末 16 字节**）、支付宝 RSA2（SHA256withRSA，字典序 `k=v&`）。项目纪律**禁支付 SDK**。
+- `db/migrations/0047-app-payment-settlement.sql`（467 行）：`app_payment_transactions`（🔴 `out_trade_no text NOT NULL UNIQUE`、`CHECK (provider IN ('wechat','alipay'))`）、`app_payment_notifications`、`settle_app_payment`/`revoke_app_payment`/`log_app_notification`（**SECURITY DEFINER，先 REVOKE 再 GRANT 只给 `dbee_app`**）、`verify_payment_order` 改**查单语义**（`IF v_order.provider IN ('wechat_xpay','wechat','alipay') THEN RETURN false`）。🔴 `payment_orders`（0021）**无 provider CHECK** → wechat/alipay **无需追加迁移**。权益模型**复用 0046**：months 累加、lifetime 不降级、`revoke` 只清同 `source` 渠道权益（不误伤兑换码）。
+- `src/lib/payment/apppayClient.ts`（177 行）：`requestAppPrepay`、`verifyViaApppayGateway`（`QUERY_ATTEMPTS=4`、`QUERY_INTERVAL_MS=1500`，🔴 **404/405/503 → null** 以回退 RPC，绝不报错）。
+- `server/lib/app.mjs`：`createAppPayHandlers` 装配（`deps.enableAppPay === false` → null；可注入 `appPayFetchImpl`/`appPayClock`/`appPayNonce` 供自检）；路由 `${P}/prepay`、`${P}/query` 走 `wrap()`，🔴 **`/.cloud/payment/wechat-app/notify` 与 `/.cloud/payment/alipay/notify` 不走 `wrap()`**（wrap 的 `readJson` 会消费验签所需原始字节）→ 自读自写响应，并加入**限流豁免**名单。
+- `server/lib/config.mjs`：`publicBaseUrl`（`PUBLIC_BASE_URL` 默认 `https://d-bee.cn`，去末尾斜杠）、`wechatPay*` 6 项、`alipay*` 3 项（均 `.replace(/\\n/g,'\n').trim()`）；`validate()` **半配拦截**（微信 5 项/支付宝 3 项缺一即拦、APIv3 ≠32 字节拦、`wechatPayMchid && !wechatPayPlatformCert` 拦）；`warnings()` 未配提示 → **渠道级 503 降级**（不整站崩）。
+
+### 二、推模式结算与资损防线（🔴 铁律全文）
+
+1. **推模式**：客户端 SDK 成功**只代表用户付完钱**；发权益的**权威信号 = 服务端异步回调验签 → `settle_app_payment`**；query 只作「回调未到窗口」的兜底。
+2. **查单语义**：`verify_payment_order` RPC 只回订单状态；**回调未到恒 `false`** → 前端有限重试（4×1500ms），窗口内提示「**权益到账中**」**绝不报 error**（可能已扣款）。
+3. **幂等键 = `out_trade_no`**（我方业务单号，UNIQUE），🔴 **不是平台交易号**。
+4. **owner 权威 = `payment_orders.owner_id`**（JWT sub）；回调路径 `ownerId` **传 null**（支持代付）→ `v_owner := v_order.owner_id`。归属不符回 **403**。
+5. 🔴 **金额校验三路径**（微信回调 / 支付宝回调 / 主动查单）：`amountCents < Number(order.amount_cents)` → **拒发权益**（防「1 分钱买会员」），记 `amount_mismatch`。
+6. 🔴 **支付宝 `8000`（处理中）与 `9000` 同路径、绝不报错**（可能已扣款）；`6001` = 用户取消。初版曾把 8000 与 9000 分开 early-return，已合并为 `if (res.resultStatus !== '9000' && res.resultStatus !== '8000') throw`。
+7. 🔴 **`cloudError` 响应形状 = `{message, error}`**，**不是 `code`**（自检断言曾误写 `.code` 恒假）。
+8. 🔴 **凭据零泄漏**：私钥 / APIv3 密钥只在服务端签名，不下发、不进日志与响应（护栏 20-H + 自检 F 节）。
+
+### 三、Web 零收款三层纵深防御 + 双渠道引导
+
+- ① **构建期 `define` 布尔折叠**：`D_BEE_APPPAY_ENABLED` → `__APPPAY_SALE_ENABLED__` 布尔字面量 → terser 死代码折叠（默认 false 时产物 0 命中，`wechat:!1,alipay:!1`）。
+- ② **`PaywallSheet` 的 `isAndroid()` 门**：`setPayChannels(APPPAY_SALE_ENABLED && isAndroid() ? {wechat: isWechatPayAvailable(), alipay: isAlipayAvailable()} : {wechat:false, alipay:false})`。
+- ③ **运行时兜底**：`buyProduct` 开头 `if (isWeb() && noPayChannel) { setErr('网页版仅展示价格…'); return }`。
+- `MiniOrderGuide` / `lib/miniOrderGuide.ts`：`APPPAY_SALE_ENABLED`、`canGuideToAppSale()`、`APP_DOWNLOAD_LINK`/`APP_DOWNLOAD_QR`、🔴 `WEB_NO_CHARGE_TEXT` **恒展示**、`{guideApp && (…)}` **双渠道独立门控**、**无凭证退化纯文字**。
+- 法务（`src/content/legal.ts`）：§六 Android 条按开关分支（开启态「一次性购买对应时长，属**预付费买断**，不构成自动续期订阅，**不自动续费、不自动扣款**」/ 关闭态「当前版本不提供应用内购买」）；§四 微信 SDK 清单按开关分支 + `…(APPPAY_SALE_ENABLED ? [支付宝 SDK 条目] : [])`。🔴 `LEGAL_UPDATED` **未动**（改值 = 全体老用户重弹同意窗，产品决策）。
+  - 🔴 铁律：道具直购**不自动续费** → 照抄 iOS「24 小时续订」文案 = **虚假宣传**。
+
+### 四、验证结果（本轮实测，均重跑核对）
+
+- `npm test` = **18 文件 / 839 项全绿**（`Test Files 18` == `ls tools/*.test.ts` 18，防假绿）；`npm run typecheck` 0 错。
+- 自检：`apppay-selftest` **156** / `gateway-selftest` **303** / `xpay-selftest` **96** / `iap-selftest` **47**（app.mjs 新增装配未破坏既有链路）。较基线 17/752 新增护栏 20（78 项）+ 护栏 19 扩至 29 项。
+- **红验证**（注入缺陷证明断言能抓，随后逐字恢复 + `diff -q` 校验）：护栏 20 四组（Web 渲染支付按钮→2 红 / 删金额校验→1 红 / notify 走 wrap→1 红 / 查单失败改报错→1 红）；护栏 19 四组（付费墙去开关门控→1 / legal 无条件披露→1 / 0047 标记已应用→1 / env key 改名→2）；selftest 三组（绕过微信验签→7 / 删金额校验→4 / 查单失败改报 500→2）。
+- **默认构建探针**（`npm run build`，🔴 不用 `build:web`——它会删 `dist/legal/`）：入口 js `index-HoMGJbqY.js`；App / 小程序引导字样 0、支付按钮折叠 `wechat:!1,alipay:!1`（`wechat:!0` 零命中）、「网页版仅展示价格」3 命中、兑换码保留。
+
+### 五、🔴 验收口径修正（本轮实测发现，判读产物必须照此）
+
+- 旧判据「Web 产物 `下单` 字样 = 0」**自本轮起失效**：`apppayClient.ts` 技术性错误文案含「**预**下单」（「支付响应缺少预下单参数」「微信/支付宝预下单参数不完整」）→ 裸串 `下单` 恒 **3 命中**。实测 `预下单` 3 / `下单` 3 / **差值 0**，可自证全是子串碰撞。
+- **正确判据**：真实引导 CTA 全 0（`去小程序下单` / `去 App 购买` / `立即购买` / `立即开通` / `去支付` / `前往小程序` 本轮实测均 **0**），或等价差值 `count('下单') - count('预下单') == 0`。
+- 📌 **Web 产物含 apppay 客户端代码 = 既有架构属性，非本轮缺陷**：`src/lib/api.ts:9` 静态 import `verifyViaApppayGateway` → `/.cloud/payment/apppay/{prepay,query}` 端点串进 Web 包；但 iOS 通道 `/.cloud/payment/apple/verify` **同样在 Web 包内**（早于本轮即如此）。Web 上**不可达**：调用点包在 `platformName() === 'android'` 内、原生 SDK `window.Capacitor.Plugins.*` 在浏览器恒不存在。🔴 **判 Web 能否收款看「按钮是否渲染 + 运行时是否拦截」，不看端点串是否出现**。
+
+### 六、护栏与自检构成
+
+- **护栏 20 `tools/apppay-consistency.test.ts`**（481 行 / 78 项）：20-A 业务流程不变 / 20-B 开关同源 / 20-C **Web 恒不收款**（`isAndroid()` 门 + api.ts android 分支 + `WEB_NO_CHARGE_TEXT` 恒展示）/ 20-D 资损防线（金额·验签先于业务·幂等键·403 归属）/ 20-E **已扣款绝不报错**（8000 / retry_later / QUERY_ATTEMPTS=4 / 404|405|503→null）/ 20-F 路由装配（notify 不走 wrap / 限流豁免）/ 20-G 数据库（UNIQUE / CHECK / SECURITY DEFINER / 0021 无 provider CHECK）/ 20-H 凭据边界（前端零签名）。
+- **护栏 19 `tools/release-readiness.test.ts` + `.baseline.json`**（29 项，本轮改写 19-B/19-C）：19-B 加 `migration0047Applied:false`、`gatewayAppPayDeployed:false`、APP 支付 **9 env keys**（微信 6 + 支付宝 3）、0047 函数/GRANT/凭据零泄漏断言；19-C 从「钉死 `THIRD_PARTY_CHECKOUT_ENABLED=false`」改为「**门控 ↔ 法务口径 ↔ 实装登记三者一致**」（9 断言）。
+- **`tools/apppay-selftest.mjs`**（919 行 / 156 项）：自造 4 把 RSA 密钥（WX_MCH / WX_PLATFORM / ALI_MCH / ALI_PLATFORM）；A 密码学纯函数正反用例、B prepay（微信外呼报文断言 + 支付宝本地签名验证 + 拒绝路径 + 503 降级）、C 微信回调（核销/幂等/验签失败/解密失败/金额不足/非成功）、D 支付宝回调、E 查单（本地 paid 不外呼/补发/金额不足/退款/外呼失败 200+`retry_later`/支付宝查单）、F 凭据零泄漏。**起 3 个真实 HTTP 实例**（双渠道齐备 / 仅微信 / 全未配置）。
+- **护栏 18 `web-no-payment.test.ts`**（既有）：`THIRD_PARTY_CHECKOUT_ENABLED` 已删，W 系断言不依赖该常量故不受影响。
+- `tools/gateway-selftest.mjs`：「配齐后无提示」基线加 `wechatPayMchid:'1900000109'`、`alipayAppId:'2021000100000001'`，另加 2 条正向断言（缺商户号 / 缺支付宝 AppID → `warnings()` 提示）。
+
+### 七、🔴 本轮踩坑六则（勿重犯）
+
+1. **自检断言字段名错**：`cloudError` = `{message, error}` **不是 `code`** → `.code === 'provider_mismatch'` 恒假。（sed 批量替换因引号嵌套报 `unknown option to 's'` → 改用 Edit 逐个修。）
+2. **settles 未清零** → 「外呼失败零 settle」假红；子块前补 `mockPool.settles.length = 0`。
+3. **lifetime 权益污染**：同一 OWNER 在 D 节已买断 lifetime → E 节 revoke 断言失败。`revoke` 只清同 `source`、lifetime **不降级是 0047 刻意语义不是缺陷** → 改用独立用户 `OWNER_E`/`OWNER_E2`。
+4. 🔴 **红验证静默跳过（最危险）**：python heredoc `assert s.count(old)==1` 失败（该行在微信/支付宝两处回调各出现一次）→ **文件未被改动但自检仍报 156 通过**，造成「验证通过」的错觉。改用 `sed -i '580s/…/…/'` **按行号定位**。教训：**红验证必须确认「注入真的生效」**（先确认改动落盘 / diff 有变化），不能只看测试输出变红或不变红。
+5. **护栏断言自身写法错**：①「先验签」用全文 `indexOf('verifyAlipayNotifySignature(')` 命中文件上部**导出函数定义**而非 handler 内 → 改为从 `async alipayNotify(` 起 `slice` 再定位（微信同修）；② 断言含注释文本 `// 网络层异常`，但 `stripComments` 已抹成空格 → 改为只匹配代码结构 `catch { return null }`。（= 护栏铁律②「匹配实际使用非标识符出现」③「断言在 stripComments 后做」的现场复现。）
+6. **gateway-selftest「配齐后无提示」基线冲突**：新增 2 条 `warnings()` 撞既有基线 → 按既有模式（参照 line 451 对 `wechatMiniSecrets` 的处理）把 `wechatPayMchid`/`alipayAppId` 纳入基线，另加正向断言。
+
+### 八、配置模板与开启前置
+
+- `.env.example` 加「售卖构建期开关」段：`D_BEE_XPAY_ENABLED`（mini 售卖）/ `D_BEE_APPPAY_ENABLED`（Android 支付 + Web 引导，**一个变量同决定两端**）**各自独立、默认 false**。
+- `deploy/gateway/gateway.env.template` 在 Apple IAP 段后插「Android APP 支付（0047）」段：`PUBLIC_BASE_URL` + 微信 6 项 + 支付宝 3 项注释化模板。
+- 🔴 **开启收款前置（资质未到位前开关必须保持 false，先配平台再开开关）**：微信开放平台移动应用审核 + 商户号 **APP 支付权限** + 支付宝企业应用 + **App 备案下证** + 软著 → 再做「**1 分钱**」真实联调验证金额校验。详版 → 权威文档 §五。
+
+### 九、文档纠偏（保决策溯源，只加横幅不改正文）
+
+- 新增权威 `docs/Web引导闭环与Android收款实装-2026-11-09.md`。
+- `docs/四端收款堵点与政策依据详表-2026-11-09.md`：头部加 🔴🔴 纠偏横幅 —— 结论 #5 / §4.4 / §六第 6 阶段「Web 办妥 ICP 经营许可证后可独立收款」**作废**、绑定的「启动办证」建议**不再是本轮前置**、Android 进入**已实装可收款**；渠道强制 / 备案阻断 / 法规依据部分**仍有效**，降级为法规与资质核对存档。
+- `docs/四端收费一致性核验与合规实施总纲-2026-11-09.md`：加**第二版横幅**（优先级高于上一版）覆盖上一版 ②③（②′ Web 办证收款作废、③′ 暂不启动办证、①′ Android 已落地、⑤ 四端业务逻辑零改动）；一致性盘点 / L1~L3 / 护栏边界 / 发版验收 / 执行铁律**仍有效**。
+- `docs/Web端定价展示与小程序下单-现状梳理与改造方案-2026-11-07.md`：加**三次补注**覆盖二次补注（① Web 办证收款作废、② Android 已实装、③ 权威改为本文、④ §2.6「跨端权益不互通」已被 11-08 云库清零 + 四端统一自建 PG 解决）。
+
+### 十、状态与未决
+
+- **零生产变更、未开任何开关**（`D_BEE_APPPAY_ENABLED` 默认 false）、**线上零变化**（线上入口 js 仍 `index-Bm9H-Xgy.js`，本轮本地构建 `index-HoMGJbqY.js`，`dist/` 不入 git）；生产迁移水位仍 **0045**（🔴 **0046 / 0047 均已写未应用**）。
+- 🟠 未决：开启收款待资质链；`LEGAL_UPDATED` 是否刷新（产品决策）；iOS 包需 **Mac 重打**才含 A-5 真删号 + 本轮改动。

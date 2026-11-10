@@ -448,9 +448,14 @@ section('config · validate 拦住不安全配置')
   // A3（2026-11-05）：微信小程序凭据未配 → 提示 login-wechat 将 503。
   // envBase 不含 WECHAT_* → c.wechatMiniSecrets 是空 Map，正好触发该 warning。
   assert('缺微信凭据 → 提示 login-wechat 将 503', warnings(c).some((w) => w.includes('login-wechat')))
-  // 「配齐」基线须含微信凭据（wx 开头 appid + secret），否则上面那条 warning 会残留
+  // APP 支付（0047 / apppay.mjs）：微信商户号 / 支付宝 AppID 未配 → 渠道级 503 提示。
+  //   envBase 不含 WECHAT_PAY_* / ALIPAY_* → c.wechatPayMchid / c.alipayAppId 皆空，正好触发。
+  assert('缺微信商户号 → 提示 apppay 微信渠道 503', warnings(c).some((w) => w.includes('WECHAT_PAY_MCHID')))
+  assert('缺支付宝 AppID → 提示 apppay 支付宝渠道 503', warnings(c).some((w) => w.includes('ALIPAY_APP_ID')))
+  // 「配齐」基线须含微信凭据（wx 开头 appid + secret）+ APP 支付两渠道入口凭据，
+  //   否则上面那几条 warning 会残留、断言假红。
   const wxOk = new Map([['wxb7c7122de9c3ab1f', 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4']])
-  assert('配齐后无提示', warnings({ ...c, llmApiKey: 'sk-x', publishableKey: 'wbpk_x', appleBundleId: 'com.x', appleSharedSecret: 'sec', wechatMiniSecrets: wxOk }).length === 0)
+  assert('配齐后无提示', warnings({ ...c, llmApiKey: 'sk-x', publishableKey: 'wbpk_x', appleBundleId: 'com.x', appleSharedSecret: 'sec', wechatMiniSecrets: wxOk, wechatPayMchid: '1900000109', alipayAppId: '2021000100000001' }).length === 0)
 }
 
 section('config · isOriginAllowed（安全审计⑦ CORS 白名单）')

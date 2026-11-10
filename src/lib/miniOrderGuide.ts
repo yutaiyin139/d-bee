@@ -1,13 +1,18 @@
 /**
- * Web → 微信小程序下单引导的**唯一配置真源**（2026-11-08）。
+ * Web → 微信端 / App 端购买引导的**唯一配置真源**（2026-11-08 建，11-09 扩为双渠道）。
  *
  * ## 为什么必须有这个模块
  *
  * 付费墙（`pages/PaywallSheet.tsx`）与公开定价页（`pages/PricingSheet.tsx`）都要展示
- * 同一套「网页不收款 + 去小程序下单」的口径。若两处各写一份小程序名称、各拼一份文案，
+ * 同一套「网页不收款 + 去对应端下单」的口径。若两处各写一份小程序/App 名称、各拼一份文案，
  * 改口径必漏改一处 —— 而这里漏改的后果不是样式问题，是**法务文案与实际不符**
  * （《广告法》第 4 条「不得含有虚假或者引人误解的内容」）。故名称、跳转配置、
  * 售卖开关全部收敛到本模块，两个页面只 import，不自己拼。
+ *
+ * 🔴 2026-11-09 用户定案：**Web 暂不收费，靠「引导到微信端 + App 端购买」完成商业闭环**。
+ *    这推翻了同日「办妥 ICP 经营许可证后 Web 可独立收款」的改判 —— Web 不新增支付能力、
+ *    不启动 Web 支付通道、不为此办证，四端业务逻辑（定价 / 权益 / 免费额度 / 口径 /
+ *    数据面）一律不变。文件名沿用 `miniOrderGuide` 只是历史沿革，实际已是双渠道真源。
  *
  * ## 🔴 与 mini 端同源（最重要的一条）
  *
@@ -25,7 +30,14 @@
  *
  * 未设 `D_BEE_XPAY_ENABLED=true` 时 `XPAY_SALE_ENABLED === false`：
  * Web 只展示三档价格 + 明示「网页不收取任何费用」，**不出现任何「去小程序下单」字样**，
- * 与 mini 默认「免费提供」口径一致。Web 自身恒不收款，开启本值也不会给 Web 增加支付能力。
+ * 与 mini 默认「免费提供」口径一致。同理 `D_BEE_APPPAY_ENABLED` 未设时
+ * `APPPAY_SALE_ENABLED === false`，Web 零「去 App 内购买」引导。
+ * **当前** Web 不收款、不创建订单；开启任一开关只增加对应端的引导，
+ * 绝不给 Web 增加任何支付能力（护栏 18 与 20 共同钉死）。
+ *
+ * 🔴 两条渠道**独立门控**：mini 走微信虚拟支付、App 走微信/支付宝 APP 支付，
+ *    谁的平台侧前置就绪就开谁，不必互相等待，也绝不「引导到还没开放的渠道」。
+ *    详见 `docs/Web引导闭环与Android收款实装-2026-11-09.md` §二。
  */
 
 /**
@@ -37,6 +49,16 @@
  */
 export const XPAY_SALE_ENABLED: boolean =
   typeof __XPAY_SALE_ENABLED__ !== 'undefined' && __XPAY_SALE_ENABLED__ === true
+
+/**
+ * App 端售卖能力（构建期字面量，来源 `D_BEE_APPPAY_ENABLED`）。
+ *
+ * 与 `XPAY_SALE_ENABLED` 平行但独立：原生包与 Web 用同一条 vite `define`，
+ * 故「Android 是否可发起支付」与「Web 是否引导去 App 购买」必然同值。
+ * `typeof` 兜底同样选 false（漏注入时宁可少引导，不可错引导）。
+ */
+export const APPPAY_SALE_ENABLED: boolean =
+  typeof __APPPAY_SALE_ENABLED__ !== 'undefined' && __APPPAY_SALE_ENABLED__ === true
 
 /** 小程序名称。默认 A1 定案值，可用 VITE_MINI_APP_NAME 覆盖，避免再写一份名称副本。 */
 export const MINI_APP_NAME =
@@ -78,6 +100,21 @@ export const MINI_ORDER_LINK = sanitizeMiniOrderLink(
 )
 
 /**
+ * App 下载 / 商店落地页（https 白名单过滤，与小程序链接**同一个纯函数**）。
+ *
+ * 复用 `sanitizeMiniOrderLink` 而不是另写一个：协议白名单是安全逻辑，多一份实现
+ * 就多一份漂移风险；护栏 W8 的 12 项断言因此同时覆盖两个渠道的链接过滤。
+ * 未配置时 App 引导退化为纯文字「在应用商店搜索 App 名」，绝不渲染死链接。
+ */
+export const APP_DOWNLOAD_LINK = sanitizeMiniOrderLink(
+  import.meta.env.VITE_APP_DOWNLOAD_LINK as string | undefined,
+)
+
+/** App 下载二维码图片路径（放 `public/`，与小程序码同理，零 AppSecret）。 */
+export const APP_DOWNLOAD_QR =
+  (import.meta.env.VITE_APP_DOWNLOAD_QR as string | undefined)?.trim() || ''
+
+/**
  * 是否具备「引导去小程序下单」的完整条件。
  *
  * 售卖开关是唯一必要条件：跳转凭证（码 / 链接）**可以都为空** —— 那时退化为
@@ -87,10 +124,22 @@ export function canGuideToMiniSale(): boolean {
   return XPAY_SALE_ENABLED
 }
 
+/** 是否具备「引导去 App 内购买」的完整条件（与 Android 支付按钮同源同值）。 */
+export function canGuideToAppSale(): boolean {
+  return APPPAY_SALE_ENABLED
+}
+
 /**
  * 网页版不收款声明（付费墙与公开定价页共用同一句，杜绝两处措辞漂移）。
  *
- * 这句在**开关开与关两种构建里都必须存在**：Web 恒不收款是 ICP 经营许可证绕行方案的
- * 基石（Web 只发布价格信息、不缔约、不收钱），与小程序卖不卖无关。
+ * 这句在**两个开关开与关的四种组合里都必须存在**：Web 只发布价格信息、
+ * 不缔约、不收钱，与微信端/App 卖不卖无关。
+ *
+ * 🔴 2026-11-09 用户定案：Web **暂不收费，以引导闭环**，商业逻辑由
+ *    「引导到微信端 + App 端购买」完成，不新增 Web 收款能力、不为此办证。
+ *    这推翻了同日「办妥 ICP 经营许可证后 Web 可独立收款」的改判，故本文案
+ *    与护栏 18 的「Web 零收款」语义**保持有效，无需改写**。
+ *    🔴 渠道隔离仍是硬约束：Web 不得成为小程序虚拟商品的支付落地页
+ *    （小程序运营规范 2.5.13 / 2.14.7 禁止引导至网站成交），引导只做导流。
  */
 export const WEB_NO_CHARGE_TEXT = '网页版仅展示价格，不提供在线支付，也不会通过网页收取任何费用。'

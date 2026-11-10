@@ -16,8 +16,13 @@ import { PRODUCTS, priceTag } from '../lib/entitlement'
  * ## 🔴 本页三条硬边界（改动前必读）
  *
  * 1. **零收款、零下单、零创建订单**：本页不 import `lib/payment/checkout`，
- *    没有任何购买按钮，也不调 `createPaymentOrder`。Web 不提供在线支付是 ICP
- *    经营许可证绕行方案的基石（见 `docs/Web端定价展示与小程序下单-现状梳理与改造方案`）。
+ *    没有购买按钮，也不调 `createPaymentOrder`。当前 Web 仅持 ICP **备案**
+ *    （非经营性），据《互联网信息服务管理办法》第 11 条不得从事有偿服务。
+ *    🔴 2026-11-09 用户定案：**Web 暂不收费，以「引导到微信端 + App 端购买」闭环**，
+ *    这推翻了同日「办妥 ICP 经营许可证后本页可改为可购买」的改判 —— 不新增 Web
+ *    收款能力、不启动 Web 支付通道、不为此办证，护栏 18 的「Web 零收款」语义
+ *    继续有效。渠道隔离仍是硬约束（小程序运营规范 2.5.13 / 2.14.7 禁止引导至
+ *    网站成交），本页引导只做导流，见 `docs/Web引导闭环与Android收款实装-2026-11-09.md`。
  * 2. **价格零副本**：三档价格一律走 `PRODUCTS` + `priceTag(p)`（真相源
  *    `@dbee/shared` 的 `PRICE_*`），权益清单走 `content/membership.ts`。
  *    护栏 `tools/web-no-payment.test.ts` 会扫本页是否出现写死的 `¥数字`。
@@ -25,13 +30,14 @@ import { PRODUCTS, priceTag } from '../lib/entitlement'
  *    `components/MiniOrderGuide.tsx` 统一渲染，本页不自己拼一句话。
  *    售卖开关默认关闭时，本页与付费墙一样**零处「下单/购买」引导**。
  *
- * ## 刻意不做的两件事
+ * ## 当前不做的两件事（随实装/上架可解，非产品克制）
  *
  * · **不放兑换码输入框**：未登录状态下兑换无处落账，放了就是指向不存在的能力。
  *   故 `MiniOrderGuide` 传 `showRedeemHint={false}`（付费墙内才提示兑换码）。
- * · **不写「也可在 iOS / Android App 内开通」**：iOS 尚未上架、Android 尚未分发，
- *   对 Web 访客承诺一个装不到的渠道同属引人误解的表述。购买渠道只由开关门控的
- *   小程序引导如实给出，其余以「实际可购渠道以对应购买页面展示为准」兜住。
+ * · **不无条件写「也可在 iOS / Android App 内开通」**：iOS 尚未上架、
+ *   Android 尚未开放收款时，对 Web 访客承诺一个装不到/买不了的渠道属引人误解表述。
+ *   现由 `canGuideToAppSale()`（与 Android 支付按钮同源）门控，App 真能收款了才
+ *   通过共用组件 `MiniOrderGuide` 如实给出；微信端同理受 `canGuideToMiniSale()` 门控。
  */
 export function PricingSheet({ onClose }: { onClose: () => void }) {
   return (

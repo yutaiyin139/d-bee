@@ -6,6 +6,7 @@ import { zh } from './errmsg'
 import { todayKey } from './nutrition'
 import { roundTo } from './numfmt'
 import { createNativeFetch } from './originProxy'
+import { verifyViaApppayGateway } from './payment/apppayClient'
 import { platformName } from './platform'
 
 /**
@@ -994,6 +995,16 @@ export async function verifyPaymentOrder(
     const gw = await verifyViaGateway(orderNo, providerTxnId, receipt)
     if (gw !== null) return gw
     // gw === null：网关端点不存在/未配置（云端旧网关、503）→ 回退 RPC
+  }
+  // Android + 自托管网关：走 apppay 查单端点（server/lib/apppay.mjs）。
+  // 数据库 RPC 的 wechat/alipay 分支在 0047 改为「查单」语义：paid 由服务端
+  // 验签回调写入，RPC 只回状态，对未结算恒 false，故客户端直调 RPC 拿不到真值，
+  // 必须走网关（网关会外呼平台查单并补发权益）。与 iOS 分支同构。
+  if (platformName() === 'android') {
+    const gw = await verifyViaApppayGateway(orderNo)
+    if (gw !== null) return gw
+    // gw === null：网关端点不存在/未配置（旧网关、503）→ 回退 RPC（此时恒 false，
+    // 保持未实装态的旧行为，绝不谎报成功）
   }
   try {
     const { data, error } = await callRpc('verify_payment_order', {
