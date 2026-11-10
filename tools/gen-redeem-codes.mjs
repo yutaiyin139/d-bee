@@ -222,11 +222,15 @@ END $chk$;
 INSERT INTO public.redeem_codes (code_hash, plan, months, note, expires_at) VALUES
 ${rows}
 ON CONFLICT (code_hash) DO NOTHING
-RETURNING 'INSERTED:' || encode(digest('REDACTED','sha256'),'hex') || ':' || plan || ':' || coalesce(months::text,'NULL');
+RETURNING 'GENCODES_OK:' || plan || ':' || coalesce(months::text,'NULL');
 GENCODES_SQL_EOF
 
 echo "=== applying to database '${db}' ==="
-SUDO -u postgres psql -d ${db} -v ON_ERROR_STOP=1 ${vars.join(' ')} -f ${sqlPath}
+# 🔴 必须带 -tA（tuples-only + unaligned）：默认对齐输出会在每行前补空格与表头，
+#    实测得到 " GENCODES_OK:pro:1"（行首有空格），导致 Node 侧 /^GENCODES_OK:/ 恒不匹配
+#    → 误判「插入 0 行」→ 不发码文件，而 INSERT 其实已成功（库里留下无明文的孤儿哈希）。
+#    -tA 后每行就是裸值，无前导空格、无表头、无行数尾巴。
+SUDO -u postgres psql -d ${db} -tA -v ON_ERROR_STOP=1 ${vars.join(' ')} -f ${sqlPath}
 RC=$?
 rm -f ${sqlPath}
 echo "=== psql exit=$RC ==="
@@ -297,6 +301,36 @@ function main() {
 
   mkdirSync(relDir, { recursive: true })
 
+  // ═══════════════════════════════════════════════════════════════════
+  // 🔴🔴 先落盘明文，再写库（顺序是关键，别改回去）
+  // ───────────────────────────────────────────────────────────────────
+  // 原实现是「INSERT 成功 → 解析计数 → 写码文件」。2026-11-10 实测炸了：
+  //   psql 默认对齐输出给 " GENCODES_OK:pro:1"（行首有空格），
+  //   而计数用 /^INSERTED:/gm 锚定行首 → 恒匹配 0 行 → 判「发码失败」直接 return，
+  //   码文件从未写出，进程退出后**明文永久丢失**；但 INSERT 其实已成功，
+  //   库里留下一行只有 SHA-256 哈希的记录（哈希不可逆推）= **无主死码/孤儿行**，
+  //   既没人能兑换、也没人知道它对应哪张码，只能事后清理。
+  // 修法：**明文先落盘**。这样无论后续解析/网络/退出码出任何问题，
+  //   明文都已在本地文件里，最坏情况是「库里少了记录 → 重发」，绝不会「明文丢失」。
+  //   失败方向的代价必须偏小：宁可多发一次（幂等可清理），不可丢明文（不可恢复）。
+  // ═══════════════════════════════════════════════════════════════════
+  const header = [
+    '# D-Bee 兑换码批次（机密 —— 等同现金，勿外发、勿提交、勿贴聊天）',
+    `# 生成时间 : ${now.toISOString()}`,
+    `# 档位     : ${v.plan}${v.plan === 'pro' ? ` / ${v.months} 个月` : '（终身买断）'}`,
+    `# 数量     : ${codes.length}`,
+    `# 批次备注 : ${v.note}`,
+    `# 有效期   : ${v.expiresDays === null ? '永久有效' : `${v.expiresDays} 天（过期不可兑换）`}`,
+    `# 目标库   : ${db}`,
+    `# 格式     : ${CODE_LENGTH} 位 Crockford base32，无连字符；大小写与空格不敏感`,
+    '# 说明     : 每张码只能兑换一次；pro 档到期不自动续费（见用户协议 §六）',
+    '# 存储     : 库内仅存 SHA-256 哈希，明文只在本文件',
+    '',
+  ].join('\n')
+  writeFileSync(outFile, header + codes.join('\n') + '\n', 'utf8')
+  try { chmodSync(outFile, 0o600) } catch { /* Windows 上无 POSIX 权限，忽略 */ }
+  console.log(`\n🔐 明文已先落盘 → ${path.relative(ROOT, outFile)}（写库失败也不会丢码）`)
+
   const sqlPath = `/tmp/gencodes-${tag}.sql`
   const script = buildServerScript({ codes, plan: v.plan, months: v.months, note: v.note, db, sqlPath, batchTag: tag, expiresDays: v.expiresDays })
   const scriptPath = path.join(ROOT, `tmp-gencodes-${tag}.sh`)
@@ -308,39 +342,32 @@ function main() {
     env: { ...process.env, DBEE_HOST: host, DBEE_USER: user, DBEE_PWD: pwd },
   })
   const stdout = (r.stdout || '') + (r.stderr || '')
-  // 只回显不含码明文的行：INSERTED: 行带码，过滤掉（码只落文件）
-  const safe = stdout.split('\n').filter((l) => !l.startsWith('INSERTED:'))
+
+  // 🔴 计数容错：行首允许空白（万一 psql 参数被人改回对齐模式也不会再误判）。
+  //    标记串 GENCODES_OK 足够独特，不会与 SQL 报错文本撞车。
+  const inserted = (stdout.match(/^\s*GENCODES_OK:/gm) || []).length
+
+  // 回显：GENCODES_OK 行不含码明文（明文只在本地文件），可安全打印；
+  // 但仍过滤掉，避免刷屏与误粘贴。
+  const safe = stdout.split('\n').filter((l) => !/^\s*GENCODES_OK:/.test(l))
   console.log(safe.join('\n'))
 
   try { rmSync(scriptPath, { force: true }) } catch { /* 尽力清理 */ }
 
-  const inserted = (stdout.match(/^INSERTED:/gm) || []).length
   if (r.status !== 0 || inserted === 0) {
     console.error(`\n✗ 发码失败（psql 退出码 ${r.status}，确认插入 ${inserted} 行）`)
-    console.error('  未写出码文件；库内若已部分写入，请用 note 查询核对：')
-    console.error(`    SELECT count(*) FROM redeem_codes WHERE note = '${v.note.replace(/'/g, "''")}';`)
+    console.error(`  ✅ 明文已安全落盘，未丢失：${path.relative(ROOT, outFile)}`)
+    console.error('  ⚠ 但库内可能已部分写入（哈希已生成而明文只在本地 → 会成孤儿死码）。')
+    console.error('  请先核对并按需清理，再重跑本命令：')
+    console.error(`    SELECT id, plan, months, used_by FROM redeem_codes WHERE note = '${v.note.replace(/'/g, "''")}';`)
+    console.error(`    -- 确认是孤儿后清理：DELETE FROM redeem_codes WHERE note = '${v.note.replace(/'/g, "''")}' AND used_by IS NULL;`)
+    console.error('  🔴 若不清理就重跑，会产生「有哈希无明文」的死码行（本次事故的根因）。')
     return 1
   }
   if (inserted !== codes.length) {
     console.error(`\n⚠ 只插入了 ${inserted}/${codes.length} 张（ON CONFLICT DO NOTHING 命中或约束拒绝）`)
+    console.error(`  码文件里是全部 ${codes.length} 张明文；未入库的那几张无法兑换，请核对后清理文件。`)
   }
-
-  // 落盘：码明文只进这个文件（release/ 已 gitignore）
-  const header = [
-    '# D-Bee 兑换码批次（机密 —— 等同现金，勿外发、勿提交、勿贴聊天）',
-    `# 生成时间 : ${now.toISOString()}`,
-    `# 档位     : ${v.plan}${v.plan === 'pro' ? ` / ${v.months} 个月` : '（终身买断）'}`,
-    `# 数量     : ${inserted}`,
-    `# 批次备注 : ${v.note}`,
-    `# 有效期   : ${v.expiresDays === null ? '永久有效' : `${v.expiresDays} 天（过期不可兑换）`}`,
-    `# 目标库   : ${db}`,
-    `# 格式     : ${CODE_LENGTH} 位 Crockford base32，无连字符；大小写与空格不敏感`,
-    '# 说明     : 每张码只能兑换一次；pro 档到期不自动续费（见用户协议 §六）',
-    '# 存储     : 库内仅存 SHA-256 哈希，明文只在本文件',
-    '',
-  ].join('\n')
-  writeFileSync(outFile, header + codes.join('\n') + '\n', 'utf8')
-  try { chmodSync(outFile, 0o600) } catch { /* Windows 上无 POSIX 权限，忽略 */ }
 
   console.log(`\n✅ 已发放 ${inserted} 张码 → ${path.relative(ROOT, outFile)}`)
   if (opts.print) {

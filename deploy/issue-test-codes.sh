@@ -48,6 +48,10 @@ cd "$DIR" || { echo "✗ 无法进入仓库根目录: $DIR"; exit 1; }
 
 NOTE="${TEST_NOTE:-测试码-$(date '+%Y%m%d')}"
 EXPIRES="${TEST_EXPIRES:-7}"
+# 发哪些档位：默认只发「月卡」（2026-11-10 用户明确「给我一个月卡码用来测试；日卡取消」）。
+# 需要多档时用 TEST_TIERS 覆盖，空格分隔的 months 值，例：
+#   TEST_TIERS="1 12" bash deploy/issue-test-codes.sh --yes   # 月卡 + 年卡
+TIERS="${TEST_TIERS:-1}"
 DO_IT=0
 [ "${1:-}" = "--yes" ] && DO_IT=1
 
@@ -59,10 +63,17 @@ export DBEE_USER="${USER:-$DBEE_USER}" DBEE_PWD="${SSH_PWD:-$DBEE_PWD}"
 [ -n "${DBEE_USER:-}" ] || { echo "✗ .env 缺 USER"; exit 2; }
 [ -n "${DBEE_PWD:-}" ] || { echo "✗ .env 缺 SSH_PWD"; exit 2; }
 
+TIER_DESC=""
+for m in $TIERS; do
+  case "$m" in 1) TIER_DESC="$TIER_DESC 月卡(pro/1)";; 12) TIER_DESC="$TIER_DESC 年卡(pro/12)";;
+                *) TIER_DESC="$TIER_DESC pro/${m}月";; esac
+done
+
 echo "─── D-Bee 测试兑换码发放 ───"
 echo "批次备注 : $NOTE"
 echo "码有效期 : $EXPIRES 天（测试码刻意短命，过期自动失效 = 自带止损）"
-echo "计划     : ① 应用 0048（若未应用） ② 核验 ③ 发 pro/1月 ×1 + pro/12月 ×1"
+echo "本次档位 :$TIER_DESC  （各 1 张）"
+echo "计划     : ① 应用 0048（若未应用） ② 核验 ③ 发码并打印明文"
 echo "⚠ 日卡   : 兑换码体系无此档位（months 整数 + CHECK>0，最小 1 个月），发不出来"
 echo "⚠ 终身   : 刻意不发 —— 当天刚处理完 3 张 lifetime 码公开泄露事故；"
 echo "           --expires-days 只限「可兑换窗口」不限「会员时长」，lifetime 负债无界"
@@ -83,13 +94,24 @@ echo "==> ② 核验 0048 已生效（水位应含 0048、code_hash 列应为 tr
 python deploy/dbee-ssh.py run deploy/diag-redeem-readiness.sh 2>&1 | sed -n '1,20p'
 
 echo
-echo "==> ③ 发测试码（月卡 pro/1 + 年卡 pro/12 各 1 张，--print 让明文直接可见便于测试）"
-echo "    （两档均为 pro、都会自然到期；连着兑换可验「pro 顺延」：1 + 12 = 13 个月）"
-node tools/gen-redeem-codes.mjs --plan pro --months 1 --count 1 \
-     --note "$NOTE-月卡" --expires-days "$EXPIRES" --print || exit 1
-echo
-node tools/gen-redeem-codes.mjs --plan pro --months 12 --count 1 \
-     --note "$NOTE-年卡" --expires-days "$EXPIRES" --print || exit 1
+echo "==> ③ 发测试码（--print 让明文直接可见便于测试）"
+FAIL=0
+for m in $TIERS; do
+  # months 必须是 1..1200 的整数（与 0044 CHECK + 发码工具校验一致），
+  # 否则会被拒；提前拦一下，免得跑到一半才失败。
+  case "$m" in
+    ''|*[!0-9]*) echo "✗ TEST_TIERS 含非整数档位 '$m'（months 必须是整数月数）"; FAIL=1; continue;;
+  esac
+  if [ "$m" -lt 1 ] || [ "$m" -gt 1200 ]; then
+    echo "✗ 档位 '$m' 越界（months 必须 1..1200）"; FAIL=1; continue
+  fi
+  case "$m" in 1) LABEL="月卡";; 12) LABEL="年卡";; *) LABEL="${m}月";; esac
+  echo
+  echo "---- $LABEL (pro / $m 个月) ----"
+  node tools/gen-redeem-codes.mjs --plan pro --months "$m" --count 1 \
+       --note "$NOTE-$LABEL" --expires-days "$EXPIRES" --print || FAIL=1
+done
+[ "$FAIL" -ne 0 ] && { echo; echo "✗ 有档位发放失败，见上方输出"; exit 1; }
 
 cat <<'TAIL'
 

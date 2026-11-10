@@ -120,3 +120,51 @@ describe('0048 对外契约：返回值仍只有 ok/used/bad', () => {
     }
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════
+// 护栏 21b · 发码工具「明文不丢失」三处锁（2026-11-10 事故后新增）
+// ───────────────────────────────────────────────────────────────────
+// 事故：psql 默认对齐输出把标记行写成 " GENCODES_OK:pro:1"（行首有空格），
+//   而计数正则锚定 /^INSERTED:/ → 恒 0 → 工具判「发码失败」直接 return；
+//   但 INSERT 其实已成功。又因当时是「先写库、后落盘明文」，
+//   码文件从未写出 → 明文永久丢失 → 库里留下只有哈希的孤儿死码行。
+// 三处锁：① 顺序（明文先落盘）② psql -tA（裸值输出）③ 计数正则容忍行首空白。
+// ═══════════════════════════════════════════════════════════════════════
+describe('发码工具：明文先落盘，再写库（顺序不可反）', () => {
+  /** 在工具源码里定位某个必需片段；找不到就抛错（防止 indexOf(-1) 造成假绿） */
+  function locate(label: string, needle: string | RegExp): number {
+    const idx = typeof needle === 'string' ? TOOL.indexOf(needle) : TOOL.search(needle)
+    if (idx < 0) throw new Error(`未在 tools/gen-redeem-codes.mjs 中找到「${label}」`)
+    return idx
+  }
+
+  it('writeFileSync(outFile) 出现在 spawnSync(dbee-ssh.py) 之前', () => {
+    const writeIdx = locate('明文落盘', /writeFileSync\(outFile,\s*header \+ codes\.join/)
+    const spawnIdx = locate('写库调用', /spawnSync\('python',\s*\['deploy\/dbee-ssh\.py',\s*'run'/)
+    expect(spawnIdx).toBeGreaterThan(writeIdx)
+  })
+
+  it('发码失败分支明确告知「明文已安全落盘」并给出孤儿清理 SQL', () => {
+    // 失败路径必须给运维两条信息：明文没丢 + 怎么查/清可能产生的孤儿哈希行。
+    // 缺任一条，下一个人就会在不知情的情况下重跑，二次制造孤儿。
+    const failIdx = locate('失败分支', '✗ 发码失败')
+    const tail = TOOL.slice(failIdx, failIdx + 1200)
+    expect(tail).toMatch(/明文已安全落盘[\s\S]*DELETE FROM redeem_codes WHERE note =/)
+  })
+})
+
+describe('发码工具：psql 输出用 -tA 裸值，计数正则容忍行首空白', () => {
+  it('发码用的 psql 命令带 -tA（tuples-only + unaligned）', () => {
+    // 匹配「实际使用」的那条命令（-f ${sqlPath} 结尾的那条），不是注释里提到的 -tA
+    expect(TOOL).toMatch(/psql -d \$\{db\} -tA -v ON_ERROR_STOP=1[\s\S]{0,80}-f \$\{sqlPath\}/)
+  })
+
+  it('SQL 的 RETURNING 标记是 GENCODES_OK（唯一、不与报错文本撞车）', () => {
+    expect(TOOL).toMatch(/RETURNING 'GENCODES_OK:' \|\| plan/)
+  })
+
+  it('计数正则锚定 ^\\s*GENCODES_OK:（容忍行首空白，防对齐模式回归误判）', () => {
+    // 关键在 \s*：一旦有人把 -tA 去掉，对齐输出的前导空格仍能被数到，不会再静默判 0
+    expect(TOOL).toMatch(/const inserted = \(stdout\.match\(\/\^\\s\*GENCODES_OK:\/gm\)/)
+  })
+})
