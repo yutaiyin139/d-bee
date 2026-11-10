@@ -43,11 +43,14 @@
  *   node tools/gen-redeem-codes.mjs --plan lifetime --count 5 --note "2026-11 内测"
  *   node tools/gen-redeem-codes.mjs --plan pro --months 1  --count 20 --note "月卡首发"
  *   node tools/gen-redeem-codes.mjs --plan pro --months 12 --count 20 --note "年卡首发"
+ *   node tools/gen-redeem-codes.mjs --plan pro --months 1 --count 20 --note "限时月卡" --expires-days 30
  *   node tools/gen-redeem-codes.mjs --plan pro --months 1 --count 3 --note "测试" --dry-run
- *   加 --print 才在终端显示码明文；加 --db 指定库名（默认 dbee）。
+ *   加 --print 才在终端显示码明文；加 --db 指定库名（默认 dbee）；
+ *   加 --expires-days N 设码有效期（N 天，缺省 = 永久有效）。
  *
- * 依赖 0044 已应用（redeem_codes 需有 plan/months 列）。未应用时本工具会
- * 明确报「服务端尚未支持档位」，而不是静默发出只能兑终身的码。
+ * 依赖 0048 已应用（redeem_codes 需有 code_hash 列）。未应用时本工具会
+ * 明确报「服务端尚未支持哈希存储」，而不是静默退化成明文入库。
+ * 🔴 0048 起库内只存 SHA-256 哈希，明文码只落 release/*.txt（gitignore + 600）。
  */
 import { spawnSync } from 'node:child_process'
 import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync, rmSync } from 'node:fs'
@@ -158,7 +161,16 @@ export function validate(opts) {
     // lifetime 给了 months：0044 的 CHECK 会拒（lifetime 必须 months IS NULL）
     return { ok: false, error: '--plan lifetime 不能带 --months（0044 CHECK：lifetime 的 months 必须为 NULL）' }
   }
-  return { ok: true, plan, months, count, note }
+
+  // 有效期（0048 新增）：--expires-days N 天；缺省 = 永久有效（NULL）
+  let expiresDays = null
+  if (opts['expires-days'] !== undefined && opts['expires-days'] !== true) {
+    expiresDays = Number(opts['expires-days'])
+    if (!Number.isInteger(expiresDays) || expiresDays < 1 || expiresDays > 3650) {
+      return { ok: false, error: `--expires-days 必须是 1..3650 的整数（收到 '${opts['expires-days']}'）` }
+    }
+  }
+  return { ok: true, plan, months, expiresDays, count, note }
 }
 
 /**
@@ -179,31 +191,38 @@ export function shq(s) {
  * 🔴 SQL 走 heredoc 写临时文件 + `psql -f`，不用管道：`echo 密码 | sudo -S` 已占用
  *    stdin，再管道给 psql 会让 SQL 收不到（本项目已实测踩过两次）。
  */
-export function buildServerScript({ codes, plan, months, note, db, sqlPath, batchTag }) {
+export function buildServerScript({ codes, plan, months, note, db, sqlPath, batchTag, expiresDays }) {
   const vars = [`-v notev=${shq(note)}`, `-v planv=${shq(plan)}`,
-                `-v monthsv=${shq(months === null ? '' : String(months))}`]
+                `-v monthsv=${shq(months === null ? '' : String(months))}`,
+                `-v expiresv=${shq(expiresDays === null ? '' : String(expiresDays))}`]
   codes.forEach((c, i) => vars.push(`-v c${i}=${shq(c)}`))
-  const rows = codes.map((_, i) => `  (:'c${i}', :'planv', nullif(:'monthsv','')::int, :'notev')`).join(',\n')
+  // 🔴 0048：只存 code_hash（库内 SQL 现算 SHA-256），不存明文 code。
+  //   expires_at 用 make_interval(days => N) 现算（now() + N 天）；空 = 永久（NULL）。
+  //   🔴 不能用 N::interval（那会被解析成 N 秒而非 N 天），必须 make_interval(days=>N)。
+  const rows = codes.map((_, i) =>
+    `  (encode(digest(:'c${i}', 'sha256'), 'hex'), :'planv', nullif(:'monthsv','')::int, :'notev',` +
+    ` CASE WHEN nullif(:'expiresv','')::int IS NULL THEN NULL ELSE now() + make_interval(days => nullif(:'expiresv','')::int) END)`
+  ).join(',\n')
 
   return `#!/usr/bin/env bash
-# 自动生成：发码批次 ${batchTag}（${codes.length} 张，plan=${plan}，months=${months ?? 'NULL'}）
+# 自动生成：发码批次 ${batchTag}（${codes.length} 张，plan=${plan}，months=${months ?? 'NULL'}，expiresDays=${expiresDays ?? 'NULL'}）
 # 生成器 tools/gen-redeem-codes.mjs。本文件用后即删，勿手工编辑。
 set -uo pipefail
 SUDO() { echo "__SUDO_PWD__" | sudo -S -p '' "$@" 2>/dev/null; }
 cat > ${sqlPath} <<'GENCODES_SQL_EOF'
--- 0044 前置检查：无 plan 列则直接失败，绝不静默退化成「只能发终身」
+-- 0048 前置检查：无 code_hash 列则直接失败，绝不静默退化成「明文入库」
 DO $chk$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                  WHERE table_name='redeem_codes' AND column_name='plan') THEN
-    RAISE EXCEPTION '0044 未应用：redeem_codes 缺 plan 列，无法按档位发码';
+                  WHERE table_name='redeem_codes' AND column_name='code_hash') THEN
+    RAISE EXCEPTION '0048 未应用：redeem_codes 缺 code_hash 列，无法安全发码';
   END IF;
 END $chk$;
 
-INSERT INTO public.redeem_codes (code, plan, months, note) VALUES
+INSERT INTO public.redeem_codes (code_hash, plan, months, note, expires_at) VALUES
 ${rows}
-ON CONFLICT (code) DO NOTHING
-RETURNING 'INSERTED:' || code || ':' || plan || ':' || coalesce(months::text,'NULL');
+ON CONFLICT (code_hash) DO NOTHING
+RETURNING 'INSERTED:' || encode(digest('REDACTED','sha256'),'hex') || ':' || plan || ':' || coalesce(months::text,'NULL');
 GENCODES_SQL_EOF
 
 echo "=== applying to database '${db}' ==="
@@ -213,8 +232,8 @@ rm -f ${sqlPath}
 echo "=== psql exit=$RC ==="
 if [ $RC -ne 0 ]; then echo "FATAL: insert failed, no codes were committed"; exit $RC; fi
 
-echo "=== post-insert inventory for this batch (no plaintext codes) ==="
-SUDO -u postgres psql -d ${db} -tA -F' | ' -v notev=${shq(note)} -c "select 'batch rows=' || count(*) || ' plan=' || coalesce(string_agg(distinct plan,''),'?') from redeem_codes where note = :'notev'" 2>/dev/null
+echo "=== post-insert inventory for this batch (no plaintext codes, no hashes) ==="
+SUDO -u postgres psql -d ${db} -tA -F' | ' -v notev=${shq(note)} -c "select 'batch rows=' || count(*) || ' plan=' || coalesce(string_agg(distinct plan,''),'?') || ' unused=' || count(*) filter (where used_by is null) from redeem_codes where note = :'notev'" 2>/dev/null
 exit 0
 `
 }
@@ -243,13 +262,15 @@ function main() {
   const relDir = path.join(ROOT, 'release')
   const outFile = path.join(relDir, outFileName({ plan: v.plan, months: v.months, tag }))
 
-  console.log('─── D-Bee 发码工具（0044 三档）───')
+  console.log('─── D-Bee 发码工具（0048 哈希 + 三档 + 有效期）───')
   console.log(`档位   : ${v.plan}${v.plan === 'pro' ? ` / ${v.months} 个月` : '（终身买断）'}`)
   console.log(`数量   : ${v.count}`)
   console.log(`批次备注: ${v.note}`)
+  console.log(`有效期 : ${v.expiresDays === null ? '永久有效' : `${v.expiresDays} 天`}`)
   console.log(`目标库 : ${db}`)
   console.log(`码格式 : ${CODE_LENGTH} 位 Crockford base32（无连字符/无空格，大小写与空格容错）`)
   console.log(`码空间 : 32^${CODE_LENGTH} = 2^80 ≈ 1.2e24`)
+  console.log(`存储   : 库内仅存 SHA-256 哈希（明文只落文件）`)
   console.log(`输出   : ${path.relative(ROOT, outFile)}`)
 
   if (dryRun) {
@@ -277,7 +298,7 @@ function main() {
   mkdirSync(relDir, { recursive: true })
 
   const sqlPath = `/tmp/gencodes-${tag}.sql`
-  const script = buildServerScript({ codes, plan: v.plan, months: v.months, note: v.note, db, sqlPath, batchTag: tag })
+  const script = buildServerScript({ codes, plan: v.plan, months: v.months, note: v.note, db, sqlPath, batchTag: tag, expiresDays: v.expiresDays })
   const scriptPath = path.join(ROOT, `tmp-gencodes-${tag}.sh`)
   writeFileSync(scriptPath, script, 'utf8')
 
@@ -311,9 +332,11 @@ function main() {
     `# 档位     : ${v.plan}${v.plan === 'pro' ? ` / ${v.months} 个月` : '（终身买断）'}`,
     `# 数量     : ${inserted}`,
     `# 批次备注 : ${v.note}`,
+    `# 有效期   : ${v.expiresDays === null ? '永久有效' : `${v.expiresDays} 天（过期不可兑换）`}`,
     `# 目标库   : ${db}`,
     `# 格式     : ${CODE_LENGTH} 位 Crockford base32，无连字符；大小写与空格不敏感`,
     '# 说明     : 每张码只能兑换一次；pro 档到期不自动续费（见用户协议 §六）',
+    '# 存储     : 库内仅存 SHA-256 哈希，明文只在本文件',
     '',
   ].join('\n')
   writeFileSync(outFile, header + codes.join('\n') + '\n', 'utf8')
