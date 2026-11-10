@@ -1038,3 +1038,80 @@ Web 侧**复用 mini 的 `D_BEE_XPAY_ENABLED`**（不另起 `VITE_MINI_SALE_ENAB
 
 - **零生产变更、未开任何开关**（`D_BEE_APPPAY_ENABLED` 默认 false）、**线上零变化**（线上入口 js 仍 `index-Bm9H-Xgy.js`，本轮本地构建 `index-HoMGJbqY.js`，`dist/` 不入 git）；生产迁移水位仍 **0045**（🔴 **0046 / 0047 均已写未应用**）。
 - 🟠 未决：开启收款待资质链；`LEGAL_UPDATED` 是否刷新（产品决策）；iOS 包需 **Mac 重打**才含 A-5 真删号 + 本轮改动。
+
+## 2026-11-10 · psql 三坑 + 发码「明文先落盘」铁律（MEMORY 只留一行指针）
+
+背景：当天为发月卡测试码，**一天之内踩齐三个独立的坑**，每个都会造成「静默错误」
+（终端不报错或报错误结论），且其中两个已造成生产侧后果（孤儿死码行）。
+
+### 坑 1 · `psql -c` 放多条 SQL → `:'var'` 根本不插值
+- 写法：`psql -v idv=4 -c "DELETE ... WHERE id = :'idv'; SELECT 'ok';"`
+- 结果：`ERROR: syntax error at or near ":"` —— psql 遇到 `-c` 内含分号分隔的**多条**语句时
+  走的是「直接把整串发给服务端」的快路径，**绕过脚本处理器**，于是 `:'var'` 不做插值，
+  服务端收到字面 `:'idv'`。
+- 铁律：**需要 `-v` 插值就走 `-f` + heredoc**（`cat > /tmp/x.sql <<'EOF' ... EOF` 再 `psql -f`）。
+  `tools/gen-redeem-codes.mjs` 与 `deploy/clean-orphan-test-code.sh` 都是这个手法，均已实测可用。
+  `-c` 只配「单条 + 无需插值」的语句。
+- 连带坑：`echo | sudo -S` 已占用 stdin，**再管道给 psql 会让 SQL 收不到**（本项目此前已踩过两次）。
+
+### 坑 2 · 解析 psql 输出必须 `-tA`
+- 默认**对齐模式**会在每行前补空格并输出表头，实测得到 `" GENCODES_OK:pro:1"`（行首有空格）。
+- 计数正则若锚定 `/^标记:/gm` → **恒 0 匹配** → 误判「插入 0 行」→ 判发码失败。
+- 铁律：psql 加 `-tA`（tuples-only + unaligned，输出裸值无前导空格/表头/行数尾巴）；
+  正则**同时**写成 `/^\s*标记:/gm` 兜底（万一有人把 `-tA` 去掉也不会再静默判 0）。
+- 标记串要独特（`GENCODES_OK` 而非 `INSERTED`），避免与 SQL 报错文本撞车。
+
+### 坑 3 · 变更类语句绝不 `2>/dev/null`
+- 运维脚本里图省事写 `SUDO() { echo "$pwd" | sudo -S -p '' "$@" 2>/dev/null; }`，
+  坑 1 的语法错误被**整条吞掉** → 终端什么都不打印 → 看着像「成功但影响 0 行」。
+- 只靠 `AFTER total=1`（没变）才发现异常。
+- 铁律：**只读查询**可抑制 stderr（降噪）；**变更类语句**一律保留 stderr + 显式 `RC=$?` 检查。
+  同一脚本里拆两个函数（`SUDO` / `SUDO_V`）区分。
+
+### 🔴 发码类操作：明文必须先落盘，再写库（顺序不可反）
+- 原实现「INSERT 成功 → 解析计数 → 写明文文件」，遇坑 2 判失败即 `return`，
+  明文文件从未写出，进程退出后**明文永久丢失**；但 INSERT 其实已成功 →
+  库里留下一行只有 SHA-256 哈希的记录（哈希不可逆推）= **无主孤儿死码**，
+  既没人能兑换、也没人知道它对应哪张码。
+- 铁律：**明文先落盘**（`writeFileSync` + `chmod 600`）再写库。
+  失败方向代价必须偏小：**宁可多发一次（幂等可清理），不可丢明文（不可恢复）**。
+- 失败分支必须同时告知两件事：① 明文已安全落盘 ② 孤儿行的核查/清理 SQL
+  （缺第二条，下一个人会在不知情下重跑，二次制造孤儿）。
+
+### 一次性清理脚本：别留 id 默认值
+- `TARGET_ID="${TARGET_ID:-4}"` 首跑之后就是颗雷：目标行已删，将来 id=4 可能是
+  **另一张正常码** → 复用脚本即误删。改 `${TARGET_ID:?必须显式传}` 强制传参。
+- 删除条件用「四重与」而非 `note LIKE`：id 精确 + `used_by IS NULL` + `code IS NULL` + note 全等；
+  删前先用只读诊断确认这四条**命中且仅命中**目标行（实测 `all_four=1`）。
+- `redeem_codes.id` 真实类型是 **bigint**（不是 int）；`used_by` 是 text（不是外键整型）。
+
+### 注入型占位符在脚本里只能出现一次
+- 首版 `__CODE__` 同时出现在注释与 `case "$CODE" in __CODE__)` 的模式里，
+  `sed s/__CODE__/真码/` 把 **case 模式也换成真码** → `$CODE` 命中自己的守卫 → 误报「未替换」。
+- 修法：守卫改成**按形状校验**（`grep -Eq '^[0-9A-Z]{16}$'`），不比对占位符字面量；
+  并显式断言「占位符出现次数 == 1」。
+- 相关：`deploy/dbee-ssh.py run` **无 stdin/env 透传**，`render_text` 只认它自己的占位符表
+  （`__SUDO_PWD__` / `__DOMAIN__` / `__JWT_SECRET__` 等）→ 要传额外秘密值只能像
+  `gen-redeem-codes.mjs` 那样**本地生成临时脚本副本**（写在 gitignore 的 `release/`，用后即删）。
+  `assert_no_leaked_secret` 只放行含 `sudo -S` 的行，密码出现在其他行会拒绝上传。
+
+### 非破坏性核验发出去的码（不烧码）
+- 直接调 `redeem_by_code()` 验证会**真的核销掉**这张码，用户就没得测了。
+- 等价验证：把明文码传进服务器，库内现算 `encode(digest(码,'sha256'),'hex')` 与 `code_hash` 比对
+  （这正是 `redeem_by_code` 的第一步匹配逻辑），输出只有布尔值/形状摘要，
+  **码明文与哈希都不落日志**。脚本 `deploy/diag-verify-issued-code.sh`。
+
+### 迁移水位跳号空洞（0046/0047 缺失）实测结论
+- 11-10 为发码手工应用了 **0048**，而 `0046`（xpay）/ `0047`（apppay）**仍未应用**
+  → `schema_migrations` 出现 0045 → 0048 的**跳号空洞**。
+- 是否有害？实测无害：① 本仓**没有自动迁移 runner**（`git ls-files | grep migrat` 只有
+  `tools/migration-audit.sh` 与 `deploy/run-migration-audit.sh` 两个审计脚本），迁移是**手工逐个**应用，
+  不存在「只应用 version > max(applied) 的文件」这类会永久跳过 0046/0047 的逻辑；
+  ② `tools/migration-audit.sh` **没有跳号检查**（只查 `status <> 'applied'` 与 checksum 比对），
+  且对 checksum 为 NULL 显式跳过（「自指迁移，跳过比对」）→ 不报红；
+  ③ 0046/0047 的目标对象（`xpay_transactions` / `app_payment_transactions` / `settle_app_payment`）
+  实测均**不存在**，与「未应用」一致，说明没有被别的迁移偷偷带进来。
+- 🔴 补应用 0046/0047 时注意：两者都 `CREATE OR REPLACE FUNCTION public.verify_payment_order`，
+  **0047 覆盖 0046** → 必须按 0046 → 0047 顺序应用，否则最终函数体是 0046 版（查单语义丢失）。
+  `payment_products` / `payment_orders` 两张表是老迁移（0021/0029/0030）建的，**早已存在**，
+  别误判成「0046/0047 已部分应用」。
