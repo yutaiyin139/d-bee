@@ -13,20 +13,21 @@
 - 🔴 **原生包禁用 `npm run build`**（白屏）：内测 `npm run build:native:internal`；上架 `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native`。🔴 二者与 web **共用 `dist/`**，且 native / `build:web` 都会**删掉 `dist/legal/`**（隐私政策静态页零 JS 可爬＝OPPO 硬要求）→ **部署 web 前必须重跑 `npm run build`** 并比对入口 js 文件名。**产物自检以 `index.html` 引用的入口 js 为唯一真源**（干净构建本就有 2 个 `index-*.js`，「>1＝残留」是错误判据）。
 - 🔴🔴 **铁律 #13：「已完成」必须附生产侧实测证据**。**本地绿 ≠ 线上绿**，中间隔「提交→构建→部署」。取证 5 法见 REFERENCE.md。
 
-## 现状（截至 2026-11-10 上午 · Web 上线 / Android 收款实装未入库；详版 → REFERENCE）
+## 现状（截至 2026-11-10 上午 · Web 上线 / Android 收款已实装并入库；详版 → REFERENCE）
 
 - ✅ **WEB 上线** `https://d-bee.cn/` 200；11-09 重部署含定价页（线上入口 js `index-Bm9H-Xgy.js`、三法务页 200、证书到期 **2027-02-04**）。🔴 **git `2b18ce1`（11-09 上午）；11-09 晚 apppay 全链路（24 改 + 10 新增）仍未 commit/push → 唯一副本在本机**，线上零变化。**数据面 = 自建 PostgreSQL `dbee`**（`healthz` 实证），生产迁移水位 **0045**（🔴 **0046 xpay / 0047 apppay 均已写未应用**）。
+  - 🔄 **11-10 上午已更新**：apppay 全链路已 commit（`496ed9e`）+ push；Web 重新构建部署上线（入口 `index-HoMGJbqY.js`，线上/本地 sha256 `44b05e16` 一致，铁律 #13 实测）；Android vc16→**vc17** 重打归档（含 apppay 代码，开关默认关、运行时零变化）。
 - ✅✅ **云端库彻底废弃（11-08）**：四端数据面全指自建 PG、运行时残留清零、产物零云端域名（护栏 10/10b）；数据放弃迁移（owner_id 19 位数字 ≠ `wx:<openid>`）。🔴 **「彻底释放」仍差 2 步、均需用户本人**：① 重传 mini 体验版（`TextDecoder` polyfill 已补，**须新版本号+重设体验版**）② 云库实例停用（不可逆）；**实例仍在线、线上旧包仍连旧库、真实用户仍在写入**，真机调试 ≠ 体验版。🟠 尾巴（网关模式/安全响应头/308 复核/凭据轮换/`APPLE_*` env/公安备案 12-06）逐项 → `docs/待办清单-云库废弃收尾-2026-11-08.md`。
 - 🔴🔴 **mini 微信虚拟支付售卖**（11-08）：虚拟商品 → `wx.requestVirtualPayment`（米大师 xpay），全链路就绪（0046 + `xpay.mjs`/`xpay.ts` + 付费墙三档 + legal 同开关），开关默认 false；**开启前置 6 项在 `mini/src/lib/xpayEnabled.ts` 文件头**。头号铁律：补权益后**必调 `/xpay/notify_provide_goods`**（Apple `order_type=7` 不调）否则不结算；已扣款未确认 → **`settling` 绝不报 error**；`signData` **原样透传**；provider 恒 `'wechat_xpay'`。全文 → REFERENCE「11-08 晚间迁入」。
 - 🔴🔴 **11-09 晚用户最终定案**（全文 → REFERENCE「11-09 晚」；权威 `docs/Web引导闭环与Android收款实装-2026-11-09.md`）：「**web端暂不收费，引导进入微信端和app端收费；android端支付能力完善到能收款；4端业务逻辑不变**」→ 推翻「Web 办 ICP 经营许可证后可独立收款」+「立即启动办证」。🔴 **两开关各自独立、默认 false**：`D_BEE_XPAY_ENABLED`（mini）/ `D_BEE_APPPAY_ENABLED`（**一个变量同决定** Android 支付按钮 + Web 引导）；关闭态 Web **零引导字样**（防引导到不售卖的端＝虚假宣传）、`WEB_NO_CHARGE_TEXT` 恒展示。**Web 零收款三层防御**：define 折叠（`wechat:!1,alipay:!1`）+ `isAndroid()` 门 + 运行时 `isWeb()&&noPayChannel` 兜底。**四端业务逻辑零改动**。
 - 🔴🔴 **Android 收款已实装**（`0047` + `server/lib/apppay.mjs` + `apppayClient.ts`）：微信 V3 + 支付宝 RSA2 **零依赖密码学**（`node:crypto` 手写，🔴 禁支付 SDK）。**推模式结算**——SDK 成功只代表用户付完钱，**发权益权威信号＝服务端验签回调 → `settle_app_payment`**；`verify_payment_order` 0047 改**查单语义**（回调未到恒 false），提示「权益到账中」**绝不报 error**。**幂等键＝`out_trade_no`**；**owner 权威＝`payment_orders.owner_id`**（回调传 null 支持代付）。头号资损铁律：**金额校验三路径**（微信/支付宝回调 + 查单）`amountCents <` 订单额即**拒发权益**（防 1 分钱买会员）；支付宝 **`8000` 与 `9000` 同路径绝不报错**；`notify` **不走 `wrap()`** + 限流豁免；`cloudError`＝`{message,error}` **不是 `code`**；直购**不自动续费**。
-- 🔴 **开启收款前置（资质未到位前开关保持 false）**：微信开放平台移动应用审核 + 商户号 **APP 支付权限** + 支付宝企业应用 + **App 备案下证** + 软著 → 「**1 分钱**」真实联调（清单 → 权威文档 §五）。✅ **11-09 Android vc16 正式包**（含定价页，归档 `release/`；打包后已重跑 `npm run build`）；🟠 公网分发待批准（A7）。
+- 🔴 **开启收款前置（资质未到位前开关保持 false）**：微信开放平台移动应用审核 + 商户号 **APP 支付权限** + 支付宝企业应用 + **App 备案下证** + 软著 → 「**1 分钱**」真实联调（清单 → 权威文档 §五）。✅ **11-09 Android vc16 正式包**（含定价页，归档 `release/`；打包后已重跑 `npm run build`）；🟠 公网分发待批准（A7）。🆕 **11-10 vc17 正式包**（含已入库 apppay 代码，归档 `release/D-Bee-1.7.3-vc17-dbee.cn-FORMAL-20261110.apk`）。
 - 工程基线：`npm test` = **18 文件 / 839 项全绿**，护栏 **20 道**（20 = `apppay-consistency` 78 项）；自检 `apppay` 156 / `gateway` 303 / `xpay` 96 / `iap` 47。🔴 改 `packages/shared/src` 后必须 `cd packages/shared && npm run build`。变体自检：mini grep `enabled:`；🔴 **Web「下单」判据已失效**（`预下单` 子串恒 3 命中，见「环境备忘」产物判读③）→ 改判**真实引导 CTA 全 0**（`去小程序下单`/`去 App 购买`/`立即购买`/`去支付`）。
 - 🟠 **备案链**：域名/ICP ✅ 已下证；App / 小程序 / 算法 / 公安备案均管局审核中（前两项硬阻断 Android 上架、mini 发版+虚拟支付开通）。`四端收款堵点与政策依据详表`（**结论 #5 已作废**，法规存档）与 `四端收费一致性核验与合规实施总纲`（L1~L3/护栏/发版验收仍有效）均已加纠偏横幅指向权威文档。
 
 ## 下一步 / 待拍板（详版 → REFERENCE.md）
 
-- ⚠️ **近期第一动作：把 11-09 晚 apppay 全链路 commit/push**（开关默认关、不影响生产），当前唯一副本只在本机，先入库再谈后续阶段。
+- ✅ **11-10 上午已入库**：apppay 全链路 commit `496ed9e` + push、versionCode vc17 commit `7d300e3` + push；「唯一副本在本机」风险已解除。
 - 🔴 **主线 = iOS 上线**（权威 `docs/iOS上线依赖全景与实施步骤-2026-11-07.md`）：中国区正式上架卡软著（30–60 工作日）/ App 备案（7–20）/ Mac 签名，最大交付物 = **TestFlight 内部测试**（Mac + Xcode≥26 + Team + 重打包）。ASC 填报面几乎空白（逐字段答案 `docs/ASC表单填报答案-2026-11-07.md`）；Apple 硬闸门 Xcode 26 + iOS 26 SDK、新年龄分级问卷必答（生效日期 → REFERENCE）。🔴 壳内产物停在 11-04，**本轮 apppay + A-5 真删号均须 Mac 重打包才进 iOS 包**。
 - 🔴 **只有用户本人能做**：软著 AI 条款、Mac 选 `DEVELOPMENT_TEAM`、证书入 `signing/`、mini 发版（开端口→上传→体验版验收→提审）、云库停用、公安备案回填、ASC 填报、算法备案收尾、**支付资质申请**（微信开放平台移动应用 + 商户号 APP 支付权限 + 支付宝企业应用）。
 - 🟠 **待拍板**（详版 → REFERENCE）：隐私政策 §五 + `LEGAL_UPDATED` 刷新（**全体老用户重弹同意窗**；开卖会改 SDK 清单与 Android 条）、mini 无同意窗重确认载体、凭据轮换、网关模式收紧、Android vc16 公网分发、护栏 A9/A10、Apple 个人主体 vs 备案企业主体。
