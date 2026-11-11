@@ -1216,3 +1216,42 @@ Web 侧**复用 mini 的 `D_BEE_XPAY_ENABLED`**（不另起 `VITE_MINI_SALE_ENAB
 - 🔴🔴 **测试 = vitest**（`npm test` = `vitest run tools/`），`vite.config.ts` 强制串行（并行会静默丢文件＝假绿）；**跑完必核对 `Test Files` 数 == `ls tools/*.test.ts`**。**mini 类型检查须单独跑**；构建期护栏必须写在构建配置里（webpack 不执行被打包模块顶层代码）。**禁硬编码日期**（`log_date` 须同源取 `todayKey()`，否则窗口滑走集体假红）。**MAPE 达标 ≠ 无需处理**（四指标并报，实测需真机+样本餐≥20 条 4 档，此前不得对外表述精度数字）。**小程序验收一律以体验版为准**（真机调试注入 Web API 掩盖 JSCore 缺口，`urlCheck=false` 掩盖合法域名问题）。
 - 🔴🔴 **护栏断言三条铁律**：①一个 `it()` 只一条断言 ②匹配「**实际使用**」非「标识符出现」（验「先验签」须从 `async alipayNotify(` 起 `slice` 定位，全文 `indexOf` 会命中上部**导出定义**）③断言在 `stripComments()` 后的代码上做（勿把注释文本写进期望）。新增护栏/放宽快照基线**必须红验证**；「反向检测」里的禁用域名是**判据不是依赖**，须白名单 + 正向断言补上（护栏 10c）。🔴🔴 **红验证必须确认「注入真的生效」**：`assert s.count(old)==1` 若因目标串多处出现而失败，脚本会**静默跳过注入**但测试仍报全绿 → 极危险假绿；修法按**行号**定位或先校验 diff。
 - 🔴 **产物判读三条**：① **中文形态分工具链**——mini（Taro/webpack）= 纯 ASCII `\uXXXX` → `codecs.decode(s,'unicode_escape')`（勿再 `.encode('latin1','ignore')` 丢中文）；Web 主端（vite）= UTF-8 直存 → 直接 UTF-8 读。② **构建期替换 vs 布尔注入验证法不同**——`import.meta.env.VITE_*` 是字符串替换（字面量留产物，grep 命中 ≠ 生效）→ 安全过滤抽纯函数单测；`define` 布尔常量才被 terser 折叠（用「引导字样 0 命中」验证）。③ **裸串 grep 会子串碰撞**（「下单」命中「预下单」）→ 判据用**完整 CTA 短语**或差值。判数据面要追「哪个常量真正被 `resolveEndpoint` 返回」，不能 grep 到域名就下结论。
+
+## 11-11 晚 · 首购半价（月订阅首购 ¥9 → 恢复 ¥18）详版（由 MEMORY 压出）
+
+> ⛔ **2026-11-11 21:30 已作废、代码已整体回退**：用户决定放弃「渠道首月半价」宣传，17 改 + 3 新增全部丢弃，业务代码回到 15:00 基线（`6b0bba7`）；0049 从未应用、生产零影响、官网/法务无需改。本节仅作技术分析存档，**不得据此继续开发或作为现行口径引用**。改动备份与恢复方法 → 会话工作区 `.workbuddy/memory/backup/intro-revert-20261111-2130/README.md`。
+
+> 权威方案 `docs/首购半价方案-2026-11-11.md`（该文档已随回退从工作区移除，副本见备份 `untracked/docs/`）。用户 17:59 定案「月订阅首购 ¥9、之后恢复 ¥18」，仅限新用户拉新；
+> 20:12 补充口径「月资费仍 18，只新用户首购 ¥9」。
+
+### 三个语义决策
+- ① 半价 = **首购**（非首月续费）② 首购判定 = **只算真金白银**（wechat/alipay/apple 或 paid 订单，兑换码不算）③ 仅新用户。
+
+### 0049 迁移 `db/migrations/0049-first-purchase-intro.sql`
+- 新增 `dbee_pro_monthly_intro` 商品行（900 分）+ `is_first_purchase()` SECDEF RPC（只读 auth.uid()）+
+  `create_payment_order` 首购资格闸门（非首购下单 intro 商品 → `not_intro_eligible`）。
+- 🔴 **关键架构判断：闸门放「下单时」而非「结算时」**——结算函数幂等重试是常态，结算时判首购会「已扣款却拒发权益」
+  或「老用户先下单 ¥9 等结算再拒」两种资损；下单时拒绝则根本不产生订单/扣款。
+- 🔴 xpay 的 signData 用 `order.product_id + amount_cents` 构造，米大师道具价格平台侧定义（goodsPrice 不符 → -15013）
+  → 必须**独立 intro 商品 ID**，不能「自动改价但 ID 不变」。
+
+### 共享层 / 下单链路 / 展示层改动
+- 共享层：`PRICE_PRO_MONTHLY_INTRO=9`、`INTRO_PRODUCT_ID='dbee_pro_monthly_intro'`（不进 PRODUCT_IDS，避免 ProductId 类型扩散）、
+  `Product.introPrice`、`introTag()`、`resolvePaymentProductId(id, isFirst)`；新增 `tools/intro-pricing.test.ts` 14 项。
+- 下单链路：主端 `checkout.ts`（Android 微信/支付宝首购月订阅 → intro ID；iOS 不映射，走 ASC intro offer）、
+  mini `xpay.ts`（首购 → intro 商品）；两端 `api.ts` 加 `isFirstPurchase()` RPC（fail-safe 返回 false = 原价）。
+- 展示层（20:12 完成）：主端 `state/plan.tsx`（PlanContext 加 `isFirstPurchase`，随 refresh 并行拉取，fail-safe 默认 false，
+  未登录/登出 reset）；`PaywallSheet.tsx`（Android/Web 月档首购 introTag「首月 ¥9 · 次月起 ¥18/月」、iOS 分支
+  `storeIntroPrice` map 用商店真实 displayPrice）；mini `paywall.tsx`（自拉 isFirstPurchase）；iOS
+  `DbeeIapPlugin.swift`（`getProducts` 返回 `introductoryPrice`，🔴 **仅 `p.id === 'proMonthly'` 才显示**，避免「展示 ¥9 却下单 ¥18」失配）。
+- 验证：`npm test` 23 文件 / 901 项全绿（新增 intro-pricing 14 项）；主端 typecheck ✅、mini src 无类型错误、shared build ✅。
+
+### 剩余待办
+- ① 平台侧人工：微信后台建 ¥9 道具、ASC 配 `dbee_pro_monthly` 的 Introductory Offer（iOS Swift 改动需 Mac 重打包才生效）。
+- ② 法务 legal.ts 定价披露 + 官网 `check-facts.mjs` 快照同步。
+- ③ P1 独立：mini 到期提醒（订阅消息）。
+
+### 口径说明
+- iOS 用商店 displayPrice（¥9.00），Android/Web/mini 用 fmtNum（¥9 去尾随零），差异是对的（iOS 绝不回退硬编码价铁律）。
+- 「首月/次月起」措辞在 mini/Android 预付费语境下由付费墙既有「不自动续费」披露纠正，不构成虚假宣传。
+- ⚠️ 全部未 commit，等用户过目/拍板展示口径后再提交。
