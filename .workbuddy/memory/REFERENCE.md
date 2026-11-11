@@ -1012,6 +1012,15 @@ Web 侧**复用 mini 的 `D_BEE_XPAY_ENABLED`**（不另起 `VITE_MINI_SALE_ENAB
 - **护栏 18 `web-no-payment.test.ts`**（既有）：`THIRD_PARTY_CHECKOUT_ENABLED` 已删，W 系断言不依赖该常量故不受影响。
 - `tools/gateway-selftest.mjs`：「配齐后无提示」基线加 `wechatPayMchid:'1900000109'`、`alipayAppId:'2021000100000001'`，另加 2 条正向断言（缺商户号 / 缺支付宝 AppID → `warnings()` 提示）。
 
+### 六之二、护栏 21~23 构成（11-10 新增，MEMORY 只留文件名）
+
+- **护栏 21 `tools/redeem-hardening.test.ts`**（8 项）：锁 0048 三件套（`code_hash` 列 + `expires_at` 过期检查在标记 used **之前** + `redeem_attempts` 节流）与核销函数走 sha256 匹配。已红验证：改回明文匹配 → 变红。
+- **护栏 21b（同文件 +5 断言）**：锁发码工具 `gen-redeem-codes.mjs` 三处 —— ① `writeFileSync(outFile)` 必须在 `spawnSync(dbee-ssh.py)` **之前**（明文先落盘）② psql 带 `-tA` + `RETURNING 'GENCODES_OK:'` ③ 计数正则 `/^\s*GENCODES_OK:/gm`（容忍行首空白）；另加失败分支必须告知「明文已安全落盘」+ 附孤儿清理 SQL。**逐条红验证 4/4 通过**（分别模拟：去 `-tA`、去 `\s*`、改回 `INSERTED`、删落盘语句、删失败指引）。
+- **护栏 22 `tools/mini-upload-size.test.ts`**（6 项）：锁 `mini/project.config.json` 三项 `es6:false / minified:true / uploadWithSourceMap:false` + `libVersion` 主版本 ≥3（`es6:false` 的前置安全条件：vendors.js 含 cloud-sdk 的 async/await，基础库 <2.11.2 会真机语法报错）+ **源与 dist 配置同步**（防「只改源不构建」重演 —— DevTools 项目根是 `mini/dist`）。红验证：`es6→true` = 2 failed、`minified→false` = 2 failed、恢复后 6 passed。
+- **护栏 23 `tools/revoked-codes-not-tracked.test.ts`**（3 项）：扫全部 `git ls-files` 跟踪文件，对码形 token **现算 SHA-256** 与「吊销码哈希集」比对，命中即红。🔴 **护栏自身不含码明文**（只钉哈希，明文留证在 gitignored 的 `release/`）。含两条防假绿：哈希集自洽（3 张 64 位 hex）+ 跟踪文件数 >100（防 git 不可用扫到空集）。红验证：植入 3 张码（含小写形态）→ 1 failed；删除 → 3 passed。
+- 📌 基线演进：839（11-09 晚）→ 843（+`proDaysLeft` 4 组）→ 851（护栏 21）→ 857（护栏 22）→ 859（护栏 23）→ 862（护栏 23 注释修正后）→ **863 → 870**（`no-cloud-runtime.test.ts` 用 `it.each(文件)` 且 `SCAN_DIRS` 含 `deploy`、`EXT` 匹配 `.sh` → **每新增一个 `deploy/*.sh` 就 +1 项**，故新增 `issue-test-codes.sh` 等脚本使计数确定性上升，非 flaky）。最终 **21 文件 / 870 项全绿**。
+- 🔴 **计数口径自查方法论（踩过）**：用 `grep -E '^\s*(✓|×)'` 做「两次计数稳定性对比」时，该模式因 **ANSI 色码**根本没匹配到行 → 两个**空文件**互 diff「无差异」→ 据此得出「计数稳定」的假结论。正确做法：先 `sed -E 's/\x1b\[[0-9;]*m//g'` 去色码再比对。**空集上的断言恒真 = 假绿**，与「护栏空跑」同源。
+
 ### 七、🔴 本轮踩坑六则（勿重犯）
 
 1. **自检断言字段名错**：`cloudError` = `{message, error}` **不是 `code`** → `.code === 'provider_mismatch'` 恒假。（sed 批量替换因引号嵌套报 `unknown option to 's'` → 改用 Edit 逐个修。）
@@ -1115,3 +1124,95 @@ Web 侧**复用 mini 的 `D_BEE_XPAY_ENABLED`**（不另起 `VITE_MINI_SALE_ENAB
   **0047 覆盖 0046** → 必须按 0046 → 0047 顺序应用，否则最终函数体是 0046 版（查单语义丢失）。
   `payment_products` / `payment_orders` 两张表是老迁移（0021/0029/0030）建的，**早已存在**，
   别误判成「0046/0047 已部分应用」。
+
+## 2026-11-10 晚 · 兑换码 P0 泄露事故 + 0048 加固（MEMORY 只留精简条）
+
+### 事故本身（🔴 最普适的一课）
+- 3 张**终身**（lifetime）兑换码明文曾硬编码在 `src/lib/entitlement.ts`，虽已从前端移除
+  （commit `43e966a`/`2a87d80`），但**仓库是 public**（GitHub API 实测 `private: False`），
+  删文件 ≠ 删历史：`curl raw.githubusercontent.com/yutaiyin139/d-bee/f99a2c5/src/lib/entitlement.ts`
+  → **HTTP 200**，正文含三张码明文。任何人可免费下载 → 白拿终身会员。
+- 线上实测 `total=3 unused=3 used=0`、全 `plan=lifetime`、`used_by IS NULL` → 仍可兑换。
+- 🔴 **误判链条**：11-10 前的记忆只记「已从前端移除」，把「已修复」当成「已止损」。
+  **git 历史不可靠、public 仓库 = 全世界可读**，这两层漏掉就等于没止损。
+- 🔴 **0048 对此零止损**：0048 先用明文回填 `code_hash = digest(code,'sha256')`，再 `SET code=NULL`。
+  核销改按 hash 匹配 → 已泄露的明文码输入后**照样算出同一 hash → 仍兑换成功**。
+  即「清空明文列」只防「读库拿码」，**不防「已知明文去兑」**。唯一止损 = 显式 DELETE 那 3 行。
+- 止损执行（用户 14:55 授权）：先归档明文到 `release/REVOKED-legacy-hardcoded-codes-20261110.txt`
+  （gitignored），再 `psql -v` 参数绑定 DELETE，带**大小写不敏感**（`upper(code)`，与 RPC 归一一致）
+  + **安全闸**（子查询要求恰好 3 张未用，否则删 0 行）。生产实测 `matched_unused=3` → `DELETE 3` →
+  `still_present=0`。**独立二次核验**（另跑 diag 脚本，不复用同一事务输出，守铁律 #13）= total=0。
+- 附带发现：`.workbuddy/memory/*.md` **33 个文件被 git 跟踪且在 public 仓库**。全量扫描结论：
+  **无真实完整密钥泄露**（API key 仅截断形 `sk-5819dc...`；5 处 `DBEE_PWD` 命中全是 `"$SSH_PWD"` shell 引用）；
+  `git log --all --diff-filter=A` 证实 `.env` **从未被提交**（只有无真值的 `.env.example`）。
+  唯一实质泄露就是那 3 张码，已止损。仍建议评估仓库转 private（需用户在 GitHub 操作）。
+
+### 0048 加固内容（对外契约不变，前端零改动）
+- ①**哈希存储**：`code_hash` 列存 SHA-256（`pgcrypto`），回填后清空 `code` 明文
+  （drop NOT NULL + drop unique `redeem_codes_code_key` + `SET code=NULL`）；
+  核销改 `v_hash := encode(digest(v_norm,'sha256'),'hex')` → `WHERE code_hash = v_hash`。
+- ②**有效期**：`expires_at` 列，核销在「标记 used **之前**」检查过期返 'bad'（**不烧码**）；存量 NULL=永久。
+- ③**节流**：`redeem_attempts` 表 + `redeem_throttled(text)`（60s 失败≥5 次拒，复用 0012 `invite_throttled` 手法）。
+  🔴 这补上了「`redeem_by_code` 原本无任何节流」的暴露面（码空间 2^80 是唯一防线）。
+- 已应用到生产（实测水位 0048、`code_hash` NOT NULL、prosrc 含 code_hash+digest+expires）。
+
+### 🔴 护栏 23 的教训：护栏只钉哈希，永不写明文（连注释都不行）
+- `tools/revoked-codes-not-tracked.test.ts` 扫全部 `git ls-files` 跟踪文件，对码形 token
+  **现算 SHA-256** 与「吊销码哈希集」比对，命中即红。
+- 首版在 `TOKEN_RE` 的**注释**里顺手抄了三个吊销码当形态示例 → 护栏扫被跟踪文件时
+  **命中自己的注释** → 1 failed（护栏把自己判红，`a39d898` 修：注释只描述形态
+  「7 字符无连字符 / 10 含 1 个 / 13 含 2 个」，不写值）。
+- 普适律：**写「防泄露」的护栏时，护栏文件自身也被 git 跟踪**；在注释里写敏感值 = 护栏自己再泄露一次。
+  public 仓库下尤其致命。明文留证只能在 gitignored 的 `release/`。
+- 含两条防假绿：哈希集自洽（3 张 64 位 hex）+ 跟踪文件数 >100（防 git 不可用扫到空集）。
+
+### 发码参数语义（🔴 两个参数正交，别混）
+- `--months N` = **兑换后**会员时长 N 个月（月卡 1 / 年卡 12；`lifetime` 必须 months IS NULL）。
+- `--expires-days N` = **这张码必须在 N 天内兑换**，过期自动作废（自带止损）。
+  ⚠️ `--expires-days 1` **不是日卡**！兑换后时长仍由 months 决定。
+- 兑换码体系**没有日卡档位**（铁证 `0044:79-96`：`months integer` + CHECK `months > 0`，
+  核销用 `make_interval(months => ...)`，最小粒度 1 个月；`months=0` 被 CHECK 拒、小数被
+  `Number.isInteger` 拒）。「Pro 1 天」的正规路径是**积分兑换** `redeem_honey('pro1Day')`
+  （100 蜜糖，`src/lib/invite.ts:53`，走 `0013:204`），不是兑换码。
+- 🔴 发测试码**刻意不用 lifetime**：`--expires-days` 只限「可兑换窗口」不限「会员时长」，
+  一张忘了清理的 lifetime 测试码 = **永久**免费会员（负债无界）；月卡/年卡最坏自动到期（负债有界）。
+  本事故当天刚处理完 3 张 lifetime 泄露，别拿 lifetime 顶替别的档位。
+- 工具**刻意拒绝明文入库**（`gen-redeem-codes.mjs:213-220` 硬前置：库内无 `code_hash` 列即
+  `RAISE EXCEPTION '0048 未应用…'`），绝不静默退化。在刚处理完明文泄露事故的当天，
+  绕过该闸往生产写明文码 = 亲手复现事故根因。
+- 一条命令发测试码：`TEST_NOTE=xxx TEST_EXPIRES=7 bash deploy/issue-test-codes.sh --yes`
+  （裸跑只打印计划，`--yes` 才动生产；默认档位 `TEST_TIERS="1"` 只发月卡）。
+- 16 位 Crockford base32（去 I L O U），无连字符/空格，大小写与空格不敏感（RPC 归一只 `upper` + 去空白）。
+
+### 🔴 sed 分隔符坑（11-10 新踩，与 psql 三坑同类）
+- 密码含特殊字符时 `sed "s|__PLACEHOLDER__|$PW|"` 报 `unknown option to 's'`
+  —— `|` 被密码内容当成第二个分隔符，整条 sed 表达式崩掉（**静默不改文件**，
+  脚本仍按未替换的占位符跑 → 更难发现）。
+- 修法：**改用 Python f-string 直接写临时脚本**（不经 sed 二次替换），
+  密码全程不回显终端，`os.remove()` 后断言 `exists=False`。
+- 同源教训：`deploy/dbee-ssh.py run` **无 stdin/env 透传**，`render_text` 只认它自己的占位符表
+  （`__SUDO_PWD__` 等）→ 要传额外秘密值只能本地生成临时脚本副本（写 gitignore 目录，用后即删）。
+
+### 兑换码测试后的清理（别让测试码留成活口）
+- ①按批次作废（一条 SQL 清掉本次所有未用码）：
+  `DELETE FROM redeem_codes WHERE note LIKE '测试码-%' AND used_by IS NULL;`
+- ②若已兑换，把测试账号权益复位：
+  `UPDATE entitlements SET plan='free', pro_until=NULL, source=NULL WHERE owner_id='<测试账号>';`
+  `DELETE FROM redeem_attempts WHERE owner_id='<测试账号>';`
+- 🔴 一次性清理脚本**别留 id 默认值**（`${TARGET_ID:-4}` 首跑后即成误删雷）→ 用 `${TARGET_ID:?}` 强制显式传参；
+  `redeem_codes.id` 真实类型是 **bigint**（别按 `::int` 传）。删除条件用「四重与」（id 精确 +
+  `used_by IS NULL` + `code IS NULL` + note 全等），删前先只读诊断确认 `all_four=1`。
+- 📌 兑换入口：Web / Android / 小程序付费墙底部输入框；**iOS 端刻意无入口**（Apple 3.1.1 反规避）。
+  返回值 `ok`=成功 / `used`=已被用过 / `bad`=码错、已过期或被限流。
+
+## 2026-11-10 晚 · 「环境备忘」全节逐字归档（由 MEMORY 压出，零信息丢失）
+
+> MEMORY.md 的「环境备忘」只保留精简指针，以下为**逐字原文**（含 REFERENCE 此前缺失的
+> `import.meta.env.VITE_` / `中文形态` / `latin1` / `urlCheck` / `JSCore` 等独有条目）。
+
+## 环境备忘（详版 → REFERENCE.md）
+
+- SSH `150.158.51.106`（🔴 `SSH_PWD` 勿入记忆/文档）；**验收一律打 `https://d-bee.cn/`，别打 IP**（IP http 已 404）。APK 归档 `release/`（**绝不放 `android/.../apk/release/`**，Gradle 会清理）；异地备份 `db/backups/offsite/*.dump` 含真实健康数据，**严禁 git add**。🔴 git push 遇 `schannel: failed to receive handshake` → 单次 `git -c http.sslBackend=openssl push origin main`。🔴 **数值口径唯一权威 `src/lib/numfmt.ts`**（计算层全精度、展示层舍入），禁自写 `toFixed`/`Math.round(n*f)/f`。🔴 **nginx 只反代 `/.cloud/` 与 `/auth/`**，其余 POST 落静态层返 **405** → 405 不能判路由存在；判路由打正确前缀并用「对照已存在路由返 401」区分。
+- 🔴🔴 **测试 = vitest**（`npm test` = `vitest run tools/`），`vite.config.ts` 强制串行（并行会静默丢文件＝假绿）；**跑完必核对 `Test Files` 数 == `ls tools/*.test.ts`**。**mini 类型检查须单独跑**；构建期护栏必须写在构建配置里（webpack 不执行被打包模块顶层代码）。**禁硬编码日期**（`log_date` 须同源取 `todayKey()`，否则窗口滑走集体假红）。**MAPE 达标 ≠ 无需处理**（四指标并报，实测需真机+样本餐≥20 条 4 档，此前不得对外表述精度数字）。**小程序验收一律以体验版为准**（真机调试注入 Web API 掩盖 JSCore 缺口，`urlCheck=false` 掩盖合法域名问题）。
+- 🔴🔴 **护栏断言三条铁律**：①一个 `it()` 只一条断言 ②匹配「**实际使用**」非「标识符出现」（验「先验签」须从 `async alipayNotify(` 起 `slice` 定位，全文 `indexOf` 会命中上部**导出定义**）③断言在 `stripComments()` 后的代码上做（勿把注释文本写进期望）。新增护栏/放宽快照基线**必须红验证**；「反向检测」里的禁用域名是**判据不是依赖**，须白名单 + 正向断言补上（护栏 10c）。🔴🔴 **红验证必须确认「注入真的生效」**：`assert s.count(old)==1` 若因目标串多处出现而失败，脚本会**静默跳过注入**但测试仍报全绿 → 极危险假绿；修法按**行号**定位或先校验 diff。
+- 🔴 **产物判读三条**：① **中文形态分工具链**——mini（Taro/webpack）= 纯 ASCII `\uXXXX` → `codecs.decode(s,'unicode_escape')`（勿再 `.encode('latin1','ignore')` 丢中文）；Web 主端（vite）= UTF-8 直存 → 直接 UTF-8 读。② **构建期替换 vs 布尔注入验证法不同**——`import.meta.env.VITE_*` 是字符串替换（字面量留产物，grep 命中 ≠ 生效）→ 安全过滤抽纯函数单测；`define` 布尔常量才被 terser 折叠（用「引导字样 0 命中」验证）。③ **裸串 grep 会子串碰撞**（「下单」命中「预下单」）→ 判据用**完整 CTA 短语**或差值。判数据面要追「哪个常量真正被 `resolveEndpoint` 返回」，不能 grep 到域名就下结论。
