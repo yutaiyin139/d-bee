@@ -76,7 +76,11 @@ input,
 textarea,
 select {
   font-family: inherit;
-  font-size: inherit;
+  /* iOS Safari 会在聚焦字号 < 16px 的输入框时自动放大整页，且键盘收起后
+     scale 常不回退 —— 首次登录连过手机号/验证码/引导页输入框后，进首页仍处
+     缩放态，visualViewport 可左右/上下平移（2026-11-11 线上实测截图）。
+     16px 是移动端标准阈值，勿改回 inherit(15px)。 */
+  font-size: 16px;
   color: inherit;
 }
 
