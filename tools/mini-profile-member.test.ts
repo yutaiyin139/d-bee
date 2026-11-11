@@ -40,6 +40,7 @@ import {
   proNoticeText,
   proDaysLeft,
   memberSubText,
+  redeemSuccessText,
   isPro,
   type Entitlement,
 } from '@dbee/shared'
@@ -309,5 +310,39 @@ describe('proDaysLeft：距 Pro 到期天数（续费提醒触点）', () => {
     expect(proDaysLeft('')).toBe(null)
     expect(proDaysLeft('  ')).toBe(null)
     expect(proDaysLeft('garbage')).toBe(null)
+  })
+})
+
+describe('redeemSuccessText：兑换码成功文案按真实档位生成（2026-11-11）', () => {
+  // 🔴 起因：mini 旧代码写死「兑换成功，终身会员已生效 🐝」，但 0044 起兑换码支持
+  //   月/年/终身三档 —— 月卡用户兑换成功却被告知「终身」，属谎报所购档位。
+  //   本组用例钉死「文案必须随 entitlement 的真实 plan 变化」，防止写死回归。
+  const future = new Date(Date.now() + 30 * 86_400_000).toISOString()
+  const lifetime: Entitlement = { plan: 'lifetime', pro_until: null, redeemed_code: 'X' }
+  const monthly: Entitlement = { plan: 'pro', pro_until: future, redeemed_code: 'Y' }
+  const free: Entitlement = { plan: 'free', pro_until: null, redeemed_code: null }
+
+  it('lifetime → 明写「终身会员已生效」', () => {
+    expect(redeemSuccessText(lifetime)).toBe('兑换成功，终身会员已生效 🐝')
+  })
+
+  it('pro（月/年卡）→ 带真实有效期，且与 proUntilText 同源（时区无关）', () => {
+    // 断言复用 proUntilText 而非硬编码日期串：formatCnDate 取本地 getter，
+    // 硬编码会在 CI（UTC）与本机（Asia/Shanghai）之间漂移。
+    expect(redeemSuccessText(monthly)).toBe(`兑换成功，会员${proUntilText(future)} 🐝`)
+  })
+
+  it('pro 档位绝不谎报「终身」（与 lifetime 文案必须不同）', () => {
+    expect(redeemSuccessText(monthly)).not.toBe(redeemSuccessText(lifetime))
+  })
+
+  it('刷新失败（ent=null/undefined）→ 通用确认，不谎报档位、也不谎报失败', () => {
+    // RPC 已返回 'ok'（码已核销），拉权益失败时绝不能把成功说成失败或编造档位。
+    expect(redeemSuccessText(null)).toBe('兑换成功，会员权益已生效 🐝')
+    expect(redeemSuccessText(undefined)).toBe('兑换成功，会员权益已生效 🐝')
+  })
+
+  it('free（非会员，如脏数据）→ 通用确认，不谎报档位', () => {
+    expect(redeemSuccessText(free)).toBe('兑换成功，会员权益已生效 🐝')
   })
 })

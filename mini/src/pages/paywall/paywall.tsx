@@ -16,6 +16,7 @@ import {
   priceTag,
   proNoticeText,
   proUntilText,
+  redeemSuccessText,
   type Entitlement,
   type ProductId,
 } from '@dbee/shared'
@@ -111,8 +112,10 @@ export default function Paywall() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   // 🔴 ok 存**文案**而非布尔：购买成功与兑换码成功的提示语不同
-  //   （兑换码当前只发终身会员，购买可能是月/年），共用一句「终身会员已生效」
-  //   会让买了月卡的用户看到与事实不符的确认信息。空串 = 无成功提示。
+  //   （兑换码 0044 起支持月/年/终身三档，购买也可能是月/年），共用一句
+  //   「终身会员已生效」会让买了月卡的用户看到与事实不符的确认信息。
+  //   空串 = 无成功提示。档位文案一律由 shared 生成（redeemSuccessText /
+  //   PRODUCTS[].name），本页不再出现第二份档位判断副本。
   const [okMsg, setOkMsg] = useState('')
   const [refreshing, setRefreshing] = useState(false)
 
@@ -157,7 +160,11 @@ export default function Paywall() {
     }
   })
 
-  async function refresh() {
+  // 🔴 刻意**不**让 refresh() 返回权益：它被当作 OnGranted 传给 buyProduct /
+  //   recoverPending（3 处），改签名会破坏 `() => Promise<void> | void` 契约。
+  //   需要拿到刷新结果的地方（submitCode）自己调 getEntitlement，与主端
+  //   plan.tsx redeem() 的 `getEntitlement().catch(() => null)` 同一写法。
+  async function refresh(): Promise<void> {
     try {
       const ent = await getEntitlement()
       setEntitlement(ent)
@@ -207,7 +214,12 @@ export default function Paywall() {
         // 🔴 文案按所买档位给：买月卡却提示「终身会员已生效」= 向用户谎报
         //   他买到了什么，事后极易被当成欺诈投诉。名称取 shared PRODUCTS（单一真相源）。
         const name = PRODUCTS.find((p) => p.id === id)?.name ?? '会员'
-        setOkMsg(`${name}已开通，权益已生效 🐝`)
+        const msg = `${name}已开通，权益已生效 🐝`
+        setOkMsg(msg)
+        // 🔴 与 submitCode 同一处置：页内提示在顶部、用户视线在底部购买按钮，
+        //   且 1.4s 后 navigateBack 会销毁本页。应用级 toast 才能在返回后仍被看见
+        //   （duration 3000 → 返回后还有约 1.6s 读完档位文案）。
+        Taro.showToast({ title: msg, icon: 'none', duration: 3000 })
         setTimeout(() => { setOkMsg(''); Taro.navigateBack() }, 1400)
         return
       }
@@ -242,11 +254,25 @@ export default function Paywall() {
         setErr('该兑换码已被使用。')
         return
       }
-      setOkMsg('兑换成功，终身会员已生效 🐝')
-      await refresh()
+      // 🔴 文案按**真实档位**生成（2026-11-11，用户实测反馈「兑换成功却没有提示」）：
+      //   0044 起兑换码支持月/年/终身三档，旧代码写死「终身会员已生效」对月卡用户
+      //   就是谎报他买到了什么。刷新失败（ent=null）时 redeemSuccessText 退回不指明
+      //   档位的通用确认 —— RPC 已返回 'ok'（码已核销），绝不能反过来报失败。
+      const ent = await getEntitlement().catch(() => null)
+      if (ent) setEntitlement(ent)
+      const msg = redeemSuccessText(ent)
+      setOkMsg(msg)
+      setCode('')
+      // 🔴 同时弹 toast：页内提示条渲染在**页面顶部**，而用户的手指和视线都在底部的
+      //   「兑换」按钮上；且 1.4s 后 navigateBack 会连带销毁本页 → 提示条根本没机会
+      //   被看见（这就是「点了没反应、实际已成功」的直接原因）。
+      //   wx.showToast 是**应用级**的，返回上一页后仍会把剩余时长显示完，故 duration
+      //   取 3000：navigateBack 后还有约 1.6s 能读完带有效期的长文案（2000 只剩 0.6s）。
+      //   icon 必须用 'none'：'success' 图标下 title 只展示前 7 个汉字，
+      //   会把「会员有效期至 2026/12/11」截断成「兑换成功，会员有」。
+      Taro.showToast({ title: msg, icon: 'none', duration: 3000 })
       setTimeout(() => {
         setOkMsg('')
-        setCode('')
         Taro.navigateBack()
       }, 1400)
     } catch (e) {

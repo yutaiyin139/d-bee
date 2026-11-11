@@ -158,6 +158,26 @@ export function memberSubText(
   return `${quotaText} · 报告看近 ${freeReportDays} 天`
 }
 
+/**
+ * 兑换码核销成功后的确认文案（四端共用，按**真实档位**生成）。
+ *
+ * 🔴 为什么绝不能写死「终身会员已生效」（2026-11-11，mini 实测反馈）：
+ *   0044 迁移起 `redeem_by_code` 已支持月/年/终身三档（此前只发 lifetime）。
+ *   月卡用户兑换成功却看到「终身会员已生效」= 向用户谎报他实际买到了什么，
+ *   事后极易被当成欺诈投诉；这与定价三副本是同一类「副本漂移」病，故文案
+ *   一律从**刷新到的真实 entitlement** 生成，日期走 datefmt 的确定性格式
+ *   （不依赖各端 locale，与 proNoticeText / memberSubText 同源）。
+ *
+ * @param ent 兑换成功后重新拉取的权益。null = 拉取失败，但 RPC 已返回 'ok'
+ *            （钱/码已核销），此时既不能谎报档位、也绝不能谎报失败，
+ *            给一句不指明档位的通用确认，让用户知道「已成功」。
+ */
+export function redeemSuccessText(ent: Entitlement | null | undefined): string {
+  if (isLifetime(ent)) return '兑换成功，终身会员已生效 🐝'
+  if (isPro(ent)) return `兑换成功，会员${proUntilText(ent?.pro_until, '已生效')} 🐝`
+  return '兑换成功，会员权益已生效 🐝'
+}
+
 /** 本周一（用于周配额：usage_date 存周一日期） */
 export function mondayOf(dateKey: string): string {
   const [y, m, d] = dateKey.split('-').map(Number)
