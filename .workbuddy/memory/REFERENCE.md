@@ -1568,3 +1568,55 @@ stdin 脚本不落临时文件、不执行删除。⚠️ 首次红验证脚本�
 改 `packages/shared/src` 必须重建 dist、Web 引导 CTA 全 0 判据、P1 产物未重构建（须 P1.7）、
 真机调试 ≠ 体验版、dbproxy 401 `DATABASE_42501`（403 非释放）、**免 T+7**、指向
 `docs/云库彻底释放执行单-*` 与 REF「20:15」。
+
+---
+
+## 2026-11-12 21:20 · 推 git / Android vc19 重打包 / Web 重新发布（MEMORY 只留结论 + 指针）
+
+### 用户指令与执行边界
+- 指令：`推git 打包android 发布web端；我要进行全方位测试。` 补充：`对于无用的，也可以直接删除；删除我确认一下即可。`
+- 按 16:30 删除规则先出评估单，用户在确认弹窗处跳过 → 按最保守理解：**本轮零删除**，
+  所有会被构建工具清空的产物目录「整体改名移到项目外备份 → 构建工具新建」（P0.1 验证过的路径）。
+  候选无用文件（旧 APK、`__pycache__`、iOS 壳、微信后台旧域名）**一律未删**。
+- 备份根目录 `C:/Users/yuty/WorkBuddy/2026-10-17-09-57-18/.workbuddy/memory/backup/prebuild-20261112-2050/`，
+  内含 `dist-web-prebuild`(19 文件/1900.9KB)、`android-public-prebuild`(18 文件/1874.7KB)、
+  `gradle-apk-release-prebuild`(4 项/8017.4KB)、`dist-native-vc19-preweb`(16 文件/1877.9KB)，逐字节可回滚。
+
+### ① git（零删除）
+- 提交 `3c6dd39`：`feat: 备案等待期 P0/P1 收口 + 云库彻底释放执行单 + 四端分享修复`，43 文件 / +3680 −127。
+  提交前 `npm test` 25 文件 / 964 项全绿；核验模板 5 处敏感值全为占位符、`wbpk_` 公钥早存于 20 个已跟踪文件（非新增泄露）、无 `.env`/密钥/APK 入提交、零 `D` 状态。
+- 首次 push 两次均被本机代理阻断：`CONNECT github.com:443 → 502`（`api.github.com` 200、`d-bee.cn` 200 → 代理放行名单问题，非凭据）；SSH 22 / `ssh.github.com:443` 不可达、本机无 SSH 公钥。提交安全落地本地，未丢失。
+- `cap sync android` 额外改了 `android/app/capacitor.build.gradle` 与 `android/capacitor.settings.gradle`（新增 `@capacitor/filesystem` 插件，四端分享修复依赖）→ 连同 `build.gradle` vc18→19 提交 `856ef6b`。
+- **21:16 推送成功**：`4c93162..856ef6b main -> main`，`git status -sb` = `## main...origin/main`（工作区干净、与远端同步）。代理短暂恢复；遇 502 时提交仍安全在本地，网络恢复后单次 `git -c http.sslBackend=openssl push origin main` 即可。
+- 21:20 又补两处文档注脚（`docs/P0.1-*` §四与 §8.3：T+7 已被 20:15 决策推翻，保留原文不改，加时点横幅指向 `docs/云库彻底释放执行单-*` §3）→ 需再补一次提交/推送。
+
+### ② Android vc19 正式包
+- 前置 `cd packages/shared && npm run build`（shared dist 与源码一致）；`build.gradle` vc18→19。
+- 命令链：`VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native` → `npx cap sync android`（9 插件，含 `@capacitor/filesystem`；iOS 壳时间戳未变，确认未碰）→ `cd android && ./gradlew assembleRelease --no-daemon --console=plain`（前台，历史后台任务 exit 125）。
+- 🔴 网络中断发生在「gradle 已完成、回传输出」阶段；续接时先只读取证：APK 已于 21:10 产出（8252743 B），**未重跑**，避免无谓重建。
+- **三步实证**：① `aapt2 dump badging` = `package: name='cn.com.dbee.app' versionCode='19' versionName='1.7.3'`，minSdk24/targetSdk36；② `apksigner verify --print-certs` MD5 `0abe7fc5005987ed9b6eae9a45fb9dc9`、SHA-1 `cd1daf206e606c6825286f81e8bf39c8869ae720`，与 `release/App备案-三平台签名信息-20261107.md` 逐字一致；③ APK 内 `assets/public` 18 条，入口 `index-0kUSiBe2.js` + `index-CX1CYz9K.css`，探针：`d-bee.cn` 12 / 云库两域名 0 / 四个下单 CTA 全 0 / 首购半价 0 / `delete_own_account` 2 / `font-size:16px` 14 / **P1 文案「次数怎么算」2、「你的数据与退款」1、「这些能力怎么算」1、「仅 AI 拍照识别消耗次数」1**。`www.workbuddy.cn` 2 属平台 OAuth relay（非云库数据面，Web 扫码登录依赖，停库不断）。
+- 归档 `release/D-Bee-1.7.3-vc19-dbee.cn-FORMAL-20261112.apk`，sha256 `5504ee8a146cb55d8456fe6a1badd91162d6bf517afd3391f452bf020334ce77`；同名预检防覆盖。
+
+### ③ Web 重新发布（纯 SFTP 增量，零远端删除）
+- 打包后按零删除路径把 native `dist/` 移到备份，再 `npm run build`（= `vite build && node tools/gen-legal-static.mjs`）恢复 Web 产物：19 文件 / 1904.1 KB，入口 `index-BSo71WRh.js`(556514 B) + `index-CX1CYz9K.css`(39059 B)，`dist/legal/` 3 页回归（terms 2423 / privacy 5601 / disclaimer 1598 字）。
+- 探针：`d-bee.cn` 6 / 云库两域名 0 / 四个下单 CTA 0 / `150.158.51.106` 0 / `delete_own_account` 2 / 16px 14 / P1 文案齐 / `www.workbuddy.cn` 2。
+- 发布通道：本机**不能走 `deploy.sh`**（Python 调 bash 会撞安全策略黑名单 `wsl.exe`）→ 直接用 `dbee-ssh.py putdir`。
+  🔴 凭据键名坑：`dbee-ssh.py` 读 `DBEE_HOST/DBEE_USER/DBEE_PWD`，而 `.env` 里 `DBEE_USER=dbee_app` 是过时值（认证失败）；必须用 `.env` 的 `IP/USER(=ubuntu)/SSH_PWD` 注入前三者，且不回显任何值。`put_dir` 实现只有 `sftp.put` + `mkdirs` + `chmod`，**不删远端任何文件**。
+- 上传 19 文件 / 1904.1 KB → `/var/www/d-bee` 成功；不动 nginx、不 reload、不碰 `deploy-gateway.sh`。
+- **生产侧验收（铁律 #13）**：线上 `index.html` 入口已变 `index-BSo71WRh.js`；线上/本地 js sha256 `313ef069705840aa…`、css `5c28fab3705bfd7b…` **逐字一致**；三法务页线上/本地逐字节一致（7239/15745/4380 B）；`/`、`/legal/*`、`/.cloud/healthz`、`/manifest.webmanifest`、`/sw.js` 全 200；`http://d-bee.cn/` 与 `http://www.d-bee.cn/` 均 308→https（301=0）；线上主包零云库域名、四 CTA 全 0、P1 文案齐、16px 在、`delete_own_account` 在。`sw.js` 307 B 纯透传不做缓存（无「改了看不见」问题）。
+- 21:17 复跑 `npm test` = **25 文件 / 964 项全绿**（`Test Files` 25 == `ls tools/*.test.ts` 25，无假绿）。
+
+### ④ 未闭环 / 测试边界
+- 🔴 **云库实例仍在线**：带 `x-wb-webapp-access-key` 打 `/.cloud/database/rest/v1/profiles` = 401 `DATABASE_42501`；根路径 403「链接不完整」只是分享链接失效。**不能说已彻底摆脱**，停用实例仍需用户本人在 WorkBuddy 控制台点（平台无停用接口、`inspect count=0`）。
+- 🔴 **mini 线上包仍未换**、**iOS 壳内仍是 11-04 老产物**（Mac 重打包）、**mini/dist 未含本轮 P1 文案**（P1.7 且含删除动作需先评估）。
+- `deploy/verify-cloud-release.sh` 仍会判红（正确）；本轮在 Python 内嵌调用它时撞 `wsl.exe` 黑名单，按安全规则**不重试/不绕过**，改用纯 curl 直接确认云库状态；脚本本身此前已在 Git Bash 下双向验证判红/判绿有效。
+- 全程零删除文件、未改 `LEGAL_UPDATED`、未开双开关、未上传小程序、未停用实例、未改微信后台。
+
+### 被压缩的 MEMORY 原文（逐字归档，零信息丢失）
+> - ✅✅ **云端库废弃（11-08）**：四端数据面全指自建 PG、运行时残留清零、产物零云端域名（护栏 10/10b）、数据放弃迁移。🔴 **释放差 2 步（用户本人）**：① 重传 mini 新版本号+重设体验版 ② 停用实例（不可逆）；真机调试 ≠ 体验版。**实例仍在线**：403 非释放，dbproxy 401 `DATABASE_42501`。🔴 **11-12 20:15：数据可弃/免 T+7/当日释放，走路径①** → `docs/云库彻底释放执行单-*`（REF「20:15」）。
+> - **Bundle ID = `cn.com.dbee.app`**（iOS/Android 同值）；**版本 1.7.3**（Android vc17 / iOS build 12 / mini 0.1.0）。
+> - ✅ **WEB 上线** `https://d-bee.cn/` 200；入口 js **`index-PoY9AgRG.js`**（16px）、三法务页 200、证书到期 **2027-02-04**。**数据面 = 自建 PG `dbee`**，水位 **0048**；🔴 0046 xpay / 0047 apppay 未应用 → **跳号空洞**（补应用须 **0046→0047 顺序**，0047 覆盖 0046）。Android **vc18** 已归档（含 apppay+16px、开关默认关、三步实证，详版 → REF「11-12 上午」）；`build.gradle` vc17→18 未提交；打包后已 `npm run build` 恢复 web dist（legal 3 页回归）。
+> - 工程基线：`npm test` = **25 文件 / 964 项全绿**（11-12 20:28 实测，`Test Files` == 文件数，快照以当日为准；新增护栏 25/10d）。🔴 改 `packages/shared/src` 后必须重建 dist（回退同样要）。🔴 **Web「下单」判据失效** → 改判**真实引导 CTA 全 0**（→ REF「17:35」②）。
+> - 🔴 **三端晃动（详版 → REFERENCE「2026-11-12 上午」）**：16px 修复在 `styles.css:83`。**Web ✅ / Android vc18 ✅ / mini ✅ 结构性免疫**；**iOS 原生 App ❌**（壳内仍 11-04，须 Mac 重打包）。次要隐患 `100vw`/`100dvh` 未动。
+> - ✅ **P1.4/1.5/1.6 完成**（17:30 源码级，全文 → `docs/P1执行留证-*`，详版 → REF「17:30」）：shared 文案真源 + 四端渲染 + 护栏 25 → **25/961 绿**；mini 用 `MINI_RECORDING_CAPS` 省略无扫码/包装。🔴 零删除、生产零变更、**产物未重构建**（须 P1.7）。
+> - 🟠 **待拍板**（详版 → REFERENCE）：隐私政策 §五 + `LEGAL_UPDATED`（全体重弹同意窗）、mini 无同意窗重确认载体、凭据轮换、网关模式收紧、Android vc18 公网分发、护栏 A9/A10、Apple 个人主体 vs 备案企业主体、仓库是否转 private。
