@@ -162,9 +162,14 @@ describe('护栏 19-A · 平台侧三档商品基线（补 §1.4 零断言空白
 })
 
 describe('护栏 19-B · 生产水位与支付 env 登记（补 §1.4 零断言空白 #3 #4）', () => {
-  it('0046 登记为未应用且水位为 0045（未应用状态不得被静默跳过）', () => {
+  // 🔴 2026-11-12 P0.4 刷新：0048（兑换码加固）已应用生产，0046/0047 仍未应用。
+  //    原断言写死水位 '0045'，会与真实登记冲突。意图不变 —— 钉住「跳号空洞不得被静默抹平」：
+  //    只要 0046/0047 还是未应用，就不许有人把它们改成 true 而不走迁移评审。
+  it('0046/0047 登记为未应用且水位为 0048（跳号空洞不得被静默抹平）', () => {
     expect(
-      BASELINE.production.migration0046Applied === false && BASELINE.production.schemaMigrationLevel === '0045',
+      BASELINE.production.migration0046Applied === false &&
+        BASELINE.production.migration0047Applied === false &&
+        BASELINE.production.schemaMigrationLevel === '0048',
     ).toBe(true)
   })
 

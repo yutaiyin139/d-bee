@@ -68,10 +68,16 @@ export interface NotifyPrefs {
   water: boolean
 }
 
+/**
+ * 🔴 新用户默认「全部关闭」（2026-11-12 P0.7 / 与「无营销推送」承诺自洽）。
+ * 只改 kvGet 的**缺省值**，不写回 kv：老用户若曾手动开启，本地已存 '1'，
+ * 读出来仍是开 —— 天然灰度，不强制关、不刷 LEGAL_UPDATED、可单独回滚。
+ * 护栏 24-D 钉住四端默认值，防止将来有人改回默认开。
+ */
 export async function getNotifyPrefs(): Promise<NotifyPrefs> {
   return {
-    checkin: (await kvGet('notif.checkin', '1')) === '1',
-    water: (await kvGet('notif.water', '1')) === '1',
+    checkin: (await kvGet('notif.checkin', '0')) === '1',
+    water: (await kvGet('notif.water', '0')) === '1',
   }
 }
 

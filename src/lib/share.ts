@@ -1,37 +1,74 @@
 /**
  * 文件导出 / 分享抽象。
  *
- * 现状（Web）：Blob → URL.createObjectURL → 隐藏 <a download> 点击 → revokeObjectURL。
- * 这是浏览器里唯一可用的下载方式，阶段 0 必须**保持不变**。
+ * 平台差异只在本文件处理，业务代码只关心数据内容：
+ *   - Web：Blob → URL.createObjectURL → 隐藏 <a download> 点击 → revokeObjectURL。
+ *   - 原生（iOS/Android）：Blob → Filesystem 写入 Cache 目录 → Share.share({ files })
+ *     唤起系统分享面板（微信 / 钉钉 / 保存到相册…）。
+ *   - 微信小程序：无 DOM、无 Blob 下载，当前为安全占位（见 mini/src/lib/share.ts）。
  *
- * 未来（原生）：WebView **没有下载管理器**，`a.download` 会静默失败（用户点了没反应）。
- * 原生端必须改成：
- *   1. @capacitor/filesystem 把文件写到 Cache/Documents 目录
- *   2. @capacitor/share 唤起系统分享面板（存到「文件」、发微信、发邮件…）
- * 注意：这是 iOS 上付费功能之外的核心体验，落地时可作为 Pro 权益的一部分。
+ * 🔴 为什么原生端必须走 Filesystem + files，不能把 base64 塞进 Share 的 url：
+ *   Capacitor Share 的 `url` 语义是「一条链接」，iOS 侧 SharePlugin.swift 会把它
+ *   用 URL(string:) 转成 NSURL 后塞进 UIActivityViewController 的 activityItems；
+ *   Android 侧 SharePlugin.java 更直接对非 file/http 的 url 抛 "Unsupported url"。
+ *   传 data: 前缀的图片字符串会造成：
+ *     · 微信不接受该 scheme → 分享面板里点微信无反应（拉不起微信）；
+ *     · 钉钉把它当一条超长链接收下 → 分享出去的「链接」在钉钉里打不开。
+ *   `files: [file://URI]` 才是「分享图片文件」的正确通道（iOS/Android 自 4.1 支持），
+ *   系统面板会把真实 PNG 交给目标 App。
  *
- * 本模块把「把一段数据以文件形式交付给用户」统一成 exportFile()，
- * 业务代码只关心数据内容，不关心平台差异。
+ * ⚠️ 原生端插件缺失（旧安装包未包含 Filesystem）时**不回落 Web 下载**：
+ *   WebView 没有下载管理器，a.download 会静默失败（点了没反应），
+ *   比明确告知用户「请更新 App」更糟。
  */
 
 import { isNative, isWechatMiniProgram } from './platform'
 
-/** 原生 Capacitor Share 插件的最小结构（鸭子类型探测，不 import 包） */
+/**
+ * 原生 Capacitor 插件的最小结构（鸭子类型探测，不 import 包，保持 Web 包体积不变）。
+ */
 interface CapacitorShare {
-  share: (opts: { title?: string; text?: string; url?: string; dialogTitle?: string }) => Promise<unknown>
+  share: (opts: {
+    title?: string
+    text?: string
+    url?: string
+    files?: string[]
+    dialogTitle?: string
+  }) => Promise<unknown>
+}
+
+interface CapacitorFilesystem {
+  writeFile: (opts: { path: string; data: string; directory: string }) => Promise<unknown>
+  getUri: (opts: { path: string; directory: string }) => Promise<{ uri: string }>
+}
+
+/** Directory.Cache 的字符串值（不 import 原生包，避免把 Capacitor 打进 Web 产物） */
+const CAP_CACHE_DIR = 'CACHE'
+
+function getCapPlugin<T extends object>(name: string, methods: (keyof T)[]): T | null {
+  if (typeof window === 'undefined') return null
+  const cap = (window as unknown as { Capacitor?: { Plugins?: Record<string, unknown> } }).Capacitor
+  const p = cap?.Plugins?.[name]
+  if (!p || typeof p !== 'object') return null
+  const plugin = p as Record<string, unknown>
+  if (!methods.every((m) => typeof plugin[m as string] === 'function')) return null
+  return p as T
 }
 
 function getCapShare(): CapacitorShare | null {
-  if (typeof window === 'undefined') return null
-  const cap = (window as unknown as { Capacitor?: { Plugins?: Record<string, unknown> } }).Capacitor
-  const p = cap?.Plugins?.Share
-  if (!p || typeof p !== 'object') return null
-  const s = p as Partial<CapacitorShare>
-  if (typeof s.share !== 'function') return null
-  return s as CapacitorShare
+  return getCapPlugin<CapacitorShare>('Share', ['share'])
 }
 
-/** Blob → base64（供 Capacitor 插件使用） */
+function getCapFilesystem(): CapacitorFilesystem | null {
+  return getCapPlugin<CapacitorFilesystem>('Filesystem', ['writeFile', 'getUri'])
+}
+
+/** 文件名只保留安全字符：防止路径穿越，且不建子目录（Cache 根下直接写） */
+export function sanitizeShareFilename(filename: string): string {
+  return filename.replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '') || 'share.png'
+}
+
+/** Blob → base64（供 Capacitor Filesystem 写入二进制） */
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -43,6 +80,29 @@ function blobToBase64(blob: Blob): Promise<string> {
     reader.onerror = () => reject(new Error('读取文件失败'))
     reader.readAsDataURL(blob)
   })
+}
+
+/** 把 Blob 写成 Cache 目录下的文件，返回可传给 Share.share({ files }) 的 file:// URI */
+async function writeShareFile(blob: Blob, filename: string): Promise<string> {
+  const fs = getCapFilesystem()
+  if (!fs) throw new Error('Filesystem plugin unavailable')
+  const base64 = await blobToBase64(blob)
+  const path = sanitizeShareFilename(filename)
+  // 不传 encoding：插件按 base64 解码后写入二进制（见 WriteFileOptions 注释）
+  await fs.writeFile({ path, data: base64, directory: CAP_CACHE_DIR })
+  const { uri } = await fs.getUri({ path, directory: CAP_CACHE_DIR })
+  if (!uri) throw new Error('Failed to resolve share file URI')
+  return uri
+}
+
+/** 分享面板被用户取消：不算失败，也不要回落到下载 */
+function isShareCancelled(e: unknown): boolean {
+  return (
+    !!e &&
+    typeof e === 'object' &&
+    'message' in e &&
+    /cancel/i.test(String((e as { message: unknown }).message ?? ''))
+  )
 }
 
 export interface ExportFileOptions {
@@ -65,8 +125,7 @@ export interface ExportResult {
 }
 
 /**
- * 把字符串 / Blob 内容导出为文件。
- * @param content 文本内容或 Blob
+ * 把字符串 / Blob 内容导出为文件（原生端 = 唤起系统分享面板）。
  */
 export async function exportFile(
   content: string | Blob,
@@ -75,20 +134,26 @@ export async function exportFile(
   const blob = typeof content === 'string' ? new Blob([content], { type: mimeType }) : content
 
   if (isNative()) {
-    // ── 原生分支占位 ──────────────────────────────────────────────
-    // 接入 @capacitor/filesystem + @capacitor/share 后在此实现：
-    //   const base64 = await blobToBase64(blob)
-    //   const { uri } = await Filesystem.writeFile({
-    //     path: filename, data: base64, directory: Directory.Cache,
-    //   })
-    //   await Share.share({ title, text, url: uri, dialogTitle: title })
-    //   return { channel: 'share', message: '已生成文件，请在分享面板中保存或发送。' }
-    // 阶段 0 不改行为：原生环境尚未接入，直接落回浏览器下载实现。
-    // ──────────────────────────────────────────────────────────────
+    const capShare = getCapShare()
+    if (!capShare || !getCapFilesystem()) {
+      return { channel: 'share', message: '当前版本暂不支持在 App 内导出，请更新到最新版本。' }
+    }
+    try {
+      const uri = await writeShareFile(blob, filename)
+      await capShare.share({
+        title: title ?? '自律蜜蜂',
+        text,
+        files: [uri],
+        dialogTitle: title ?? '分享到',
+      })
+      return { channel: 'share', message: '已生成文件，请在分享面板中保存或发送。' }
+    } catch (e) {
+      if (isShareCancelled(e)) return { channel: 'share', message: '已取消分享' }
+      return { channel: 'share', message: '文件分享失败，请稍后重试。' }
+    }
   }
 
-  // 微信小程序：无 DOM，走 wx.saveFile / wx.shareFileMessage（规划中接入）。
-  // 当前返回安全结果，不影响现有三端。
+  // 微信小程序：无 DOM，走 wx.getFileSystemManager / wx.shareFileMessage（规划中接入）。
   if (isWechatMiniProgram()) {
     return { channel: 'share', message: '导出功能正在接入小程序，敬请期待。' }
   }
@@ -137,9 +202,8 @@ export async function exportText(
 
 /**
  * 分享一张图片（PNG Blob）。
- * - 原生：用 @capacitor/share 唤起系统分享面板（微信/朋友圈/保存图片）。
- *   插件不可用时回落到 Web 下载。
- * - Web：下载 PNG（用户再手动发朋友圈）。
+ * - 原生：写 Cache 文件后走 Share.share({ files })，微信 / 钉钉 / 相册都收到真实图片。
+ * - Web：下载 PNG（用户再手动发朋友圈），行为保持不变。
  */
 export async function shareImage(
   blob: Blob,
@@ -149,29 +213,25 @@ export async function shareImage(
 
   if (isNative()) {
     const capShare = getCapShare()
-    if (capShare) {
-      try {
-        const base64 = await blobToBase64(blob)
-        // Capacitor Share 用 data URL 直接分享二进制图片
-        await capShare.share({
-          title: title ?? '自律蜜蜂',
-          text,
-          url: `data:image/png;base64,${base64}`,
-          dialogTitle: title ?? '分享到',
-        })
-        return { channel: 'share', message: '已唤起分享面板' }
-      } catch (e) {
-        // 用户取消（Share 插件 cancel 场景）不报错；其它错误落回下载
-        if (e && typeof e === 'object' && 'message' in e) {
-          const msg = String((e as { message: unknown }).message ?? '')
-          if (/cancel/i.test(msg)) return { channel: 'share', message: '已取消分享' }
-        }
-      }
+    if (!capShare || !getCapFilesystem()) {
+      return { channel: 'share', message: '当前版本暂不支持在 App 内分享图片，请更新到最新版本。' }
+    }
+    try {
+      const uri = await writeShareFile(blob, filename)
+      await capShare.share({
+        title: title ?? '自律蜜蜂',
+        text,
+        files: [uri],
+        dialogTitle: title ?? '分享到',
+      })
+      return { channel: 'share', message: '已唤起分享面板' }
+    } catch (e) {
+      if (isShareCancelled(e)) return { channel: 'share', message: '已取消分享' }
+      return { channel: 'share', message: '分享失败，请稍后重试。' }
     }
   }
 
   // 微信小程序：无 DOM，走 wx.showShareImageMenu / 转发（规划中接入）。
-  // 当前返回安全结果，不影响现有三端。
   if (isWechatMiniProgram()) {
     return { channel: 'share', message: '分享功能正在接入小程序，敬请期待。' }
   }

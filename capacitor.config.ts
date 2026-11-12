@@ -40,11 +40,13 @@ const config: CapacitorConfig = {
   //   叠加会触发 SwiftPM 模块名转换兼容 bug（报 Missing package product
   //   Wechat_CapgoCapacitorWechat），导致 iOS 编译失败。
   //   （办照后启用微信时再单独处理其 SDK 集成。）
+  // 🔴 @capacitor/filesystem 必须两端都纳入：原生图片/文件分享先把 Blob 写进 Cache
+  //   目录，再交给 Share.share({ files })。缺这个插件 = 分享按钮点了没反应。
   android: {
-    includePlugins: ['@dbee/origin-proxy', '@dbee/health', '@capacitor/share', '@capgo/capacitor-wechat', '@capacitor/camera', '@capacitor/app', '@capacitor/preferences', '@capacitor/local-notifications'],
+    includePlugins: ['@dbee/origin-proxy', '@dbee/health', '@capacitor/share', '@capacitor/filesystem', '@capgo/capacitor-wechat', '@capacitor/camera', '@capacitor/app', '@capacitor/preferences', '@capacitor/local-notifications'],
   },
   ios: {
-    includePlugins: ['@dbee/origin-proxy', '@capacitor/share', '@dbee/health', '@dbee/iap', '@capacitor/camera', '@capacitor/app', '@capacitor/preferences', '@capacitor/local-notifications'],
+    includePlugins: ['@dbee/origin-proxy', '@capacitor/share', '@capacitor/filesystem', '@dbee/health', '@dbee/iap', '@capacitor/camera', '@capacitor/app', '@capacitor/preferences', '@capacitor/local-notifications'],
   },
   plugins: {
     CapacitorHttp: {

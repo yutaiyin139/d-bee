@@ -516,12 +516,12 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
     if (ladder.kind === 'redeem') {
       setQuotaHint({
         kind: 'redeem',
-        text: `今日 3 次免费识别已用完，可用 ${HONEY_PRICE.ai1Scan} 积分兑 1 次（每日最多兑 ${AI_REDEEM_DAILY_LIMIT} 次），你还有 ${balance} 积分。`,
+        text: `今日 ${FREE_DAILY_AI} 次免费识别已用完，可用 ${HONEY_PRICE.ai1Scan} 积分兑 1 次（每日最多兑 ${AI_REDEEM_DAILY_LIMIT} 次），你还有 ${balance} 积分。`,
       })
     } else if (ladder.kind === 'inviteOrPro') {
       setQuotaHint({
         kind: 'inviteOrPro',
-        text: `今日 3 次免费识别已用完。邀请好友赚积分可兑换识别（每日最多 ${AI_REDEEM_DAILY_LIMIT} 次），或升级 Pro 无限次识别。`,
+        text: `今日 ${FREE_DAILY_AI} 次免费识别已用完。邀请好友赚积分可兑换识别（每日最多 ${AI_REDEEM_DAILY_LIMIT} 次），或升级 Pro 无限次识别。`,
       })
     } else {
       setQuotaHint({ kind: 'pro', text: quotaExhaustedReason() })
@@ -1168,7 +1168,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
                 <div style={{ marginBottom: 14 }}>
                   <div className="section-title" style={{ marginBottom: 8 }}>
                     最近吃过
-                    <span className="hint">点一下就记上</span>
+                    <span className="hint">点一下就记上 · 复用不扣次数</span>
                   </div>
                   <div className="chips chips-scroll">
                     {recentFoods.map((r) => (

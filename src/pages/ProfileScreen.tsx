@@ -14,7 +14,8 @@ import {
   saveProfile,
   saveWeight,
 } from '../lib/api'
-import { memberSubText } from '../lib/entitlement'
+import { CAPABILITY_NOTES, DATA_RIGHTS_NOTES, FULL_RECORDING_CAPS, memberSubText, quotaNotes } from '../lib/entitlement'
+import { TransparencyNotes } from '../components/TransparencyNotes'
 import {
   ACTIVITY_LABELS,
   GOAL_LABELS,
@@ -76,9 +77,9 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
   // 健康数据源（可重连 / 可解除连接；连接意图存云端 profiles.health_connected）
   const healthVendor = useMemo(() => getHealthVendor(), [])
 
-  // 通知提醒偏好（打卡提醒 / 饮水提醒，存本地 kv）
-  const [notifCheckin, setNotifCheckin] = useState(true)
-  const [notifWater, setNotifWater] = useState(true)
+  // 通知提醒偏好（本地 kv）；P0.7 首帧默认关，随后由 useEffect 读 kv 覆盖（老用户已存 '1' 仍显示为开）
+  const [notifCheckin, setNotifCheckin] = useState(false)
+  const [notifWater, setNotifWater] = useState(false)
   // 原生包未装 LocalNotifications 插件（或 Web 端）→ 隐藏整个区块，
   // 不显示点了没反应的假开关
   const notifSupported = useMemo(() => isNotificationsSupported(), [])
@@ -754,6 +755,15 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
           </div>
         )}
       </div>
+
+      {/* P1.6：数据权与退款「可找到」。只指路，不替代法务条款；不改 LEGAL_UPDATED。 */}
+      <TransparencyNotes title="你的数据与退款" notes={DATA_RIGHTS_NOTES} />
+
+      {/* P1.4：已经实现、但此前只写在代码注释里的能力，让用户在「我的」页看得见。 */}
+      <TransparencyNotes title="这些能力怎么算" notes={CAPABILITY_NOTES} />
+
+      {/* P1.5：额度规则在「我的」页也可见，避免只在定价页/官网才找得到。 */}
+      <TransparencyNotes title="次数怎么算" notes={quotaNotes(FULL_RECORDING_CAPS)} />
 
       <SiteFooter onOpen={onOpenLegal} />
 

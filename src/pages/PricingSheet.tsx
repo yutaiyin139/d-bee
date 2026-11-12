@@ -2,7 +2,8 @@ import { IconCrown } from '../components/Icons'
 import { Sheet } from '../components/Sheet'
 import { MiniOrderGuide } from '../components/MiniOrderGuide'
 import { FREE_ITEMS, PRO_ITEMS } from '../content/membership'
-import { PRODUCTS, priceTag } from '../lib/entitlement'
+import { TransparencyNotes } from '../components/TransparencyNotes'
+import { FULL_RECORDING_CAPS, PRODUCTS, priceTag, quotaNotes } from '../lib/entitlement'
 
 /**
  * 公开定价页（未登录也可见，2026-11-08）。
@@ -80,6 +81,10 @@ export function PricingSheet({ onClose }: { onClose: () => void }) {
           </div>
         ))}
       </div>
+
+      {/* P1.5：次数怎么算。文案真源在 @dbee/shared，Web / 原生端为全能力端。
+          与官网 features.html 的「次数怎么算」逐字同源，避免站内/站外口径漂移。 */}
+      <TransparencyNotes title="次数怎么算" notes={quotaNotes(FULL_RECORDING_CAPS)} />
 
       {/* 网页不收款声明 + （售卖开关开启时的）小程序下单引导，与付费墙同一实现 */}
       <MiniOrderGuide showRedeemHint={false} />

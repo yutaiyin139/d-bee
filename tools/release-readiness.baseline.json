@@ -1,14 +1,14 @@
 {
-  "_about": "阶段 0 发版就绪状态登记（2026-11-09）。本文件是【预期基线 + 生产侧状态的人工登记】，不是自动探测结果。平台商品后台 / 生产库水位 / 服务器 env 都在仓库之外，本地静态扫描无法获知，必须由发版人核对后更新本文件。护栏 19 只保证：登记的商品 ID 与价格逐字等于代码真源、登记的 env key 确实被 config.mjs 读取、未就绪状态不被静默改成已就绪。护栏全绿不等于生产就绪。",
-  "updatedAt": "2026-11-09",
+  "_about": "阶段 0 发版就绪状态登记（2026-11-09 建立；2026-11-12 P0.4 刷新水位 0045→0048）。本文件是【预期基线 + 生产侧状态的人工登记】，不是自动探测结果。平台商品后台 / 生产库水位 / 服务器 env 都在仓库之外，本地静态扫描无法获知，必须由发版人核对后更新本文件。护栏 19 只保证：登记的商品 ID 与价格逐字等于代码真源、登记的 env key 确实被 config.mjs 读取、未就绪状态不被静默改成已就绪。护栏全绿不等于生产就绪。",
+  "updatedAt": "2026-11-12",
   "production": {
-    "schemaMigrationLevel": "0045",
+    "schemaMigrationLevel": "0048",
     "migration0046Applied": false,
     "migration0047Applied": false,
     "gatewayXpayDeployed": false,
     "gatewayAppPayDeployed": false,
     "gatewayIapDeployed": false,
-    "_check": "发版前用 SELECT max(version) FROM public.schema_migrations 核对；0046 未应用时严禁开 D_BEE_XPAY_ENABLED，0047 未应用时严禁开 D_BEE_APPPAY_ENABLED"
+    "_check": "发版前用 SELECT max(version) FROM public.schema_migrations 核对；0046 未应用时严禁开 D_BEE_XPAY_ENABLED，0047 未应用时严禁开 D_BEE_APPPAY_ENABLED。🔴 0048（兑换码加固）已于 2026-11-10 应用生产（依据 .workbuddy/memory/2026-11-10.md 应用回执），但 0046/0047 仍未应用 → 版本表存在跳号空洞，实测无害；补应用须按 0046→0047 顺序（0047 覆盖 0046）。本文件是人工登记，不是自动探测结果，发版前仍须 SELECT 复核。"
   },
   "env": {
     "status": "not_configured",

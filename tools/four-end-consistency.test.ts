@@ -230,9 +230,12 @@ describe('护栏 3 · 数值口径禁止新增手写舍入（唯一权威 numfmt
       'src/pages/Onboarding.tsx:123',
       // 2026-11-07 A-5 真删号整改：ProfileScreen 顶部多 1 行 import，
       // doDeleteAccount 注释/实现改写使后半段再平移 → 168,169,510 → 169,170,514。
+      // 2026-11-12 P1.4/1.5/1.6：新增 TransparencyNotes 组件 import 1 行
+      // → 169,170,514 → 170,171,515。
       // 三行**代码内容逐字未变**（仍是既有的 Math.round(x*10)/10 手写舍入），
-      // 这里同步的是行号快照，不是放宽基线；同步后已做红验证。
-      'src/pages/ProfileScreen.tsx:169,170,514',
+      // 这里同步的是行号快照，条目数未减、不是放宽基线；同步后已做红验证
+      // （注入第 4 处手写舍入 → 精准判红，恢复后全绿）。
+      'src/pages/ProfileScreen.tsx:170,171,515',
     ]
 
     expect(

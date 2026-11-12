@@ -43,11 +43,18 @@ const EXT = /\.(ts|tsx|js|mjs|java|swift|sh|example|conf)$/
 const ARCHIVED = new Set(['deploy/nginx.conf.example'])
 
 /**
- * 「反向检测」型运维脚本：里面出现云端域名是**禁止出现的判据**（grep 模式），
+ * 「反向检测」型运维脚本：里面出现云端域名是**禁止出现的判据**（grep / 探测模式），
  * 不是可回连云库的依赖，语义与本护栏相反。排除出零残留扫描，但下方另有
  * 正向断言钉死这道检测不许被删 —— 否则排除就变成了漏洞。
+ *
+ * - `deploy/upload-mini.sh`：上传前 grep 产物，含云端域名即拒绝上传（护栏 10c）。
+ * - `deploy/verify-cloud-release.sh`（11-12 新增）：停用后探测云库数据面是否仍
+ *   返回 `DATABASE_42501`，**必须引用云库域名才能探测它是否还活着**（护栏 10d）。
  */
-const CHECK_ONLY = new Set(['deploy/upload-mini.sh'])
+const CHECK_ONLY = new Set([
+  'deploy/upload-mini.sh',
+  'deploy/verify-cloud-release.sh',
+])
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const ent of readdirSync(dir, { withFileTypes: true })) {
@@ -109,6 +116,29 @@ describe('护栏 10c · 发版脚本的产物校验不许被删', () => {
 
   it('upload-mini.sh 必须在上传前检查产物指向 d-bee.cn', () => {
     expect(code).toMatch(/grep\s+-rq\s+'d-bee\.cn'/)
+  })
+})
+
+/**
+ * 🔴 护栏 10d（2026-11-12 云库彻底释放）：新增的释放验收脚本同属反向检测型，
+ * 被 CHECK_ONLY 排除后必须正向钉死判据，否则「排除」就会变成漏洞 —— 有人把
+ * 探测改成永远返回 PASS，或往脚本里塞删除/停用动作，都会在这里报红。
+ */
+describe('护栏 10d · 云库释放验收脚本不许被削弱', () => {
+  const code = stripComments(
+    readFileSync(join(ROOT, 'deploy/verify-cloud-release.sh'), 'utf8'),
+  )
+
+  it('必须探测云库数据库端点（而非只看根路径 403）', () => {
+    expect(code).toMatch(/\/\.cloud\/database\/rest\/v1\/profiles/)
+  })
+
+  it('必须以 DATABASE_42501 判定实例仍在线', () => {
+    expect(code).toMatch(/DATABASE_42501/)
+  })
+
+  it('必须是纯只读脚本（不含删除与停用动作）', () => {
+    expect(code).not.toMatch(/\brm\s+-|unpublish|--delete|stop-instance/)
   })
 })
 

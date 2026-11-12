@@ -20,10 +20,14 @@ export interface NotifyPrefs {
   water: boolean
 }
 
+/**
+ * 🔴 新用户默认「全部关闭」（2026-11-12 P0.7，对齐主端 src/lib/notifications.ts）。
+ * 只改缺省值、不写回 kv：老用户已存的 '1' 保持不变（灰度）。护栏 24-D 钉住。
+ */
 export async function getNotifyPrefs(): Promise<NotifyPrefs> {
   return {
-    checkin: (await kvGet('notif.checkin', '1')) === '1',
-    water: (await kvGet('notif.water', '1')) === '1',
+    checkin: (await kvGet('notif.checkin', '0')) === '1',
+    water: (await kvGet('notif.water', '0')) === '1',
   }
 }
 

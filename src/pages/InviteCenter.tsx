@@ -15,6 +15,7 @@ import { copyText } from '../lib/clipboard'
 import { checkStatBadges } from '../lib/badgeCheck'
 import { createShareCanvas, drawBadgeCard, drawInviteCard, canvasToBlob } from '../lib/sharecard'
 import { shareImage } from '../lib/share'
+import { buildInviteLink } from '../lib/shareLink'
 import type { Badge, HoneyBalance, HoneyLedger } from '../types'
 import { errText } from '../lib/errmsg'
 import { usePlan } from '../state/plan'
@@ -159,8 +160,9 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
       setShareMsg('邀请码加载中，请稍候')
       return
     }
-    // 邀请链接：指向当前站点，带 ?invite=CODE，好友点开自动带入邀请码注册
-    const link = `${location.origin}?invite=${encodeURIComponent(code)}`
+    // 邀请链接必须指向公网站点：原生壳里 location.origin 是 capacitor://localhost，
+    // 拼出来的链接发到微信/钉钉后好友点开打不开（见 lib/shareLink.ts）
+    const link = buildInviteLink(code)
     const text = `我在用「自律蜜蜂」记录饮食、自律打卡，用我的邀请码 ${code} 注册，双方都能得积分！\n${link}`
     setShareMsg('')
 
@@ -215,7 +217,7 @@ export function InviteCenter({ onClose }: InviteCenterProps) {
     setSharingCard('invite')
     setShareCardMsg('')
     try {
-      const link = `${location.origin}?invite=${encodeURIComponent(code)}`
+      const link = buildInviteLink(code)
       const canvas = createShareCanvas()
       drawInviteCard(canvas, { code, link })
       const blob = await canvasToBlob(canvas)

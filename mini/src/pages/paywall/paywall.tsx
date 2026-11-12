@@ -20,6 +20,8 @@ import {
   type Entitlement,
   type ProductId,
 } from '@dbee/shared'
+import { TransparencyNotes } from '../../components/TransparencyNotes'
+import { MINI_RECORDING_CAPS, quotaNotes } from '@dbee/shared'
 import { REDEEM_CODE_RULE } from '../../lib/validate'
 import { errText } from '../../lib/errmsg'
 import { XPAY_SALE_ENABLED } from '../../lib/xpayEnabled'
@@ -348,6 +350,10 @@ export default function Paywall() {
           </View>
         ))}
       </View>
+
+      {/* P1.5：次数怎么算。🔴 必须用 MINI_RECORDING_CAPS —— 本端无扫码/包装识别，
+          写「条码扫码不占额度」会构成宣传与功能不符（护栏 19 钉住的端能力差异）。 */}
+      <TransparencyNotes title='次数怎么算' notes={quotaNotes(MINI_RECORDING_CAPS)} />
 
       {/* 「管理订阅」区块：对齐主端 PaywallSheet.tsx:342-355 的 3.1.2 纪律 ——
           🔴 刻意放在 {!pro} 之外 = 免费 / Pro / 终身三种状态都可达，

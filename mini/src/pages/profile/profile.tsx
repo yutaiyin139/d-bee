@@ -32,7 +32,17 @@ import { isHealthConnectable, getHealthVendor, connectHealth, disconnectHealth }
 import { openPaywall } from '../../lib/upsell'
 import { openManageSubscriptions } from '../../lib/manageSubscription'
 import { HONEY_PRICE } from '../../lib/invite'
-import { isPro, isLifetime, memberSubText, DEFAULT_STEP_GOAL } from '@dbee/shared'
+import {
+  CAPABILITY_NOTES,
+  DATA_RIGHTS_NOTES,
+  MINI_RECORDING_CAPS,
+  isPro,
+  isLifetime,
+  memberSubText,
+  DEFAULT_STEP_GOAL,
+  quotaNotes,
+} from '@dbee/shared'
+import { TransparencyNotes } from '../../components/TransparencyNotes'
 import { signOut } from '../../lib/auth'
 import { SITE } from '../../content/legal'
 import { copyText } from '../../lib/clipboard'
@@ -88,9 +98,9 @@ export default function ProfilePage() {
   const [weightInput, setWeightInput] = useState('')
   const [weightMsg, setWeightMsg] = useState('')
 
-  // 通知提醒偏好（打卡提醒 / 饮水提醒，存本地 kv）
-  const [notifCheckin, setNotifCheckin] = useState(true)
-  const [notifWater, setNotifWater] = useState(true)
+  // 通知提醒偏好（本地 kv）；P0.7 首帧默认关，随后由 useEffect 读 kv 覆盖（老用户已存 '1' 仍显示为开）
+  const [notifCheckin, setNotifCheckin] = useState(false)
+  const [notifWater, setNotifWater] = useState(false)
   useEffect(() => {
     void getNotifyPrefs().then((p) => {
       setNotifCheckin(p.checkin)
@@ -829,6 +839,12 @@ export default function ProfilePage() {
           <View className='helper danger'><Text>⚠️ 将永久删除你的账号及全部记录、身体档案与权益，并退出登录，操作不可恢复。</Text></View>
         ) : null}
       </View>
+
+      {/* P1.6 数据权与退款 / P1.4 已有能力 / P1.5 次数规则：与主端共用 @dbee/shared 文案真源。
+          🔴 额度文案用 MINI_RECORDING_CAPS（本端无扫码 / 包装识别）。 */}
+      <TransparencyNotes title='你的数据与退款' notes={DATA_RIGHTS_NOTES} />
+      <TransparencyNotes title='这些能力怎么算' notes={CAPABILITY_NOTES} />
+      <TransparencyNotes title='次数怎么算' notes={quotaNotes(MINI_RECORDING_CAPS)} />
 
       <View className='bottom-space' />
 
