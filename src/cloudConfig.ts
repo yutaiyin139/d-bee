@@ -13,6 +13,11 @@
 //
 // 📌 publicConfig.resourceId / publishableKey 是 SDK 初始化所需的公开标识，
 //    **不是云端连接**：真正决定流量去向的只有 endpoint 字段。
+// 🔴 2026-11-13：平台上的云库应用虽已删除，这两个值**禁止清理 / 禁止改值**。
+//    它们同时是自建网关 `server/lib/auth.mjs:157` 与 `server/lib/dbproxy.mjs:123`
+//    的 access-key 校验基准（本地精确字符串比对，与平台应用是否存在无关）：
+//    前端本值与服务端 WB_PUBLISHABLE_KEY 必须逐字一致，改动任一即全端请求 401。
+//    → 这不是「已删应用的孤儿标识」，是仍在服役的自托管配置。
 const PRODUCTION_NATIVE_ENDPOINT = 'https://d-bee.cn'
 
 const fromEnv = (import.meta.env.VITE_CLOUD_ENDPOINT as string | undefined)?.trim()

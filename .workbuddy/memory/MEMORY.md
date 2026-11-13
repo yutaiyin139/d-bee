@@ -13,32 +13,33 @@
 - 🔴 **原生包禁用 `npm run build`**（白屏）：内测 `npm run build:native:internal`；上架 `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native`。🔴 二者与 web **共用 `dist/`**，且 native / `build:web` 都会**删掉 `dist/legal/`**（隐私政策静态页零 JS 可爬＝OPPO 硬要求）→ **部署 web 前必须重跑 `npm run build`** 并比对入口 js 文件名。**产物自检以 `index.html` 引用的入口 js 为唯一真源**（干净构建本就有 2 个 `index-*.js`）。
 - 🔴🔴 **铁律 #13：「已完成」必须附生产侧实测证据**。**本地绿 ≠ 线上绿**，中间隔「提交→构建→部署」。取证 5 法见 REFERENCE.md。
 
-## 现状（11-12 21:20 · Web 发布 / vc19 / P0+P1；详版 → REF）
+## 现状（11-12 21:50 · Web 发布 / vc19 / P0+P1+透明化收起；详版 → REF）
 
-- ✅ **WEB 重发布**（21:15）`https://d-bee.cn/` 200；入口 **`index-BSo71WRh.js`**（线上/本地 sha256 一致）、法务 3 页 200 且逐字一致、`healthz` 200、308×2/301×0、证书 **2027-02-04**；含 P1 文案、零云库/零 CTA/16px。**数据面 = 自建 PG `dbee`** 水位 **0048**；🔴 0046/0047 未应用 → **跳号空洞**（补时 **0046→0047**，0047 覆盖 0046）。
-- ✅ **Android vc19 + git push**（21:20 → REF「21:20」）：归档 `release/D-Bee-1.7.3-vc19-…apk`（sha256 `5504ee8a…`）；三步实证 aapt2 vc19 / apksigner MD5 `0abe7fc5…` 与备案一致 / APK 16 探针绿。`3c6dd39`+`856ef6b` 已推、工作区净。🔴 **零删除**（产物目录移项目外备份）；**mini/dist 未重构建**。
-- ✅✅ **云库废弃（REF 20:15）**：四端数据面全自建 PG、运行时零残留、数据放弃迁移。🔴 **释放差 2 步（用户本人）**：① 重传 mini 新版本+重设体验版 ② 停用实例（不可逆）；真机调试 ≠ 体验版。**实例仍在线**（403 非释放，dbproxy 401 `DATABASE_42501`）。**20:15 决策：数据可弃/免 T+7/当日释放，走①** → `docs/云库彻底释放执行单-*`。
+- ✅ **WEB 重发布**（21:15）`https://d-bee.cn/` 200；入口 **`index-BSo71WRh.js`**（线上/本地 sha256 一致）、法务 3 页 200 逐字一致、证书 **2027-02-04**；含 P1 文案、零云库/零 CTA/16px。**数据面 = 自建 PG `dbee`** 水位 **0048**；🔴 0046/0047 未应用 → **跳号空洞**（补时 **0046→0047**，0047 覆盖 0046）。
+- ✅ **Android vc19 + git push**（21:20 → REF「21:20」）：归档 `release/D-Bee-1.7.3-vc19-…apk`（sha256 `5504ee8a…`）；三步实证 aapt2 vc19 / apksigner MD5 与备案一致 / APK 16 探针绿。`3c6dd39`+`856ef6b` 已推。🔴 **零删除**（产物目录移项目外备份）；**mini/dist 未重构建**。
+- ✅✅ **云库废弃（REF 20:15）**：四端数据面全自建 PG、运行时零残留、数据放弃迁移。🔴 **释放差 2 步（用户本人）**：① 重传 mini 新版本+重设体验版 ② 停用实例（不可逆）；真机调试 ≠ 体验版。**实例仍在线**（dbproxy 401 `DATABASE_42501`）。**20:15 决策：数据可弃/免 T+7/当日释放，走①** → `docs/云库彻底释放执行单-*`。
 - 🔴🔴 **mini 虚拟支付**（11-08，全文 → REFERENCE「11-08 晚间迁入」）：`wx.requestVirtualPayment`(米大师 xpay) 全链路就绪、开关默认 false；**开启前置 6 项在 `mini/src/lib/xpayEnabled.ts` 文件头**。铁律：补权益后**必调 `/xpay/notify_provide_goods`**、已扣款未确认 → **`settling` 绝不报 error**、`signData` 原样透传。
-- 🔴🔴 **收款定案**（全文 → REFERENCE「2026-11-09 晚」）：Web 只引导、Android 能收款、四端业务零改动。🔴 两开关独立默认 false：`D_BEE_XPAY_ENABLED`(mini) / `D_BEE_APPPAY_ENABLED`(Android 按钮+Web 引导)；关闭态 Web 零引导字样。Android `0047`+`apppay.mjs`：微信 V3/支付宝 RSA2 零依赖密码学；**发权益权威信号＝验签回调 `settle_app_payment`**；`verify_payment_order` 查单语义（回调未到恒 false，「权益到账中」绝不报 error）；幂等键 `out_trade_no`、金额校验拒「1 分钱买会员」。余 → REFERENCE §二。
-- 🔴 **开启收款前置（资质未到位开关保持 false）**：微信开放平台移动应用审核 + 商户号 **APP 支付权限** + 支付宝企业应用 + **App 备案下证** + 软著 → 「1 分钱」真实联调（清单 → `docs/Web引导闭环与Android收款实装-2026-11-09.md` §五）。正式包 vc18 已归档，🟠 公网分发待批准（A7）。
-- 工程基线：`npm test` = **25 文件 / 964 项全绿**（11-12 21:17 复测，`Test Files` == 文件数；护栏 25/10d）。🔴 改 `packages/shared/src` 后必须重建 dist（回退同样要）；**Web「下单」判据失效** → 判**真实引导 CTA 全 0**（→ REF「17:35」②）。
+- 🔴🔴 **收款定案**（全文 → REFERENCE「2026-11-09 晚」）：Web 只引导、Android 能收款、四端业务零改动。🔴 两开关独立默认 false：`D_BEE_XPAY_ENABLED`(mini) / `D_BEE_APPPAY_ENABLED`(Android 按钮+Web 引导)；关闭态 Web 零引导字样。Android `0047`+`apppay.mjs`：微信 V3/支付宝 RSA2 零依赖密码学；**发权益权威信号＝验签回调 `settle_app_payment`**；`verify_payment_order` 查单语义（回调未到恒 false，绝不报 error）；幂等键 `out_trade_no`、金额校验拒「1 分钱买会员」。余 → REFERENCE §二。
+- 🔴 **开启收款前置（资质未到位开关保持 false）**：微信开放平台移动应用审核 + 商户号 **APP 支付权限** + 支付宝企业应用 + **App 备案下证** + 软著 → 「1 分钱」真实联调（清单 → `docs/Web引导闭环与Android收款实装-2026-11-09.md` §五）。🟠 公网分发待批准（A7）。
+- 工程基线：`npm test` = **25 文件 / 975 项全绿**（11-12 21:50 复测，`Test Files` == 文件数；护栏 25/10d/25-E）。🔴 改 `packages/shared/src` 后必须重建 dist（回退同样要）；**Web「下单」判据失效** → 判**真实引导 CTA 全 0**。
 - 🔴🔴 **兑换码 P0 + 0048**（详版 → REFERENCE「2026-11-10 晚」）：3 张 lifetime 码明文进 public 历史 → 已 DELETE；0048 零止损但**已应用生产**。护栏只钉哈希、永不写明文（连注释都不行）；核验用库内 sha256 比对，绝不调 `redeem_by_code`（真烧码）；`--months`=兑换后时长 / `--expires-days`=可兑窗口，无日卡档。
-- 🔴🔴 **`psql`/脚本六铁律**（详版 → REFERENCE）：`-v` 走 `-f`+heredoc / 解析用 `-tA` / 变更类禁 `2>/dev/null` / **发码明文先落盘再写库** / 清理脚本用 `${VAR:?}` / sed 遇特殊密码静默不改 → 改 Python 临时脚本（用后即删+断言不存在）。
+- 🔴🔴 **`psql`/脚本六铁律**（详版 → REFERENCE）：`-v` 走 `-f`+heredoc / 解析用 `-tA` / 变更类禁 `2>/dev/null` / **发码明文先落盘再写库** / 清理脚本用 `${VAR:?}` / sed 遇特殊密码静默不改 → 改 Python 临时脚本。
 - 🟠 **备案链**：域名/ICP ✅ 已下证；App / 小程序 / 算法 / 公安备案均管局审核中（前两项硬阻断 Android 上架、mini 发版+虚拟支付开通）。`四端收款堵点与政策依据详表`（**结论 #5 已作废**）与 `四端收费一致性核验与合规实施总纲`（L1~L3/护栏/发版验收仍有效）均加纠偏横幅。
-- ✅ **11-11 mini 兑换反馈修复（已 push `3a449cc`，详版 → 11-11 日志）**：页顶提示被 `navigateBack` 销毁 → 补 `Taro.showToast`；写死「终身会员已生效」谎报档位 → 下沉 shared `redeemSuccessText(ent)`；新增护栏 `tools/mini-paywall-feedback.test.ts`。
-- 🟠 **11-11 官网上生产**（跨项目，主项目零改动，详版 → 11-11 日志）：`d-bee.com.cn` 独立仓库 `E:\DEV\d-bee-website`，按「AI 拍照识别饮食热量」重设计（弃 11-01 错原型）；`check-facts.mjs` 23 条护栏逐字对齐主项目 `PRODUCTS`/`priceTag()`/`membership.ts`/`PricingSheet.tsx`/`legal.ts`。🔴 改这些文案须同步官网快照。
-- ⛔ **11-11 首购半价方案已作废回退**（详版 → REFERENCE「11-11 首购半价」）：17 改 + 3 新增全丢弃，回到 15:00 基线 `6b0bba7`；0049 从未应用、生产零影响。备份 → 会话工作区 `.workbuddy/memory/backup/intro-revert-20261111-2130/`。
+- ✅ **11-11 mini 兑换反馈修复（已 push `3a449cc`，详版 → 11-11 日志）**：页顶提示被 `navigateBack` 销毁 → 补 `Taro.showToast`；写死「终身会员已生效」→ 下沉 shared `redeemSuccessText(ent)`。
+- 🟠 **11-11 官网上生产**（跨项目，主项目零改动，详版 → 11-11 日志）：`d-bee.com.cn` 独立仓库 `E:\DEV\d-bee-website`；`check-facts.mjs` 23 条护栏逐字对齐主项目 `PRODUCTS`/`priceTag()`/`membership.ts`/`legal.ts`。🔴 改这些文案须同步官网快照。
+- ⛔ **11-11 首购半价方案已作废回退**（详版 → REFERENCE「11-11 首购半价」）：17 改 + 3 新增全丢弃，回到 15:00 基线 `6b0bba7`；0049 从未应用、生产零影响。备份 → 会话工作区 `.workbuddy/memory/backup/intro-revert-*`。
 
 ## 下一步 / 待拍板（详版 → REFERENCE.md）
 
-- 🔴 未提交：`build.gradle` vc17→18 + 分享修复 + **P0 本轮改动**（逐项查 `git status -sb`）；首购半价不再 commit。
-- 🔴 **主线 = iOS 上线**（权威 `docs/iOS上线依赖全景与实施步骤-2026-11-07.md`）：正式上架卡软著(30–60 工作日)/App 备案(7–20)/Mac 签名；最大交付 = **TestFlight 内部测试**(Mac+Xcode≥26+Team+重打包)。ASC 填报面几乎空白；Apple 硬闸门 Xcode 26 + iOS 26 SDK、新年龄分级问卷必答。🔴 壳内产物停在 11-04，**apppay + A-5 真删号 + 16px 修复须 Mac 重打包**。
+- 🔴 未提交：`build.gradle` vc17→18 + 分享修复 + P0 本轮 + **21:50 透明化收起**（2 组件 + 护栏 25-E）+ 停云库手册/计划刷新版（逐项 `git status -sb`）；首购半价不再 commit。
+- 🔴 **主线 = iOS 上线**（权威 `docs/iOS上线依赖全景与实施步骤-2026-11-07.md`）：正式上架卡软著(30–60 工作日)/App 备案(7–20)/Mac 签名；最大交付 = **TestFlight 内部测试**（需 Mac+Team+重打包）。ASC 填报面几乎空白；Apple 硬闸门 Xcode 26 + iOS 26 SDK、新年龄分级问卷必答。🔴 壳内产物停在 11-04，**apppay + A-5 真删号 + 16px 修复须 Mac 重打包**。
 - 🔴 **只有用户本人能做**：软著 AI 条款、Mac 选 `DEVELOPMENT_TEAM`、证书入 `signing/`、mini 发版、云库停用、公安备案回填、ASC 填报、算法备案收尾、**支付资质申请**（微信移动应用 + 商户号 APP 支付 + 支付宝企业应用）。
 - 🔴 **三端晃动（REF「11-12 上午」）**：16px 在 `styles.css:83`；**Web ✅ / Android vc19 ✅ / mini ✅**；**iOS ❌**（壳内 11-04，须 Mac 重打包）。`100vw`/`100dvh` 未动。
-- 🔴 **四端分享修复（11-12，全文 → `docs/四端分享功能梳理与修复-2026-11-12.md`）**：iOS 微信拉不起/钉钉链接打不开 = 图片 base64 被塞进 Share 的 `url` → 改 Filesystem 写 Cache + `files`；原生邀请链接改用公网域名。护栏 19 红验证 + 23/908 绿、Android 壳内已同步。**未重打包**：iOS 须 Mac（`cap sync ios` 删除被拦、壳内仍 11-04），Android 只差升 vc19。
+- 🔴 **四端分享修复（11-12，全文 → `docs/四端分享功能梳理与修复-2026-11-12.md`）**：iOS 微信拉不起/钉钉链接打不开 = 图片 base64 被塞进 Share 的 `url` → 改 Filesystem 写 Cache + `files`；原生邀请链接改用公网域名。护栏 19 红验证 + 23/908 绿、Android 壳内已同步。**iOS 未重打包**：须 Mac（`cap sync ios` 删除被拦、壳内仍 11-04）。
 - 🟠 **对标薄荷 / 备案等待期**（11-12，详版 → REFERENCE「13:40」「14:22」）：§1.2 复核 + PCM #3 立项；Wave 4.1 图片指纹违隐私政策须删。计划 → `docs/备案等待期-差距缩减与超越实施计划-2026-11-12.md`（6–12 周 / A 不追·B 清零·C 反超 / D0 无度量 / P0~P2 + 9 项待拍板）。
 - ✅ **P0 执行**（详版 → REF「16:22」「16:45」）：P0.1 零删除重构建闭环 / P0.2 度量 / P0.3 口径护栏 / P0.4 水位 0048 / P0.7 提醒默认关，24/933 绿；P0.5 待评审、P0.6 缺公安备案号、P0.8 待拍板。🔴 上传·体验版·停库须用户本人（**免 T+7** → 20:15）。
 - ✅ **P1.4/1.5/1.6**（详版 → REF「17:30」）：shared 文案真源 + 四端渲染 + 护栏 25；mini 用 `MINI_RECORDING_CAPS` 省略无扫码/包装。**Web/Android 已含文案，mini/dist 未重构建**（P1.7）。
+- 🟠 **21:50 透明化说明默认收起**（改 2 组件 + 护栏 25-E 11 项；详版 → REF「21:50」）：数据/能力/次数三块默认收起、点击展开（复刻「饮食体检」手势 + `aria-expanded`），只改可见性不删文案、不记忆偏好；四端源码一次覆盖。🔴 **未提交/未重构建**（6 改 2 新增，`git status -sb`）。
 - 🟠 **待拍板**（详版 → REFERENCE）：隐私政策 §五 + `LEGAL_UPDATED`、mini 同意窗重确认载体、凭据轮换、网关模式收紧、Android vc19 公网分发、护栏 A9/A10、Apple 个人 vs 备案企业主体、仓库是否转 private。
 - ⚠️ 已决不再讨论：云库回迁自托管 / 老用户不迁移 / 存量 newbie bonus / 演示数据两套面 / App 名称=`自律蜜蜂` / 凭据不打进终端 / **mini 微信虚拟支付** / **Android 微信+支付宝 APP 支付** / **Web 暂不收费、ICP 经营许可证不办** / **不做渠道首月半价**（11-11 已回退）。
 - 三条主线：**开发**（看板=本文件「现状」，自动化每日收敛）；**备份两层**（cron 03:30 `pg_dump -Fc` + 异地副本，含真实健康数据**严禁 git add**）；**运营**（每周提醒）。

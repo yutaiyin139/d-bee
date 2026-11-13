@@ -188,3 +188,67 @@ describe('护栏 25-D · 红线：不改法务条款 / 不刷同意窗 / 不新�
     expect(official).toEqual(OFFICIAL_QUOTA_TEXTS)
   })
 })
+
+/**
+ * 护栏 25-E · 说明区块「默认收起 / 点击展开」四端同款（2026-11-12）
+ *
+ * 用户诉求：「数据与退款 / 这些能力怎么算 / 次数怎么算」平铺太长，要像首页
+ * 「饮食体检」那样收起展开，以简洁、好操作为主，并推广到其余端。
+ *
+ * 防的退化：
+ *  ① 有人把默认值改成 true（回到平铺，页面重新变长）或删掉切换按钮（说明再也打不开）；
+ *  ② 「收起」被实现成只留摘要 / 干脆不渲染 notes —— 透明化文案就此消失，
+ *     等于 P1.4/1.5/1.6 白做，且数据权与退款重新「找不到」；
+ *  ③ 只改主端（Web/iOS/Android）忘了 mini，或反之，造成四端交互分叉。
+ *
+ * 三铁律：一个 it 一条断言 / 匹配渲染与状态的实际使用 / 断言在 stripComments() 后的代码上。
+ * 红验证：把主端 useState(false) 注入成 true → 本组精准判红，逐字恢复后全绿。
+ */
+describe('护栏 25-E · 说明区块默认收起、可展开，且仍逐条渲染真源', () => {
+  const MAIN = stripComments(read('src/components/TransparencyNotes.tsx'))
+  const MINI = stripComments(read('mini/src/components/TransparencyNotes.tsx'))
+
+  it('主端组件默认收起（useState(false)）', () => {
+    expect(/useState\(\s*false\s*\)/.test(MAIN)).toBe(true)
+  })
+
+  it('mini 组件默认收起（useState(false)）', () => {
+    expect(/useState\(\s*false\s*\)/.test(MINI)).toBe(true)
+  })
+
+  it('主端组件实际提供展开/收起切换（调用 setOpen 取反）', () => {
+    expect(MAIN).toContain('setOpen((v) => !v)')
+  })
+
+  it('mini 组件实际提供展开/收起切换（调用 setOpen 取反）', () => {
+    expect(MINI).toContain('setOpen((v) => !v)')
+  })
+
+  it('主端折叠态由 open 控制高度（不是无条件平铺）', () => {
+    expect(MAIN).toContain('maxHeight: open ?')
+  })
+
+  it('mini 折叠态由 open 控制高度（不是无条件平铺）', () => {
+    expect(MINI).toContain('maxHeight: open ?')
+  })
+
+  it('主端展开后仍逐条渲染 notes 真源（未缩成摘要 / 未丢文案）', () => {
+    expect(MAIN).toContain('notes.map(')
+  })
+
+  it('mini 展开后仍逐条渲染 notes 真源（未缩成摘要 / 未丢文案）', () => {
+    expect(MINI).toContain('notes.map(')
+  })
+
+  it('主端按钮随状态显示「收起 / 展开」字样（操作可预期）', () => {
+    expect(MAIN).toContain("open ? '收起' : '展开'")
+  })
+
+  it('mini 按钮随状态显示「收起 / 展开」字样（操作可预期）', () => {
+    expect(MINI).toContain("open ? '收起' : '展开'")
+  })
+
+  it('主端标题按钮带 aria-expanded（可访问性对齐饮食体检）', () => {
+    expect(MAIN).toContain('aria-expanded={open}')
+  })
+})
