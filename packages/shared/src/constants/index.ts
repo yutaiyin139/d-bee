@@ -30,6 +30,15 @@ export const BONUS_TTL_DAYS = 7 // 识别次数奖励有效期（防囤积）
 /** 消耗额度的 feature 标识（ai_usage.feature） */
 export const SCAN_FEATURE = 'scan'
 
+/** 免费用户 AI 问答每日上限（llm_gate feature=coach；Pro 不计入） */
+export const FREE_COACH_DAILY = 20
+
+/** 免费用户包装营养表识别每日上限（llm_gate feature=package，与拍照池分开） */
+export const FREE_PACKAGE_DAILY = 8
+
+/** 免费用户「本期解读」每日上限。0 = 仅 Pro。 */
+export const FREE_RECAP_DAILY = 0
+
 /* ── 免费版权益文案（P2-D，多端付费墙共用）───────────────── */
 /**
  * 「永久无广告」—— 把竞品当作付费权益的东西，D-Bee 当免费卖点。

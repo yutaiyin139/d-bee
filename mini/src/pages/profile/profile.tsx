@@ -17,7 +17,7 @@ import Taro, { useDidShow } from '@tarojs/taro'
 import { IconCrown, IconDownload, IconTrash } from '../../components/Icons'
 import {
   listWeightLogs, saveProfile, saveWeight, clearAllRecords, deleteAccount,
-  exportAllData, listMealsBetween, buildMealsCsv,
+  exportAllData, buildMealsCsv,
   getProfile, getEntitlement, getPhotoQuota,
   type Entitlement, type Profile, type WeightLog,
 } from '../../lib/api'
@@ -398,7 +398,7 @@ export default function ProfilePage() {
     if (!guardExport()) return
     setExporting(true)
     try {
-      const meals = await listMealsBetween('1970-01-01', '2999-12-31')
+      const meals = (await exportAllData()).meal_entries
       if (meals.length === 0) {
         setDataMsg('还没有任何饮食记录，先去记一餐吧。')
         return

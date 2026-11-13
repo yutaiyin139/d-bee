@@ -37,31 +37,35 @@ import { getTokenVersion } from './identity.mjs'
  * 额度占用记录（ai_quota_claims）：正常前端流程「先 consume 后调 LLM」必然
  * 有 claim 可核销；绕过前端的裸调没有 claim → 落入包装识别日配额（有界）→ 拒绝。
  *
- * 文本请求不做业务额度（产品口径：只有拍照识别计费），由独立文本日限额兜底。
+ * 0049 起文本也走 llm_gate：recap 仅 Pro，coach 免费日上限入库，普通文字识别
+ * 仍放行（另有进程内 textLimiter 兜底）。视觉无 claim 时改打 feature=package，
+ * 日限额在 ai_usage，不再靠本进程内存计数（多网关实例会各自放行）。
  *
- * 🔴 fail 策略（安全审计③，2026-10-27）：此前数据库查询异常 → **放行**
- *   （fail-open，注释承认是刻意为之）。风险：llm_gate 依赖的连接池一旦抖动，
- *   视觉额度校验整体失效，任何人可无限用视觉模型白烧 API key 费用。
- *   现改为 **fail-closed**：视觉请求在 llm_gate 查询异常 / 返回畸形时拒绝
- *   （reason=gate_unavailable，网关回 503 而非 402，避免把「数据库抖动」误报成
- *   「额度用尽」诱导用户付费升级）。视觉是计费功能，宁可短暂不可用，也不白烧钱。
+ * 🔴 fail-closed：llm_gate 查询异常 / 返回畸形 → 503（reason=gate_unavailable），
+ *   避免把数据库抖动误报成「额度用尽」诱导付费。
  */
-async function llmGate(deps, ownerId, wantVision) {
+function inferTextFeature(messages) {
+  const sys = Array.isArray(messages) ? messages.find((m) => m?.role === 'system') : null
+  const text = typeof sys?.content === 'string' ? sys.content : ''
+  if (text.includes('[dbee-feature:recap]')) return 'recap'
+  if (text.includes('[dbee-feature:coach]')) return 'coach'
+  return 'text'
+}
+
+async function llmGate(deps, ownerId, feature) {
   const { cfg, logger, pool } = deps
-  if (!pool || cfg.llmGateEnabled === false) return { allowed: true, gate: 'disabled' }
-  if (!wantVision) return { allowed: true, gate: 'text' }
+  if (!pool || cfg.llmGateEnabled === false) return { allowed: true, gate: 'disabled', feature }
   try {
     const gate = await withUserIdentity(pool, ownerId, async (q) => {
-      const r = await q('SELECT public.llm_gate($1) AS g', ['scan'])
+      const r = await q('SELECT public.llm_gate($1) AS g', [feature])
       return r.rows[0]?.g ?? null
     })
     if (gate && typeof gate === 'object') return { ...gate, gate: 'db' }
-    // 函数缺失/返回异常 → fail-closed（不再放行），记 error 日志
-    logger.error('[llm] llm_gate 返回异常形状，视觉请求按 fail-closed 拒绝（请确认 0039 已应用）')
-    return { allowed: false, gate: 'db-anomaly', reason: 'gate_unavailable' }
+    logger.error(`[llm] llm_gate 返回异常形状，feature=${feature} 按 fail-closed 拒绝（请确认 0049 已应用）`)
+    return { allowed: false, gate: 'db-anomaly', reason: 'gate_unavailable', feature }
   } catch (err) {
-    logger.error(`[llm] llm_gate 查询失败，视觉请求按 fail-closed 拒绝: ${err?.message || err}`)
-    return { allowed: false, gate: 'db-error', reason: 'gate_unavailable' }
+    logger.error(`[llm] llm_gate 查询失败 feature=${feature}，按 fail-closed 拒绝: ${err?.message || err}`)
+    return { allowed: false, gate: 'db-error', reason: 'gate_unavailable', feature }
   }
 }
 
@@ -177,17 +181,8 @@ export function createLlmHandlers(deps) {
   // 在途流式请求计数（进程级）。SSE 长连接同时占用网关内存与上游并发额度，
   // 超过上限直接 429，避免慢请求堆积成雪崩。
   let activeStreams = 0
-  // 包装识别（条码兜底，无 claim）的独立日限额器。
-  // 不能复用 usageLimiter：RateLimiter.hit() 不支持按 key 覆盖 limit，
-  // 混用会让兜底通道错误地继承 200/日的宽松上限。
-  // key 带 dayKey()（北京时间日历日），午夜自然换新桶。
-  const fallbackLimiter = new RateLimiter({
-    windowMs: 86_400_000,
-    limit: Math.max(1, cfg.llmPackageDailyCap || 8),
-    maxKeys: 200_000,
-  })
-  // 🔴 安全审计③：文本独立日限额器（不再与视觉共用 usageLimiter 200/日）。
-  //   文本不经过 llm_gate 业务额度，若不独立降额 = 200 次/日免费通用 LLM 代理。
+  // 🔴 安全审计③：文本独立日限额器（与视觉 usageLimiter 分开）。
+  //   文字描述/计划走 llm_gate(text) 放行，若无此闸 = 免费通用 LLM 代理。
   const textLimiter = new RateLimiter({
     windowMs: 86_400_000,
     limit: Math.max(1, cfg.llmTextDailyCapPerUser || 50),
@@ -295,38 +290,35 @@ export function createLlmHandlers(deps) {
         }
       }
 
-      // ── 服务端权益闸门（0039 P0-C 修复的核心）───────────────
-      // 视觉请求必须持有当日额度占用（前端 consume_photo_quota 产生），
-      // 由 llm_gate 在数据库内**原子核销**一条 claim；文本请求放行
-      // （产品口径：仅拍照识别计额度）。
-      const gate = await llmGate(deps, ownerId, wantVision)
+      // ── 服务端权益闸门（0039 scan + 0049 分功能）───────────────
+      // 视觉：先核销拍照 claim；没有 claim 再走 package 日限额（库内 ai_usage）。
+      // 文本：按 system 标记 recap / coach / text 分别闸门。
+      let gate
+      if (wantVision) {
+        gate = await llmGate(deps, ownerId, 'scan')
+        if (!gate.allowed && gate.reason === 'quota_not_claimed') {
+          gate = await llmGate(deps, ownerId, 'package')
+        }
+      } else {
+        gate = await llmGate(deps, ownerId, inferTextFeature(body.messages))
+      }
       if (!gate.allowed) {
-        // 🔴 安全审计③：llm_gate 查询异常（库抖动/函数缺失/返回畸形）→
-        //   fail-closed，返回 503（服务暂不可用），而非 402（额度用尽）——
-        //   避免把数据库故障误报成「额度用尽」诱导用户付费升级。
         if (gate.reason === 'gate_unavailable') {
-          logger.error(`[llm] owner=${ownerId} 权益闸门不可用，视觉请求 fail-closed 拒绝`)
+          logger.error(`[llm] owner=${ownerId} 权益闸门不可用 feature=${gate.feature || '?'} fail-closed 拒绝`)
           return llmError(res, 503, 'AI 服务暂不可用，请稍后重试', 'gate_unavailable')
         }
-        // 兜底通道：包装识别（条码兜底）按产品口径**不占拍照额度**、无 claim
-        // （见 src/pages/LogSheet.tsx 的 handlePackagePhoto）。若不放行，
-        // 免费用户扫包装会被闸门 402 —— 功能回归。
-        // 滥用面由「视觉兜底日限额」封顶：即便伪造无 claim 的视觉请求，
-        // 每人每天也最多 llmPackageDailyCap（默认 8）张，成本可控。
-        if (gate.reason === 'quota_not_claimed') {
-          const cap = Math.max(1, cfg.llmPackageDailyCap || 8)
-          const f = fallbackLimiter.hit(`llm_fallback:${ownerId}:${dayKey()}`)
-          if (f.ok) {
-            logger.info(`[llm] owner=${ownerId} 包装识别兜底放行（无 claim，剩 ${f.remaining}/${cap}）`)
-          } else {
-            res.setHeader('retry-after', String(f.retryAfterSec))
-            logger.warn(`[llm] owner=${ownerId} 包装识别兜底日限额已用尽（${cap}/日）`)
-            return llmError(res, 402, '今日识别次数已用完，请明日再试或升级 Pro', 'quota_exhausted')
-          }
-        } else {
-          logger.warn(`[llm] owner=${ownerId} 闸门拒绝 reason=${gate.reason || 'unknown'}`)
-          return llmError(res, 402, '今日识别额度已用尽，请明日再试或升级 Pro', 'quota_exhausted')
+        if (gate.reason === 'pro_required') {
+          logger.info(`[llm] owner=${ownerId} 闸门拒绝 recap/Pro feature=${gate.feature}`)
+          return llmError(res, 402, '该功能属于 Pro 会员，升级后可使用', 'pro_required')
         }
+        logger.warn(`[llm] owner=${ownerId} 闸门拒绝 reason=${gate.reason || 'unknown'} feature=${gate.feature || '?'}`)
+        if (gate.feature === 'coach') {
+          return llmError(res, 402, '今日问答次数已用完，请明日再试或升级 Pro', 'quota_exhausted')
+        }
+        if (gate.feature === 'package') {
+          return llmError(res, 402, '今日包装识别次数已用完，请明日再试或升级 Pro', 'quota_exhausted')
+        }
+        return llmError(res, 402, '今日识别额度已用尽，请明日再试或升级 Pro', 'quota_exhausted')
       }
 
       activeStreams += 1

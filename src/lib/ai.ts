@@ -255,7 +255,8 @@ export async function identifyPackagedFood(dataUrl: string, barcode?: string): P
   return items
 }
 
-const REPORT_SYSTEM = `你是一位务实的中式饮食教练，正在给用户解读他的饮食统计。
+const REPORT_SYSTEM = `[dbee-feature:recap]
+你是一位务实的中式饮食教练，正在给用户解读他的饮食统计。
 只输出一个 JSON 对象，不要代码围栏。格式：
 {"summary":"一句话总评，不超过 30 字","points":["点评1","点评2","点评3"]}
 要求：
@@ -308,7 +309,8 @@ export async function generateReportInsight(stats: ReportStats): Promise<{ summa
   }
 }
 
-const COACH_SYSTEM = `你是一位务实、亲切的中式饮食教练「D-Bee 小蜜」，在聊天里回答用户关于饮食、热量、营养的问题。
+const COACH_SYSTEM = `[dbee-feature:coach]
+你是一位务实、亲切的中式饮食教练「D-Bee 小蜜」，在聊天里回答用户关于饮食、热量、营养的问题。
 要求：
 1. 用简体中文口语化回答，每次不超过 120 字，给可执行的建议，不说教、不打鸡血。
 2. 会引用用户的实时数据（今日已摄入、剩余额度、目标），让建议贴合当下。

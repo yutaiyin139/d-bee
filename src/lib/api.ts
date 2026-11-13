@@ -105,13 +105,12 @@ export async function listMealsByDate(logDate: string): Promise<MealEntry[]> {
   return rows<MealEntry>(data)
 }
 
-/** 按日期区间批量读取（含首尾），用于趋势与报告 */
+/**
+ * 按日期区间批量读取全字段（含首尾），用于报告营养分析。
+ * 走 0049 list_meals_between：服务端按会员档截断窗口，不信客户端起止日。
+ */
 export async function listMealsBetween(startDate: string, endDate: string): Promise<MealEntry[]> {
-  const { data, error } = await db('meal_entries')
-    .select('*')
-    .gte('log_date', startDate)
-    .lte('log_date', endDate)
-    .order('log_date', { ascending: true })
+  const { data, error } = await callRpc('list_meals_between', { p_start: startDate, p_end: endDate })
   if (error) throw new Error(zh(error.message, '读取记录失败'))
   return rows<MealEntry>(data)
 }
@@ -563,23 +562,22 @@ export interface ExportBundle {
 }
 
 export async function exportAllData(): Promise<ExportBundle> {
-  const [profile, meals, weights, waters, exercises, usage] = await Promise.all([
-    getProfile(),
-    listMealsBetween('1970-01-01', '2999-12-31'),
-    listWeightLogsAsc(3650),
-    db('water_logs').select('*').order('log_date', { ascending: false }).limit(5000).then((r: QueryResult) => rows<unknown>(r.data)),
-    db('exercise_logs').select('*').order('log_date', { ascending: false }).limit(5000).then((r: QueryResult) => rows<unknown>(r.data)),
-    db('ai_usage').select('*').order('usage_date', { ascending: false }).limit(5000).then((r: QueryResult) => rows<unknown>(r.data)),
-  ])
+  const { data, error } = await callRpc('export_user_bundle', {})
+  if (error) throw new Error(zh(error.message, '导出失败'))
+  const bundle = (Array.isArray(data) ? data[0] : data) as (ExportBundle & { ok?: boolean; code?: string }) | null
+  if (!bundle || bundle.ok === false) {
+    if (bundle?.code === 'pro_required') throw new Error('数据导出是 Pro 功能，升级后可随时打包带走全部记录。')
+    throw new Error('导出失败')
+  }
   return {
-    app: 'D-Bee 自律蜜蜂',
-    exported_at: new Date().toISOString(),
-    profile,
-    meal_entries: meals,
-    weight_logs: weights,
-    water_logs: waters,
-    exercise_logs: exercises,
-    ai_usage: usage,
+    app: bundle.app,
+    exported_at: bundle.exported_at,
+    profile: bundle.profile,
+    meal_entries: rows<MealEntry>(bundle.meal_entries),
+    weight_logs: rows<WeightLog>(bundle.weight_logs),
+    water_logs: rows<unknown>(bundle.water_logs),
+    exercise_logs: rows<unknown>(bundle.exercise_logs),
+    ai_usage: rows<unknown>(bundle.ai_usage),
   }
 }
 

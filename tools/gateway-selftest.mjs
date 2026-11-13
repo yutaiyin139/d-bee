@@ -82,6 +82,21 @@ function createMockPool() {
 
       throw new Error(`mock pool 未实现的 SQL: ${s.slice(0, 80)}`)
     },
+    async connect() {
+      const self = this
+      return {
+        async query(sql, params = []) {
+          if (/llm_gate/.test(sql)) {
+            return { rows: [{ g: { allowed: true, pro: false, feature: params[0] || 'text' } }] }
+          }
+          if (/^BEGIN|^COMMIT|^ROLLBACK|set_config/i.test(String(sql).trim())) {
+            return { rows: [], rowCount: 0 }
+          }
+          return self.query(sql, params)
+        },
+        release() {},
+      }
+    },
     async end() {},
   }
 }
@@ -919,18 +934,22 @@ section('HTTP · 演示账户发码→验码→注册全链（固定码，不发
 
 /** 可编程 pool：connect() 返回 mock client，llm_gate 的应答由 mode 决定 */
 function createGatePool() {
-  const state = { mode: { allowed: true, pro: false }, calls: 0 }
+  const state = { mode: { allowed: true, pro: false }, calls: 0, features: [] }
   return {
     state,
     setMode(m) { state.mode = m },
     async connect() {
       if (state.mode === 'connect-throw') throw new Error('pool down')
       return {
-        async query(sql) {
+        async query(sql, params = []) {
           if (/llm_gate/.test(sql)) {
             state.calls += 1
+            state.features.push(params[0])
             if (state.mode === 'query-throw') throw new Error('db error')
             if (state.mode === 'malformed') return { rows: [{ g: 'not-an-object' }] }
+            if (typeof state.mode === 'function') {
+              return { rows: [{ g: state.mode(params[0], state) }] }
+            }
             return { rows: [{ g: state.mode }] }
           }
           return { rows: [], rowCount: 0 } // BEGIN / set_config / COMMIT
@@ -966,28 +985,36 @@ section('HTTP · LLM 闸门（llm_gate）与包装识别兜底')
   assert('视觉+闸门放行 → 502（到达上游）', r.status === 502, `实际 ${r.status}`)
   assert('llm_gate 被调用', gatePool.state.calls === 1, `calls=${gatePool.state.calls}`)
 
-  // ② 文本请求 → 不调闸门（llmGate 内部 wantVision=false 直接放行）
+  // ② 文本请求 → 0049 起也调 llm_gate(text)
   const callsBefore = gatePool.state.calls
   r = await gpost({ messages: [{ role: 'user', content: '你好' }] })
   assert('文本请求 → 502（到达上游）', r.status === 502, `实际 ${r.status}`)
-  assert('文本请求不触发 llm_gate', gatePool.state.calls === callsBefore)
+  assert('文本请求触发 llm_gate', gatePool.state.calls === callsBefore + 1, `calls=${gatePool.state.calls}`)
+  assert('文本 feature=text', gatePool.state.features.at(-1) === 'text', String(gatePool.state.features.at(-1)))
 
   // ③ Pro 放行 → 502
   gatePool.setMode({ allowed: true, pro: true })
   r = await gpost({ messages: [visionMsg] })
   assert('视觉+Pro → 502（到达上游）', r.status === 502, `实际 ${r.status}`)
 
-  // ④ 无 claim（quota_not_claimed）→ 落入包装识别兜底：cap=2，前 2 次放行
-  gatePool.setMode({ allowed: false, pro: false, reason: 'quota_not_claimed' })
+  // ④ 无 claim → 改打 package；库内限额由 mock 模拟 2 次
+  gatePool.setMode((feature, st) => {
+    if (feature === 'scan') return { allowed: false, pro: false, reason: 'quota_not_claimed', feature: 'scan' }
+    if (feature === 'package') {
+      st.packageHits = (st.packageHits || 0) + 1
+      if (st.packageHits <= 2) return { allowed: true, pro: false, feature: 'package' }
+      return { allowed: false, pro: false, feature: 'package', reason: 'quota_exhausted' }
+    }
+    return { allowed: true, pro: false, feature }
+  })
   r = await gpost({ messages: [visionMsg] })
-  assert('兜底第 1/2 次 → 502（放行到上游）', r.status === 502, `实际 ${r.status}`)
+  assert('包装第 1/2 次 → 502（放行到上游）', r.status === 502, `实际 ${r.status}`)
   r = await gpost({ messages: [visionMsg] })
-  assert('兜底第 2/2 次 → 502（放行到上游）', r.status === 502, `实际 ${r.status}`)
+  assert('包装第 2/2 次 → 502（放行到上游）', r.status === 502, `实际 ${r.status}`)
   r = await gpost({ messages: [visionMsg] })
-  assert('兜底第 3 次 → 402 quota_exhausted', r.status === 402, `实际 ${r.status}`)
+  assert('包装第 3 次 → 402 quota_exhausted', r.status === 402, `实际 ${r.status}`)
   const j = await r.json()
   assert('402 错误码 = quota_exhausted', j.error?.code === 'quota_exhausted', JSON.stringify(j.error))
-  assert('402 带 retry-after', Number(r.headers.get('retry-after')) > 0)
 
   // ⑤ 非兜底类拒绝（unauthenticated）→ 直接 402，不走兜底
   gatePool.setMode({ allowed: false, pro: false, reason: 'unauthenticated' })
@@ -1009,10 +1036,24 @@ section('HTTP · LLM 闸门（llm_gate）与包装识别兜底')
   r = await gpost({ messages: [visionMsg] })
   assert('pool.connect 异常 → fail-closed 503', r.status === 503, `实际 ${r.status}`)
 
-  // ⑥b 文本请求不经过 llm_gate（wantVision=false），库异常也不影响文本
+  // ⑥b 0049：文本也 fail-closed
   gatePool.setMode('query-throw')
   r = await gpost({ messages: [{ role: 'user', content: '你好' }] })
-  assert('库异常时文本请求仍可走（502 到达上游，不因视觉闸门被拒）', r.status === 502, `实际 ${r.status}`)
+  assert('库异常时文本请求 fail-closed 503', r.status === 503, `实际 ${r.status}`)
+
+  // ⑥c recap 标记 + 非 Pro → 402 pro_required
+  gatePool.setMode({ allowed: false, pro: false, feature: 'recap', reason: 'pro_required' })
+  r = await gpost({
+    messages: [
+      { role: 'system', content: '[dbee-feature:recap]\n解读饮食统计' },
+      { role: 'user', content: '请点评' },
+    ],
+  })
+  assert('本期解读非 Pro → 402 pro_required', r.status === 402, `实际 ${r.status}`)
+  {
+    const jj = await r.json()
+    assert('402 错误码 = pro_required', jj.error?.code === 'pro_required', JSON.stringify(jj.error))
+  }
 
   // ⑦ 输入限制：图片数超限（默认 4）→ 400 input_too_large，且不消耗兜底额度
   gatePool.setMode({ allowed: false, pro: false, reason: 'quota_not_claimed' })
@@ -1054,7 +1095,7 @@ section('HTTP · LLM 闸门开关（llmGateEnabled=false 时不查库）')
 section('HTTP · 文本独立降额（安全审计③：文本不再共用 200/日）')
 {
   const textPool = createGatePool()
-  // 文本请求 wantVision=false，不经过 llm_gate，也不走视觉 usageLimiter
+  // 文本请求走 llm_gate(text)（mock 放行）+ 独立 textLimiter
   const textCfg = { ...cfg, llmGateEnabled: true, llmTextDailyCapPerUser: 2, llmDailyCapPerUser: 100 }
   const textApp = createApp({ cfg: textCfg, pool: textPool, gatewayPool: textPool, logger, enableDbProxy: false, enableLlm: true })
   await new Promise((r) => textApp.server.listen(0, '127.0.0.1', r))

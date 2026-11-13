@@ -9,7 +9,6 @@ import {
   clearAllRecords,
   deleteAccount,
   exportAllData,
-  listMealsBetween,
   listWeightLogs,
   saveProfile,
   saveWeight,
@@ -343,7 +342,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
     setDataErr('')
     setDataMsg('')
     try {
-      const meals = await listMealsBetween('1970-01-01', '2999-12-31')
+      const meals = (await exportAllData()).meal_entries
       if (meals.length === 0) {
         setDataMsg('还没有任何饮食记录，先去记一餐吧。')
         return

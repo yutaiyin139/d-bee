@@ -6,7 +6,7 @@
  *          / STREAK_BONUS_* / NEWBIE_BONUS_AMOUNT / BONUS_TTL_DAYS / SCAN_FEATURE
  *          / PRICE_* / PRODUCT_IDS / HONEY_PRICE
  *  - 函数：isPro / isLifetime / effectivePlan / mondayOf / normalizeCode
- *          / proUntilFromMonths / quotaExhaustedReason / photoLadderHint
+ *          / proUntilFromMonths / quotaExhaustedReason / INSIGHT_PAYWALL_REASON / photoLadderHint
  *          / isDuplicatePhoto / summarizePhoto
  *  - 类型：UserPlan / Entitlement / Product / ProductId / HoneyRewardKind / LadderHint ...
  *

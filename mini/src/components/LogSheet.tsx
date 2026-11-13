@@ -42,7 +42,7 @@ import { errText } from '../lib/errmsg'
 import { FOOD_CATEGORIES, searchFoods, listFoodsByCategory, type FoodItem } from '../lib/foods'
 import {
   isPro, roundTo, isDuplicatePhoto, summarizePhoto, photoLadderHint,
-  quotaExhaustedReason, FREE_DAILY_AI, HONEY_PRICE, AI_REDEEM_DAILY_LIMIT,
+  quotaExhaustedReason, MINI_RECORDING_CAPS, FREE_DAILY_AI, HONEY_PRICE, AI_REDEEM_DAILY_LIMIT,
   type PhotoSummary,
 } from '@dbee/shared'
 import './LogSheet.scss'
@@ -360,7 +360,7 @@ export function LogSheet({ logDate, initialMeal, initialMode = 'photo', onClose,
     } else if (ladder.kind === 'inviteOrPro') {
       setError(`今日 ${FREE_DAILY_AI} 次免费识别已用完。邀请好友赚积分可兑换识别（每日最多 ${AI_REDEEM_DAILY_LIMIT} 次），或升级 Pro 无限次识别。`)
     } else {
-      setError(quotaExhaustedReason())
+      setError(quotaExhaustedReason(MINI_RECORDING_CAPS))
     }
     return false
   }
@@ -400,7 +400,7 @@ export function LogSheet({ logDate, initialMeal, initialMode = 'photo', onClose,
         if (!c.allowed) {
           setError(c.degraded
             ? '识别服务暂时不可用（额度扣减失败）。本次未消耗额度，请稍后重试；若持续如此请联系客服。'
-            : quotaExhaustedReason())
+            : quotaExhaustedReason(MINI_RECORDING_CAPS))
           await refreshStats()
           return
         }

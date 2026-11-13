@@ -232,10 +232,9 @@ describe('护栏 3 · 数值口径禁止新增手写舍入（唯一权威 numfmt
       // doDeleteAccount 注释/实现改写使后半段再平移 → 168,169,510 → 169,170,514。
       // 2026-11-12 P1.4/1.5/1.6：新增 TransparencyNotes 组件 import 1 行
       // → 169,170,514 → 170,171,515。
-      // 三行**代码内容逐字未变**（仍是既有的 Math.round(x*10)/10 手写舍入），
-      // 这里同步的是行号快照，条目数未减、不是放宽基线；同步后已做红验证
-      // （注入第 4 处手写舍入 → 精准判红，恢复后全绿）。
-      'src/pages/ProfileScreen.tsx:170,171,515',
+      // 2026-11-13 阶段 B：CSV 改走 exportAllData，去掉未用的 listMealsBetween import
+      // → 170,171,515 → 169,170,514。三行手写舍入内容未变，只是行号快照。
+      'src/pages/ProfileScreen.tsx:169,170,514',
     ]
 
     expect(

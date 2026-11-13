@@ -289,4 +289,30 @@ describe('护栏 19-D · 权益清单端能力差异快照（补 §1.3 L3 #8）'
       /真实端能力差异|端能力差异/.test(raw(MEMBERSHIP)) && /端能力差异/.test(raw(MINI_PAYWALL)),
     ).toBe(true)
   })
+
+  it('PRO_ITEMS 不含尚未独立上线的长期规划 / 宏量深度分析', () => {
+    const banned = /长期 AI 膳食规划|宏量营养素深度分析/
+    expect(!banned.test(code(MEMBERSHIP)) && !banned.test(code(MINI_PAYWALL))).toBe(true)
+  })
+})
+
+const SHARED_RULES = 'packages/shared/src/rules/index.ts'
+const MINI_LOG = 'mini/src/components/LogSheet.tsx'
+
+describe('护栏 19-E · 额度用尽文案按端能力插值（防小程序宣传扫条码）', () => {
+  it('quotaExhaustedReason 接受 RecordingCaps 且按 barcode 插值', () => {
+    const src = code(SHARED_RULES)
+    expect(
+      /export function quotaExhaustedReason\(caps: RecordingCaps/.test(src) &&
+        /\.\.\.\(caps\.barcode \? \['扫条码'\] : \[\]\)/.test(src),
+    ).toBe(true)
+  })
+
+  it('mini LogSheet 传入 MINI_RECORDING_CAPS，不得无参调用默认全能力文案', () => {
+    const src = code(MINI_LOG)
+    expect(
+      /quotaExhaustedReason\(MINI_RECORDING_CAPS\)/.test(src) &&
+        !/quotaExhaustedReason\(\)/.test(src),
+    ).toBe(true)
+  })
 })

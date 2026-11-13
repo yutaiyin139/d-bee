@@ -26,6 +26,7 @@ import {
 } from '../constants'
 import { fmtNum } from '../numfmt'
 import { proUntilText } from '../datefmt'
+import { FULL_RECORDING_CAPS, type RecordingCaps } from '../content/transparency'
 
 export interface Product {
   id: ProductId
@@ -201,15 +202,33 @@ export function proUntilFromMonths(months: number): string {
 }
 
 /**
- * 免费拍照额度用尽时的统一提示（多端共用文案）。
+ * 免费拍照额度用尽时的统一提示。
+ *
+ * 第三句按端能力插值：主端有条码扫码，小程序没有。默认 FULL_RECORDING_CAPS
+ * 保持 Web / iOS / Android 原文；mini 必须传入 MINI_RECORDING_CAPS，否则会宣传
+ * 一个不存在的入口（《广告法》第 4 条）。
  */
-export function quotaExhaustedReason(): string {
+export function quotaExhaustedReason(caps: RecordingCaps = FULL_RECORDING_CAPS): string {
+  const stillFree = [
+    ...(caps.barcode ? ['扫条码'] : []),
+    '文字描述',
+    '手动录入',
+    '记录饮水体重运动',
+    'AI 问答',
+  ].join('、')
   return (
     `今日 ${FREE_DAILY_AI} 次免费拍照识别已用完（积分可再兑换 ${AI_REDEEM_DAILY_LIMIT} 次），明天 0 点重置。` +
     `升级 Pro 可无限次拍照识别。` +
-    `扫条码、文字描述、手动录入、记录饮水体重运动、AI 问答都免费不限次数。`
+    `${stillFree}都免费不限次数。`
   )
 }
+
+/**
+ * 点「本期解读」时非 Pro 的付费墙原因。只陈述已实现的复盘能力，
+ * 不附带尚未单独上线的「周复盘 / 长期规划 / 宏量深度分析」。
+ */
+export const INSIGHT_PAYWALL_REASON =
+  '「本期解读」是 AI 长文本复盘，属于 Pro 会员专属功能。升级后可无限次生成。'
 
 /* ── 拍照额度阶梯 + 反复拍照判定（多端共用纯函数）────────────────── */
 

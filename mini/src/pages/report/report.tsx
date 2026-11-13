@@ -13,14 +13,14 @@ import { BarChart, LineChart, RatioBar, C_HONEY, C_BLUE, C_GREEN } from '../../c
 import { IconLock, IconWeight } from '../../components/Icons'
 import { generateReportInsight } from '../../lib/ai'
 import { AiLabel } from '../../components/AiLabel'
-import { getProfile, listMealsBetween, listWeightLogsAsc, saveWeight, getEntitlement, type MealEntry, type Profile, type WeightLog } from '../../lib/api'
+import { getProfile, listLoggedMeals, listMealsBetween, listWeightLogsAsc, saveWeight, getEntitlement, type MealEntry, type MealSlim, type Profile, type WeightLog } from '../../lib/api'
 import { shiftDate, todayKey, monthGrid } from '../../lib/nutrition'
 import {
   computeReport, forecastGoal, kcalByDate, monthCompareFromMeals, weightTrendTone,
   dayTone, type DayTone, type Forecast, type MonthCompare, type ReportData,
 } from '../../lib/report'
 import { WEIGHT_LIMIT, checkNumber, clampNumeric, rangeText, sanitizeNumeric } from '../../lib/validate'
-import { FREE_REPORT_DAYS, PRO_REPORT_DAYS, isPro } from '@dbee/shared'
+import { FREE_REPORT_DAYS, PRO_REPORT_DAYS, isPro, INSIGHT_PAYWALL_REASON } from '@dbee/shared'
 import { openPaywall } from '../../lib/upsell'
 import './report.scss'
 
@@ -54,6 +54,7 @@ export default function ReportPage() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [days, setDays] = useState(7)
   const [recentMeals, setRecentMeals] = useState<MealEntry[]>([])
+  const [loggedMeals, setLoggedMeals] = useState<MealSlim[]>([])
   const [weights, setWeights] = useState<WeightLog[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -84,12 +85,14 @@ export default function ReportPage() {
     setLoading(true)
     setError('')
     try {
-      const [m, w, p] = await Promise.all([
-        listMealsBetween(shiftDate(today, -STREAK_WINDOW_DAYS), today),
+      const [m, slim, w, p] = await Promise.all([
+        listMealsBetween(shiftDate(today, -(PRO_REPORT_DAYS - 1)), today),
+        listLoggedMeals(shiftDate(today, -STREAK_WINDOW_DAYS), today),
         listWeightLogsAsc(365),
         getProfile(),
       ])
       setRecentMeals(m)
+      setLoggedMeals(slim)
       setWeights(w)
       if (p) setProfile(p)
     } catch (e) {
@@ -113,8 +116,11 @@ export default function ReportPage() {
     [recentMeals, weights, profile, days],
   )
 
-  const kcalMap = useMemo(() => kcalByDate(recentMeals), [recentMeals])
-  const monthCmp: MonthCompare = useMemo(() => monthCompareFromMeals(recentMeals, today), [recentMeals, today])
+  const kcalMap = useMemo(() => kcalByDate(loggedMeals as unknown as MealEntry[]), [loggedMeals])
+  const monthCmp: MonthCompare = useMemo(
+    () => monthCompareFromMeals(loggedMeals as unknown as MealEntry[], today),
+    [loggedMeals, today],
+  )
 
   const tone = weightTrendTone(report.weightChange, profile?.goal ?? 'keep')
   const todayWeight = weights.find((w) => w.log_date === today)?.weight_kg
@@ -174,7 +180,7 @@ export default function ReportPage() {
   async function handleInsight() {
     // 长文本 AI 复盘（本期解读）为会员专属（对齐主工程 ReportScreen 的 pro 门控）
     if (!pro) {
-      void openPaywall('「本期解读」是 Pro 会员专属功能')
+      void openPaywall(INSIGHT_PAYWALL_REASON)
       return
     }
     setInsightBusy(true)

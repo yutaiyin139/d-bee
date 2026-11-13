@@ -4,8 +4,8 @@ import { BarChart, LineChart, RatioBar } from '../components/Charts'
 import { IconLock, IconPlus, IconWeight } from '../components/Icons'
 import { AiLabel } from '../components/AiLabel'
 import { generateReportInsight } from '../lib/ai'
-import { listMealsBetween, listWeightLogsAsc, saveWeight } from '../lib/api'
-import { FREE_REPORT_DAYS } from '../lib/entitlement'
+import { listLoggedMeals, listMealsBetween, listWeightLogsAsc, saveWeight } from '../lib/api'
+import { FREE_REPORT_DAYS, PRO_REPORT_DAYS, INSIGHT_PAYWALL_REASON } from '../lib/entitlement'
 import { shiftDate, todayKey } from '../lib/nutrition'
 import {
   computeReport,
@@ -19,7 +19,7 @@ import {
 } from '../lib/report'
 import { usePlan } from '../state/plan'
 import { WEIGHT_LIMIT, checkNumber, clampNumeric, rangeText, sanitizeNumeric } from '../lib/validate'
-import type { MealEntry, Profile, WeightLog } from '../types'
+import type { MealEntry, MealSlim, Profile, WeightLog } from '../types'
 import { errText } from '../lib/errmsg'
 
 interface ReportScreenProps {
@@ -91,6 +91,7 @@ export function ReportScreen({ profile }: ReportScreenProps) {
   const { pro, openPaywall } = usePlan()
   const [days, setDays] = useState(7)
   const [recentMeals, setRecentMeals] = useState<MealEntry[]>([])
+  const [loggedMeals, setLoggedMeals] = useState<MealSlim[]>([])
   const [weights, setWeights] = useState<WeightLog[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -108,11 +109,13 @@ export function ReportScreen({ profile }: ReportScreenProps) {
     setLoading(true)
     setError('')
     try {
-      const [m, w] = await Promise.all([
-        listMealsBetween(shiftDate(today, -STREAK_WINDOW_DAYS), today),
+      const [m, slim, w] = await Promise.all([
+        listMealsBetween(shiftDate(today, -(PRO_REPORT_DAYS - 1)), today),
+        listLoggedMeals(shiftDate(today, -STREAK_WINDOW_DAYS), today),
         listWeightLogsAsc(365),
       ])
       setRecentMeals(m)
+      setLoggedMeals(slim)
       setWeights(w)
     } catch (e) {
       setError(errText(e, '加载报告失败'))
@@ -137,8 +140,11 @@ export function ReportScreen({ profile }: ReportScreenProps) {
   )
 
   // 日历与月对比用同一份近窗数据
-  const kcalMap = useMemo(() => kcalByDate(recentMeals), [recentMeals])
-  const monthCmp: MonthCompare = useMemo(() => monthCompareFromMeals(recentMeals, today), [recentMeals, today])
+  const kcalMap = useMemo(() => kcalByDate(loggedMeals as unknown as MealEntry[]), [loggedMeals])
+  const monthCmp: MonthCompare = useMemo(
+    () => monthCompareFromMeals(loggedMeals as unknown as MealEntry[], today),
+    [loggedMeals, today],
+  )
 
   const tone = weightTrendTone(report.weightChange, profile.goal ?? 'keep')
   const todayWeight = weights.find((w) => w.log_date === today)?.weight_kg
@@ -196,7 +202,7 @@ export function ReportScreen({ profile }: ReportScreenProps) {
   async function handleInsight() {
     // 长文本 AI 复盘（本期解读）为会员专属：免费用户弹付费墙，Pro/终身可无限次生成
     if (!pro) {
-      openPaywall('「本期解读」是 AI 长文本复盘，属于 Pro 会员专属功能。升级后可无限次生成，并获得周复盘、长期膳食规划与宏量营养素深度分析。')
+      openPaywall(INSIGHT_PAYWALL_REASON)
       return
     }
     setInsightBusy(true)
