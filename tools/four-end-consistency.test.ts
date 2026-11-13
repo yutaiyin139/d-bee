@@ -469,7 +469,7 @@ describe('护栏 7 · 合规公示可达性与版本号同源', () => {
 
   it('🔴 mini/config 解析版本号必须校验 name==="d-bee"（防误读 mini/package.json 的 0.1.0）', () => {
     const cfg = stripComments(readFileSync(join(ROOT, 'mini', 'config', 'index.ts'), 'utf8'))
-    // 根 package.json 的 name 是 'd-bee'、version 是产品版本（1.7.3）；
+    // 根 package.json 的 name 是 'd-bee'、version 是产品版本（1.7.4）；
     // mini/package.json 的 name 是 'd-bee-mini'、version 是 0.1.0（小程序包自身版本）。
     // 少了这道校验，候选路径一旦命中 mini 自己的包，就会向用户展示 0.1.0 —— 错版本号比不显示更糟。
     expect(
