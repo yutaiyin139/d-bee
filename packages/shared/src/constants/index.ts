@@ -30,8 +30,11 @@ export const BONUS_TTL_DAYS = 7 // 识别次数奖励有效期（防囤积）
 /** 消耗额度的 feature 标识（ai_usage.feature） */
 export const SCAN_FEATURE = 'scan'
 
-/** 免费用户 AI 问答每日上限（llm_gate feature=coach；Pro 不计入） */
-export const FREE_COACH_DAILY = 20
+/**
+ * 文本问答不设每日次数（2026-11-13 定案）。
+ * 免费用户只保留每分钟 3 次防刷，写在两端 Coach 页与网关，不在这里设日上限。
+ * Pro 不限流。不要再引入 FREE_COACH_DAILY。
+ */
 
 /** 免费用户包装营养表识别每日上限（llm_gate feature=package，与拍照池分开） */
 export const FREE_PACKAGE_DAILY = 8

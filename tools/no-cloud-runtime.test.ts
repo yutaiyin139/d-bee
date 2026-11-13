@@ -81,6 +81,9 @@ const RUNTIME_FILES = [
 const FORBIDDEN = [
   'zilv-mifeng.app.workbuddy.host',
   'workbuddy.host',
+  'www.workbuddy.cn',
+  'genie-baas/oauth',
+  'oauthRelayBaseUrl',
   'CLOUD_HOST',
   'CLOUD_ORIGIN',
   'CLOUD_UPSTREAM',
@@ -178,8 +181,8 @@ describe('🔴 四端 endpoint / Origin 常量同源', () => {
  * 会让「只需配一个 request 合法域名」变成靠推断而非可验证的事实。
  * 本断言把它钉死为「mini 侧绝不能出现」。
  *
- * ⚠️ 射程**只限 mini/**：主工程 `src/cloudConfig.ts` 仍保留该字段（网页扫码登录
- * 可能用到），全仓禁止会误伤 Web 端。同样在 `stripComments()` 后的代码上做。
+ * 2026-11-13：主工程也已去掉该字段。网页扫码登录随云库中转一起下线，
+ * 短信 / 邮箱 / 小程序 `signInWithWechat` 不依赖它。全仓运行时扫描一并禁止。
  */
 const MINI_FILES = RUNTIME_FILES.filter((rel) => rel.startsWith('mini/'))
 const MINI_FORBIDDEN = [

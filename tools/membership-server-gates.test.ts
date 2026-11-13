@@ -3,7 +3,7 @@
  *
  * 锁死 0049 + 网关 + 两端调用，防止「只改前端、服务端仍可抓包」回潮：
  *   ① list_meals_between / export_user_bundle / llm_gate 分 feature 写在 0049
- *   ② 数字与 shared 常量同源（7/30、coach 20、package 8、recap 0）
+ *   ② 数字与 shared 常量同源（7/30、package 8、recap 0）；问答不设日上限
  *   ③ 主端 / mini 走 RPC，不再用 meal_entries 全字段跨日直查做报告/导出
  *   ④ 网关文本也调 llm_gate；视觉无 claim 改打 package，不靠进程内存限额
  *
@@ -74,10 +74,10 @@ describe('护栏 22-A · 0049 RPC 与库内限额', () => {
     expect(/v_feature = 'recap'/.test(MIG) && /v_feature = 'package'/.test(MIG) && /v_feature = 'coach'/.test(MIG)).toBe(true)
   })
 
-  it('包装日限额 8、问答日限额 20 与 shared 常量一致', () => {
-    const coach = SHARED.match(/FREE_COACH_DAILY\s*=\s*(\d+)/)?.[1]
+  it('包装日限额 8 与 shared 一致，问答不设日上限', () => {
     const pack = SHARED.match(/FREE_PACKAGE_DAILY\s*=\s*(\d+)/)?.[1]
-    expect(coach === '20' && pack === '8' && /v_limit := 8/.test(MIG) && /v_limit := 20/.test(MIG)).toBe(true)
+    const coachOpen = /v_feature = 'coach'[\s\S]{0,180}allowed', true/.test(MIG)
+    expect(pack === '8' && /v_limit := 8/.test(MIG) && !/v_limit := 20/.test(MIG) && !/FREE_COACH_DAILY/.test(SHARED) && coachOpen).toBe(true)
   })
 
   it('llm_gate 仍不授 authenticated', () => {
@@ -110,6 +110,10 @@ describe('护栏 22-C · 网关分功能 + fail-closed', () => {
 
   it('闸门异常返回 gate_unavailable', () => {
     expect(/reason: 'gate_unavailable'/.test(LLM)).toBe(true)
+  })
+
+  it('问答只保留每分钟防刷，不出现日次数用尽文案', () => {
+    expect(/coachMinuteLimiter/.test(LLM) && /windowMs: 60_000/.test(LLM) && /limit: 3/.test(LLM) && !/今日问答次数已用完/.test(LLM)).toBe(true)
   })
 
   it('两端本期解读 / 问答 system 带 feature 标记', () => {

@@ -17,12 +17,12 @@ const nativeFetch = createNativeFetch()
 
 /**
  * 全局唯一的云服务客户端。
- * endpoint / publishableKey / oauthRelayBaseUrl 全部来自 publicConfig，禁止硬编码或改写。
- * Auth / Database / Storage / LLM 四个模块共用这一个实例。
+ * endpoint / publishableKey 来自 publicConfig，禁止硬编码或改写。
+ * 不传平台 OAuth 中转地址：云库已删除，网页扫码登录没有可连的中转。
+ * Auth / Database / Storage / LLM 四个模块共用这一个实例，请求只打 endpoint。
  */
 export const cloud = createWorkBuddyCloud({
   endpoint: publicConfig.endpoint,
-  oauthRelayBaseUrl: publicConfig.oauthRelayBaseUrl,
   publishableKey: publicConfig.publishableKey,
   ...(nativeFetch ? { fetch: nativeFetch } : {}),
 })

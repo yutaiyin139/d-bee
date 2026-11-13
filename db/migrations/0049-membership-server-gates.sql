@@ -10,7 +10,7 @@
 --   (a) report_window_days() / list_meals_between()：非 Pro 全字段区间截断为 7 天
 --   (b) export_user_bundle()：非 Pro 返回 {ok:false, code:pro_required}，不吐全量
 --   (c) llm_gate 分 feature：scan 仍核销 claim；package 走 ai_usage 日限额 8；
---       coach 免费日上限 20；recap（本期解读）免费 0（必须 Pro）
+--       coach 文本问答不设日上限（2026-11-13 定案）；recap（本期解读）免费 0（必须 Pro）
 --   (d) 包装识别日限额入库，不再只靠网关进程内 RateLimiter（多实例会各自放行 8 次）
 --
 -- 🔴 刻意不收回 meal_entries 的表级 SELECT：INSERT/UPDATE/DELETE … RETURNING
@@ -205,10 +205,13 @@ BEGIN
     RETURN json_build_object('allowed', true, 'pro', false, 'feature', 'text');
   END IF;
 
+  -- 文本问答：不记日次数。每分钟防刷在网关，不在本函数计数。
+  IF v_feature = 'coach' THEN
+    RETURN json_build_object('allowed', true, 'pro', false, 'feature', 'coach');
+  END IF;
+
   IF v_feature = 'package' THEN
     v_limit := 8;
-  ELSIF v_feature = 'coach' THEN
-    v_limit := 20;
   ELSE
     RETURN json_build_object('allowed', false, 'pro', false, 'reason', 'unknown_feature');
   END IF;
@@ -247,7 +250,7 @@ BEGIN
 END $$;
 
 COMMENT ON FUNCTION public.llm_gate(text) IS
-  '0049 · LLM 网关分功能闸门。scan 核销 claim；package/coach 记 ai_usage 日限额；recap 仅 Pro；仅 dbee_app 可执行。';
+  '0049 · LLM 网关分功能闸门。scan 核销 claim；package 记 ai_usage 日限额；coach 不设日上限；recap 仅 Pro；仅 dbee_app 可执行。';
 
 DO $$
 BEGIN
@@ -258,7 +261,7 @@ BEGIN
   INSERT INTO public.schema_migrations (version, name, status, applied_by, note)
   VALUES ('0049', 'membership-server-gates', 'applied', 'self',
           '(a) list_meals_between 按档截断 (b) export_user_bundle Pro 门控 '
-          '(c) llm_gate 分 feature (d) 包装/问答日限额入库')
+          '(c) llm_gate 分 feature (d) 包装日限额入库；问答不设日上限')
   ON CONFLICT (version, name) DO UPDATE SET
     status = EXCLUDED.status, applied_by = EXCLUDED.applied_by, note = EXCLUDED.note;
 END $$;

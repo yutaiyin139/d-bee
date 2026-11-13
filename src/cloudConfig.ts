@@ -166,7 +166,9 @@ function resolveEndpoint(): string {
 export const publicConfig = {
   resourceId: 'wbcs_45DQ4I52Uv2NUAKAJkWdq1',
   endpoint: resolveEndpoint(),
-  oauthRelayBaseUrl: 'https://www.workbuddy.cn/v2/as/genie-baas/oauth',
+  // 网页微信扫码的平台中转地址已随云库删除。SDK 省略该字段时回落为空串，
+  // signInWithOAuth 在本地返回 requires oauthRelayBaseUrl，不会再发请求。
+  // 短信 / 邮箱 / 小程序微信登录都不走这条中转。
   publishableKey: 'wbpk_w6iIU6TqTyHvJxESPTxBTy_545Abmwi5Euln5uauP5Dp18ZpMvH2P4E',
 } as const
 

@@ -37,8 +37,9 @@ import { getTokenVersion } from './identity.mjs'
  * 额度占用记录（ai_quota_claims）：正常前端流程「先 consume 后调 LLM」必然
  * 有 claim 可核销；绕过前端的裸调没有 claim → 落入包装识别日配额（有界）→ 拒绝。
  *
- * 0049 起文本也走 llm_gate：recap 仅 Pro，coach 免费日上限入库，普通文字识别
- * 仍放行（另有进程内 textLimiter 兜底）。视觉无 claim 时改打 feature=package，
+ * 0049 起文本也走 llm_gate：recap 仅 Pro，coach 文本问答不设日上限（免费用户
+ * 每分钟 3 次防刷，Pro 不限），普通文字识别仍放行（另有进程内 textLimiter 兜底）。
+ * 视觉无 claim 时改打 feature=package，
  * 日限额在 ai_usage，不再靠本进程内存计数（多网关实例会各自放行）。
  *
  * 🔴 fail-closed：llm_gate 查询异常 / 返回畸形 → 503（reason=gate_unavailable），
@@ -188,6 +189,12 @@ export function createLlmHandlers(deps) {
     limit: Math.max(1, cfg.llmTextDailyCapPerUser || 50),
     maxKeys: 200_000,
   })
+  // 文本问答不设每日次数。免费用户每分钟 3 次，与客户端 Coach 页一致；Pro 不走这里。
+  const coachMinuteLimiter = new RateLimiter({
+    windowMs: 60_000,
+    limit: 3,
+    maxKeys: 200_000,
+  })
 
   async function authOwnerId(req) {
     const token = bearerFrom(req.headers)
@@ -281,12 +288,16 @@ export function createLlmHandlers(deps) {
       //   若共用宽松的 200/日，等于开放免费通用 LLM 代理；故文本走独立 textLimiter
       //   （默认 50/日），视觉才走 usageLimiter（默认 200/日）。
       const wantVisionReq = wantVision
-      const dayLimiter = wantVisionReq ? deps.usageLimiter : textLimiter
-      if (dayLimiter) {
-        const u = dayLimiter.hit(`llm:${ownerId}:${dayKey()}`)
-        if (!u.ok) {
-          res.setHeader('retry-after', String(u.retryAfterSec))
-          return llmError(res, 429, '今日 AI 调用次数已达上限', 'rate_limited')
+      const textFeature = wantVisionReq ? '' : inferTextFeature(body.messages)
+      // 问答不计入文字描述的每日兜底（默认 50）。否则付费墙写「不限次数」，第 51 次仍会被拒。
+      if (textFeature !== 'coach') {
+        const dayLimiter = wantVisionReq ? deps.usageLimiter : textLimiter
+        if (dayLimiter) {
+          const u = dayLimiter.hit(`llm:${ownerId}:${dayKey()}`)
+          if (!u.ok) {
+            res.setHeader('retry-after', String(u.retryAfterSec))
+            return llmError(res, 429, '今日 AI 调用次数已达上限', 'rate_limited')
+          }
         }
       }
 
@@ -300,7 +311,14 @@ export function createLlmHandlers(deps) {
           gate = await llmGate(deps, ownerId, 'package')
         }
       } else {
-        gate = await llmGate(deps, ownerId, inferTextFeature(body.messages))
+        gate = await llmGate(deps, ownerId, textFeature)
+      }
+      if (textFeature === 'coach' && gate.allowed && !gate.pro) {
+        const u = coachMinuteLimiter.hit(`coach:${ownerId}`)
+        if (!u.ok) {
+          res.setHeader('retry-after', String(u.retryAfterSec))
+          return llmError(res, 429, '问得太快啦，请稍后再提问（免费版每分钟最多 3 次）', 'rate_limited')
+        }
       }
       if (!gate.allowed) {
         if (gate.reason === 'gate_unavailable') {
@@ -312,9 +330,6 @@ export function createLlmHandlers(deps) {
           return llmError(res, 402, '该功能属于 Pro 会员，升级后可使用', 'pro_required')
         }
         logger.warn(`[llm] owner=${ownerId} 闸门拒绝 reason=${gate.reason || 'unknown'} feature=${gate.feature || '?'}`)
-        if (gate.feature === 'coach') {
-          return llmError(res, 402, '今日问答次数已用完，请明日再试或升级 Pro', 'quota_exhausted')
-        }
         if (gate.feature === 'package') {
           return llmError(res, 402, '今日包装识别次数已用完，请明日再试或升级 Pro', 'quota_exhausted')
         }

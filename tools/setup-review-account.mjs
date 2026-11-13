@@ -40,7 +40,6 @@ const STATE_FILE = path.join(__dirname, '.review-otp.json')
 const ENDPOINT = 'https://d-bee.cn'
 const PUBLISHABLE_KEY =
   process.env.REVIEW_PUBLISHABLE_KEY || 'wbpk_w6iIU6TqTyHvJxESPTxBTy_545Abmwi5Euln5uauP5Dp18ZpMvH2P4E'
-const OAUTH_RELAY = 'https://www.workbuddy.cn/v2/as/genie-baas/oauth'
 
 const EMAIL = process.env.REVIEW_EMAIL || 'dbeesupport@163.com'
 const PASSWORD = process.env.REVIEW_PASSWORD || '888888'
@@ -66,7 +65,6 @@ const nodeFetch = (input, init) => {
 
 const cloud = createWorkBuddyCloud({
   endpoint: ENDPOINT,
-  oauthRelayBaseUrl: OAUTH_RELAY,
   publishableKey: PUBLISHABLE_KEY,
   fetch: nodeFetch,
 })
