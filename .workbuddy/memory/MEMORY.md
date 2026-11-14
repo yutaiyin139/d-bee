@@ -13,8 +13,9 @@
 - 🔴 **原生包禁用 `npm run build`**（白屏）：内测 `npm run build:native:internal`；上架 `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native`。🔴 二者与 web **共用 `dist/`**，且 native / `build:web` 都会**删掉 `dist/legal/`**（隐私政策静态页零 JS 可爬＝OPPO 硬要求）→ **部署 web 前必须重跑 `npm run build`** 并比对入口 js 文件名。**产物自检以 `index.html` 引用的入口 js 为唯一真源**（干净构建本就有 2 个 `index-*.js`）。
 - 🔴🔴 **铁律 #13：「已完成」必须附生产侧实测证据**。**本地绿 ≠ 线上绿**，中间隔「提交→构建→部署」。取证 5 法见 REFERENCE.md。
 
-## 现状（11-13 晚 · v1.7.4 / vc22 / 0049 门控 / 问答不限次数；详版 → REF）
+## 现状（11-14 晚 · v1.7.6 / vc24 已发布；下方 11-13 条目为历史快照；详版 → REF）
 
+- ✅✅ **11-14 最新（覆盖下方旧版本口径）**：**V1.7.6 / vc24 已全量发版**，`d4975fa` + 滞留的 `4732dc5` 已 push，`main...origin/main` 同步。生产库 **0050** 已应用（`profiles.plan_started_at` 可空 + 回填 `created_at`，备份 `backup-before-0050-20261114-162513.dump`，FAIL=0）。**体重管理方案**三段卡片 + 红黄绿 BMI 参考带（四重非色彩编码）+ 第 N 天 / 达成日；`HEALTH_PLAN_*` 常量名与文件名不变。Web 线上入口 `index-yiSXUEOv.js`，19/19 逐字一致 / 18/18 探针 / 法务 v1.7.6 / `healthz db.ok=true` / Chromium PASS；Android `release/D-Bee-1.7.6-vc24-dbee.cn-FORMAL-20261114.apk`（8,257,619 B）三步实证全绿。`npm test` **27 文件 / 1138 项**、方案页护栏 **141 项**。留证 `docs/发版留证-体重管理方案-V1.7.6-vc24-2026-11-14.md`。🔴 产物探针「会员定价」「自动续费」命中为中性/否定式文案＝**假红**，精确 CTA 全 0；干净 Web 构建本就有 2 个 `index-*.js`（另一个是 zxing 稳定 chunk）。边界不变：iOS 需 Mac 重打包、mini 体验版本人上传、公网分发待批准。
 - ✅ **WEB 发布** `https://d-bee.cn/` 200；**数据面 = 自建 PG `dbee`** 水位 **0048**，🔴 0046/0047 未应用 → **跳号空洞**（补时 **0046→0047**，0047 覆盖 0046）；**0049 会员门控已进 git**（`091f5ec`，分 feature 门控报告/导出/复盘）+ 文本问答定案**不限次数**（`69c17d8`，每分钟限 3 次防刷）。证书 **2027-02-04**、法务 3 页逐字一致、零云库/零 CTA/16px。
 - ✅ **Android vc22**（归档 `release/D-Bee-1.7.4-vc22-dbee.cn-FORMAL-20261113.apk`）：11-13 单日 vc20(16:00)→vc21(21:06)→vc22(22:43) 三次重打，三步实证 aapt2 vc / apksigner MD5 与备案一致 / APK 探针绿；git `991ee10`（v1.7.4）已推、`main...origin/main` 同步。🔴 **零删除**；**mini/iOS 产物留用户本人编译**。
 - ✅✅ **云库废弃（REF 20:15）**：四端数据面全自建 PG、运行时零残留、数据放弃迁移。🔴 **释放差 2 步（用户本人）**：① 重传 mini 新版本+重设体验版 ② 停用实例（不可逆）；真机调试 ≠ 体验版。**实例仍在线**（dbproxy 401 `DATABASE_42501`）。**20:15 决策：数据可弃/免 T+7/当日释放，走①** → `docs/云库彻底释放执行单-*`。
