@@ -16,19 +16,14 @@
 ## 现状（11-14 晚 · v1.7.6 / vc24 已发布；下方 11-13 条目为历史快照；详版 → REF）
 
 - ✅✅ **11-14 最新（覆盖下方旧版本口径）**：**V1.7.6 / vc24 已全量发版**，`d4975fa` + 滞留的 `4732dc5` 已 push，`main...origin/main` 同步。生产库 **0050** 已应用（`profiles.plan_started_at` 可空 + 回填 `created_at`，备份 `backup-before-0050-20261114-162513.dump`，FAIL=0）。**体重管理方案**三段卡片 + 红黄绿 BMI 参考带（四重非色彩编码）+ 第 N 天 / 达成日；`HEALTH_PLAN_*` 常量名与文件名不变。Web 线上入口 `index-yiSXUEOv.js`，19/19 逐字一致 / 18/18 探针 / 法务 v1.7.6 / `healthz db.ok=true` / Chromium PASS；Android `release/D-Bee-1.7.6-vc24-dbee.cn-FORMAL-20261114.apk`（8,257,619 B）三步实证全绿。`npm test` **27 文件 / 1138 项**、方案页护栏 **141 项**。留证 `docs/发版留证-体重管理方案-V1.7.6-vc24-2026-11-14.md`。🔴 产物探针「会员定价」「自动续费」命中为中性/否定式文案＝**假红**，精确 CTA 全 0；干净 Web 构建本就有 2 个 `index-*.js`（另一个是 zxing 稳定 chunk）。边界不变：iOS 需 Mac 重打包、mini 体验版本人上传、公网分发待批准。
-- ✅ **WEB 发布** `https://d-bee.cn/` 200；**数据面 = 自建 PG `dbee`** 水位 **0048**，🔴 0046/0047 未应用 → **跳号空洞**（补时 **0046→0047**，0047 覆盖 0046）；**0049 会员门控已进 git**（`091f5ec`，分 feature 门控报告/导出/复盘）+ 文本问答定案**不限次数**（`69c17d8`，每分钟限 3 次防刷）。证书 **2027-02-04**、法务 3 页逐字一致、零云库/零 CTA/16px。
-- ✅ **Android vc22**（归档 `release/D-Bee-1.7.4-vc22-dbee.cn-FORMAL-20261113.apk`）：11-13 单日 vc20(16:00)→vc21(21:06)→vc22(22:43) 三次重打，三步实证 aapt2 vc / apksigner MD5 与备案一致 / APK 探针绿；git `991ee10`（v1.7.4）已推、`main...origin/main` 同步。🔴 **零删除**；**mini/iOS 产物留用户本人编译**。
 - ✅✅ **云库废弃（REF 20:15）**：四端数据面全自建 PG、运行时零残留、数据放弃迁移。🔴 **释放差 2 步（用户本人）**：① 重传 mini 新版本+重设体验版 ② 停用实例（不可逆）；真机调试 ≠ 体验版。**实例仍在线**（dbproxy 401 `DATABASE_42501`）。**20:15 决策：数据可弃/免 T+7/当日释放，走①** → `docs/云库彻底释放执行单-*`。
 - 🔴🔴 **mini 虚拟支付**（11-08，全文 → REFERENCE「11-08 晚间迁入」）：`wx.requestVirtualPayment`(米大师 xpay) 全链路就绪、开关默认 false；**开启前置 6 项在 `mini/src/lib/xpayEnabled.ts` 文件头**。铁律：补权益后**必调 `/xpay/notify_provide_goods`**、已扣款未确认 → **`settling` 绝不报 error**、`signData` 原样透传。
 - 🔴🔴 **收款定案**（全文 → REFERENCE「2026-11-09 晚」）：Web 只引导、Android 能收款、四端业务零改动。🔴 两开关独立默认 false：`D_BEE_XPAY_ENABLED`(mini) / `D_BEE_APPPAY_ENABLED`(Android 按钮+Web 引导)；关闭态 Web 零引导字样。Android `0047`+`apppay.mjs`：微信 V3/支付宝 RSA2 零依赖密码学；**发权益权威信号＝验签回调 `settle_app_payment`**；`verify_payment_order` 查单语义（回调未到恒 false，绝不报 error）；幂等键 `out_trade_no`、金额校验拒「1 分钱买会员」。余 → REFERENCE §二。
 - 🔴 **开启收款前置（资质未到位开关保持 false）**：微信开放平台移动应用审核 + 商户号 **APP 支付权限** + 支付宝企业应用 + **App 备案下证** + 软著 → 「1 分钱」真实联调（清单 → `docs/Web引导闭环与Android收款实装-2026-11-09.md` §五）。🟠 公网分发待批准（A7）。
-- 工程基线：`npm test` = **25 文件 / 975 项全绿**（11-12 21:50 复测，`Test Files` == 文件数；护栏 25/10d/25-E）。🔴 改 `packages/shared/src` 后必须重建 dist（回退同样要）；**Web「下单」判据失效** → 判**真实引导 CTA 全 0**。
 - 🔴🔴 **兑换码 P0 + 0048**（详版 → REFERENCE「2026-11-10 晚」）：3 张 lifetime 码明文进 public 历史 → 已 DELETE；0048 零止损但**已应用生产**。护栏只钉哈希、永不写明文（连注释都不行）；核验用库内 sha256 比对，绝不调 `redeem_by_code`（真烧码）；`--months`=兑换后时长 / `--expires-days`=可兑窗口，无日卡档。
 - 🔴🔴 **`psql`/脚本六铁律**（详版 → REFERENCE）：`-v` 走 `-f`+heredoc / 解析用 `-tA` / 变更类禁 `2>/dev/null` / **发码明文先落盘再写库** / 清理脚本用 `${VAR:?}` / sed 遇特殊密码静默不改 → 改 Python 临时脚本。
 - 🟠 **备案链**：域名/ICP ✅ 已下证；App / 小程序 / 算法 / 公安备案均管局审核中（前两项硬阻断 Android 上架、mini 发版+虚拟支付开通）。`四端收款堵点与政策依据详表`（**结论 #5 已作废**）与 `四端收费一致性核验与合规实施总纲`（L1~L3/护栏/发版验收仍有效）均加纠偏横幅。
-- ✅ **11-11 mini 兑换反馈修复（已 push `3a449cc`，详版 → 11-11 日志）**：页顶提示被 `navigateBack` 销毁 → 补 `Taro.showToast`；写死「终身会员已生效」→ 下沉 shared `redeemSuccessText(ent)`。
-- 🟠 **11-11 官网上生产**（跨项目，主项目零改动，详版 → 11-11 日志）：`d-bee.com.cn` 独立仓库 `E:\DEV\d-bee-website`；`check-facts.mjs` 23 条护栏逐字对齐主项目 `PRODUCTS`/`priceTag()`/`membership.ts`/`legal.ts`。🔴 改这些文案须同步官网快照。
-- ⛔ **11-11 首购半价方案已作废回退**（详版 → REFERENCE「11-11 首购半价」）：17 改 + 3 新增全丢弃，回到 15:00 基线 `6b0bba7`；0049 从未应用、生产零影响。备份 → 会话工作区 `.workbuddy/memory/backup/intro-revert-*`。
+- 📚 **11-13 已完成 / 过时快照**（Web 0048 水位、Android vc22、25 文件/975 项工程基线、11-11 mini 兑换修复、官网上生产、首购半价作废回退）已逐字迁入 `REFERENCE.md`「11-14 迁入」，零信息丢失；**当前版本口径以上方 11-14 最新条目为准**。
 
 ## 下一步 / 待拍板（详版 → REFERENCE.md）
 
