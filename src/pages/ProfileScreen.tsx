@@ -45,6 +45,8 @@ import {
 import type { Profile, WeightLog } from '../types'
 import { InviteCenter } from './InviteCenter'
 import { errText } from '../lib/errmsg'
+import { HealthPlanSheet } from '../components/HealthPlanSheet'
+import { HEALTH_PLAN_TITLE, HEALTH_PLAN_CHANGE_WILL, HEALTH_PLAN_CHANGE_WONT, HEALTH_PLAN_EDIT_CURRENT_PREFIX, HEALTH_PLAN_EDIT_CONFIRM_TAIL, HEALTH_PLAN_EDIT_WILL_PREFIX, HEALTH_PLAN_EDIT_WONT_PREFIX, HEALTH_PLAN_UPDATED_PREFIX } from '../lib/healthPlan'
 
 interface ProfileScreenProps {
   profile: Profile
@@ -58,6 +60,9 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
   const { pro, lifetime, aiRemaining, openPaywall, entitlement } = usePlan()
   const target = useMemo(() => targetFromProfile(profile), [profile])
   const [editing, setEditing] = useState(false)
+  // 健康管理方案：单态 Sheet（只读 profile.goal）；改目标确认写库后自动回到新目标态
+  const [planOpen, setPlanOpen] = useState(false)
+  const [planUpdated, setPlanUpdated] = useState('')
   const [barriers] = useState<string[]>(() => (profile.barriers ? profile.barriers.split(',') : []))
 
   // 数据与隐私
@@ -286,6 +291,9 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
       })
       onProfileChanged(saved)
       setEditing(false)
+      // 确认后自动回到健康管理方案：父级 profile 已更新，Sheet 以新目标态重渲染
+      setPlanOpen(true)
+      setPlanUpdated(`${HEALTH_PLAN_UPDATED_PREFIX}${GOAL_LABELS[saved.goal ?? goal]}`)
     } catch (e) {
       setErr(errText(e, '保存失败'))
     } finally {
@@ -465,6 +473,22 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
           <div className="v">
             {target.carb_g}<small>g</small> / {target.fat_g}<small>g</small>
           </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div
+          className="list-line"
+          onClick={() => { setPlanUpdated(''); setPlanOpen(true) }}
+          onKeyDown={onActivateKey(() => { setPlanUpdated(''); setPlanOpen(true) })}
+          role="button"
+          tabIndex={0}
+        >
+          <span>{HEALTH_PLAN_TITLE}</span>
+          <span className="val">
+            {GOAL_LABELS[profile.goal ?? 'lose']}
+            <span className="arrow" style={{ marginLeft: 6 }}>›</span>
+          </span>
         </div>
       </div>
 
@@ -884,6 +908,13 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
             />
             {fieldErr.stepGoal && <div className="err">{fieldErr.stepGoal}</div>}
           </div>
+          <div className="helper" style={{ marginBottom: 12 }}>
+            {HEALTH_PLAN_EDIT_CURRENT_PREFIX}{GOAL_LABELS[profile.goal ?? 'lose']}{HEALTH_PLAN_EDIT_CONFIRM_TAIL}
+          </div>
+          <div className="helper" style={{ marginBottom: 12 }}>
+            {HEALTH_PLAN_EDIT_WILL_PREFIX}{HEALTH_PLAN_CHANGE_WILL}<br />
+            {HEALTH_PLAN_EDIT_WONT_PREFIX}{HEALTH_PLAN_CHANGE_WONT}
+          </div>
           <div className="helper" style={{ marginBottom: 16 }}>
             保存后会按新数据重新计算每日热量与营养素目标。历史记录不会被改动。
           </div>
@@ -891,6 +922,16 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
             {saving ? <span className="spinner" /> : '保存并重新计算'}
           </button>
         </Sheet>
+      )}
+
+      {planOpen && (
+        <HealthPlanSheet
+          profile={profile}
+          mode="normal"
+          updatedLabel={planUpdated}
+          onClose={() => { setPlanOpen(false); setPlanUpdated('') }}
+          onChangeGoal={() => { setPlanOpen(false); setPlanUpdated(''); setEditing(true) }}
+        />
       )}
     </div>
   )

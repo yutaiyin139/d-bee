@@ -1,0 +1,161 @@
+// =============================================================
+// 健康管理方案 Sheet（mini 端）— 视觉规格逐项对齐主端
+//   · 真源：src/components/HealthPlanSheet.tsx + src/styles.css
+//   · designWidth 750：scss 内 px 由 Taro 转 rpx，故数值为主端 2 倍
+//   · 组件行内样式沿用主端原值（行内 px 不转换），两端真机视觉一致
+//   · 颜色一律走 mini/src/styles/tokens.scss（与主端 :root 一一对应）
+// 独立 hp- 前缀，不依赖任何页面级 scss，profile / index 两页可直接复用。
+// =============================================================
+
+.hp-mask {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: rgba(30, 26, 20, 0.42);
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.hp-sheet {
+  width: 100%;
+  max-width: 960px;
+  background: $bg;
+  border-radius: 44px 44px 0 0;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.hp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 36px 36px 24px;
+  flex-shrink: 0;
+}
+
+.hp-title {
+  font-size: 34px;
+  font-weight: 600;
+  color: $ink;
+}
+
+// 44px 内容 + 22px 内边距 = 88px 热区（主端 44×44 的 2 倍），负外边距抵消视觉位移
+.hp-close {
+  font-size: 44px;
+  color: $ink-3;
+  line-height: 1;
+  padding: 22px;
+  margin: -22px;
+  min-width: 88px;
+  min-height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hp-body {
+  overflow-y: auto;
+  padding: 0 36px 48px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.hp-card {
+  background: $surface;
+  border-radius: 40px;
+  border: 2px solid $line;
+  padding: 36px;
+  margin-bottom: 28px;
+}
+
+.hp-chip {
+  display: inline-block;
+  background: rgba(242, 169, 59, 0.18);
+  border: 2px solid rgba(242, 169, 59, 0.45);
+  color: $ink;
+}
+
+.hp-helper {
+  display: block;
+  font-size: 24px;
+  color: $ink-3;
+  margin-top: 10px;
+}
+
+.hp-num {
+  color: $ink;
+}
+
+.hp-stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.hp-stat {
+  background: $surface;
+  border: 2px solid $line;
+  border-radius: 28px;
+  padding: 28px;
+  min-width: 0;
+}
+
+.hp-stat-v {
+  color: $ink;
+}
+
+.hp-track {
+  background: $bg-2;
+}
+
+.hp-fill {
+  background: $honey;
+}
+
+.hp-notice {
+  border-radius: 28px;
+  padding: 24px 28px;
+  font-size: 26px;
+  line-height: 1.55;
+  background: $green-soft;
+  color: $ok-ink;
+}
+
+.hp-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100px;
+  min-height: 88px;
+  border-radius: 28px;
+  background: $honey;
+  color: $honey-btn-ink;
+  font-size: 32px;
+  font-weight: 600;
+}
+
+// TransparencyNotes 复用同一组件；这里给两层页面做视觉兜底，避免页面级 scss 差异
+.hp-sheet {
+  .section-title {
+    font-size: 30px;
+    font-weight: 600;
+    color: $ink;
+  }
+
+  .hint {
+    font-size: 24px;
+    color: $ink-3;
+  }
+
+  .card {
+    background: $surface;
+    border-radius: $radius;
+    border: 2px solid $line;
+  }
+}

@@ -12,6 +12,7 @@ import { Onboarding } from './pages/Onboarding'
 import { PaywallSheet } from './pages/PaywallSheet'
 import { ProfileScreen } from './pages/ProfileScreen'
 import { ReportScreen } from './pages/ReportScreen'
+import { HealthPlanSheet } from './components/HealthPlanSheet'
 import { PlanProvider } from './state/plan'
 import { errText } from './lib/errmsg'
 import { rescheduleIfPermitted, cancelAllNotifications } from './lib/notifications'
@@ -86,6 +87,8 @@ function AppInner({ onOpenLegal }: { onOpenLegal: (id: DocId) => void }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [account, setAccount] = useState('')
   const [tab, setTab] = useState<Tab>('today')
+  // 首次完成引导后自动展示一次所选目标的健康管理方案；老用户不经过 onDone，天然不弹
+  const [introPlan, setIntroPlan] = useState(false)
   const [bootError, setBootError] = useState('')
   // 好友邀请链接带入的邀请码（?invite=CODE），仅在启动时读取一次
   const [inviteCode] = useState(() => readInviteFromUrl())
@@ -242,6 +245,7 @@ function AppInner({ onOpenLegal }: { onOpenLegal: (id: DocId) => void }) {
       setProfile(p)
       setTab('today')
       setStage('main')
+      setIntroPlan(true)
     }} />
   }
 
@@ -275,6 +279,10 @@ function AppInner({ onOpenLegal }: { onOpenLegal: (id: DocId) => void }) {
           我的
         </button>
       </nav>
+
+      {introPlan && (
+        <HealthPlanSheet profile={profile} mode="intro" onClose={() => setIntroPlan(false)} />
+      )}
     </div>
   )
 }

@@ -22,6 +22,12 @@ import {
   type Entitlement, type Profile, type WeightLog,
 } from '../../lib/api'
 import { ACTIVITY_LABELS, GOAL_LABELS, calcTarget, todayKey } from '../../lib/nutrition'
+import { HealthPlanSheet } from '../../components/HealthPlanSheet'
+import {
+  HEALTH_PLAN_TITLE, HEALTH_PLAN_CHANGE_WILL, HEALTH_PLAN_CHANGE_WONT,
+  HEALTH_PLAN_EDIT_CURRENT_PREFIX, HEALTH_PLAN_EDIT_CONFIRM_TAIL,
+  HEALTH_PLAN_EDIT_WILL_PREFIX, HEALTH_PLAN_EDIT_WONT_PREFIX, HEALTH_PLAN_UPDATED_PREFIX,
+} from '../../lib/healthPlan'
 import {
   AGE_LIMIT, HEIGHT_LIMIT, WEIGHT_LIMIT, STEP_GOAL_LIMIT, NICKNAME_RULE,
   type NumLimit, checkNumber, checkTargetWeightDiff, checkText,
@@ -78,6 +84,9 @@ export default function ProfilePage() {
 
   // 身体数据编辑
   const [editing, setEditing] = useState(false)
+  // 健康管理方案：单态 Sheet（只读 profile.goal）；改目标确认写库后自动回到新目标态
+  const [planOpen, setPlanOpen] = useState(false)
+  const [planUpdated, setPlanUpdated] = useState('')
   const [barriers] = useState<string[]>([])
 
   // 数据与隐私
@@ -325,6 +334,9 @@ export default function ProfilePage() {
       setProfile(saved)
       setWeightInput(String(w))
       setEditing(false)
+      // 确认后自动回到健康管理方案：profile 已更新，Sheet 以新目标态重渲染
+      setPlanOpen(true)
+      setPlanUpdated(`${HEALTH_PLAN_UPDATED_PREFIX}${GOAL_LABELS[saved.goal ?? goal]}`)
     } catch (e) {
       setErr(e instanceof Error ? e.message : '保存失败')
     } finally {
@@ -592,6 +604,14 @@ export default function ProfilePage() {
             <Text className='stat-sep'>/</Text>
             <Text className='stat-pair'>{target.fat_g}<Text className='stat-unit'>g</Text></Text>
           </View>
+        </View>
+      </View>
+
+      {/* 健康管理方案：单态入口，标签取落库 goal（不用编辑草稿 goal） */}
+      <View className='card'>
+        <View className='list-line' onClick={() => { setPlanUpdated(''); setPlanOpen(true) }}>
+          <Text className='line-label'>{HEALTH_PLAN_TITLE}</Text>
+          <Text className='line-val'>{GOAL_LABELS[profile?.goal ?? 'lose']}<Text className='arrow'>›</Text></Text>
         </View>
       </View>
 
@@ -959,6 +979,9 @@ export default function ProfilePage() {
                 {fieldErr.stepGoal ? <Text className='field-err'>{fieldErr.stepGoal}</Text> : null}
               </View>
 
+              <Text className='helper'>{HEALTH_PLAN_EDIT_CURRENT_PREFIX}{GOAL_LABELS[profile?.goal ?? 'lose']}{HEALTH_PLAN_EDIT_CONFIRM_TAIL}</Text>
+              <Text className='helper'>{HEALTH_PLAN_EDIT_WILL_PREFIX}{HEALTH_PLAN_CHANGE_WILL}</Text>
+              <Text className='helper'>{HEALTH_PLAN_EDIT_WONT_PREFIX}{HEALTH_PLAN_CHANGE_WONT}</Text>
               <Text className='helper'>保存后会按新数据重新计算每日热量与营养素目标。历史记录不会被改动。</Text>
               <Button className='btn' onClick={() => void submitBody()} disabled={saving}>
                 {saving ? '保存中…' : '保存并重新计算'}
@@ -966,6 +989,16 @@ export default function ProfilePage() {
             </View>
           </View>
         </View>
+      ) : null}
+
+      {planOpen && profile ? (
+        <HealthPlanSheet
+          profile={profile}
+          mode='normal'
+          updatedLabel={planUpdated}
+          onClose={() => { setPlanOpen(false); setPlanUpdated('') }}
+          onChangeGoal={() => { setPlanOpen(false); setPlanUpdated(''); setEditing(true) }}
+        />
       ) : null}
     </View>
   )

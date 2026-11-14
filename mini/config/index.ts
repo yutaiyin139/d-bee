@@ -6,7 +6,7 @@ import prodConfig from './prod'
 import { resolveBackendTarget } from '../src/lib/backend'
 
 /**
- * 🔴 版本号单一真相源 = **项目根** package.json 的 version（当前 1.7.4），
+ * 🔴 版本号单一真相源 = **项目根** package.json 的 version（当前 1.7.5），
  * 不是 mini/package.json 的 version（那是 0.1.0，小程序包自身的版本，与产品版本无关）。
  *
  * 为什么必须同源：主端 vite.config.ts:64 注入的正是根 package.json，格式 `v${pkg.version}`，

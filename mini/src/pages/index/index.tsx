@@ -17,6 +17,8 @@ import {
   type MealEntry, type MealSlim, type WaterLog, type ExerciseLog, type Profile,
 } from '../../lib/api'
 import { LogSheet } from '../../components/LogSheet'
+import { HealthPlanSheet } from '../../components/HealthPlanSheet'
+import { HEALTH_PLAN_INTRO_FLAG_KEY } from '../../lib/healthPlan'
 import { AiLabel } from '../../components/AiLabel'
 import { LegalLinks } from '../../components/LegalLinks'
 import {
@@ -93,6 +95,8 @@ export default function Index() {
   // 旧实现把入口拆成「原生 ActionSheet 二选一 + 跳 scan 独立页 + 首页内嵌手录 Sheet」
   // 三块割裂容器，是移植时走平台原生捷径造成的走样，并非平台能力限制。
   const [logSheetMeal, setLogSheetMeal] = useState<MealType | null>(null)
+  // 首次完成引导后落地首页自动展示一次方案 Sheet（老用户不写旗标，天然不弹）
+  const [introPlan, setIntroPlan] = useState(false)
 
   const today = todayKey()
 
@@ -202,6 +206,13 @@ export default function Index() {
   const shownOnceRef = useRef(false)
 
   useDidShow(async () => {
+    // 首次引导旗标：onboarding 写入，读到即清，保证只弹一次
+    try {
+      if (Taro.getStorageSync(HEALTH_PLAN_INTRO_FLAG_KEY) === '1') {
+        Taro.removeStorageSync(HEALTH_PLAN_INTRO_FLAG_KEY)
+        setIntroPlan(true)
+      }
+    } catch { /* ignore */ }
     if (!loggedIn) {
       const ok = await isSignedIn()
       if (!ok) return
@@ -950,6 +961,10 @@ export default function Index() {
           onSaved={() => { setLogSheetMeal(null); void load() }}
         />
       )}
+
+      {introPlan && profile ? (
+        <HealthPlanSheet profile={profile} mode='intro' onClose={() => setIntroPlan(false)} />
+      ) : null}
 
       {/* 主操作「记一餐」吸底悬浮：打开统一录入弹层 */}
       <Button className='btn fab-meal' onClick={() => openLogSheet()}>

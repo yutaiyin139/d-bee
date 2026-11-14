@@ -225,7 +225,9 @@ describe('护栏 3 · 数值口径禁止新增手写舍入（唯一权威 numfmt
     //   护栏的职责是**防新增**，不是逼人在无评估下改既有行为。
     const KNOWN = [
       'mini/src/components/Charts.tsx:47',
-      'mini/src/pages/onboarding/onboarding.tsx:88',
+      // 2026-11-14 四端同构：onboarding 顶部新增 1 行旗标 import → 88 → 89。
+      // 手写舍入内容未变，只是行号快照。
+      'mini/src/pages/onboarding/onboarding.tsx:89',
       'src/components/Charts.tsx:62',
       'src/pages/Onboarding.tsx:123',
       // 2026-11-07 A-5 真删号整改：ProfileScreen 顶部多 1 行 import，
@@ -234,7 +236,9 @@ describe('护栏 3 · 数值口径禁止新增手写舍入（唯一权威 numfmt
       // → 169,170,514 → 170,171,515。
       // 2026-11-13 阶段 B：CSV 改走 exportAllData，去掉未用的 listMealsBetween import
       // → 170,171,515 → 169,170,514。三行手写舍入内容未变，只是行号快照。
-      'src/pages/ProfileScreen.tsx:169,170,514',
+      // 2026-11-14 健康管理方案（Web 先行）：新增 2 行 import + 3 行 state，
+      // 我的页再插一张方案入口 card → 169,170,514 → 174,175,538。内容仍未变。
+      'src/pages/ProfileScreen.tsx:174,175,538',
     ]
 
     expect(
@@ -469,7 +473,7 @@ describe('护栏 7 · 合规公示可达性与版本号同源', () => {
 
   it('🔴 mini/config 解析版本号必须校验 name==="d-bee"（防误读 mini/package.json 的 0.1.0）', () => {
     const cfg = stripComments(readFileSync(join(ROOT, 'mini', 'config', 'index.ts'), 'utf8'))
-    // 根 package.json 的 name 是 'd-bee'、version 是产品版本（1.7.4）；
+    // 根 package.json 的 name 是 'd-bee'、version 是产品版本（1.7.5）；
     // mini/package.json 的 name 是 'd-bee-mini'、version 是 0.1.0（小程序包自身版本）。
     // 少了这道校验，候选路径一旦命中 mini 自己的包，就会向用户展示 0.1.0 —— 错版本号比不显示更糟。
     expect(
