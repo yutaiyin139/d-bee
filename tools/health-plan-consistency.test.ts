@@ -1,5 +1,5 @@
 /**
- * 护栏 26 · 健康管理方案单态渲染 / 目标变更自动重算 / 四端 UI 一致（2026-11-14）
+ * 护栏 26 · 体重管理方案单态渲染 / 目标变更自动重算 / 四端 UI 一致（2026-11-14）
  *
  * ## 为什么需要这道护栏
  * ① 又加回 segment / 目标三选一，出现「显示态 ≠ 生效态」，首页「还可吃」对不上；
@@ -22,7 +22,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Profile } from '../src/types'
-import { GOAL_LABELS as WEB_GOALS } from '../src/lib/nutrition'
+import { GOAL_LABELS as WEB_GOALS, calcBmr as WEB_CALC_BMR } from '../src/lib/nutrition'
 import { GOAL_LABELS as MINI_GOALS } from '../mini/src/lib/nutrition'
 import {
   HEALTH_PLAN_TITLE,
@@ -31,7 +31,13 @@ import {
   isHealthPlanReady as webReady,
 } from '../src/lib/healthPlan'
 import { buildHealthPlanView as buildMiniPlan, isHealthPlanReady as miniReady } from '../mini/src/lib/healthPlan'
-import { HEALTH_PLAN_TITLE as SHARED_TITLE, HEALTH_PLAN_NOTES as SHARED_NOTES } from '@dbee/shared'
+import {
+  HEALTH_PLAN_TITLE as SHARED_TITLE,
+  HEALTH_PLAN_NOTES as SHARED_NOTES,
+  HEALTH_PLAN_BMI_BANDS,
+  bmiBandOf, calcBmiCore, calcBmrCore, buildPlanTimelineCore,
+  dateKeyFromIso, diffDateKeys, shiftDateKey,
+} from '@dbee/shared'
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 const read = (p: string): string => readFileSync(join(ROOT, p), 'utf8')
@@ -54,6 +60,11 @@ const MINI_SCSS = (): string => stripComments(read('mini/src/components/HealthPl
 const MINI_PROFILE = (): string => stripComments(read('mini/src/pages/profile/profile.tsx'))
 const MINI_INDEX = (): string => stripComments(read('mini/src/pages/index/index.tsx'))
 const MINI_ONBOARDING = (): string => stripComments(read('mini/src/pages/onboarding/onboarding.tsx'))
+const WEB_ONBOARDING = (): string => stripComments(read('src/pages/Onboarding.tsx'))
+const WEB_API = (): string => stripComments(read('src/lib/api.ts'))
+const MINI_API = (): string => stripComments(read('mini/src/lib/api.ts'))
+const TYPES = (): string => stripComments(read('src/types.ts'))
+const SHARED_DATEFMT = (): string => stripComments(read('packages/shared/src/datefmt.ts'))
 
 /** plan_summary 故意留内容：若纯函数误引用它，动态断言会立刻变红。 */
 function mkProfile(patch: Partial<Profile> = {}): Profile {
@@ -75,6 +86,7 @@ function mkProfile(patch: Partial<Profile> = {}): Profile {
     barriers: null,
     plan_summary: '旧的 AI 减脂建议',
     onboarded: true,
+    plan_started_at: '2026-11-03T00:00:00+08:00',
     ...patch,
   }
 }
@@ -117,12 +129,12 @@ describe('单态渲染', () => {
 })
 
 describe('命名与口径', () => {
-  it('页面标题统一为健康管理方案', () => {
-    expect(HEALTH_PLAN_TITLE).toBe('健康管理方案')
+  it('页面标题统一为体重管理方案', () => {
+    expect(HEALTH_PLAN_TITLE).toBe('体重管理方案')
   })
 
   it('运行时代码不出现旧命名', () => {
-    expect(LIB() + SHEET() + PROFILE_SCREEN() + MINI_LIB() + MINI_SHEET() + MINI_PROFILE()).not.toContain('体重管理方案')
+    expect([LIB(), SHEET(), PROFILE_SCREEN(), MINI_LIB(), MINI_SHEET(), MINI_PROFILE()].every((x) => !x.includes('健康管理方案'))).toBe(true)
   })
 
   it('主端纯函数不读取 AI 首次建议', () => {
@@ -197,7 +209,7 @@ describe('首次登录与改目标接线（主端 = Web/iOS/Android 共用）', 
     expect(PROFILE_SCREEN()).toContain('历史记录不会被改动')
   })
 
-  it('我的页提供健康管理方案入口', () => {
+  it('我的页提供体重管理方案入口', () => {
     expect(PROFILE_SCREEN()).toContain('{HEALTH_PLAN_TITLE}')
   })
 
@@ -224,19 +236,19 @@ describe('四端文案单一真源（@dbee/shared）', () => {
   })
 
   it('主端适配层不硬编码方案标题', () => {
-    expect(LIB()).not.toContain("'健康管理方案'")
+    expect(LIB()).not.toContain("'体重管理方案'")
   })
 
   it('mini 适配层不硬编码方案标题', () => {
-    expect(MINI_LIB()).not.toContain("'健康管理方案'")
+    expect(MINI_LIB()).not.toContain("'体重管理方案'")
   })
 
   it('主端组件不硬编码中文文案', () => {
-    expect(SHEET()).not.toContain("'健康管理方案'")
+    expect(SHEET()).not.toContain("'体重管理方案'")
   })
 
   it('mini 组件不硬编码中文文案', () => {
-    expect(MINI_SHEET()).not.toContain("'健康管理方案'")
+    expect(MINI_SHEET()).not.toContain("'体重管理方案'")
   })
 
   it('两端组件都引用每日建议摄入标签', () => {
@@ -259,8 +271,8 @@ describe('四端文案单一真源（@dbee/shared）', () => {
     expect(SHARED_TITLE).toBe(HEALTH_PLAN_TITLE)
   })
 
-  it('shared 说明条目为四条', () => {
-    expect(SHARED_NOTES.length).toBe(4)
+  it('shared 说明条目为六条', () => {
+    expect(SHARED_NOTES.length).toBe(6)
   })
 
   it('适配层说明条目与 shared 同引用', () => {
@@ -455,5 +467,181 @@ describe('mini 端接线', () => {
 
   it('旗标 key 两端引用同一常量', () => {
     expect([MINI_ONBOARDING(), MINI_INDEX()].every((x) => x.includes('HEALTH_PLAN_INTRO_FLAG_KEY'))).toBe(true)
+  })
+})
+
+
+describe('三段卡片结构（四端一致）', () => {
+  it('两端组件都引用基本信息段标题', () => {
+    expect([SHEET(), MINI_SHEET()].every((x) => x.includes('HEALTH_PLAN_SECTION_BASIC'))).toBe(true)
+  })
+  it('两端组件都引用体重目标段标题', () => {
+    expect([SHEET(), MINI_SHEET()].every((x) => x.includes('HEALTH_PLAN_SECTION_GOAL'))).toBe(true)
+  })
+  it('两端组件都引用每日方案段标题', () => {
+    expect([SHEET(), MINI_SHEET()].every((x) => x.includes('HEALTH_PLAN_SECTION_DAILY'))).toBe(true)
+  })
+  it('主端渲染四格基本信息', () => {
+    expect((SHEET().match(/className="plan-basic-stat"/g) ?? []).length).toBe(4)
+  })
+  it('mini 渲染四格基本信息', () => {
+    expect((MINI_SHEET().match(/className='hp-basic-stat'/g) ?? []).length).toBe(4)
+  })
+  it('mini 样式含基本信息网格', () => {
+    expect(MINI_SCSS()).toContain('hp-basic-grid')
+  })
+  it('mini 样式含时间行', () => {
+    expect(MINI_SCSS()).toContain('hp-timeline')
+  })
+  it('两端组件都渲染时间行', () => {
+    expect([SHEET(), MINI_SHEET()].every((x) => x.includes('timeline.timelineText'))).toBe(true)
+  })
+  it('两端组件都渲染第 N 天胶囊', () => {
+    expect([SHEET(), MINI_SHEET()].every((x) => x.includes('timeline.dayLabel'))).toBe(true)
+  })
+  it('两端组件都渲染双卡', () => {
+    expect([SHEET(), MINI_SHEET()].every((x) => x.includes('goals.expectValue'))).toBe(true)
+  })
+  it('两端组件都渲染时间行说明', () => {
+    expect([SHEET(), MINI_SHEET()].every((x) => x.includes('timeline.timeNote'))).toBe(true)
+  })
+})
+
+describe('红黄绿 BMI 参考带（可访问性与合规）', () => {
+  it('四档色值为约定低饱和色阶', () => {
+    expect(HEALTH_PLAN_BMI_BANDS.map((b) => b.color)).toEqual(['#8FB8D9', '#79B98A', '#E8B95C', '#D98174'])
+  })
+  it('档位文字只用中性区间词', () => {
+    expect(HEALTH_PLAN_BMI_BANDS.map((b) => b.label)).toEqual(['偏瘦', '标准', '偏重', '超重'])
+  })
+  it('BMI 四档边界判定正确', () => {
+    expect([17, 20, 26, 30].map((n) => bmiBandOf(n)?.key)).toEqual(['thin', 'standard', 'heavy', 'obese'])
+  })
+  it('BMI 展示值只保留一位', () => {
+    expect(buildWebPlan(mkProfile({ height_cm: 170, current_weight_kg: 54 })).basic.bmi).toBe(18.7)
+  })
+  it('基础代谢展示值只保留整数', () => {
+    expect(buildWebPlan(mkProfile()).basic.bmrKcal).toBe(1649)
+  })
+  it('身高缺失时不编造 BMI', () => {
+    expect(calcBmiCore(null, 54)).toBe(null)
+  })
+  it('shared 基础代谢与两端同式', () => {
+    expect(calcBmrCore('male', 30, 175, 70)).toBe(WEB_CALC_BMR('male', 30, 175, 70))
+  })
+  it('两端组件都渲染免责说明', () => {
+    expect([SHEET(), MINI_SHEET()].every((x) => x.includes('HEALTH_PLAN_BMI_DISCLAIMER'))).toBe(true)
+  })
+  it('两端组件都渲染四段色带', () => {
+    expect([SHEET(), MINI_SHEET()].every((x) => x.includes('flex: 1, background: b.color'))).toBe(true)
+  })
+  it('两端组件都有指示器位置编码', () => {
+    expect([SHEET(), MINI_SHEET()].every((x) => x.includes('bandPositionPct'))).toBe(true)
+  })
+  it('两端组件都渲染档位文字标签', () => {
+    expect([SHEET(), MINI_SHEET()].every((x) => x.includes('b.label'))).toBe(true)
+  })
+  it('两端组件都用 ariaLabel 描述当前档位', () => {
+    expect([SHEET(), MINI_SHEET()].every((x) => x.includes('ariaLabel'))).toBe(true)
+  })
+  it('主端色带有无障碍语义', () => {
+    expect(SHEET()).toContain('role="img"')
+  })
+  it('mini 色带有无障碍语义', () => {
+    expect(MINI_SHEET()).toContain("'aria-role': 'img'")
+  })
+  it('两端组件都不出现健康判断词', () => {
+    const banned = ['不健康', '疾病风险', '正常体重', '体型正常', '诊断分级']
+    expect([SHEET(), MINI_SHEET()].every((x) => banned.every((w) => !x.includes(w)))).toBe(true)
+  })
+})
+
+describe('第 N 天与预计达成日（0050）', () => {
+  const tl = (patch: Record<string, unknown> = {}) => buildPlanTimelineCore({
+    planStartedAt: '2026-11-03T00:00:00+08:00',
+    todayKey: '2026-11-14',
+    goal: 'lose',
+    currentWeightKg: 70,
+    targetWeightKg: 64,
+    weeklyRateKg: 0.5,
+    ...patch,
+  })
+  it('shared 导出时间轴纯函数', () => {
+    expect(SHARED()).toContain('export function buildPlanTimelineCore')
+  })
+  it('方案页不引用报告页趋势拟合', () => {
+    expect([LIB(), SHEET(), MINI_LIB(), MINI_SHEET(), SHARED()].every((x) => !x.includes('forecastGoal'))).toBe(true)
+  })
+  it('两端时间轴逐字段相等', () => {
+    expect(JSON.stringify(buildWebPlan(mkProfile()).timeline)).toBe(JSON.stringify(buildMiniPlan(miniProfile(mkProfile())).timeline))
+  })
+  it('两端基本信息逐字段相等', () => {
+    expect(JSON.stringify(buildWebPlan(mkProfile()).basic)).toBe(JSON.stringify(buildMiniPlan(miniProfile(mkProfile())).basic))
+  })
+  it('两端双卡逐字段相等', () => {
+    expect(JSON.stringify(buildWebPlan(mkProfile()).goals)).toBe(JSON.stringify(buildMiniPlan(miniProfile(mkProfile())).goals))
+  })
+  it('保持体重态不设达成日', () => {
+    expect(buildWebPlan(mkProfile({ goal: 'keep' })).timeline.goalDateLabel).toBe(null)
+  })
+  it('保持体重态状态为 keep', () => {
+    expect(tl({ goal: 'keep' }).state).toBe('keep')
+  })
+  it('缺少起始日时不编造天数', () => {
+    expect(tl({ planStartedAt: null }).state).toBe('no_start')
+  })
+  it('缺少周速率时不推算', () => {
+    expect(tl({ weeklyRateKg: 0 }).state).toBe('no_rate')
+  })
+  it('已达成目标体重状态正确', () => {
+    expect(tl({ currentWeightKg: 64 }).state).toBe('reached')
+  })
+  it('第 N 天按日期键计算', () => {
+    expect(tl().dayIndex).toBe(12)
+  })
+  it('达成日按周速率推算', () => {
+    expect(tl().goalDateLabel).toBe(shiftDateKey('2026-11-14', 84))
+  })
+  it('跨月日期键相差正确', () => {
+    expect(diffDateKeys('2026-11-03', '2026-11-14')).toBe(11)
+  })
+  it('日期键平移跨月正确', () => {
+    expect(shiftDateKey('2026-11-14', 20)).toBe('2026-12-04')
+  })
+  it('非法起始日不产生 1970 日期', () => {
+    expect(dateKeyFromIso(null)).toBe(null)
+  })
+  it('日期键函数下沉 shared', () => {
+    expect(SHARED_DATEFMT()).toContain('export function shiftDateKey')
+  })
+  it('shared 不写死 toFixed', () => {
+    expect(SHARED()).not.toContain('toFixed(')
+  })
+})
+
+describe('0050 数据字段与写入时机', () => {
+  it('主端 Profile 声明方案起始日', () => {
+    expect(TYPES()).toContain('plan_started_at')
+  })
+  it('mini Profile 声明方案起始日', () => {
+    expect(MINI_API()).toContain('plan_started_at')
+  })
+  it('两端写库白名单都登记方案起始日', () => {
+    expect([WEB_API(), MINI_API()].every((x) => x.includes("'plan_started_at'"))).toBe(true)
+  })
+  it('两端引导完成都写入方案起始日', () => {
+    expect([WEB_ONBOARDING(), MINI_ONBOARDING()].every((x) => x.includes('plan_started_at: new Date().toISOString()'))).toBe(true)
+  })
+  it('两端仅改目标时重置方案起始日', () => {
+    expect([PROFILE_SCREEN(), MINI_PROFILE()].every((x) => x.includes('!== goal ? { plan_started_at'))).toBe(true)
+  })
+  it('两端适配层都注入 todayKey', () => {
+    expect([LIB(), MINI_LIB()].every((x) => x.includes('todayKey: todayKey()'))).toBe(true)
+  })
+  it('两端适配层都不读取 AI 首次建议', () => {
+    expect([LIB(), MINI_LIB()].every((x) => !x.includes('plan_summary'))).toBe(true)
+  })
+  it('两端适配层都不现场重算热量', () => {
+    expect([LIB(), MINI_LIB()].every((x) => !x.includes('calcTarget('))).toBe(true)
   })
 })

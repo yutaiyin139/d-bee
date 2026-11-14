@@ -127,3 +127,48 @@ export function proDaysLeft(iso: string | null | undefined): number | null {
   if (diff <= 0) return null // 已过期（或恰在到期瞬间）：不展示「还剩 X 天」
   return Math.floor(diff / 86_400_000)
 }
+
+// ── 体重管理方案：日期键运算（第 N 天 / 预计达成日）────────────────────
+//
+// 🔴 与上面会员日期函数的分工：proDaysLeft 是「时间戳到现在的实时差」，
+//    这里处理的是**纯日期**（YYYY-MM-DD）。刻意用 Date.UTC 构造再相减，
+//    不走时间戳毫秒差 —— 否则夏令时/时区切换会把「今天」算成昨天或明天。
+//    这是 @dbee/shared 的唯一日期键实现，两端组件不得自写日期运算。
+
+const DATE_KEY_RE = /^(\d{4})-(\d{2})-(\d{2})$/
+const pad2 = (n: number): string => String(n).padStart(2, '0')
+
+function parseDateKey(key: string): number | null {
+  const m = DATE_KEY_RE.exec(key)
+  if (!m) return null
+  const y = Number(m[1])
+  const mo = Number(m[2])
+  const d = Number(m[3])
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null
+  const t = Date.UTC(y, mo - 1, d)
+  return Number.isFinite(t) ? t : null
+}
+
+/** 后端 timestamptz → 本地时区的 YYYY-MM-DD 日期键；非法输入返回 null（绝不返回 1970）。 */
+export function dateKeyFromIso(iso: string | null | undefined): string | null {
+  if (typeof iso !== 'string' || iso.trim() === '') return null
+  const d = new Date(iso)
+  if (!Number.isFinite(d.getTime())) return null
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+
+/** 两个日期键相差的整天数（to − from）；非法输入返回 null。 */
+export function diffDateKeys(from: string, to: string): number | null {
+  const a = parseDateKey(from)
+  const b = parseDateKey(to)
+  if (a == null || b == null) return null
+  return Math.round((b - a) / 86_400_000)
+}
+
+/** 日期键平移若干天，仍返回 YYYY-MM-DD；非法输入返回 null。 */
+export function shiftDateKey(key: string, days: number): string | null {
+  const a = parseDateKey(key)
+  if (a == null || !Number.isFinite(days)) return null
+  const d = new Date(a + Math.trunc(days) * 86_400_000)
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`
+}

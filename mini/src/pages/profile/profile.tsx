@@ -84,7 +84,7 @@ export default function ProfilePage() {
 
   // 身体数据编辑
   const [editing, setEditing] = useState(false)
-  // 健康管理方案：单态 Sheet（只读 profile.goal）；改目标确认写库后自动回到新目标态
+  // 体重管理方案：单态 Sheet（只读 profile.goal）；改目标确认写库后自动回到新目标态
   const [planOpen, setPlanOpen] = useState(false)
   const [planUpdated, setPlanUpdated] = useState('')
   const [barriers] = useState<string[]>([])
@@ -330,11 +330,13 @@ export default function ProfilePage() {
         daily_calorie_target: t.calories, protein_target_g: t.protein_g,
         carb_target_g: t.carb_g, fat_target_g: t.fat_g,
         step_goal: num(stepGoal, DEFAULT_STEP_GOAL),
+        // 仅改目标时重置方案起始日；仅改身高/体重/活动量不重置（第 N 天连续）
+        ...(profile?.goal !== goal ? { plan_started_at: new Date().toISOString() } : {}),
       })
       setProfile(saved)
       setWeightInput(String(w))
       setEditing(false)
-      // 确认后自动回到健康管理方案：profile 已更新，Sheet 以新目标态重渲染
+      // 确认后自动回到体重管理方案：profile 已更新，Sheet 以新目标态重渲染
       setPlanOpen(true)
       setPlanUpdated(`${HEALTH_PLAN_UPDATED_PREFIX}${GOAL_LABELS[saved.goal ?? goal]}`)
     } catch (e) {
@@ -607,7 +609,7 @@ export default function ProfilePage() {
         </View>
       </View>
 
-      {/* 健康管理方案：单态入口，标签取落库 goal（不用编辑草稿 goal） */}
+      {/* 体重管理方案：单态入口，标签取落库 goal（不用编辑草稿 goal） */}
       <View className='card'>
         <View className='list-line' onClick={() => { setPlanUpdated(''); setPlanOpen(true) }}>
           <Text className='line-label'>{HEALTH_PLAN_TITLE}</Text>

@@ -60,7 +60,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
   const { pro, lifetime, aiRemaining, openPaywall, entitlement } = usePlan()
   const target = useMemo(() => targetFromProfile(profile), [profile])
   const [editing, setEditing] = useState(false)
-  // 健康管理方案：单态 Sheet（只读 profile.goal）；改目标确认写库后自动回到新目标态
+  // 体重管理方案：单态 Sheet（只读 profile.goal）；改目标确认写库后自动回到新目标态
   const [planOpen, setPlanOpen] = useState(false)
   const [planUpdated, setPlanUpdated] = useState('')
   const [barriers] = useState<string[]>(() => (profile.barriers ? profile.barriers.split(',') : []))
@@ -288,10 +288,12 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
         carb_target_g: t.carb_g,
         fat_target_g: t.fat_g,
         step_goal: num(stepGoal, 6000),
+        // 仅改目标时重置方案起始日；仅改身高/体重/活动量不重置（第 N 天连续）
+        ...(profile.goal !== goal ? { plan_started_at: new Date().toISOString() } : {}),
       })
       onProfileChanged(saved)
       setEditing(false)
-      // 确认后自动回到健康管理方案：父级 profile 已更新，Sheet 以新目标态重渲染
+      // 确认后自动回到体重管理方案：父级 profile 已更新，Sheet 以新目标态重渲染
       setPlanOpen(true)
       setPlanUpdated(`${HEALTH_PLAN_UPDATED_PREFIX}${GOAL_LABELS[saved.goal ?? goal]}`)
     } catch (e) {

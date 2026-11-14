@@ -1,17 +1,17 @@
 /**
- * 健康管理方案 · mini 端适配层（2026-11-14 四端同构）。
+ * 体重管理方案 · mini 端适配层（2026-11-14 四端同构）。
  *
  * 文案与展示层纯函数的【单一真源】在 @dbee/shared/healthPlan.ts，主端
  * src/lib/healthPlan.ts 是同样形状的适配层；两端组件消费同一组常量与
  * buildHealthPlanViewCore()，因此四端文案、数值、口径、说明条目逐字一致。
  *
- * 本文件只负责：把 mini Profile 映射成 HealthPlanInput，并注入 mini 的 GOAL_LABELS 真源。
- * 禁止在此重算热量、禁止读取 plan_summary、禁止自写舍入。
+ * 本文件只负责：把 mini Profile 映射成 HealthPlanInput，并注入 mini 的 GOAL_LABELS 真源
+ * 与 todayKey()。禁止在此重算热量、禁止读取 plan_summary、禁止自写舍入与日期运算。
  */
 import type { HealthPlanGoalKey, HealthPlanView } from '@dbee/shared'
 import { buildHealthPlanViewCore, isHealthPlanReadyCore } from '@dbee/shared'
 import type { Profile } from './api'
-import { GOAL_LABELS } from './nutrition'
+import { GOAL_LABELS, todayKey } from './nutrition'
 
 export {
   HEALTH_PLAN_TITLE,
@@ -23,6 +23,26 @@ export {
   HEALTH_PLAN_EDIT_WILL_PREFIX,
   HEALTH_PLAN_EDIT_WONT_PREFIX,
   HEALTH_PLAN_UPDATED_PREFIX,
+  HEALTH_PLAN_SECTION_BASIC,
+  HEALTH_PLAN_SECTION_GOAL,
+  HEALTH_PLAN_SECTION_DAILY,
+  HEALTH_PLAN_LABEL_HEIGHT,
+  HEALTH_PLAN_LABEL_WEIGHT,
+  HEALTH_PLAN_LABEL_BMR,
+  HEALTH_PLAN_LABEL_BMI,
+  HEALTH_PLAN_UNIT_CM,
+  HEALTH_PLAN_UNIT_KG,
+  HEALTH_PLAN_UNIT_G,
+  HEALTH_PLAN_BMI_PREFIX,
+  HEALTH_PLAN_BMI_DISCLAIMER,
+  HEALTH_PLAN_BMI_BANDS,
+  HEALTH_PLAN_LABEL_PROGRESS,
+  HEALTH_PLAN_LABEL_START_W,
+  HEALTH_PLAN_LABEL_TARGET_W,
+  HEALTH_PLAN_LABEL_GOAL_DATE,
+  HEALTH_PLAN_LABEL_EXPECT_KEEP,
+  HEALTH_PLAN_LABEL_REMAIN_KEEP,
+  HEALTH_PLAN_TIMELINE_ARROW,
   HEALTH_PLAN_INTRO_HINT,
   HEALTH_PLAN_NOTES_TITLE,
   HEALTH_PLAN_NOT_READY,
@@ -65,6 +85,9 @@ export function buildHealthPlanView(p: Profile): HealthPlanView {
   return buildHealthPlanViewCore({
     goal,
     goalLabel: GOAL_LABELS[goal],
+    gender: p.gender,
+    age: p.age,
+    heightCm: p.height_cm,
     dailyCalorieTarget: p.daily_calorie_target,
     proteinTargetG: p.protein_target_g,
     carbTargetG: p.carb_target_g,
@@ -73,5 +96,7 @@ export function buildHealthPlanView(p: Profile): HealthPlanView {
     startWeightKg: p.start_weight_kg,
     currentWeightKg: p.current_weight_kg,
     targetWeightKg: p.target_weight_kg,
+    planStartedAt: p.plan_started_at ?? null,
+    todayKey: todayKey(),
   })
 }

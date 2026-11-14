@@ -199,6 +199,8 @@ export function Onboarding({ nickname, onDone }: OnboardingProps) {
         barriers: barriers.join(','),
         plan_summary: plan ? JSON.stringify(plan) : null,
         onboarded: true,
+        // 首次完成引导：当前方案自此刻生效（第 N 天从 1 起算）
+        plan_started_at: new Date().toISOString(),
       })
       // 首次完善身体数据 → 一次性新手奖励（发蜜糖积分，不再发识别次数；数据库 UNIQUE 防重复）
       void grantNewbieBonus()

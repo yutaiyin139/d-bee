@@ -87,7 +87,7 @@ function AppInner({ onOpenLegal }: { onOpenLegal: (id: DocId) => void }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [account, setAccount] = useState('')
   const [tab, setTab] = useState<Tab>('today')
-  // 首次完成引导后自动展示一次所选目标的健康管理方案；老用户不经过 onDone，天然不弹
+  // 首次完成引导后自动展示一次所选目标的体重管理方案；老用户不经过 onDone，天然不弹
   const [introPlan, setIntroPlan] = useState(false)
   const [bootError, setBootError] = useState('')
   // 好友邀请链接带入的邀请码（?invite=CODE），仅在启动时读取一次

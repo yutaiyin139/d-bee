@@ -1,5 +1,5 @@
 // =============================================================
-// 健康管理方案 Sheet（mini 端）— 视觉规格逐项对齐主端
+// 体重管理方案 Sheet（mini 端）— 视觉规格逐项对齐主端
 //   · 真源：src/components/HealthPlanSheet.tsx + src/styles.css
 //   · designWidth 750：scss 内 px 由 Taro 转 rpx，故数值为主端 2 倍
 //   · 组件行内样式沿用主端原值（行内 px 不转换），两端真机视觉一致
@@ -158,4 +158,66 @@
     border-radius: $radius;
     border: 2px solid $line;
   }
+}
+
+// ── 三段卡片新增类（2026-11-14 拍板版）────────────────────────────
+// 布局尺寸按 designWidth 750 取主端 2 倍；组件行内样式沿用主端原值不转换。
+// 辅助文字统一用 #757067（主端 --ink-3 同值，4.64:1 达 WCAG AA），
+// 不沿用 mini 旧的 $ink-3 #a39c90（仅 2.57:1）——本页范围内收口。
+.hp-sheet .hp-helper {
+  color: #757067;
+}
+
+.hp-section-chip {
+  background: $honey-soft;
+  color: $honey-dark;
+}
+
+.hp-basic-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.hp-basic-stat {
+  display: flex;
+  flex-direction: column;
+  background: $bg-2;
+  border-radius: 24px;
+  padding: 20px;
+}
+
+.hp-basic-stat .hp-stat-v {
+  color: $ink;
+}
+
+.hp-band {
+  display: block;
+}
+
+.hp-timeline {
+  background: $honey-soft;
+  color: $ink;
+}
+
+.hp-timeline .hp-helper {
+  color: $info-ink;
+}
+
+.hp-dual-a {
+  background: $honey-soft;
+  color: $honey-dark;
+}
+
+.hp-dual-b {
+  background: $green-soft;
+  color: $ok-ink;
+}
+
+.hp-dual-a .hp-helper {
+  color: $honey-dark;
+}
+
+.hp-dual-b .hp-helper {
+  color: $ok-ink;
 }

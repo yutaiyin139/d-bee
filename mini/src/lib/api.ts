@@ -60,6 +60,10 @@ export interface Profile {
   invited_by?: string | null
   invite_code?: string | null
   ai_consented?: boolean | null
+  /** 账号创建日（只读，0050 回填方案起始日时以其为近似值） */
+  created_at?: string | null
+  /** 当前体重管理方案的生效日；改目标确认后重置，仅改身体数据不重置 */
+  plan_started_at?: string | null
 }
 
 export interface MealEntry {
@@ -237,6 +241,7 @@ const PROFILE_WRITABLE = [
   'target_weight_kg', 'activity_level', 'goal', 'weekly_rate_kg',
   'daily_calorie_target', 'protein_target_g', 'carb_target_g', 'fat_target_g',
   'barriers', 'plan_summary', 'onboarded', 'health_connected', 'health_connected_at', 'step_goal', 'ai_consented',
+  'plan_started_at',
 ] as const
 
 export async function getProfile(): Promise<Profile | null> {

@@ -236,9 +236,9 @@ describe('护栏 3 · 数值口径禁止新增手写舍入（唯一权威 numfmt
       // → 169,170,514 → 170,171,515。
       // 2026-11-13 阶段 B：CSV 改走 exportAllData，去掉未用的 listMealsBetween import
       // → 170,171,515 → 169,170,514。三行手写舍入内容未变，只是行号快照。
-      // 2026-11-14 健康管理方案（Web 先行）：新增 2 行 import + 3 行 state，
+      // 2026-11-14 体重管理方案（Web 先行）：新增 2 行 import + 3 行 state，
       // 我的页再插一张方案入口 card → 169,170,514 → 174,175,538。内容仍未变。
-      'src/pages/ProfileScreen.tsx:174,175,538',
+      'src/pages/ProfileScreen.tsx:174,175,540',
     ]
 
     expect(
@@ -473,7 +473,7 @@ describe('护栏 7 · 合规公示可达性与版本号同源', () => {
 
   it('🔴 mini/config 解析版本号必须校验 name==="d-bee"（防误读 mini/package.json 的 0.1.0）', () => {
     const cfg = stripComments(readFileSync(join(ROOT, 'mini', 'config', 'index.ts'), 'utf8'))
-    // 根 package.json 的 name 是 'd-bee'、version 是产品版本（1.7.5）；
+    // 根 package.json 的 name 是 'd-bee'、version 是产品版本（1.7.6）；
     // mini/package.json 的 name 是 'd-bee-mini'、version 是 0.1.0（小程序包自身版本）。
     // 少了这道校验，候选路径一旦命中 mini 自己的包，就会向用户展示 0.1.0 —— 错版本号比不显示更糟。
     expect(

@@ -162,10 +162,12 @@ export default function Onboarding() {
         barriers: barriers.join(','),
         plan_summary: plan ? JSON.stringify(plan) : null,
         onboarded: true,
+        // 首次完成引导：当前方案自此刻生效（第 N 天从 1 起算）
+        plan_started_at: new Date().toISOString(),
       })
       // 首次完善身体数据 → 一次性新手奖励（发蜜糖积分，不再发识别次数；数据库 UNIQUE 防重复）
       void grantHoney('newbie', 'newbie', NEWBIE_BONUS_AMOUNT, BONUS_TTL_DAYS)
-      // 首次登录：落地首页后自动展示一次所选目标的健康管理方案。
+      // 首次登录：落地首页后自动展示一次所选目标的体重管理方案。
       // reLaunch 到 tabBar 页不能带 query，故用本地旗标；index 读后即清，只弹一次。
       Taro.setStorageSync(HEALTH_PLAN_INTRO_FLAG_KEY, '1')
       // 回到首页

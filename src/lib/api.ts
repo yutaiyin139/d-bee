@@ -56,6 +56,7 @@ const PROFILE_WRITABLE = [
   'barriers', 'plan_summary', 'onboarded',
   'health_connected', 'health_connected_at',
   'step_goal', 'ai_consented',
+  'plan_started_at',
 ] as const
 
 function pickProfileFields(patch: Partial<Profile>): Row {

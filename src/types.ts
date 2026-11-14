@@ -41,6 +41,10 @@ export interface Profile {
   step_goal?: number | null
   /** 是否已同意 AI 处理个人数据（拍照识别 / AI 问答） */
   ai_consented?: boolean | null
+  /** 账号创建日（只读，0050 回填方案起始日时以其为近似值） */
+  created_at?: string | null
+  /** 当前体重管理方案的生效日；改目标确认后重置，仅改身体数据不重置 */
+  plan_started_at?: string | null
 }
 
 export interface MealEntry {
