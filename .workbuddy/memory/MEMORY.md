@@ -16,8 +16,8 @@
 
 ## 现状（11-14 晚 · v1.7.7 / vc25 已全量发版；下方 11-13 条目为历史快照；详版 → REF）
 
-- ✅✅ **22:45 编辑份量四端闭环**（仍 V1.7.7）：① 生产库应用 `0051`（补 `meal_entries.updated_at timestamptz DEFAULT now()` + 台账 + `NOTIFY pgrst`）→ **四端旧包写入立即全恢复**；红绿探针实证（假列 400 `PGRST204` / `updated_at` 200 / 新包 200，`id=eq.-1` 零改动），140 行不变。② 源码已 commit/push。③ Web 重发：重建产物与线上 **19/19 逐字节一致（幂等）**，入口仍 **`index-DfW2isy_.js`**，幽灵列 0 / `GRAMS ['2e3']` / 法务 v1.7.7 / healthz / Chromium PASS。留证 `docs/发版留证-四端恢复与git闭环-2026-11-14.md`。份量 **2000 g**、DB 5000 兜底、清空回弹修复 + mini 对标均保留；历史详版 → REFERENCE「11-14 22:45 迁入」。
-- 🔴 **剩余边界**：mini / iOS / Android **无需重发即已恢复保存**，但包内仍 5000 g + mini 过长按钮/无就近提示（仅源码已修）；`taro build` 清 `mini/dist` 属删除类需确认故未构建，新 UI 仍需本人编译上传；未做登录后真机交互测试。验 schema cache 须真实 PATCH 探针 + 红验证（OpenAPI 已关）；psql 用 `sudo -n … -f -`（生产 sudo 免密）。详版 → REFERENCE。
+- ✅✅ **22:45 编辑份量四端闭环**（仍 V1.7.7）：① 生产库应用 `0051`（补 `meal_entries.updated_at timestamptz DEFAULT now()` + 台账 + `NOTIFY pgrst`）→ **四端旧包写入立即全恢复**；红绿探针实证（假列 400 `PGRST204` / `updated_at` 200 / 新包 200，`id=eq.-1` 零改动），140 行不变。② 源码已 commit `c7a2e98`；🔴 push 被代理 502 阻断（ahead 1，Mac 拉不到）。③ Web 重发：重建产物与线上 **19/19 逐字节一致（幂等）**，入口仍 **`index-DfW2isy_.js`**，幽灵列 0 / `GRAMS ['2e3']` / 法务 v1.7.7 / healthz / Chromium PASS。留证 `docs/发版留证-四端恢复与git闭环-2026-11-14.md`。份量 **2000 g**、DB 5000 兜底、清空回弹修复 + mini 对标均保留；历史详版 → REFERENCE「11-14 22:45 迁入」。
+- 🔴 **剩余边界**：mini / iOS / Android **无需重发即已恢复保存**，但包内仍 5000 g + mini 过长按钮/无就近提示（仅源码已修）；`taro build` 清 `mini/dist` 属删除类需确认故未构建，新 UI 仍需本人编译上传；未做登录后真机交互测试。验 schema cache 须真实 PATCH + 红验证；psql 用 `sudo -n … -f -`。
 - 探针口径：vite 把 2000 压成 `2e3`/5000 压成 `5e3`，须匹配 `label:.份量.,min:1,max:…` 精确常量（React scheduler 本有 `5e3`）；法务 URL `/legal/<name>/`。
 - ✅✅ **云库废弃（REF 20:15）**：四端数据面全自建 PG、数据放弃迁移。🔴 释放差 2 步（用户本人）：① 重传 mini+重设体验版 ② 停用实例（不可逆）；实例**仍在线**。20:15 决策：数据可弃/免 T+7/走① → `docs/云库彻底释放执行单-*`。
 - 🔴🔴 **mini 虚拟支付**（11-08，全文 → REFERENCE「11-08 晚间迁入」）：`wx.requestVirtualPayment`(米大师 xpay) 全链路就绪、开关默认 false；**开启前置 6 项在 `mini/src/lib/xpayEnabled.ts` 文件头**。铁律：补权益后**必调 `/xpay/notify_provide_goods`**、已扣款未确认 → **`settling` 绝不报 error**、`signData` 原样透传。
@@ -30,7 +30,7 @@
 
 ## 下一步 / 待拍板（详版 → REFERENCE.md）
 
-- ✅ 20:51 git 闭环（`993d0f49`）为当时事实，详版 → REFERENCE「11-14 22:30 迁入」；**22:45 已再次 commit/push 全部改动，哈希查 `git log`**。首购半价不再 commit。
+- ✅ 20:51 git 闭环（`993d0f49`）为当时事实，详版 → REFERENCE「11-14 22:30 迁入」；**22:45 再 commit `c7a2e98`，push 待网络恢复（ahead 1）**。首购半价不再 commit。
 - 🔴 **主线 = iOS 上线**（权威 `docs/iOS上线依赖全景与实施步骤-2026-11-07.md`）：正式上架卡软著(30–60 工作日)/App 备案(7–20)/Mac 签名；最大交付 = **TestFlight 内部测试**（需 Mac+Team+重打包）。ASC 填报面几乎空白；Apple 硬闸门 Xcode 26 + iOS 26 SDK、新年龄分级问卷必答。🔴 壳内停在 11-04，apppay + A-5 真删号 + 16px 修复须 Mac 重打包。
 - 🔴 **只有用户本人能做**：软著 AI 条款、Mac 选 `DEVELOPMENT_TEAM`、证书入 `signing/`、mini 发版、云库停用、公安备案回填、ASC 填报、算法备案收尾、**支付资质申请**（微信移动应用 + 商户号 APP 支付 + 支付宝企业应用）。
 - 🔴 **三端晃动（REF「11-12 上午」）**：16px 在 `styles.css:83`；**Web ✅ / Android vc25 ✅ / mini ✅**；**iOS ❌**（壳内 11-04，须 Mac 重打包）。`100vw`/`100dvh` 未动。
