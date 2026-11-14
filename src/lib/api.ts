@@ -204,7 +204,10 @@ export async function updateMealGrams(id: number, grams: number): Promise<MealEn
     sodium_mg: existing.sodium_mg != null ? roundTo((Number(existing.sodium_mg) || 0) * scale, 0) : null,
     fiber_g: existing.fiber_g != null ? roundTo((Number(existing.fiber_g) || 0) * scale, 2) : null,
     added_sugar_g: existing.added_sugar_g != null ? roundTo((Number(existing.added_sugar_g) || 0) * scale, 2) : null,
-    updated_at: new Date().toISOString(),
+    // 🔴 禁止写入 updated_at：public.meal_entries 建表（0030）从未有这一列，也没有维护它的触发器。
+    //    此前写它会让 PostgREST 返回 PGRST204「Could not find the 'updated_at' column of
+    //    'meal_entries' in the schema cache」；errmsg.ts 把 "schema cache" 映射成
+    //    「服务版本不匹配，请更新应用后重试」，四端「编辑份量」保存因此全部失败（2026-11-14 生产实证）。
   }
 
   const { data, error } = await db('meal_entries').update(patch).eq('id', id).select()

@@ -307,6 +307,8 @@ export function LogSheet({ logDate, initialMeal, initialMode = 'photo', onClose,
   const [pro, setPro] = useState(false)
   const [todayPhotoCount, setTodayPhotoCount] = useState(0)
   const [upsellVisible, setUpsellVisible] = useState(false)
+  // 份量输入草稿（key → 字符串）：对标主端 LogSheet，支持清空重输、失焦 clamp 提交
+  const [gramDraft, setGramDraft] = useState<Record<string, string>>({})
 
   const settlingRef = useRef(false)
   const claimRef = useRef<{ token?: string | null; remaining?: number } | null>(null)
@@ -491,7 +493,10 @@ export function LogSheet({ logDate, initialMeal, initialMode = 'photo', onClose,
   }
 
   function updateGrams(key: string, grams: number) {
-    setItems((prev) => prev.map((it) => (it.key === key ? { ...it, grams } : it)))
+    // 统一 clamp 到 [GRAMS_LIMIT.min, GRAMS_LIMIT.max]（≤2000）：对标主端，预设「双份」等
+    // 可能算出 >2000，兜底夹到边界，保证输入框与预设都不越界。
+    const g = Number.isFinite(grams) ? Math.min(GRAMS_LIMIT.max, Math.max(GRAMS_LIMIT.min, Math.round(grams))) : GRAMS_LIMIT.min
+    setItems((prev) => prev.map((it) => (it.key === key ? { ...it, grams: g } : it)))
   }
   function removeItem(key: string) {
     setItems((prev) => prev.filter((it) => it.key !== key))
@@ -811,12 +816,39 @@ export function LogSheet({ logDate, initialMeal, initialMode = 'photo', onClose,
                     <View className='ls-draft-actions'>
                       {portionPresets(it).map((p) => (
                         <Button key={p.label} size='mini' className={`ls-chip ${it.grams === p.grams ? 'active' : ''}`}
-                          onClick={() => updateGrams(it.key, p.grams)}>{p.label}</Button>
+                          onClick={() => {
+                            updateGrams(it.key, p.grams)
+                            // 同步清掉该条目的输入草稿，避免输入框停留在旧编辑值（对标主端）
+                            setGramDraft((prev) => {
+                              const next = { ...prev }
+                              delete next[it.key]
+                              return next
+                            })
+                          }}>{p.label}</Button>
                       ))}
-                      <Input className='ls-grams' type='number' value={String(it.grams)}
+                      <Input className='ls-grams' type='number' value={gramDraft[it.key] ?? String(Math.round(it.grams))}
                         onInput={(e) => {
-                          const n = Number(e.detail.value)
-                          if (Number.isFinite(n) && n >= GRAMS_LIMIT.min && n <= GRAMS_LIMIT.max) updateGrams(it.key, Math.round(n))
+                          // 严格对标主端 LogSheet：clamp 到 [GRAMS_LIMIT.min, GRAMS_LIMIT.max]（≤2000），
+                          // 允许空串（清空重输），失焦时 clamp 提交并清草稿。
+                          const s = e.detail.value
+                          setGramDraft((prev) => ({ ...prev, [it.key]: s }))
+                          if (s === '') return
+                          const n = Number(s)
+                          if (Number.isFinite(n)) {
+                            updateGrams(it.key, Math.min(GRAMS_LIMIT.max, Math.max(GRAMS_LIMIT.min, Math.round(n))))
+                          }
+                        }}
+                        onBlur={() => {
+                          const raw = gramDraft[it.key]
+                          const g = raw === '' || raw === undefined
+                            ? Math.round(it.grams)
+                            : Math.min(GRAMS_LIMIT.max, Math.max(GRAMS_LIMIT.min, Math.round(Number(raw) || GRAMS_LIMIT.min)))
+                          updateGrams(it.key, Number.isFinite(g) ? g : GRAMS_LIMIT.min)
+                          setGramDraft((prev) => {
+                            const next = { ...prev }
+                            delete next[it.key]
+                            return next
+                          })
                         }} />
                       <Text className='ls-unit'>克</Text>
                     </View>

@@ -34,7 +34,6 @@ import {
   MEAL_HINT_RULE,
   MEAL_TEXT_RULE,
   RECIPE_NAME_RULE,
-  sanitizeNumeric,
 } from '../lib/validate'
 import { FoodTagList } from '../components/FoodTags'
 import { Scanner } from '../components/Scanner'
@@ -386,6 +385,9 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   const [overridePulse, setOverridePulse] = useState(0)
   // 保存按钮就近提示：点保存撞上冲突待决时短暂提示「请先选择覆盖或追加」
   const [saveNudge, setSaveNudge] = useState<string | null>(null)
+  // 份量输入框的编辑草稿（key → 字符串）：支持清空后重新输入，失焦时 clamp 回 [min,max] 并提交。
+  // 直接绑 it.grams 会让「删空」瞬间回弹旧值，用户改不动重量（「重量没实时刷新」的观感来源）。
+  const [gramDraft, setGramDraft] = useState<Record<string, string>>({})
 
   const [text, setText] = useState('')
   const [preview, setPreview] = useState<string | null>(null)
@@ -697,7 +699,10 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   }
 
   function updateGrams(key: string, grams: number) {
-    setItems((prev) => prev.map((it) => (it.key === key ? { ...it, grams } : it)))
+    // 统一 clamp 到 [GRAMS_LIMIT.min, GRAMS_LIMIT.max]（≤2000）：chips「双份」等预设
+    // 可能算出 >2000 的值，这里兜底夹到边界，保证所有入口（输入框/预设）都不越界。
+    const g = Number.isFinite(grams) ? Math.min(GRAMS_LIMIT.max, Math.max(GRAMS_LIMIT.min, Math.round(grams))) : GRAMS_LIMIT.min
+    setItems((prev) => prev.map((it) => (it.key === key ? { ...it, grams: g } : it)))
   }
 
   function removeItem(key: string) {
@@ -1364,7 +1369,15 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
                             key={p.label}
                             className={`chip ${Math.round(it.grams) === p.grams ? 'active' : ''}`}
                             style={{ fontSize: 12, padding: '5px 11px' }}
-                            onClick={() => updateGrams(it.key, p.grams)}
+                            onClick={() => {
+                              updateGrams(it.key, p.grams)
+                              // 同步清掉该条目的输入草稿，避免输入框停留在旧的编辑值
+                              setGramDraft((prev) => {
+                                const next = { ...prev }
+                                delete next[it.key]
+                                return next
+                              })
+                            }}
                           >
                             {p.label}
                           </button>
@@ -1375,12 +1388,29 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
                             inputMode="numeric"
                             min={GRAMS_LIMIT.min}
                             max={GRAMS_LIMIT.max}
-                            value={Math.round(it.grams)}
+                            value={gramDraft[it.key] ?? String(Math.round(it.grams))}
                             onChange={(e) => {
-                              const s = sanitizeNumeric(e.target.value, { int: true })
-                              if (s === '') return
-                              const n = Math.min(GRAMS_LIMIT.max, Math.max(GRAMS_LIMIT.min, Number(s)))
-                              updateGrams(it.key, Number.isFinite(n) ? n : GRAMS_LIMIT.min)
+                              const raw = e.target.value
+                              // 允许空串（清空后重新输入），先记入草稿不立即提交，避免受控回弹
+                              setGramDraft((prev) => ({ ...prev, [it.key]: raw }))
+                              if (raw === '') return
+                              const n = Number(raw)
+                              if (Number.isFinite(n)) {
+                                updateGrams(it.key, Math.min(GRAMS_LIMIT.max, Math.max(GRAMS_LIMIT.min, Math.round(n))))
+                              }
+                            }}
+                            onBlur={() => {
+                              // 失焦时 clamp 到合法范围并提交，同时清草稿回到受控展示
+                              const raw = gramDraft[it.key]
+                              const g = raw === '' || raw === undefined
+                                ? Math.round(it.grams)
+                                : Math.min(GRAMS_LIMIT.max, Math.max(GRAMS_LIMIT.min, Math.round(Number(raw) || GRAMS_LIMIT.min)))
+                              updateGrams(it.key, Number.isFinite(g) ? g : GRAMS_LIMIT.min)
+                              setGramDraft((prev) => {
+                                const next = { ...prev }
+                                delete next[it.key]
+                                return next
+                              })
                             }}
                           />
                           <span className="unit">g</span>

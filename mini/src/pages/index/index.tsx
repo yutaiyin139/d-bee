@@ -44,7 +44,7 @@ import {
   readInviteFromParams, setPendingInvite,
 } from '../../lib/inviteLink'
 import { STREAK_BONUS_AMOUNT, fmtNum, isPro, ACTIVITY_EATBACK_RATIO, DEFAULT_STEP_GOAL } from '@dbee/shared'
-import { GRAMS_LIMIT, checkNumber } from '../../lib/validate'
+import { GRAMS_LIMIT, checkNumber, sanitizeNumeric, clampNumeric } from '../../lib/validate'
 import './index.scss'
 
 const MEAL_LABELS = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' } as const
@@ -460,9 +460,13 @@ export default function Index() {
 
   async function saveEdit() {
     if (editingId == null || savingEdit) return
-    // 对齐主端 Dashboard:401-426：走 GRAMS_LIMIT（1–5000 整数）而非硬编码 2000
+    // 对齐主端 Dashboard:406-413：走 GRAMS_LIMIT（1–2000 整数，产品拍板），不在调用点硬编码
     const checked = checkNumber(editGrams, GRAMS_LIMIT)
-    if (!checked.ok || checked.value == null) { setError(checked.error); return }
+    if (!checked.ok || checked.value == null) {
+      setError(checked.error)
+      Taro.showToast({ title: checked.error, icon: 'none' })
+      return
+    }
     setSavingEdit(true)
     setError('')
     try {
@@ -470,7 +474,11 @@ export default function Index() {
       setEditingId(null)
       await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : '修改失败')
+      const msg = e instanceof Error ? e.message : '修改失败'
+      setError(msg)
+      // 🔴 页面级错误条在顶部（热量卡之前），用户编辑记录时已滚到「今日餐次」区，
+      //    根本看不到，表现为「点保存没反应、也不退出编辑态」。这里就近再提示一次。
+      Taro.showToast({ title: msg, icon: 'none', duration: 2500 })
     } finally {
       setSavingEdit(false)
     }
@@ -882,9 +890,17 @@ export default function Index() {
                       <Text className='entry-meta'>{e.quantity_text || ''}{e.ai_note ? ` · ${e.ai_note}` : ''}</Text>
                       {editingId === e.id ? (
                         <View className='entry-edit'>
-                          <Input type='number' value={editGrams} onInput={(ev) => setEditGrams(ev.detail.value)} />
+                          {/* 严格对标主端 Dashboard:997-1014：输入即过滤非数字、失焦夹到 1–2000 */}
+                          <Input
+                            type='number'
+                            value={editGrams}
+                            onInput={(ev) => setEditGrams(sanitizeNumeric(ev.detail.value, { int: true }))}
+                            onBlur={() => setEditGrams(clampNumeric(editGrams, GRAMS_LIMIT))}
+                          />
                           <Text>g</Text>
-                          <Button className='btn-text' disabled={savingEdit} onClick={() => void saveEdit()}>保存</Button>
+                          <Button className='btn-text' disabled={savingEdit} onClick={() => void saveEdit()}>
+                            {savingEdit ? '保存中…' : '保存'}
+                          </Button>
                           <Button className='btn-text' onClick={() => setEditingId(null)}>取消</Button>
                         </View>
                       ) : (

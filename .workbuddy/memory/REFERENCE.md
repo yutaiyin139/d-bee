@@ -1646,3 +1646,21 @@ stdin 脚本不落临时文件、不执行删除。⚠️ 首次红验证脚本�
 > - ✅ **19:45「我的」页+健康档案+智能设备四端同构已实施（🔴 未发版）**：`d8f2207` 已 push；shared `myPage.ts`/`healthRecord.ts` 真源 + 两端各 4 Sheet；三处收敛（邀请好友 / 查看完整报告 ↗ / 今日目标只读摘要，移除现场 `calcTarget()`）。`npm test` **28 文件/1269 项**、新护栏 115 项（5 类红验证精准）、typecheck 0、三构建 + 双端产物探针 PASS。**版本仍 1.7.6/vc24，零生产变更**；发版须先确认版本号。留证 `docs/实施留证-我的页与健康档案四端同构-2026-11-14.md`。
 >
 > - 本轮完整发版证据 → `docs/发版留证-我的页与健康档案-V1.7.7-vc25-2026-11-14.md`；19:45 实施证据 → `docs/实施留证-我的页与健康档案四端同构-2026-11-14.md`。
+
+## 11-14 22:30 迁入（MEMORY.md 体积压缩，逐字归档，零信息丢失）
+
+> 以下两条为 `MEMORY.md`「现状」中 20:30 与 22:05 条目的**逐字原文**，因 MEMORY.md 超出 ≤9k 字符口径而迁入。最新状态以 `MEMORY.md` 22:30 条目为准；完整证据在对应发版留证与当日工作日志。
+
+- ✅✅ **20:30 V1.7.7 / vc25 已全量发版**（覆盖下方全部历史版本口径）：Web 入口 `index-JvQVzi3l.js`，19/19 逐字一致 / 11 组探针 / 法务 `v1.7.7` / `healthz db.ok=true` / Chromium PASS；Android `release/D-Bee-1.7.7-vc25-dbee.cn-FORMAL-20261114.apk`（8,262,327 B / sha256 `f8829f28…`），aapt2 vc25/1.7.7 + apksigner MD5 `0abe7fc5…` + 包内 18 文件入口 `index-3I6pKLyl.js` 三步实证绿。mini 重建 69 文件探针 PASS（**用户本人上传**），iOS `MARKETING_VERSION 1.7.7`（**用户 Mac 编译**）。功能代码 `d8f2207`；`npm test` **28 文件/1269 项**、新护栏 115 项、typecheck 0。🔴 `cap sync` 仅清理阶段被 safe-delete 守卫超时打断（APK 已实证有效）；首轮 mini build 同因卡住 → 半构建 20 文件整体移出留档后从零重建。零删除备份 `prebuild-20261114-1956/`；留证 `docs/发版留证-我的页与健康档案-V1.7.7-vc25-2026-11-14.md`。边界：未跑 `deploy-gateway.sh`、网关仍 `llm.mjs`、iOS/mini/公网分发待用户侧动作。
+
+- ✅ **22:05 Web 热修已发**（仅 Web，版本仍 V1.7.7 不升版）：份量上限前端 **2000 g**、DB 保留 5000 兜底；份量输入框「清空回弹」修复 + mini 对标。入口 `index-JvQVzi3l.js` → **`index-vQIl0kRY.js`**（下方 20:30 条目的入口已过时）；19/19 逐字一致 / 线上主包 `max=2e3` / 法务 v1.7.7 / `healthz db.ok=true` / Chromium PASS。留证 `docs/发版留证-Web份量上限2000-2026-11-14.md`。🔴 源码**未 commit/push**（HEAD `993d0f4`），mini / iOS / Android 包内仍是 5000 逻辑；零删除备份 `prebuild-20261114-2159/`。探针口径：vite 把 2000 压成 `2e3`、5000 压成 `5e3`，须匹配 `label:.份量.,min:1,max:…` 精确常量定义（React scheduler 里本就有 `5e3`，笼统 grep 会假红）；法务页线上 URL 为 `/legal/<name>/`（后者会落到 SPA fallback 造成假 200）。
+
+- ✅ git 已闭环（20:51 push `993d0f49`，`main...origin/main` 同步）：V1.7.7/vc25 全量发版三笔（`d8f2207` 四端同构 + `b8fd569`/`415ce1f` 发版 + `89d5fa3`/`993d0f49` 推送状态修正）均已入 origin/main。工作区仅记忆文件改动，无未提交源码。首购半价不再 commit。（**此为 20:51 当时事实；22:30 起源码又有未提交改动；22:45 已全部 commit/push，见下段。**）
+
+## 11-14 22:45 迁入（MEMORY.md「现状」22:30 条目压缩时逐字归档；零信息丢失）
+
+- ✅✅ **22:30 Web 第二次热修已发**（仅 Web，仍 V1.7.7）：修「编辑份量」四端共因 —— patch 写了生产库不存在的 `updated_at` → `PGRST204 schema cache` → 前端误报「服务版本不匹配」。入口 **`index-DfW2isy_.js`**（20:30/22:05 入口均过时）；19/19 逐字一致 / 幽灵写入 0 / `GRAMS ['2e3']` / 法务 v1.7.7 / healthz / Chromium PASS。留证 `docs/发版留证-Web幽灵列修复-2026-11-14.md`，备份 `prebuild-20261114-2230/`。份量上限 **2000 g**、DB 5000 兜底、输入框清空回弹修复 + mini 对标均保留。**20:30 全量发版与 22:05 首轮热修详版 → 本文件「11-14 22:30 迁入」以上各段**。
+- 🔴 **22:30 当时未完成（22:45 已全部解除/变化）**：源码未 commit/push（HEAD `993d0f4`）；mini / iOS / Android 旧包仍写幽灵列、编辑份量仍坏（mini 源码已修含按钮样式与就近提示，但 `taro build` 会清 `mini/dist`，属需确认的删除动作故未构建，需用户本人编译上传）；未做登录后真机交互测试。💡 一劳永逸备选（当时未执行）：生产库补 `updated_at` 列 + `NOTIFY pgrst, 'reload schema'` 可让四端旧包立即全恢复。
+- ✅✅ **22:45 一劳永逸方案落地 + git 闭环 + Web 重发**（用户拍板「省事的一劳永逸方案」+「提交 git 发布 web 端」）：详见 `docs/发版留证-四端恢复与git闭环-2026-11-14.md` 与 `2026-11-14.md`「22:45」段。要点：新增并应用 `db/migrations/0051-meal-entries-updated-at.sql`（`ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now()` + 台账 + `NOTIFY pgrst`）；**红绿探针**实证四端旧包写入恢复（假列 400 PGRST204 / `updated_at` 200 / 新包 200，打 `id=eq.-1` 零数据改动）；列 `NULL=YES DEFAULT=now()`、140 行不变、台账 `0051/applied`；源码一次性 commit/push；Web 重发（重建产物与备份 19/19 逐字节一致＝幂等，入口仍 `index-DfW2isy_.js`），生产 19/19 + 幽灵列 0 + `GRAMS ['2e3']` + 法务 v1.7.7 + healthz + Chromium PASS；备份 `prebuild-20261114-2245/`。
+- 🔴 **22:45 新增长期经验**：① PostgREST `openapi-mode=disabled` 时不能用 OpenAPI 端点验 schema cache，须发**真实 PATCH 探针**，且必须配**红验证**（假列应报 PGRST204）排除假绿；② 生产 sudo 已免密，`sudo -S` 会把 stdin 第一行密码漏给 psql → 用 `sudo -n ... -f -` + 纯 SQL stdin；③ `NOTIFY pgrst` 在事务内，COMMIT 后才生效，验证前留 3s 窗口。
+

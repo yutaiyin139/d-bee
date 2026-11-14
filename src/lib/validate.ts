@@ -38,8 +38,9 @@ export const AGE_LIMIT: NumLimit = { label: '年龄', min: 1, max: 120, int: tru
 export const HEIGHT_LIMIT: NumLimit = { label: '身高', min: 100, max: 250, decimals: 1, unit: 'cm' }
 /** 体重：20–300 kg（1 位小数） */
 export const WEIGHT_LIMIT: NumLimit = { label: '体重', min: 20, max: 300, decimals: 1, unit: 'kg' }
-/** 食物份量：1–5000 g（整数） */
-export const GRAMS_LIMIT: NumLimit = { label: '份量', min: 1, max: 5000, int: true, unit: 'g' }
+/** 食物份量：1–2000 g（整数）。上限 2000 为产品拍板（单份食物 >2000g 属误输入），
+ *  DB 层 0016/0030/0035 约束仍为 5000 宽松兜底（前端先行收紧，不动生产迁移）。 */
+export const GRAMS_LIMIT: NumLimit = { label: '份量', min: 1, max: 2000, int: true, unit: 'g' }
 /** 运动时长：5–300 分钟（整数） */
 export const MINUTES_LIMIT: NumLimit = { label: '运动时长', min: 5, max: 300, int: true, unit: '分钟' }
 /** 摄入热量：1–10000 kcal（整数） */

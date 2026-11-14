@@ -878,6 +878,10 @@
         }
 
         .btn-text {
+          display: inline-block;
+          width: auto;
+          min-width: 0;
+          margin: 0;
           color: $honey-dark;
           font-size: 24px;
           background: transparent;
@@ -885,18 +889,33 @@
           height: auto;
           line-height: 1;
           padding: 0;
+
+          &::after {
+            border: none;
+          }
         }
       }
 
+      // 🔴 Taro 的 <Button> 编译成小程序原生 button：默认 display:block + width:100%，
+      //    且描边来自 ::after 伪元素（只写 border:none 清不掉）。不显式重置会让
+      //    「编辑份量」变成横跨整张卡片的描边长条（2026-11-14 用户截图实证）。
+      //    主端 styles.css:172 的 .btn-text 靠 width:auto 达到同样效果，此处严格对标。
       .edit-link {
+        display: inline-block;
+        width: auto;
+        min-width: 0;
+        margin: 8px 0 0;
         color: $ink-3;
         font-size: 24px;
-        margin-top: 8px;
         background: transparent;
         border: none;
         height: auto;
         line-height: 1;
         padding: 0;
+
+        &::after {
+          border: none;
+        }
       }
     }
 

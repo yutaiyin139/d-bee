@@ -366,8 +366,10 @@ export async function updateMealGrams(id: number, grams: number): Promise<MealEn
     sodium_mg: existing.sodium_mg != null ? roundTo((Number(existing.sodium_mg) || 0) * scale, 0) : null,
     fiber_g: existing.fiber_g != null ? roundTo((Number(existing.fiber_g) || 0) * scale, 2) : null,
     added_sugar_g: existing.added_sugar_g != null ? roundTo((Number(existing.added_sugar_g) || 0) * scale, 2) : null,
-    // 对齐主工程 src/lib/api.ts:206：meal_entries 无 updated_at 触发器，靠前端写入维护
-    updated_at: new Date().toISOString(),
+    // 🔴 禁止写入 updated_at：与主工程 src/lib/api.ts:206 同源口径。
+    //    public.meal_entries（0030 建表）没有该列，写入会触发 PostgREST PGRST204
+    //    "… in the schema cache"，被前端翻成「服务版本不匹配」，导致编辑份量保存失败
+    //    且停在编辑态（2026-11-14 生产实证）。旧注释「靠前端写入维护」是错误假设，已纠正。
   }
 
   const { data, error } = await db('meal_entries').update(patch).eq('id', id).select()
