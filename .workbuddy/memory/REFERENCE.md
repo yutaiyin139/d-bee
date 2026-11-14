@@ -1630,3 +1630,10 @@ stdin 脚本不落临时文件、不执行删除。⚠️ 首次红验证脚本�
 > - ✅ **11-11 mini 兑换反馈修复（已 push `3a449cc`，详版 → 11-11 日志）**：页顶提示被 `navigateBack` 销毁 → 补 `Taro.showToast`；写死「终身会员已生效」→ 下沉 shared `redeemSuccessText(ent)`。
 > - 🟠 **11-11 官网上生产**（跨项目，主项目零改动，详版 → 11-11 日志）：`d-bee.com.cn` 独立仓库 `E:\DEV\d-bee-website`；`check-facts.mjs` 23 条护栏逐字对齐主项目 `PRODUCTS`/`priceTag()`/`membership.ts`/`legal.ts`。🔴 改这些文案须同步官网快照。
 > - ⛔ **11-11 首购半价方案已作废回退**（详版 → REFERENCE「11-11 首购半价」）：17 改 + 3 新增全丢弃，回到 15:00 基线 `6b0bba7`；0049 从未应用、生产零影响。备份 → 会话工作区 `.workbuddy/memory/backup/intro-revert-*`。
+
+### 11-14 19:45 迁入：MEMORY.md 体积压缩（逐字归档，零信息丢失）
+> 缘起：加入 19:45「我的」页四端同构实施条目后 `MEMORY.md` 达 9156 字符，超出 ≤9k 口径；把 V1.7.6 发版条目的产物级细节迁来，结论（发版完成、19/19 逐字一致、三步实证、探针假红口径、外部边界）仍留在 `MEMORY.md`。
+>
+> - 被替换原文逐字：`Web 线上入口 `index-yiSXUEOv.js`，19/19 逐字一致 / 18/18 探针 / 法务 v1.7.6 / `healthz db.ok=true` / Chromium PASS；Android `release/D-Bee-1.7.6-vc24-dbee.cn-FORMAL-20261114.apk`（8,257,619 B）三步实证全绿。`
+> - 配套细节：Web 入口 `index-yiSXUEOv.js` + `index-CX1CYz9K.css`；APK `release/D-Bee-1.7.6-vc24-dbee.cn-FORMAL-20261114.apk` 8,257,619 B / sha256 `81c7b9c0…`；aapt2 vc24/1.7.6；apksigner MD5 `0abe7fc5005987ed9b6eae9a45fb9dc9` 与备案一致；包内 18 文件入口 `index-Cge988N6.js`。完整留证 → `docs/发版留证-体重管理方案-V1.7.6-vc24-2026-11-14.md`。
+> - 19:45 实施条目详版（门禁数字、红验证 5 类、三处收敛、零删除、未发版边界）→ `docs/实施留证-我的页与健康档案四端同构-2026-11-14.md` 与 `.workbuddy/memory/2026-11-14.md`。
