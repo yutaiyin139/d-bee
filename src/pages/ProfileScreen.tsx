@@ -19,7 +19,6 @@ import {
   ACTIVITY_LABELS,
   GOAL_LABELS,
   calcTarget,
-  targetFromProfile,
   todayKey,
 } from '../lib/nutrition'
 import { usePlan } from '../state/plan'
@@ -46,7 +45,19 @@ import type { Profile, WeightLog } from '../types'
 import { InviteCenter } from './InviteCenter'
 import { errText } from '../lib/errmsg'
 import { HealthPlanSheet } from '../components/HealthPlanSheet'
-import { HEALTH_PLAN_TITLE, HEALTH_PLAN_CHANGE_WILL, HEALTH_PLAN_CHANGE_WONT, HEALTH_PLAN_EDIT_CURRENT_PREFIX, HEALTH_PLAN_EDIT_CONFIRM_TAIL, HEALTH_PLAN_EDIT_WILL_PREFIX, HEALTH_PLAN_EDIT_WONT_PREFIX, HEALTH_PLAN_UPDATED_PREFIX } from '../lib/healthPlan'
+import { HEALTH_PLAN_CHANGE_WILL, HEALTH_PLAN_CHANGE_WONT, HEALTH_PLAN_EDIT_CURRENT_PREFIX, HEALTH_PLAN_EDIT_CONFIRM_TAIL, HEALTH_PLAN_EDIT_WILL_PREFIX, HEALTH_PLAN_EDIT_WONT_PREFIX, HEALTH_PLAN_UPDATED_PREFIX } from '../lib/healthPlan'
+import {
+  MY_PAGE_SECTION_GRID, MY_PAGE_SECTION_LIST, MY_PAGE_SECTION_RECORDS,
+  MY_PAGE_GRID_ITEMS, MY_PAGE_LIST_ITEMS, MY_PAGE_INVITE_LABEL, MY_PAGE_INVITE_VIEW,
+  MY_PAGE_REPORT_ARIA, MY_PAGE_TODAY_TITLE, MY_PAGE_TODAY_HINT, MY_PAGE_TODAY_ARIA,
+  MY_PAGE_TODAY_LABELS, MY_PAGE_TODAY_UNITS,
+  type MyPageGridKey, type MyPageListKey,
+} from '@dbee/shared'
+import { buildTodayTarget } from '../lib/myPage'
+import { HealthRecordSheet } from '../components/HealthRecordSheet'
+import { MyFoodSheet } from '../components/MyFoodSheet'
+import { WeekRecipeSheet } from '../components/WeekRecipeSheet'
+import { SmartDeviceSheet } from '../components/SmartDeviceSheet'
 
 interface ProfileScreenProps {
   profile: Profile
@@ -54,11 +65,14 @@ interface ProfileScreenProps {
   onOpenLegal: (id: DocId) => void
   onProfileChanged: (p: Profile) => void
   onSignOut: () => void
+  onOpenReport: () => void
 }
 
-export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged, onSignOut }: ProfileScreenProps) {
+export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged, onSignOut, onOpenReport }: ProfileScreenProps) {
   const { pro, lifetime, aiRemaining, openPaywall, entitlement } = usePlan()
-  const target = useMemo(() => targetFromProfile(profile), [profile])
+  const todayTarget = useMemo(() => buildTodayTarget(profile), [profile])
+  // 四个新弹层共用一个状态：少一个状态就少一处分叉，四端更易对齐
+  const [activeSheet, setActiveSheet] = useState<'record' | 'food' | 'week' | 'device' | null>(null)
   const [editing, setEditing] = useState(false)
   // 体重管理方案：单态 Sheet（只读 profile.goal）；改目标确认写库后自动回到新目标态
   const [planOpen, setPlanOpen] = useState(false)
@@ -148,6 +162,25 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
 
   // 蜜糖积分中心
   const [inviteOpen, setInviteOpen] = useState(false)
+
+  /** 宫格 4 项：全部复用既有入口，零新建页面 / 零新建状态 */
+  function openGrid(key: MyPageGridKey) {
+    if (key === 'personal') setEditing(true)
+    else if (key === 'honey') setInviteOpen(true)
+    else if (key === 'food') setActiveSheet('food')
+    else setActiveSheet('device')
+  }
+
+  /** 列表 4 项：第 4 项是报告 tab 的深链，不是另一个功能 */
+  function openList(key: MyPageListKey) {
+    if (key === 'plan') { setPlanUpdated(''); setPlanOpen(true) }
+    else if (key === 'record') setActiveSheet('record')
+    else if (key === 'week') setActiveSheet('week')
+    else onOpenReport()
+  }
+
+  // 收敛项标记：6px 琥珀点必须同时配文字说明，不靠颜色单独传达信息
+  const convergeDot = <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 99, background: 'var(--honey)', flexShrink: 0 }} />
 
   const [weights, setWeights] = useState<WeightLog[]>([])
   const [weightInput, setWeightInput] = useState(String(profile.current_weight_kg ?? ''))
@@ -416,9 +449,15 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
   return (
     <div className="page">
       <div className="page-top" />
-      <div className="hero">
-        <h1>我的</h1>
-        <p>{account}</p>
+      <div className="hero" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div aria-hidden="true" style={{ width: 44, height: 44, borderRadius: 99, background: 'var(--honey-soft)', color: 'var(--honey-dark)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
+          {(profile.nickname || '蜂').slice(0, 1)}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h1 style={{ margin: 0 }}>{profile.nickname || '自律蜜蜂用户'}</h1>
+          <p style={{ margin: 0 }}>{account}</p>
+        </div>
+        <span className="chip" style={{ flexShrink: 0 }}>{GOAL_LABELS[profile.goal ?? 'lose']}</span>
       </div>
 
       {/* 会员状态 */}
@@ -444,81 +483,96 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
         )}
       </div>
 
-      {/* 蜜糖积分入口 */}
+      {/* 收敛 1：账户区只承担邀请动作，积分余额与明细归宫格「蜜糖积分」 */}
       <div className="card" style={{ marginBottom: 14, cursor: 'pointer' }} onClick={() => setInviteOpen(true)} onKeyDown={onActivateKey(() => setInviteOpen(true))} role="button" tabIndex={0}>
         <div className="list-line">
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 16 }}>🍯</span> 蜜糖积分 · 邀请好友
+            {convergeDot} {MY_PAGE_INVITE_LABEL}
           </span>
           <span className="val">
-            查看积分与兑换
+            {MY_PAGE_INVITE_VIEW}
             <span className="arrow" style={{ marginLeft: 6 }}>›</span>
           </span>
         </div>
       </div>
 
-      <div className="stat-grid" style={{ marginBottom: 14 }}>
-        <div className="stat">
-          <div className="l">每日热量预算</div>
-          <div className="v">{target.calories}<small>kcal</small></div>
-        </div>
-        <div className="stat">
-          <div className="l">当前体重</div>
-          <div className="v">{profile.current_weight_kg ?? '—'}<small>kg</small></div>
-        </div>
-        <div className="stat">
-          <div className="l">蛋白质目标</div>
-          <div className="v">{target.protein_g}<small>g</small></div>
-        </div>
-        <div className="stat">
-          <div className="l">碳水 / 脂肪</div>
-          <div className="v">
-            {target.carb_g}<small>g</small> / {target.fat_g}<small>g</small>
+      <div className="section-title">{MY_PAGE_SECTION_GRID}</div>
+      <div className="card" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, padding: 12, marginBottom: 14 }}>
+        {MY_PAGE_GRID_ITEMS.map((item) => (
+          <div
+            key={item.key}
+            role="button"
+            tabIndex={0}
+            aria-label={item.label}
+            onClick={() => openGrid(item.key)}
+            onKeyDown={onActivateKey(() => openGrid(item.key))}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 56, borderRadius: 8, background: 'var(--bg-2)', fontSize: 12, cursor: 'pointer' }}
+          >
+            {item.label}
           </div>
-        </div>
+        ))}
       </div>
 
-      <div className="card">
-        <div
-          className="list-line"
-          onClick={() => { setPlanUpdated(''); setPlanOpen(true) }}
-          onKeyDown={onActivateKey(() => { setPlanUpdated(''); setPlanOpen(true) })}
-          role="button"
-          tabIndex={0}
-        >
-          <span>{HEALTH_PLAN_TITLE}</span>
-          <span className="val">
-            {GOAL_LABELS[profile.goal ?? 'lose']}
-            <span className="arrow" style={{ marginLeft: 6 }}>›</span>
-          </span>
-        </div>
+      <div className="section-title">{MY_PAGE_SECTION_LIST}</div>
+      <div className="card" style={{ marginBottom: 14 }}>
+        {MY_PAGE_LIST_ITEMS.map((item, i) => (
+          <div
+            key={item.key}
+            className="list-line"
+            role="button"
+            tabIndex={0}
+            aria-label={item.key === 'report' ? MY_PAGE_REPORT_ARIA : item.label}
+            onClick={() => openList(item.key)}
+            onKeyDown={onActivateKey(() => openList(item.key))}
+            style={i === MY_PAGE_LIST_ITEMS.length - 1 ? { borderBottom: 0 } : undefined}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {item.key === 'report' && convergeDot}
+              {item.label}
+            </span>
+            <span className="val">
+              {item.key === 'plan' ? GOAL_LABELS[profile.goal ?? 'lose'] : ''}
+              <span className="arrow" style={{ marginLeft: 6 }}>{item.arrow}</span>
+            </span>
+          </div>
+        ))}
       </div>
 
-      <div className="card">
-        <div className="list-line" onClick={() => setEditing(true)} onKeyDown={onActivateKey(() => setEditing(true))} role="button" tabIndex={0}>
-          <span>身体数据与目标</span>
-          <span className="val">
-            {GOAL_LABELS[goal]}
-            <span className="arrow" style={{ marginLeft: 6 }}>›</span>
+      <div className="section-title">{MY_PAGE_SECTION_RECORDS}</div>
+      <div
+        className="card"
+        role="button"
+        tabIndex={0}
+        aria-label={MY_PAGE_TODAY_ARIA}
+        onClick={() => { setPlanUpdated(''); setPlanOpen(true) }}
+        onKeyDown={onActivateKey(() => { setPlanUpdated(''); setPlanOpen(true) })}
+        style={{ marginBottom: 14, cursor: 'pointer' }}
+      >
+        <div className="list-line" style={{ borderBottom: 0 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {convergeDot} {MY_PAGE_TODAY_TITLE}
           </span>
+          <span className="val" style={{ fontSize: 12, color: 'var(--ink-3)' }}>{MY_PAGE_TODAY_HINT}</span>
         </div>
-        <div className="list-line">
-          <span>身高 / 年龄 / 性别</span>
-          <span className="val">
-            {profile.height_cm ?? '—'}cm · {profile.age ?? '—'}岁 · {gender === 'male' ? '男' : '女'}
-          </span>
-        </div>
-        <div className="list-line">
-          <span>活动水平</span>
-          <span className="val">{ACTIVITY_LABELS[activity]}</span>
-        </div>
-        <div className="list-line" style={{ alignItems: 'flex-start' }}>
-          <span style={{ flexShrink: 0 }}>目标体重</span>
-          <span className="val" style={{ textAlign: 'right' }}>{profile.target_weight_kg ?? '—'} kg</span>
-        </div>
-        <div className="list-line">
-          <span>每日步数目标</span>
-          <span className="val">{profile.step_goal ?? 6000} 步</span>
+        <div className="stat-grid" style={{ padding: '0 12px 12px', margin: 0 }}>
+          <div className="stat">
+            <div className="l">{MY_PAGE_TODAY_LABELS.calories}</div>
+            <div className="v">{todayTarget.calories}<small>{MY_PAGE_TODAY_UNITS.kcal}</small></div>
+          </div>
+          <div className="stat">
+            <div className="l">{MY_PAGE_TODAY_LABELS.weight}</div>
+            <div className="v">{todayTarget.weight}<small>{MY_PAGE_TODAY_UNITS.kg}</small></div>
+          </div>
+          <div className="stat">
+            <div className="l">{MY_PAGE_TODAY_LABELS.protein}</div>
+            <div className="v">{todayTarget.protein}<small>{MY_PAGE_TODAY_UNITS.g}</small></div>
+          </div>
+          <div className="stat">
+            <div className="l">{MY_PAGE_TODAY_LABELS.carbFat}</div>
+            <div className="v">
+              {todayTarget.carb}<small>{MY_PAGE_TODAY_UNITS.g}</small> / {todayTarget.fat}<small>{MY_PAGE_TODAY_UNITS.g}</small>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -933,6 +987,23 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
           updatedLabel={planUpdated}
           onClose={() => { setPlanOpen(false); setPlanUpdated('') }}
           onChangeGoal={() => { setPlanOpen(false); setPlanUpdated(''); setEditing(true) }}
+        />
+      )}
+
+      {activeSheet === 'record' && <HealthRecordSheet profile={profile} onClose={() => setActiveSheet(null)} />}
+      {activeSheet === 'food' && <MyFoodSheet onClose={() => setActiveSheet(null)} />}
+      {activeSheet === 'week' && <WeekRecipeSheet onClose={() => setActiveSheet(null)} />}
+      {activeSheet === 'device' && (
+        <SmartDeviceSheet
+          onClose={() => setActiveSheet(null)}
+          connected={!!profile.health_connected}
+          connectable={isHealthConnectable()}
+          vendorLabel={healthVendor.label}
+          steps={null}
+          weightKg={profile.current_weight_kg}
+          heightCm={profile.height_cm}
+          onConnect={() => void handleConnectHealth()}
+          onDisconnect={() => void handleDisconnectHealth()}
         />
       )}
     </div>

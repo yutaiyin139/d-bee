@@ -81,6 +81,7 @@ function Screen() {
           onOpenLegal={openLegal}
           onProfileChanged={noop}
           onSignOut={noop}
+          onOpenReport={noop}
         />
       )
     case 'log':

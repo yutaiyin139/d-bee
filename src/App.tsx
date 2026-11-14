@@ -262,6 +262,7 @@ function AppInner({ onOpenLegal }: { onOpenLegal: (id: DocId) => void }) {
           onOpenLegal={onOpenLegal}
           onProfileChanged={setProfile}
           onSignOut={handleSignOut}
+          onOpenReport={() => setTab('report')}
         />
       )}
 

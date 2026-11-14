@@ -24,7 +24,19 @@ import {
 import { ACTIVITY_LABELS, GOAL_LABELS, calcTarget, todayKey } from '../../lib/nutrition'
 import { HealthPlanSheet } from '../../components/HealthPlanSheet'
 import {
-  HEALTH_PLAN_TITLE, HEALTH_PLAN_CHANGE_WILL, HEALTH_PLAN_CHANGE_WONT,
+  MY_PAGE_SECTION_GRID, MY_PAGE_SECTION_LIST, MY_PAGE_SECTION_RECORDS,
+  MY_PAGE_GRID_ITEMS, MY_PAGE_LIST_ITEMS, MY_PAGE_INVITE_LABEL, MY_PAGE_INVITE_VIEW,
+  MY_PAGE_REPORT_ARIA, MY_PAGE_TODAY_TITLE, MY_PAGE_TODAY_HINT, MY_PAGE_TODAY_ARIA,
+  MY_PAGE_TODAY_LABELS, MY_PAGE_TODAY_UNITS,
+  type MyPageGridKey, type MyPageListKey,
+} from '@dbee/shared'
+import { buildTodayTarget } from '../../lib/myPage'
+import { HealthRecordSheet } from '../../components/HealthRecordSheet'
+import { MyFoodSheet } from '../../components/MyFoodSheet'
+import { WeekRecipeSheet } from '../../components/WeekRecipeSheet'
+import { SmartDeviceSheet } from '../../components/SmartDeviceSheet'
+import {
+  HEALTH_PLAN_CHANGE_WILL, HEALTH_PLAN_CHANGE_WONT,
   HEALTH_PLAN_EDIT_CURRENT_PREFIX, HEALTH_PLAN_EDIT_CONFIRM_TAIL,
   HEALTH_PLAN_EDIT_WILL_PREFIX, HEALTH_PLAN_EDIT_WONT_PREFIX, HEALTH_PLAN_UPDATED_PREFIX,
 } from '../../lib/healthPlan'
@@ -54,6 +66,7 @@ import { SITE } from '../../content/legal'
 import { copyText } from '../../lib/clipboard'
 import { getNotifyPrefs, setNotifyPrefs, enableCheckinNotify, disableCheckinNotify, enableWaterNotify, disableWaterNotify } from '../../lib/notifications'
 import './profile.scss'
+import '../../components/MyPageSheets.scss'
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -179,16 +192,9 @@ export default function ProfilePage() {
   const [err, setErr] = useState('')
   const [fieldErr, setFieldErr] = useState<Record<string, string>>({})
 
-  const target = useMemo(() => {
-    const p = profile
-    if (!p || !p.daily_calorie_target) return { calories: 1800, protein_g: 90, carb_g: 220, fat_g: 50 }
-    return {
-      calories: p.daily_calorie_target,
-      protein_g: p.protein_target_g ?? 0,
-      carb_g: p.carb_target_g ?? 0,
-      fat_g: p.fat_target_g ?? 0,
-    }
-  }, [profile])
+  const todayTarget = useMemo(() => buildTodayTarget(profile), [profile])
+  // 四个新弹层共用一个状态：少一个状态就少一处分叉，四端更易对齐
+  const [activeSheet, setActiveSheet] = useState<'record' | 'food' | 'week' | 'device' | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -501,6 +507,22 @@ export default function ProfilePage() {
     Taro.navigateTo({ url: '/pages/leaderboard/leaderboard' })
   }
 
+  /** 宫格 4 项：全部复用既有入口，零新建页面 / 零新建状态 */
+  function openGrid(key: MyPageGridKey) {
+    if (key === 'personal') setEditing(true)
+    else if (key === 'honey') goInvite()
+    else if (key === 'food') setActiveSheet('food')
+    else setActiveSheet('device')
+  }
+
+  /** 列表 4 项：第 4 项是报告页的深链，不是另一个功能 */
+  function openList(key: MyPageListKey) {
+    if (key === 'plan') { setPlanUpdated(''); setPlanOpen(true) }
+    else if (key === 'record') setActiveSheet('record')
+    else if (key === 'week') setActiveSheet('week')
+    else Taro.navigateTo({ url: '/pages/report/report' })
+  }
+
   /**
    * 会员状态卡片的副标题。2026-11-03 修：此前 mini 本页只有三个分支且免费档把剩余
    * 拍照次数**硬编码成 3**，兑换码与有效期两条信息完全缺失；现已改为调 shared 的
@@ -523,8 +545,15 @@ export default function ProfilePage() {
 
   return (
     <View className='page profile'>
-      <View className='hero'>
-        <Text className='hero-title'>我的</Text>
+      <View className='hero' style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+        <View aria-hidden='true' style={{ width: 88, height: 88, borderRadius: 99, background: '#fdf1da', color: '#96600a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36, flexShrink: 0 }}>
+          <Text>{(profile?.nickname || '蜂').slice(0, 1)}</Text>
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text className='hero-title'>{profile?.nickname || '自律蜜蜂用户'}</Text>
+          <Text className='mp-muted'>自律蜜蜂</Text>
+        </View>
+        <Text className='chip'>{GOAL_LABELS[profile?.goal ?? 'lose']}</Text>
       </View>
 
       {/* 会员状态 */}
@@ -543,101 +572,99 @@ export default function ProfilePage() {
         )}
       </View>
 
-      {/* 管理订阅：对齐主端 PaywallSheet 3.1.2「一律可见」纪律，免费 / Pro / 终身均可达 */}
-      <View className='card' onClick={() => {
-        void openManageSubscriptions().then((ok) => {
-          if (!ok) Taro.showToast({ title: '暂时打不开会员与订阅，请稍后重试', icon: 'none' })
-        })
-      }}>
-        <View className='list-line'>
-          <Text className='line-label'>👑 会员与订阅</Text>
-          <Text className='line-val'>
-            管理权益 <Text className='arrow'>›</Text>
-          </Text>
-        </View>
-      </View>
-
-      {/* 蜜糖积分入口 */}
+      {/* 收敛 1：账户区只承担邀请动作，积分余额与明细归宫格「蜜糖积分」 */}
       <View className='card' onClick={goInvite}>
         <View className='list-line'>
-          <Text className='line-label'>🍯 蜜糖积分 · 邀请好友</Text>
+          <View style={{ display: 'flex', alignItems: 'center' }}>
+            <View className='mp-dot' />
+            <Text className='line-label'>{MY_PAGE_INVITE_LABEL}</Text>
+          </View>
           <Text className='line-val'>
-            查看积分与兑换 <Text className='arrow'>›</Text>
+            {MY_PAGE_INVITE_VIEW} <Text className='arrow'>›</Text>
           </Text>
         </View>
       </View>
 
-      {/* 我的食谱 + 榜单入口（P2） */}
+      <View className='section-title'><Text>{MY_PAGE_SECTION_GRID}</Text></View>
+      <View className='mp-grid4' style={{ marginBottom: 28 }}>
+        {MY_PAGE_GRID_ITEMS.map((item) => (
+          <View key={item.key} className='mp-grid-item' aria-label={item.label} onClick={() => openGrid(item.key)}>
+            <Text>{item.label}</Text>
+          </View>
+        ))}
+      </View>
+
+      <View className='section-title'><Text>{MY_PAGE_SECTION_LIST}</Text></View>
       <View className='card'>
-        <View className='list-line' onClick={goRecipes}>
-          <Text className='line-label'>🍱 我的食谱</Text>
-          <Text className='line-val'>
-            一键复记常吃的一餐 <Text className='arrow'>›</Text>
-          </Text>
-        </View>
-        <View className='list-line' onClick={goLeaderboard} style={{ borderTop: '1px solid rgba(42,39,35,0.09)', marginTop: 8, paddingTop: 16 }}>
-          <Text className='line-label'>🏆 自律榜单</Text>
-          <Text className='line-val'>
-            看看大家坚持了多久 <Text className='arrow'>›</Text>
-          </Text>
-        </View>
+        {MY_PAGE_LIST_ITEMS.map((item) => (
+          <View
+            key={item.key}
+            className='list-line'
+            aria-label={item.key === 'report' ? MY_PAGE_REPORT_ARIA : item.label}
+            onClick={() => openList(item.key)}
+          >
+            <View style={{ display: 'flex', alignItems: 'center' }}>
+              {item.key === 'report' ? <View className='mp-dot' /> : null}
+              <Text className='line-label'>{item.label}</Text>
+            </View>
+            <Text className='line-val'>
+              {item.key === 'plan' ? GOAL_LABELS[profile?.goal ?? 'lose'] : ''}
+              <Text className='arrow'> {item.arrow}</Text>
+            </Text>
+          </View>
+        ))}
       </View>
 
-      {/* 统计卡 */}
-      <View className='stat-grid'>
-        <View className='stat'>
-          <Text className='stat-l'>每日热量预算</Text>
-          <Text className='stat-v'>{target.calories}<Text className='stat-unit'>kcal</Text></Text>
+      <View className='section-title'><Text>{MY_PAGE_SECTION_RECORDS}</Text></View>
+      <View className='card' aria-label={MY_PAGE_TODAY_ARIA} onClick={() => { setPlanUpdated(''); setPlanOpen(true) }}>
+        <View className='list-line'>
+          <View style={{ display: 'flex', alignItems: 'center' }}>
+            <View className='mp-dot' />
+            <Text className='line-label'>{MY_PAGE_TODAY_TITLE}</Text>
+          </View>
+          <Text className='line-val' style={{ fontSize: 22 }}>{MY_PAGE_TODAY_HINT}</Text>
         </View>
-        <View className='stat'>
-          <Text className='stat-l'>当前体重</Text>
-          <Text className='stat-v'>{profile?.current_weight_kg ?? '—'}<Text className='stat-unit'>kg</Text></Text>
-        </View>
-        <View className='stat'>
-          <Text className='stat-l'>蛋白质目标</Text>
-          <Text className='stat-v'>{target.protein_g}<Text className='stat-unit'>g</Text></Text>
-        </View>
-        <View className='stat'>
-          <Text className='stat-l'>碳水 / 脂肪</Text>
-          {/* 🔴 小程序 <text> 会把每个嵌套 Text / 裸空格当断行机会，iOS 上 254g / 56g 会折行。
-              改成 View(flex nowrap) + 三个独立 token，分隔符间距交给 CSS margin。 */}
-          <View className='stat-v stat-v--pair'>
-            <Text className='stat-pair'>{target.carb_g}<Text className='stat-unit'>g</Text></Text>
-            <Text className='stat-sep'>/</Text>
-            <Text className='stat-pair'>{target.fat_g}<Text className='stat-unit'>g</Text></Text>
+        <View className='stat-grid' style={{ padding: '0 12px 12px', margin: 0 }}>
+          <View className='stat'>
+            <Text className='stat-l'>{MY_PAGE_TODAY_LABELS.calories}</Text>
+            <Text className='stat-v'>{todayTarget.calories}<Text className='stat-unit'>{MY_PAGE_TODAY_UNITS.kcal}</Text></Text>
+          </View>
+          <View className='stat'>
+            <Text className='stat-l'>{MY_PAGE_TODAY_LABELS.weight}</Text>
+            <Text className='stat-v'>{todayTarget.weight}<Text className='stat-unit'>{MY_PAGE_TODAY_UNITS.kg}</Text></Text>
+          </View>
+          <View className='stat'>
+            <Text className='stat-l'>{MY_PAGE_TODAY_LABELS.protein}</Text>
+            <Text className='stat-v'>{todayTarget.protein}<Text className='stat-unit'>{MY_PAGE_TODAY_UNITS.g}</Text></Text>
+          </View>
+          <View className='stat'>
+            <Text className='stat-l'>{MY_PAGE_TODAY_LABELS.carbFat}</Text>
+            <View className='stat-v stat-v--pair'>
+              <Text className='stat-pair'>{todayTarget.carb}<Text className='stat-unit'>g</Text></Text>
+              <Text className='stat-sep'>/</Text>
+              <Text className='stat-pair'>{todayTarget.fat}<Text className='stat-unit'>g</Text></Text>
+            </View>
           </View>
         </View>
       </View>
 
-      {/* 体重管理方案：单态入口，标签取落库 goal（不用编辑草稿 goal） */}
+      {/* mini 端既有独立入口：全部保留，收进记录与设置区，不删功能 */}
       <View className='card'>
-        <View className='list-line' onClick={() => { setPlanUpdated(''); setPlanOpen(true) }}>
-          <Text className='line-label'>{HEALTH_PLAN_TITLE}</Text>
-          <Text className='line-val'>{GOAL_LABELS[profile?.goal ?? 'lose']}<Text className='arrow'>›</Text></Text>
+        <View className='list-line' onClick={() => {
+          void openManageSubscriptions().then((ok) => {
+            if (!ok) Taro.showToast({ title: '暂时打不开会员与订阅，请稍后重试', icon: 'none' })
+          })
+        }}>
+          <Text className='line-label'>👑 会员与订阅</Text>
+          <Text className='line-val'>管理权益 <Text className='arrow'>›</Text></Text>
         </View>
-      </View>
-
-      {/* 身体数据与目标 */}
-      <View className='card'>
-        <View className='list-line' onClick={() => setEditing(true)}>
-          <Text className='line-label'>身体数据与目标</Text>
-          <Text className='line-val'>{GOAL_LABELS[goal]}<Text className='arrow'>›</Text></Text>
+        <View className='list-line' onClick={goRecipes}>
+          <Text className='line-label'>🍱 我的食谱</Text>
+          <Text className='line-val'>一键复记常吃的一餐 <Text className='arrow'>›</Text></Text>
         </View>
-        <View className='list-line'>
-          <Text className='line-label'>身高 / 年龄 / 性别</Text>
-          <Text className='line-val'>{profile?.height_cm ?? '—'}cm · {profile?.age ?? '—'}岁 · {gender === 'male' ? '男' : '女'}</Text>
-        </View>
-        <View className='list-line'>
-          <Text className='line-label'>活动水平</Text>
-          <Text className='line-val'>{ACTIVITY_LABELS[activity]}</Text>
-        </View>
-        <View className='list-line'>
-          <Text className='line-label'>目标体重</Text>
-          <Text className='line-val'>{profile?.target_weight_kg ?? '—'} kg</Text>
-        </View>
-        <View className='list-line'>
-          <Text className='line-label'>每日步数目标</Text>
-          <Text className='line-val'>{profile?.step_goal ?? DEFAULT_STEP_GOAL} 步</Text>
+        <View className='list-line' onClick={goLeaderboard}>
+          <Text className='line-label'>🏆 自律榜单</Text>
+          <Text className='line-val'>看看大家坚持了多久 <Text className='arrow'>›</Text></Text>
         </View>
       </View>
 
@@ -1000,6 +1027,23 @@ export default function ProfilePage() {
           updatedLabel={planUpdated}
           onClose={() => { setPlanOpen(false); setPlanUpdated('') }}
           onChangeGoal={() => { setPlanOpen(false); setPlanUpdated(''); setEditing(true) }}
+        />
+      ) : null}
+
+      {activeSheet === 'record' && profile ? <HealthRecordSheet profile={profile} onClose={() => setActiveSheet(null)} /> : null}
+      {activeSheet === 'food' ? <MyFoodSheet onClose={() => setActiveSheet(null)} /> : null}
+      {activeSheet === 'week' ? <WeekRecipeSheet onClose={() => setActiveSheet(null)} /> : null}
+      {activeSheet === 'device' && profile ? (
+        <SmartDeviceSheet
+          onClose={() => setActiveSheet(null)}
+          connected={!!healthConnected}
+          connectable={isHealthConnectable()}
+          vendorLabel={healthVendor.label}
+          steps={null}
+          weightKg={profile.current_weight_kg}
+          heightCm={profile.height_cm}
+          onConnect={() => void handleConnectHealth()}
+          onDisconnect={() => void handleDisconnectHealth()}
         />
       ) : null}
     </View>

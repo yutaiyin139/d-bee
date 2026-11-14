@@ -1,0 +1,110 @@
+// =============================================================
+// 「我的」页四个 Sheet（mini 端）— 视觉规格逐项对齐主端
+//   · 真源：src/components/{HealthRecord,MyFood,WeekRecipe,SmartDevice}Sheet.tsx
+//   · designWidth 750：scss 内 px 由 Taro 转 rpx，故数值为主端 2 倍
+//   · 组件行内样式沿用主端原值（行内 px 不转换），两端真机视觉一致
+//   · 卡片层级仅 2 级、辅助文字 #757067（WCAG AA）、触控目标 ≥44px
+// 独立 mp- 前缀，不依赖任何页面级 scss，profile 页可直接复用。
+// =============================================================
+
+.mp-mask {
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  background: rgba(30, 26, 20, 0.42);
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.mp-sheet {
+  width: 100%;
+  max-width: 960px;
+  background: #fbf8f1;
+  border-radius: 40px 40px 0 0;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.mp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px 32px 20px;
+  border-bottom: 1px solid rgba(42, 39, 35, 0.09);
+}
+
+.mp-title { font-size: 32px; font-weight: 500; color: #2a2723; }
+.mp-close { font-size: 40px; color: #6b655c; padding: 0 12px; line-height: 44px; }
+.mp-body { padding: 24px 28px 40px; max-height: 76vh; }
+
+.mp-section { font-size: 24px; color: #757067; margin: 28px 0 14px; }
+.mp-helper { font-size: 24px; color: #757067; line-height: 1.6; display: block; margin-bottom: 16px; }
+.mp-card {
+  background: #ffffff;
+  border: 1px solid rgba(42, 39, 35, 0.09);
+  border-radius: 28px;
+  padding: 4px 24px;
+  margin-bottom: 24px;
+}
+.mp-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 88px;
+  padding: 16px 0;
+  border-bottom: 1px solid rgba(42, 39, 35, 0.09);
+  font-size: 26px;
+  color: #2a2723;
+}
+.mp-line:last-child { border-bottom: none; }
+.mp-val { color: #6b655c; font-size: 26px; }
+.mp-muted { color: #757067; font-size: 22px; }
+.mp-dot {
+  width: 12px; height: 12px;
+  border-radius: 99px;
+  background: #f2a93b;
+  margin-right: 12px;
+}
+.mp-grid4 { display: flex; gap: 12px; }
+.mp-grid-item {
+  flex: 1;
+  min-width: 0;
+  height: 96px;
+  background: #f4efe4;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #2a2723;
+}
+.mp-stat-grid { display: flex; flex-wrap: wrap; }
+.mp-stat { width: 50%; padding: 20px 16px; }
+.mp-stat-l { font-size: 22px; color: #757067; display: block; }
+.mp-stat-v { font-size: 36px; font-weight: 500; color: #2a2723; display: block; margin-top: 6px; }
+.mp-stat-unit { font-size: 22px; font-weight: 400; }
+.mp-bar-track {
+  flex: 1;
+  height: 16px;
+  border-radius: 99px;
+  background: #f4efe4;
+  margin: 0 20px;
+  overflow: hidden;
+}
+.mp-bar-fill { height: 16px; border-radius: 99px; background: #f2a93b; }
+.mp-anchor-row { display: flex; gap: 12px; margin-bottom: 24px; }
+.mp-anchor {
+  flex: 1;
+  min-height: 88px;
+  border-radius: 16px;
+  background: #fdf1da;
+  color: #96600a;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mp-progress-track { height: 16px; border-radius: 99px; background: #f4efe4; overflow: hidden; }
+.mp-progress-fill { height: 16px; border-radius: 99px; background: #f2a93b; }

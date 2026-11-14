@@ -37,6 +37,7 @@ import {
   HEALTH_PLAN_BMI_BANDS,
   bmiBandOf, calcBmiCore, calcBmrCore, buildPlanTimelineCore,
   dateKeyFromIso, diffDateKeys, shiftDateKey,
+  MY_PAGE_LIST_ITEMS,
 } from '@dbee/shared'
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -209,8 +210,12 @@ describe('首次登录与改目标接线（主端 = Web/iOS/Android 共用）', 
     expect(PROFILE_SCREEN()).toContain('历史记录不会被改动')
   })
 
-  it('我的页提供体重管理方案入口', () => {
-    expect(PROFILE_SCREEN()).toContain('{HEALTH_PLAN_TITLE}')
+  it('我的页渲染 shared 列表 4 项（方案入口不再单独硬编码）', () => {
+    expect(PROFILE_SCREEN()).toContain('MY_PAGE_LIST_ITEMS.map')
+  })
+
+  it('列表第 1 项标题与方案页标题逐字一致', () => {
+    expect(MY_PAGE_LIST_ITEMS[0].label).toBe(HEALTH_PLAN_TITLE)
   })
 
   it('底部导航仍为三项', () => {
@@ -421,8 +426,8 @@ describe('mini 端接线', () => {
     expect(MINI_PROFILE()).toContain('<HealthPlanSheet')
   })
 
-  it('我的页入口标题取 shared 常量', () => {
-    expect(MINI_PROFILE()).toContain('{HEALTH_PLAN_TITLE}')
+  it('我的页入口标题取 shared 列表常量', () => {
+    expect(MINI_PROFILE()).toContain('MY_PAGE_LIST_ITEMS.map')
   })
 
   it('我的页入口标签取落库目标而非编辑草稿', () => {
