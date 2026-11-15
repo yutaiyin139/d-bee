@@ -1664,3 +1664,61 @@ stdin 脚本不落临时文件、不执行删除。⚠️ 首次红验证脚本�
 - ✅✅ **22:45 一劳永逸方案落地 + git 闭环 + Web 重发**（用户拍板「省事的一劳永逸方案」+「提交 git 发布 web 端」）：详见 `docs/发版留证-四端恢复与git闭环-2026-11-14.md` 与 `2026-11-14.md`「22:45」段。要点：新增并应用 `db/migrations/0051-meal-entries-updated-at.sql`（`ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now()` + 台账 + `NOTIFY pgrst`）；**红绿探针**实证四端旧包写入恢复（假列 400 PGRST204 / `updated_at` 200 / 新包 200，打 `id=eq.-1` 零数据改动）；列 `NULL=YES DEFAULT=now()`、140 行不变、台账 `0051/applied`；源码一次性 commit `c7a2e98`（**push 未完成**：先 schannel handshake，改用 openssl 后端报 `CONNECT tunnel failed 502`，`curl https://github.com` 退出 56/HTTP 000 → 代理层故障，按铁律不盲目重试，当前 `main...origin/main [ahead 1]`，Mac 侧 pull 拿不到，待网络恢复补推）；Web 重发（重建产物与备份 19/19 逐字节一致＝幂等，入口仍 `index-DfW2isy_.js`），生产 19/19 + 幽灵列 0 + `GRAMS ['2e3']` + 法务 v1.7.7 + healthz + Chromium PASS；备份 `prebuild-20261114-2245/`。
 - 🔴 **22:45 新增长期经验**：① PostgREST `openapi-mode=disabled` 时不能用 OpenAPI 端点验 schema cache，须发**真实 PATCH 探针**，且必须配**红验证**（假列应报 PGRST204）排除假绿；② 生产 sudo 已免密，`sudo -S` 会把 stdin 第一行密码漏给 psql → 用 `sudo -n ... -f -` + 纯 SQL stdin；③ `NOTIFY pgrst` 在事务内，COMMIT 后才生效，验证前留 3s 窗口。
 
+## 2026-11-15 23:08 迁入（MEMORY.md 体积压缩 · 零信息丢失）
+
+### 一、11-14「现状」三条逐字归档（V1.7.7 / vc25 期口径，已被 11-15 V1.7.8 / vc26 取代）
+
+- ✅✅ **22:45 编辑份量四端闭环**（仍 V1.7.7）：① 生产库应用 `0051`（补 `meal_entries.updated_at timestamptz DEFAULT now()` + 台账 + `NOTIFY pgrst`）→ **四端旧包写入立即全恢复**；红绿探针实证（假列 400 `PGRST204` / `updated_at` 200 / 新包 200，`id=eq.-1` 零改动），140 行不变。② 源码已 commit `c7a2e98` + docs 修正 `cb2a786`；🔴 push 被代理 502 阻断（ahead 2，Mac 拉不到）。③ Web 重发：重建产物与线上 **19/19 逐字节一致（幂等）**，入口仍 **`index-DfW2isy_.js`**，幽灵列 0 / `GRAMS ['2e3']` / 法务 v1.7.7 / healthz / Chromium PASS。留证 `docs/发版留证-四端恢复与git闭环-2026-11-14.md`。份量 **2000 g**、DB 5000 兜底、清空回弹修复 + mini 对标均保留；历史详版 → REFERENCE「11-14 22:45 迁入」。
+- 🔴 **剩余边界**：mini / iOS / Android **无需重发即已恢复保存**，但包内仍 5000 g + mini 过长按钮/无就近提示（仅源码已修）；`taro build` 清 `mini/dist` 属删除类需确认故未构建，新 UI 仍需本人编译上传；未做登录后真机交互测试。验 schema cache 须真实 PATCH + 红验证；psql 用 `sudo -n … -f -`。
+- 探针口径：vite 把 2000 压成 `2e3`/5000 压成 `5e3`，须匹配 `label:.份量.,min:1,max:…` 精确常量（React scheduler 本有 `5e3`）；法务 URL `/legal/<name>/`。
+
+> 🔴 上引三条的历史定位：`0051` 已应用生产、四端旧包写入已恢复；`index-DfW2isy_.js` → 11-15 19:10 `index-B6tcs3Gk.js` → 11-15 23:08 `index-CIpsiX29.js`。**「剩余边界」条中的 mini 未构建 / 未上传已在 11-15 两轮解决**（19:10 交付 `prebuild-20261115-1900/mini-dist-new`、23:08 交付 `prebuild-20261115-2230/mini-dist-v178`），但**用户本人上传仍未完成**。
+> ✅ 「探针口径」条中的**法务 URL `/legal/<name>/`** 是长期有效口径 —— 11-15 23:08 复核时因写成 `/legal/<name>.html` 而**再次踩到假红**（见下 §二·坑 3），此条务必留在 MEMORY 正文。
+
+### 二、11-15 23:08 发版轮新踩 5 坑（详版；MEMORY 只留一句话线索，完整实证数据 → `docs/发版留证-小程序导出实装与占位护栏-V1.7.8-vc26-2026-11-15.md` §七）
+
+- **坑 1 · `deploy/dbee-ssh.py putdir` 不可靠（根因未查明）**：`putdir dist /var/www/d-bee` 在**第一个** `sftp.put` 就抛 `FileNotFoundError: [Errno 2] No such file`，两次重试同样失败、**0 文件上传**；但同一台远端权限正常（`ubuntu` 属主、`WRITE_OK` 探针通过），且**手工 `import` 该脚本模块后逐个 `sftp.put` 全部成功（OK=19 / FAIL=0）**。→ 处置：**发布一律改逐文件 `sftp.put`，事后必做全量 sha256 逐字节验证**（本轮 19/19 IDENTICAL 才算发布完成）。怀疑与 Windows 路径分隔符 / `os.walk` 相对路径拼接有关，**未证实，勿写成结论**。另：该脚本**没有 `getdir` 动作**，远端整目录取回只能服务器端 `cp -a` 备份 + 本地留档（`/var/backups` 无写权限 → 用 `$HOME/dbee-web-backup-<ts>`）。
+- **坑 2 · `dist/` 混合污染（native 与 Web 共用目录的后遗症）**：Android 打包后 `dist/` 里是 native 16 文件；此时执行 `cp -a <web备份>/. dist/` 会得到 **24 文件的混合产物**（5 个 native 独有 hash 文件 `NativeDiagnostics-*` / `alipay-*` / `index-*` / `iosIap-*` / `wechatPay-*` 残留），**既不是 Web 也不是 native**，若直接拿去发布＝发出带脏文件的产物。→ 正确做法：**先整体 `mv` 移出混合目录留档（零删除），再从空目录 `cp -a` 复制，复制后做逐字节校验**。本轮移出为 `prebuild-20261115-2230/dist-mixed-nativeplusweb/`（24 文件，仅留档不发布）。
+- **坑 3 · 法务页目录形态 → SPA fallback 假红**：法务静态页产物是**目录形态** `dist/legal/<terms|privacy|disclaimer>/index.html`，线上正确 URL = `https://d-bee.cn/legal/terms/index.html`。若请求 `/legal/terms.html`，nginx SPA fallback 返回 `index.html`（**11,871 B**），表现为「三页长度完全相同 + `v1.7.8` 计 0 + `生效日期` 计 0」的**假红**。→ **一眼识别法**：拿一个不存在的路径（如 `/legal/NONEXISTENT-xyz.html`）做对照，若同样 200 且字节数相同，即证明是 fallback 而非真实页面。复核法务页务必用目录路径。
+- **坑 4 · APK 内 `capacitor.plugins.json` 位置 + `cordova*.js` 0 字节均属正常**：该文件真实路径是 **`assets/capacitor.plugins.json`**（**不在** `assets/public/` 下；vc25 / vc26 两版一致），探针写 `assets/public/capacitor.plugins.json` 会**假报缺失**。`assets/public/cordova.js` 与 `cordova_plugins.js` 为 **0 字节**是本项目**无 Cordova 插件**的正常形态（旧包同为 0，非退化）。判「是否退化」必须**与上一版 APK 逐文件对比**：本轮 18=18、仅 5 个 hash 名随内容变、其余 13 文件逐字节相同 → 无夹带。
+- **坑 5 · 产物探针字串必须取源码常量原文**：D1 通知说明的实际文案是「开关目前**仅保存你的提醒偏好**，小程序端尚未接入微信订阅消息，因此暂时不会收到推送通知。」（常量 `NOTIFY_UNAVAILABLE_NOTE` @ `mini/src/lib/notifications.ts:40`）。若按记忆用「仅保存偏好」去 grep 产物，会得到 **0 的假阴性**（本轮实际踩到）。→ 铁律：**探针字串先从源码常量取值，再下产物**；mini 产物还须先解 `\uXXXX`（中文）与 `\xNN`（如 `±`）。
+
+### 三、11-15 两轮发版的版本与产物链（供追溯）
+
+| 轮次 | 版本 | Web 入口 | APK | mini 交付目录 |
+| --- | --- | --- | --- | --- |
+| 11-15 19:10 | V1.7.7 / vc25（**版本未升**，与 11-14 vc25 同 code 不同二进制） | `index-B6tcs3Gk.js` | `release/D-Bee-1.7.7-vc25-dbee.cn-FORMAL-20261115.apk`（8,262,563 B / sha256 `00d1bc5ac86ac92ef35f587d8cb2eea39d1e3dc3436d10ff688785fb08b8710b`） | `prebuild-20261115-1900/mini-dist-new` |
+| 11-15 23:08 | **V1.7.8 / vc26** | **`index-CIpsiX29.js`** | **`release/D-Bee-1.7.8-vc26-dbee.cn-FORMAL-20261115.apk`**（8,262,867 B / sha256 `223a31a40f52bde5f475af490d5b9b7a92ee30ce4ae6c7777185a061e2d58049`） | **`prebuild-20261115-2230/mini-dist-v178`** |
+
+> 🔴 11-15 19:10 留证中「Android 公网分发前须升 vc26」的要求，已于 23:08 轮**解除**（vc26 已产出）。
+> 门禁基线演进：11-15 19:10 = 28 文件 / 1274 项 → 23:08 = **30 文件 / 1329 项**（+护栏 29 的 39 项、+`camera-startup.test.ts` 16 项；1274+39+16=1329 账目吻合）。
+### 四、11-14「下一步 / 待拍板」四条逐字归档（11-15 已失效：push 已闭环、P0/P1/21:50 均已入库并发版）
+
+- ✅ 20:51 git 闭环（`993d0f49`）为当时事实，详版 → REFERENCE「11-14 22:30 迁入」；**22:45 再 commit `c7a2e98`，后接 docs 修正 `cb2a786`，push 待网络恢复（ahead 2）**。首购半价不再 commit。
+- ✅ **P0 执行**（详版 → REF「16:22」「16:45」）：P0.1 零删除重构建闭环 / P0.2 度量 / P0.3 口径护栏 / P0.4 水位 0048 / P0.7 提醒默认关，24/933 绿；P0.5 待评审、P0.6 缺公安备案号、P0.8 待拍板。🔴 上传·体验版·停库须用户本人（**免 T+7** → 20:15）。
+- ✅ **P1.4/1.5/1.6**（详版 → REF「17:30」）：shared 文案真源 + 四端渲染 + 护栏 25；mini 用 `MINI_RECORDING_CAPS` 省略无扫码/包装。**Web/Android 已含文案，mini/dist 未重构建**（P1.7）。
+- ✅ **21:50 透明化说明默认收起**（改 2 组件 `TransparencyNotes.tsx` + 护栏 25-E 11 项，`c3268c5` 已入库；详版 → REF「21:50」）：数据/能力/次数三块默认收起、点击展开（复刻「饮食体检」手势 + `aria-expanded`），只改可见性不删文案、不记忆偏好；四端源码一次覆盖。
+
+> 失效说明：① 首条的「push 待网络恢复（ahead 2）」已于 11-15 19:0x 解除（GitHub 502 恢复，`993d0f4..02b5d64` push 成功），11-15 23:08 又推 `4f76dfa..87c51dc` 与 `87c51dc..dfb1fb2`，`main...origin/main` = `0 0`。② P0 / P1.4-1.6 / 21:50 透明化收起均已入库，并随 V1.7.6~V1.7.8 发到 Web 与 Android；**其中「mini/dist 未重构建（P1.7）」已于 11-15 两轮构建解除**，但用户本人上传仍未完成。
+### 五、11-15 23:08 压缩前的原文逐字归档（发版条 / 5 坑条 / 收款三条；均被下方更短指针取代，实证细节以留证文档为权威）
+
+- ✅✅ **11-15 23:08 V1.7.8 / vc26 已全量发版**（留证 `docs/发版留证-小程序导出实装与占位护栏-V1.7.8-vc26-2026-11-15.md`）：四项拍板落地 —— **D1** mini 通知诚实说明（真源 `isNotifyPushAvailable = CHECKIN_TEMPLATE_ID.length > 0`，文案 `NOTIFY_UNAVAILABLE_NOTE`，红线＝不得写具体时间）／**D2** mini 导出**实装**（`writeFileSync(USER_DATA_PATH)` + `shareFileMessage`，`isExportAvailable = true`，保留 PIPL 45 条邮箱兜底 + false 态回退保护）／**D3** 死代码清理（`InviteeStatus` + 三处不可达 `isWechatMiniProgram()` 分支 + 假承诺文案「正在接入小程序，敬请期待」）／**D4** 新增**护栏 29**（`tools/placeholder-capability.test.ts` 39 项，五节 A 单一真源 / B false 态诚实 / C 回退保护 / D 主端无小程序死分支 / E 反漂移扫未登记开关），红验证 **9/9 精准命中 + 字节级恢复**。门禁 **30 文件 / 1329 项**全绿、两端 typecheck 0。Web 入口 **`index-CIpsiX29.js`**、**19/19 逐字节一致**、`v1.7.8` 1 / `v1.7.7` 0、Chromium PASS；APK **8,262,867 B / sha256 `223a31a4…`**，aapt2 vc26/1.7.8、apksigner MD5 `0abe7fc5…` 与备案一致、包内入口 `index-D6Ix1upI.js`、9 插件。
+
+- 🔴 **11-15 新踩 5 坑（详版 → REFERENCE「2026-11-15 23:08 迁入」§二）**：① `dbee-ssh.py putdir` 首个 `sftp.put` 即 ENOENT（0 文件上传，根因未明）→ **发布改逐文件 put + 事后全量 sha256**；该脚本无 `getdir`。② `dist/` 为 Web 与 native 共用，`cp -a` 覆盖会得 **24 文件混合产物** → 必先 `mv` 移出再从空目录复制 + 逐字节校验。③ 法务页是**目录形态** `/legal/<name>/index.html`，请求 `*.html` 会命中 SPA fallback（11,871 B）造成「三页等长 + 版本号 0」**假红**，识别法＝拿不存在路径对照。④ APK 内 `capacitor.plugins.json` 在 **`assets/`** 而非 `assets/public/`；`cordova*.js` 0 字节属正常（无 Cordova 插件）；判退化须与上版 APK **逐文件对比**。⑤ **产物探针字串必须取源码常量原文**（「仅保存偏好」≠「仅保存你的提醒偏好」→ 假阴性）。
+
+- 🔴🔴 **mini 虚拟支付**（11-08，全文 → REFERENCE「11-08 晚间迁入」）：`wx.requestVirtualPayment`(米大师 xpay) 全链路就绪、开关默认 false；**开启前置 6 项在 `mini/src/lib/xpayEnabled.ts` 文件头**。铁律：补权益后**必调 `/xpay/notify_provide_goods`**、已扣款未确认 → **`settling` 绝不报 error**、`signData` 原样透传。
+
+- 🔴🔴 **收款定案**（全文 → REFERENCE「2026-11-09 晚」）：Web 只引导、Android 能收款、四端业务零改动。🔴 两开关独立默认 false：`D_BEE_XPAY_ENABLED`(mini) / `D_BEE_APPPAY_ENABLED`(Android 按钮+Web 引导)；关闭态 Web 零引导字样。Android `0047`+`apppay.mjs`：微信 V3/支付宝 RSA2 零依赖密码学；**发权益权威信号＝验签回调 `settle_app_payment`**；`verify_payment_order` 查单语义（回调未到恒 false，绝不报 error）；幂等键 `out_trade_no`、金额校验拒「1 分钱买会员」。余 → REFERENCE §二。
+
+- 🔴 **开启收款前置（资质未到位开关保持 false）**：微信开放平台移动应用审核 + 商户号 **APP 支付权限** + 支付宝企业应用 + **App 备案下证** + 软著 → 「1 分钱」真实联调（清单 → `docs/Web引导闭环与Android收款实装-2026-11-09.md` §五）。🟠 公网分发待批准（A7）。
+
+> 说明：「发版条」的全部实证数字（19/19 sha256、法务三页字节数、APK 逐文件对比、探针计数）以 `docs/发版留证-小程序导出实装与占位护栏-V1.7.8-vc26-2026-11-15.md` 为唯一权威；「5 坑条」详版见本文件 §二；「收款三条」的更完整详版另见 REFERENCE「11-08 晚间迁入」与「2026-11-09 晚」两节，此处归档的是 MEMORY 精简条原文，三者互不替代。
+### 六、11-15 23:08 体积收敛前的三条原文逐字归档（权威口径条 / 发版条完整版 / 11-14 指针条）
+
+- **Bundle ID = `cn.com.dbee.app`**（iOS/Android 同值）；**版本 1.7.8**（Android vc26 / iOS `CURRENT_PROJECT_VERSION` 12 / mini 包名 `d-bee`）。🔴 **版本号单一真相源 = 根 `package.json` 的 `version`**，经 `__APP_VERSION__` 注入 Web 与 mini（mini/package.json 的 0.1.0 是包自身版本，护栏校验 `name === "d-bee"` 防误读）；发版须**六处统一**：package.json、android build.gradle（versionCode+versionName）、ios pbxproj（`MARKETING_VERSION`×2，`CURRENT_PROJECT_VERSION` 不动）、mini/config/index.ts 注释、four-end-consistency.test.ts 注释。
+
+- ✅✅ **11-15 23:08 V1.7.8 / vc26 全量发版**（实证数字权威 = `docs/发版留证-小程序导出实装与占位护栏-V1.7.8-vc26-2026-11-15.md`；本条原文 → REF §五）：D1 mini 通知诚实说明（真源 `isNotifyPushAvailable = CHECKIN_TEMPLATE_ID.length > 0`，红线＝不写具体时间）／D2 mini 导出**实装**（`writeFileSync(USER_DATA_PATH)`+`shareFileMessage`，`isExportAvailable=true`，留 PIPL 45 条邮箱兜底与 false 态回退）／D3 删死代码（`InviteeStatus`、三处不可达 `isWechatMiniProgram()`、假承诺「正在接入小程序，敬请期待」）／D4 新护栏 29（39 项五节 + 反漂移扫未登记开关），红验证 9/9 + 字节级恢复。门禁 **30 文件 / 1329 项**、typecheck 双 0。Web 入口 **`index-CIpsiX29.js`**、19/19 逐字节一致、Chromium PASS；APK **8,262,867 B / `223a31a4…`**、vc26/1.7.8、签名 MD5 `0abe7fc5…`、入口 `index-D6Ix1upI.js`。
+
+- 📚 11-14 期口径（`0051` 编辑份量四端闭环 / `index-DfW2isy_.js` / 幽灵列探针 / 剩余边界）**三条已逐字归档** → REFERENCE「2026-11-15 23:08 迁入」§一。仍长期有效的探针口径：vite 把 2000 压成 `2e3`、5000 压成 `5e3`，须匹配 `label:.份量.,min:1,max:…` 精确常量（React scheduler 本有 `5e3`）；**法务 URL = `/legal/<name>/`**；验 schema cache 须真实 PATCH + 红验证；psql 用 `sudo -n … -f -`。
+
+> 归档原因：MEMORY.md 触及 ≤9k 字符上限，正文改为精简指针；上引三条**逐字保留于此**，其中「发版条」的实证数字仍以 `docs/发版留证-小程序导出实装与占位护栏-V1.7.8-vc26-2026-11-15.md` 为唯一权威（该文档含 19/19 sha256、法务三页字节数、APK 与 vc25 逐文件对比、全部探针计数、回滚与边界）。

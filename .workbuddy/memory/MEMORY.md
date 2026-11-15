@@ -7,38 +7,34 @@
 
 ## 权威口径（勿再改动；详版 → REFERENCE.md）
 
-- **Bundle ID = `cn.com.dbee.app`**（iOS/Android 同值）；**版本 1.7.7**（Android vc25 / iOS build 12 / mini 0.1.0）。
+- **Bundle ID = `cn.com.dbee.app`**（iOS/Android 同值）；**版本 1.7.8**（Android vc26 / iOS `CURRENT_PROJECT_VERSION` 12）。🔴 **版本号单一真相源 = 根 `package.json` 的 `version`**，经 `__APP_VERSION__` 注入 Web 与 mini（mini/package.json 的 0.1.0 是包自身版本）；发版须**六处统一**（package.json / android build.gradle 的 versionCode+versionName / ios pbxproj 的 `MARKETING_VERSION`×2 / mini config 与 four-end-consistency 注释）。原文 → REF §六。
 - **域名**：`d-bee.cn` = 自律蜜蜂 Web（隐私政策 / Apple webhook / Universal Link / 原生 endpoint）；`d-bee.com.cn` = 公司官网。
 - 🟢 **ICP 已下证（11-06）**：`-1`=官网、`-2`=自律蜜蜂。🔴 生效代码任何位置**不得出现 `-1`**。真相源 = `packages/shared` 的 `ICP_BEIAN_D_BEE_CN`；`POLICE_BEIAN` 仍空（不渲染＝合规），下证后回填（**2026-12-06 前**）。🔴 **公开公示信息不得只放 `.env`**（备案号/主体名/资质号）：被 gitignore → 换机器/CI 静默产出无备案号页面。
 - 🔴 **原生包禁用 `npm run build`**（白屏）：内测 `npm run build:native:internal`；上架 `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native`。🔴 二者与 web **共用 `dist/`**，且 native / `build:web` 都会**删掉 `dist/legal/`**（隐私政策静态页零 JS 可爬＝OPPO 硬要求）→ **部署 web 前必须重跑 `npm run build`** 并比对入口 js 文件名。**产物自检以 `index.html` 引用的入口 js 为唯一真源**（干净构建本就有 2 个 `index-*.js`）。
 - 🔴🔴 **铁律 #13：「已完成」必须附生产侧实测证据**。**本地绿 ≠ 线上绿**，中间隔「提交→构建→部署」。取证 5 法见 REFERENCE.md。
 - 🔴🔴 **写库字段必须对齐生产库列**：`updateMealGrams` 曾写 `meal_entries.updated_at`（0030 漏列）→ `PGRST204 schema cache` → 前端误翻「服务版本不匹配」，四端编辑份量全崩（11-14 实证）。改 patch 先对 `information_schema.columns`；加列后必 `NOTIFY pgrst, 'reload schema'`。🔴 用户报「服务版本不匹配」**不是前端版本问题**，是 schema cache / function 不存在。
 
-## 现状（11-14 晚 · v1.7.7 / vc25 已全量发版；下方 11-13 条目为历史快照；详版 → REF）
+## 现状（11-15 23:08 · V1.7.8 / vc26 已全量发版；下方 11-14 及更早条目为历史快照；详版 → REF）
 
-- ✅✅ **22:45 编辑份量四端闭环**（仍 V1.7.7）：① 生产库应用 `0051`（补 `meal_entries.updated_at timestamptz DEFAULT now()` + 台账 + `NOTIFY pgrst`）→ **四端旧包写入立即全恢复**；红绿探针实证（假列 400 `PGRST204` / `updated_at` 200 / 新包 200，`id=eq.-1` 零改动），140 行不变。② 源码已 commit `c7a2e98` + docs 修正 `cb2a786`；🔴 push 被代理 502 阻断（ahead 2，Mac 拉不到）。③ Web 重发：重建产物与线上 **19/19 逐字节一致（幂等）**，入口仍 **`index-DfW2isy_.js`**，幽灵列 0 / `GRAMS ['2e3']` / 法务 v1.7.7 / healthz / Chromium PASS。留证 `docs/发版留证-四端恢复与git闭环-2026-11-14.md`。份量 **2000 g**、DB 5000 兜底、清空回弹修复 + mini 对标均保留；历史详版 → REFERENCE「11-14 22:45 迁入」。
-- 🔴 **剩余边界**：mini / iOS / Android **无需重发即已恢复保存**，但包内仍 5000 g + mini 过长按钮/无就近提示（仅源码已修）；`taro build` 清 `mini/dist` 属删除类需确认故未构建，新 UI 仍需本人编译上传；未做登录后真机交互测试。验 schema cache 须真实 PATCH + 红验证；psql 用 `sudo -n … -f -`。
-- 探针口径：vite 把 2000 压成 `2e3`/5000 压成 `5e3`，须匹配 `label:.份量.,min:1,max:…` 精确常量（React scheduler 本有 `5e3`）；法务 URL `/legal/<name>/`。
+- ✅✅ **11-15 23:08 V1.7.8 / vc26 全量发版**（🔴 实证数字唯一权威 = `docs/发版留证-小程序导出实装与占位护栏-V1.7.8-vc26-2026-11-15.md`；原文 → REF §六）：四项拍板 **D1** mini 通知诚实说明（真源 `isNotifyPushAvailable = CHECKIN_TEMPLATE_ID.length > 0`）／**D2** mini 导出**实装**（`isExportAvailable=true`，留 PIPL 45 条邮箱兜底 + false 态回退）／**D3** 删死代码／**D4** 护栏 29（39 项 + 反漂移），红验证 9/9。门禁 **30 文件 / 1329 项**、typecheck 双 0；Web **`index-CIpsiX29.js`** 19/19 逐字节一致；APK **8,262,867 B / `223a31a4…`**、入口 `index-D6Ix1upI.js`。
+- 🔴 **剩余边界**：**mini 导出与通知说明零真机实证**（铁律 #13：本轮只证到「源码对 + 产物含实现 + 护栏绿 + Web 生产逐字节一致 + APK 三步实证」）；iOS 壳须 Mac + Xcode≥26 重打包；mini 体验版须本人上传 **`prebuild-20261115-2230/mini-dist-v178`**（🔴 **`mini/dist` 仍是 17:07 旧包 v1.7.7，导入即发旧版**）；Android 公网分发待批准（A7）；模板 ID 回填后**还须补服务端 `subscribeMessage.send`**。
+- 🔴 **11-15 新踩 5 坑（详版 → REF §二）**：`dbee-ssh.py putdir` 不可靠 → **发布改逐文件 put + 事后全量 sha256**；`dist/` 为 Web/native 共用 → `cp -a` 覆盖会得**混合产物**，须先移出再复制 + 校验；**法务 URL 是 `/legal/<name>/index.html`**（写 `*.html` 命中 SPA fallback ＝假红，拿不存在路径对照即可识别）；APK 的 `capacitor.plugins.json` 在 `assets/`；**探针字串须取源码常量原文**。
+- 📚 11-14 期口径（`0051` 编辑份量闭环 / `index-DfW2isy_.js` / 幽灵列探针）已归档 → REF §一（原文 §六）。**仍长期有效**：vite 把 2000 压成 `2e3`、5000 压成 `5e3` → 须匹配 `label:.份量.,min:1,max:…` 精确常量；验 schema cache 须真实 PATCH + 红验证；psql 用 `sudo -n … -f -`。
 - ✅✅ **云库废弃（REF 20:15）**：四端数据面全自建 PG、数据放弃迁移。🔴 释放差 2 步（用户本人）：① 重传 mini+重设体验版 ② 停用实例（不可逆）；实例**仍在线**。20:15 决策：数据可弃/免 T+7/走① → `docs/云库彻底释放执行单-*`。
-- 🔴🔴 **mini 虚拟支付**（11-08，全文 → REFERENCE「11-08 晚间迁入」）：`wx.requestVirtualPayment`(米大师 xpay) 全链路就绪、开关默认 false；**开启前置 6 项在 `mini/src/lib/xpayEnabled.ts` 文件头**。铁律：补权益后**必调 `/xpay/notify_provide_goods`**、已扣款未确认 → **`settling` 绝不报 error**、`signData` 原样透传。
-- 🔴🔴 **收款定案**（全文 → REFERENCE「2026-11-09 晚」）：Web 只引导、Android 能收款、四端业务零改动。🔴 两开关独立默认 false：`D_BEE_XPAY_ENABLED`(mini) / `D_BEE_APPPAY_ENABLED`(Android 按钮+Web 引导)；关闭态 Web 零引导字样。Android `0047`+`apppay.mjs`：微信 V3/支付宝 RSA2 零依赖密码学；**发权益权威信号＝验签回调 `settle_app_payment`**；`verify_payment_order` 查单语义（回调未到恒 false，绝不报 error）；幂等键 `out_trade_no`、金额校验拒「1 分钱买会员」。余 → REFERENCE §二。
-- 🔴 **开启收款前置（资质未到位开关保持 false）**：微信开放平台移动应用审核 + 商户号 **APP 支付权限** + 支付宝企业应用 + **App 备案下证** + 软著 → 「1 分钱」真实联调（清单 → `docs/Web引导闭环与Android收款实装-2026-11-09.md` §五）。🟠 公网分发待批准（A7）。
+- 🔴🔴 **收款（原文 → REF §五；详版 → REF 11-08 / 11-09 节）**：mini xpay 与 Android `0047`+`apppay.mjs` 全链路就绪；两开关独立默认 false（`D_BEE_XPAY_ENABLED` / `D_BEE_APPPAY_ENABLED`，关闭态 Web 零引导字样）。铁律：补权益后必调 `/xpay/notify_provide_goods`；已扣款未确认 → `settling` **绝不报 error**；`signData` 原样透传；**发权益权威信号＝验签回调 `settle_app_payment`**；`verify_payment_order` 回调未到恒 false；幂等键 `out_trade_no`、拒「1 分钱买会员」；开启前置 6 项在 `mini/src/lib/xpayEnabled.ts` 头。🟠 资质未到位 → 开关保持 false、公网分发待批准（A7）。
 - 🔴🔴 **兑换码 P0 + 0048**（详版 → REFERENCE「2026-11-10 晚」）：3 张 lifetime 码明文进 public 历史 → 已 DELETE；0048 零止损但**已应用生产**。护栏只钉哈希、永不写明文（连注释都不行）；核验用库内 sha256 比对，绝不调 `redeem_by_code`（真烧码）；`--months`=兑换后时长 / `--expires-days`=可兑窗口，无日卡档。
 - 🔴🔴 **`psql`/脚本六铁律**（详版 → REFERENCE）：`-v` 走 `-f`+heredoc / 解析用 `-tA` / 变更类禁 `2>/dev/null` / **发码明文先落盘再写库** / 清理脚本用 `${VAR:?}` / sed 遇特殊密码静默不改 → 改 Python 临时脚本。
 - 🟠 **备案链**：域名/ICP ✅ 已下证；App / 小程序 / 算法 / 公安备案均管局审核中（前两项硬阻断 Android 上架、mini 发版+虚拟支付开通）。`四端收款堵点与政策依据详表`（**结论 #5 已作废**）与 `四端收费一致性核验与合规实施总纲`（L1~L3/护栏/发版验收仍有效）均加纠偏横幅。
-- 📚 11-13 过时快照（Web 0048/vc22/25 文件 975 项/11-11 mini 兑换/官网/首购半价回退）已逐字迁入 REFERENCE「11-14 迁入」；版本口径以上方 11-14 为准。
+- 📚 11-13 过时快照（Web 0048/vc22/25 文件 975 项/11-11 mini 兑换/官网/首购半价回退）已逐字迁入 REFERENCE「11-14 迁入」；版本口径以上方 11-15（V1.7.8 / vc26）为准。
 
 ## 下一步 / 待拍板（详版 → REFERENCE.md）
 
-- ✅ 20:51 git 闭环（`993d0f49`）为当时事实，详版 → REFERENCE「11-14 22:30 迁入」；**22:45 再 commit `c7a2e98`，后接 docs 修正 `cb2a786`，push 待网络恢复（ahead 2）**。首购半价不再 commit。
+- ✅ **git 已闭环**（11-14 的「push 待网络恢复 / ahead 2」已解除）：11-15 三次 push 成功，`main...origin/main` = `0 0`。11-14 的 P0 / P1.4-1.6 / 21:50 透明化收起均已入库并随 V1.7.6~V1.7.8 发版；**「mini/dist 未重构建（P1.7）」已于 11-15 两轮解除**（但用户上传仍未完成）。四条原文 → REFERENCE「2026-11-15 23:08 迁入」§四。首购半价不再 commit。
 - 🔴 **主线 = iOS 上线**（权威 `docs/iOS上线依赖全景与实施步骤-2026-11-07.md`）：正式上架卡软著(30–60 工作日)/App 备案(7–20)/Mac 签名；最大交付 = **TestFlight 内部测试**（需 Mac+Team+重打包）。ASC 填报面几乎空白；Apple 硬闸门 Xcode 26 + iOS 26 SDK、新年龄分级问卷必答。🔴 壳内停在 11-04，apppay + A-5 真删号 + 16px 修复须 Mac 重打包。
 - 🔴 **只有用户本人能做**：软著 AI 条款、Mac 选 `DEVELOPMENT_TEAM`、证书入 `signing/`、mini 发版、云库停用、公安备案回填、ASC 填报、算法备案收尾、**支付资质申请**（微信移动应用 + 商户号 APP 支付 + 支付宝企业应用）。
 - 🔴 **三端晃动（REF「11-12 上午」）**：16px 在 `styles.css:83`；**Web ✅ / Android vc25 ✅ / mini ✅**；**iOS ❌**（壳内 11-04，须 Mac 重打包）。`100vw`/`100dvh` 未动。
 - 🔴 **四端分享修复（11-12，全文 → `docs/四端分享功能梳理与修复-2026-11-12.md`）**：iOS 微信拉不起/钉钉链接打不开 = 图片 base64 被塞进 Share 的 `url` → 改 Filesystem 写 Cache + `files`；原生邀请链接改用公网域名。护栏 19 红验证 + 23/908 绿、Android 壳内已同步。**iOS 未重打包**：须 Mac（壳内仍 11-04）。
 - 🟠 **对标薄荷 / 备案等待期**（11-12，详版 → REFERENCE「13:40」「14:22」）：§1.2 复核 + PCM #3 立项；Wave 4.1 图片指纹违隐私政策须删。计划 → `docs/备案等待期-差距缩减与超越实施计划-2026-11-12.md`（6–12 周 / A 不追·B 清零·C 反超 / D0 无度量 / P0~P2 + 9 项待拍板）。
-- ✅ **P0 执行**（详版 → REF「16:22」「16:45」）：P0.1 零删除重构建闭环 / P0.2 度量 / P0.3 口径护栏 / P0.4 水位 0048 / P0.7 提醒默认关，24/933 绿；P0.5 待评审、P0.6 缺公安备案号、P0.8 待拍板。🔴 上传·体验版·停库须用户本人（**免 T+7** → 20:15）。
-- ✅ **P1.4/1.5/1.6**（详版 → REF「17:30」）：shared 文案真源 + 四端渲染 + 护栏 25；mini 用 `MINI_RECORDING_CAPS` 省略无扫码/包装。**Web/Android 已含文案，mini/dist 未重构建**（P1.7）。
-- ✅ **21:50 透明化说明默认收起**（改 2 组件 `TransparencyNotes.tsx` + 护栏 25-E 11 项，`c3268c5` 已入库；详版 → REF「21:50」）：数据/能力/次数三块默认收起、点击展开（复刻「饮食体检」手势 + `aria-expanded`），只改可见性不删文案、不记忆偏好；四端源码一次覆盖。
 - 🟠 **待拍板**：隐私政策 §五 + `LEGAL_UPDATED`、mini 同意窗重确认载体、凭据轮换、网关模式收紧、Android vc25 公网分发、护栏 A9/A10、Apple 个人 vs 备案企业主体、仓库是否转 private。
 - ⚠️ 已决不再讨论：云库回迁自托管 / 老用户不迁移 / 存量 newbie bonus / 演示数据两套面 / App 名称=`自律蜜蜂` / 凭据不打进终端 / **mini 微信虚拟支付** / **Android 微信+支付宝 APP 支付** / **Web 暂不收费、ICP 经营许可证不办** / **不做渠道首月半价**（11-11 已回退）。
 - 三条主线：**开发**（看板=本文件「现状」，自动化每日收敛）；**备份两层**（cron 03:30 `pg_dump -Fc` + 异地副本，含真实健康数据**严禁 git add**）；**运营**（每周提醒）。
