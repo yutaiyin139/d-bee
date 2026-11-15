@@ -184,18 +184,6 @@ export interface HoneyBalance {
   totalSpent: number
 }
 
-/** 受邀好友状态（邀请记录面板用） */
-export interface InviteeStatus {
-  /** 好友昵称快照（可能为空） */
-  nickname: string | null
-  /** 注册时间 */
-  invited_at: string | null
-  /** 7 日内是否完成 ≥5 天打卡 */
-  checkinDone: boolean
-  /** 是否已订阅（占位，真实支付后填充） */
-  subscribed: boolean
-}
-
 /** 成就徽章 */
 export interface Badge {
   id?: number

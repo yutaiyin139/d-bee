@@ -9,13 +9,11 @@
  *   2. navigator.clipboard.writeText（https / localhost 等安全上下文）
  *   3. document.execCommand('copy') + 隐藏 textarea（http 也能用，最可靠兜底）
  *
- * 微信小程序：无 DOM / 无 navigator.clipboard，走 wx.setClipboardData（规划中接入），
- * 不影响现有三端。
+ * 微信小程序：本文件**不参与**小程序构建（mini 是独立 Taro 工程），小程序复制由
+ * `mini/src/lib/clipboard.ts` 走 `Taro.setClipboardData` 自行实现。故此处无小程序分支。
  *
  * 业务代码只关心「复制成没成功」，不关心平台差异。
  */
-
-import { isWechatMiniProgram } from './platform'
 
 /** 原生 Capacitor Clipboard 插件的最小结构 */
 interface CapacitorClipboard {
@@ -63,12 +61,6 @@ function copyViaExecCommand(text: string): boolean {
  * @returns 是否复制成功（供业务方决定是否提示用户手动复制）
  */
 export async function copyText(text: string): Promise<boolean> {
-  // 0) 微信小程序：无 DOM，走 wx.setClipboardData（规划中接入）。
-  //    当前返回 false，不影响现有三端（小程序环境本就不会命中下方分支）。
-  if (isWechatMiniProgram()) {
-    return false
-  }
-
   // 1) 原生插件（原生 App 内）
   const cap = getCapClipboard()
   if (cap) {

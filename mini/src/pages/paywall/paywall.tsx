@@ -90,13 +90,15 @@ const PRO_ITEMS = [
   'AI 拍照识别不限次数',
   'AI 问答不限流',
   '长文本 AI 复盘（本期解读）无限次',
-  `饮食报告扩展到 ${PRO_REPORT_DAYS} 天`,
+  `饮食报告扩展到 ${PRO_REPORT_DAYS} 天 + 数据导出`,
 ]
 // 🔴 2026-11-13 与主端同步：删去未独立上线的「长期膳食规划」「宏量营养素深度分析」。
-// 注：与主工程 PaywallSheet 相比，本端刻意去掉「+ 数据导出」——导出尚未实装
-// （mini/src/lib/share.ts 的 isExportAvailable=false 是单一真源），宣传即为不符，
-// 且与 legal.ts §五「当前版本暂不可用」冲突。11-08 已在「我的」页补齐 Pro 门控
-// （与主端一致）；待导出实装后，仅改 share.ts 一处即可同步恢复本条文案。
+// 🔴 2026-11-15 恢复「+ 数据导出」：mini 导出已实装（mini/src/lib/share.ts 的
+//   isExportAvailable=true，走 getFileSystemManager().writeFileSync + shareFileMessage
+//   转发文件到聊天），与主端 PRO_ITEMS 自此逐字一致，端能力差异清零。
+//   仍与主端 FREE_ITEMS 保留一条端能力差异：「扫条码不限次数永久免费」—— mini LogSheet
+//   4 模式无 barcode，且 Open Food Facts 需另加 request 合法域名；写上即构成宣传与
+//   功能不符，待补齐后同步恢复。护栏 19-D 把 PRO 一致 + FREE 单条差异钉成精确快照。
 
 /** entitlements.source 的展示名（跨端购买来源，不展示原始枚举值给用户） */
 const SOURCE_LABELS: Record<string, string> = {

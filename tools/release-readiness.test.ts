@@ -272,18 +272,24 @@ describe('护栏 19-D · 权益清单端能力差异快照（补 §1.3 L3 #8）'
     expect(main.filter((x) => !mini.includes(x))).toEqual(['扫条码不限次数永久免费'])
   })
 
-  it('主端 PRO_ITEMS 比 mini 恰好多「+ 数据导出」一条', () => {
+  // 🔴 2026-11-15 改写：mini 导出已实装（`mini/src/lib/share.ts` 的 isExportAvailable=true，
+  //    走 getFileSystemManager().writeFileSync + shareFileMessage），PRO_ITEMS 两端自此逐字一致。
+  //    原断言「主端恰好多『+ 数据导出』一条」是导出占位期的快照，继续钉住会把实装判成退化。
+  //    FREE_ITEMS 的「扫条码」差异**保持不变** —— mini LogSheet 仍无 barcode 模式。
+  it('主端 PRO_ITEMS 与 mini 逐字一致（导出已实装，差异清零）', () => {
     const main = arrayItems(code(MEMBERSHIP), 'PRO_ITEMS')
     const mini = arrayItems(code(MINI_PAYWALL), 'PRO_ITEMS')
-    expect(main.filter((x) => !mini.includes(x))).toEqual(['饮食报告扩展到 ${PRO_REPORT_DAYS} 天 + 数据导出'])
+    expect(main).toEqual(mini)
   })
 
-  it('mini PRO_ITEMS 的独有条目恰好是「无数据导出」变体（不得再冒出第三条差异）', () => {
+  it('mini PRO_ITEMS 无独有条目（不得残留「无数据导出」旧变体）', () => {
     const main = arrayItems(code(MEMBERSHIP), 'PRO_ITEMS')
     const mini = arrayItems(code(MINI_PAYWALL), 'PRO_ITEMS')
-    expect(mini.filter((x) => !main.includes(x))).toEqual(['饮食报告扩展到 ${PRO_REPORT_DAYS} 天'])
+    expect(mini.filter((x) => !main.includes(x))).toEqual([])
   })
 
+  // 差异注释仍须存在：FREE_ITEMS 的扫条码差异是真的，注释解释「为什么不抹平」；
+  // 同时记录导出差异已于 11-15 实装清零，防止后人误以为 PRO_ITEMS 也该有差异。
   it('两端差异说明注释必须存在（防被当成 bug 顺手抹平）', () => {
     expect(
       /真实端能力差异|端能力差异/.test(raw(MEMBERSHIP)) && /端能力差异/.test(raw(MINI_PAYWALL)),

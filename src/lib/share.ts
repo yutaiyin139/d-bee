@@ -5,7 +5,9 @@
  *   - Web：Blob → URL.createObjectURL → 隐藏 <a download> 点击 → revokeObjectURL。
  *   - 原生（iOS/Android）：Blob → Filesystem 写入 Cache 目录 → Share.share({ files })
  *     唤起系统分享面板（微信 / 钉钉 / 保存到相册…）。
- *   - 微信小程序：无 DOM、无 Blob 下载，当前为安全占位（见 mini/src/lib/share.ts）。
+ *   - 微信小程序：本文件**不参与**小程序构建（mini 是独立 Taro 工程，只 import
+ *     `mini/src/**` 与 `@dbee/shared`），小程序导出由 `mini/src/lib/share.ts` 用
+ *     `wx.getFileSystemManager` + `wx.shareFileMessage` 自行实现。故此处无小程序分支。
  *
  * 🔴 为什么原生端必须走 Filesystem + files，不能把 base64 塞进 Share 的 url：
  *   Capacitor Share 的 `url` 语义是「一条链接」，iOS 侧 SharePlugin.swift 会把它
@@ -22,7 +24,7 @@
  *   比明确告知用户「请更新 App」更糟。
  */
 
-import { isNative, isWechatMiniProgram } from './platform'
+import { isNative } from './platform'
 
 /**
  * 原生 Capacitor 插件的最小结构（鸭子类型探测，不 import 包，保持 Web 包体积不变）。
@@ -153,11 +155,6 @@ export async function exportFile(
     }
   }
 
-  // 微信小程序：无 DOM，走 wx.getFileSystemManager / wx.shareFileMessage（规划中接入）。
-  if (isWechatMiniProgram()) {
-    return { channel: 'share', message: '导出功能正在接入小程序，敬请期待。' }
-  }
-
   return downloadBlob(blob, filename)
 }
 
@@ -229,11 +226,6 @@ export async function shareImage(
       if (isShareCancelled(e)) return { channel: 'share', message: '已取消分享' }
       return { channel: 'share', message: '分享失败，请稍后重试。' }
     }
-  }
-
-  // 微信小程序：无 DOM，走 wx.showShareImageMenu / 转发（规划中接入）。
-  if (isWechatMiniProgram()) {
-    return { channel: 'share', message: '分享功能正在接入小程序，敬请期待。' }
   }
 
   // Web 兜底：下载 PNG

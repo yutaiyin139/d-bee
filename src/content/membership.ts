@@ -52,9 +52,10 @@ export const PRO_ITEMS = [
 //   引导期那一次计划仍是免费入门，不在本清单重复承诺。
 
 // 🔴 阶段 0（2026-11-09）跨端差异登记：**不要顺手抹平**。
-//   `mini/src/pages/paywall/paywall.tsx` 的 FREE_ITEMS / PRO_ITEMS 刻意比本文件少 2 条：
+//   `mini/src/pages/paywall/paywall.tsx` 的 FREE_ITEMS 刻意比本文件少 1 条：
 //     · 「扫条码不限次数永久免费」—— mini LogSheet 无 barcode 模式，且 Open Food Facts
 //       需另加 request 合法域名；写上即构成宣传与功能不符。
-//     · PRO_ITEMS 末条的「+ 数据导出」—— mini/src/lib/share.ts 的 isExportAvailable=false。
-//   二者都是**真实端能力差异**，不是免费/订阅权益逻辑分叉；待 mini 补齐功能后同步恢复。
-//   护栏 19（tools/release-readiness.test.ts）把差异钉成精确快照：多一条/少一条都会红。
+//   这是**真实端能力差异**，不是免费/订阅权益逻辑分叉；待 mini 补齐功能后同步恢复。
+//   📌 2026-11-15：PRO_ITEMS 曾有第 2 条差异（末条「+ 数据导出」，因 mini 导出占位），
+//      现已实装（mini/src/lib/share.ts 的 isExportAvailable=true），两端 PRO_ITEMS 逐字一致。
+//   护栏 19（tools/release-readiness.test.ts）把差异钉成精确快照：FREE 多一条/PRO 有差异都会红。

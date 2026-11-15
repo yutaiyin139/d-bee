@@ -15,6 +15,31 @@ import { kvGet, kvSet } from './kv'
 /** 微信打卡提醒订阅消息模板 ID（需在微信公众平台「订阅消息」申请后回填） */
 const CHECKIN_TEMPLATE_ID: string = ''
 
+/**
+ * 🔴 提醒是否真能送达 —— **UI 与实现共用的单一真源**（2026-11-15 新增，与
+ *   `share.ts` 的 `isExportAvailable` 同款设计）。
+ *
+ * 为什么需要它：微信订阅消息**必须**有后台申请的模板 ID 才能发起授权与下发。
+ *   `CHECKIN_TEMPLATE_ID` 为空时 `requestCheckinSubscribe()` 恒返回 `no_template`，
+ *   两个开关只是把偏好写进本地 kv，**永远不会有任何推送**。而 UI 此前无条件渲染
+ *   两个 Switch 且零说明 —— 用户拨开开关后什么也收不到，属「可见但不可用」的误导，
+ *   比导出那条更隐蔽（导出至少有「即将上线」角标）。
+ *   法务 `legal.ts` §七已如实声明，但普通用户不会先读隐私政策再拨开关。
+ *
+ * 用法：profile 页据此条件渲染一行诚实说明（`NOTIFY_UNAVAILABLE_NOTE`）。
+ *   🔴 模板 ID 申请到并回填后，本值自动变 true、说明自动消失，**不必再改 UI**；
+ *   届时还须补服务端下发链路（网关调 subscribeMessage.send），否则开关仍不生效。
+ */
+export const isNotifyPushAvailable: boolean = CHECKIN_TEMPLATE_ID.length > 0
+
+/**
+ * 推送未接入时的诚实说明。
+ * 🔴 措辞红线：不得写「每天 20:00 提醒」这类具体时间 —— 那是对未实现能力的承诺
+ *   （广告法 / 微信审核风险）。只说明「保存了什么、现在会不会推、什么时候会推」。
+ */
+export const NOTIFY_UNAVAILABLE_NOTE =
+  '开关目前仅保存你的提醒偏好，小程序端尚未接入微信订阅消息，因此暂时不会收到推送通知。'
+
 export interface NotifyPrefs {
   checkin: boolean
   water: boolean

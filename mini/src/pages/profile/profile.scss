@@ -297,6 +297,20 @@
 }
 
 // ── 提示 / 通知 ──
+// 卡片内的整行说明（如「通知提醒」区块的推送未接入告知）。
+// 🔴 用了显式 .list-line-noborder 而不是 :has() / :last-of-type：
+//   加了说明行后最后一条 .list-line 不再是 :last-child，会多出一条压在说明文字上方的
+//   分隔线；而 WXSS 对 :has() 支持不可靠、:last-of-type 在这里匹配的是 view 标签
+//   （所有子元素同标签，会选中 .card-note 而非 .list-line），故按条件加类名最稳妥。
+.list-line-noborder {
+  border-bottom: none;
+}
+
+.card-note {
+  padding: 4px 0 16px;
+  line-height: 1.6;
+}
+
 .hint {
   font-size: 24px;
   color: $ink-3;

@@ -10,9 +10,13 @@
  *
  * 本模块把「选图」这一步统一成 takePhoto()，业务代码拿到的始终是一个 File，
  * 因此原生分支接入后，下游的 compressImage / AI 识别逻辑完全不用改。
+ *
+ * 微信小程序：本文件**不参与**小程序构建（mini 是独立 Taro 工程），小程序选图由
+ * `mini/src/components/LogSheet.tsx` 直接调 `Taro.chooseImage`（配 `mini/src/lib/ai.ts`
+ * 的 tempFilePath→base64 通道）。故此处无小程序分支。
  */
 
-import { isNative, isWechatMiniProgram } from './platform'
+import { isNative } from './platform'
 
 export interface TakePhotoOptions {
   /** 是否优先唤起相机（原生端映射为 CameraSource.Camera）；Web 端即 capture 属性 */
@@ -65,13 +69,33 @@ export async function takePhoto(opts: TakePhotoOptions = {}): Promise<File | nul
     // 插件未注入（旧包 / 未同步）：落回 Web input 实现，保证不白屏
   }
 
-  // 微信小程序：无 DOM，走 wx.chooseImage（规划中接入）。当前返回 null，
-  // 不影响现有三端（小程序环境本就不会命中原生/Web 分支）。
-  if (isWechatMiniProgram()) {
-    return null
-  }
-
   return pickWithInput(opts)
+}
+
+/**
+ * 预热原生相机插件（仅 iOS / Android 生效，Web 端零操作）。
+ *
+ * iOS 首次点「拍一张这一餐的照片」偏慢的可消除部分：Capacitor 的 JS bridge 与
+ * 原生 CameraPlugin 都是懒加载，第一次 getPhoto() 才实例化；若等用户点击才开始，
+ * 这段冷启动会叠在系统授权弹窗前面。这里只调 checkPermissions()（纯读授权状态、
+ * **不弹系统授权框**），把插件初始化提前到录入层挂载时。
+ *
+ * 🔴 刻意不调 requestPermissions()：法务公示写明相机权限的触发时机是「你点击
+ *    「拍照识别」时」，提前弹授权框会与之不符，也容易被 App Store 判为过度索权。
+ *    授权框仍由用户点击后的 getPhoto() 触发，系统授权弹窗与相机硬件冷启动属
+ *    iOS 系统行为，前端无法消除。
+ *
+ * 预热失败静默降级：点击时 getPhoto() 会自行再查一次权限，主流程不受影响。
+ */
+export async function primeCamera(): Promise<void> {
+  if (!isNative()) return
+  const camera = getCameraPlugin()
+  if (!camera || typeof camera.checkPermissions !== 'function') return
+  try {
+    await camera.checkPermissions()
+  } catch {
+    // 预热只是体验优化，失败不外抛、不打断录入层渲染
+  }
 }
 
 /** @capacitor/camera 插件的最小接口（鸭子类型探测，不 import 包，Web 零新增依赖） */
@@ -82,6 +106,8 @@ interface CameraPluginLike {
     quality?: number
     correctOrientation?: boolean
   }) => Promise<{ dataUrl?: string; base64String?: string; path?: string; webPath?: string }>
+  /** 纯查询授权状态，不弹系统授权框（iOS 侧只读 AVCaptureDevice.authorizationStatus） */
+  checkPermissions?: () => Promise<unknown>
 }
 
 function getCameraPlugin(): CameraPluginLike | null {

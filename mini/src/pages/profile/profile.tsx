@@ -45,7 +45,7 @@ import {
   type NumLimit, checkNumber, checkTargetWeightDiff, checkText,
   clampNumeric, firstError, rangeText, sanitizeNumeric,
 } from '../../lib/validate'
-import { exportJSON, exportText, isExportAvailable, EXPORT_UNAVAILABLE_MESSAGE } from '../../lib/share'
+import { exportJSON, exportText, isExportAvailable, EXPORT_UNAVAILABLE_MESSAGE, EXPORT_EMAIL_FALLBACK } from '../../lib/share'
 import { isHealthConnectable, getHealthVendor, connectHealth, disconnectHealth } from '../../lib/health'
 import { openPaywall } from '../../lib/upsell'
 import { openManageSubscriptions } from '../../lib/manageSubscription'
@@ -64,7 +64,7 @@ import { TransparencyNotes } from '../../components/TransparencyNotes'
 import { signOut } from '../../lib/auth'
 import { SITE } from '../../content/legal'
 import { copyText } from '../../lib/clipboard'
-import { getNotifyPrefs, setNotifyPrefs, enableCheckinNotify, disableCheckinNotify, enableWaterNotify, disableWaterNotify } from '../../lib/notifications'
+import { getNotifyPrefs, setNotifyPrefs, enableCheckinNotify, disableCheckinNotify, enableWaterNotify, disableWaterNotify, isNotifyPushAvailable, NOTIFY_UNAVAILABLE_NOTE } from '../../lib/notifications'
 import './profile.scss'
 import '../../components/MyPageSheets.scss'
 
@@ -378,12 +378,15 @@ export default function ProfilePage() {
 
   /**
    * 数据导出门控：对齐主端 ProfileScreen:646/664「非 Pro → 提示并拉付费墙」。
-   * 🔴 本端导出尚未实装，故非 Pro 提示里**保留** PIPL 第 45 条邮箱兜底路径 ——
-   *    不能因为补了 Pro 门控就把数据复制权入口藏掉；Pro 用户仍走 share.ts 诚实占位。
+   * 🔴 2026-11-15 导出已在小程序端实装（share.ts 的 isExportAvailable=true）。
+   *    非 Pro 提示里仍**保留** PIPL 第 45 条邮箱兜底路径（EXPORT_EMAIL_FALLBACK）——
+   *    数据复制权是法定权利，不能因为补了 Pro 门控就把这条权利入口藏掉；付费墙只拦
+   *    「App 内一键导出」这个便利功能。isExportAvailable 分支保留作防御：若真机实测
+   *    微信拒收某格式把它翻回 false，这里会自动退回诚实提示，不发无效网络请求。
    */
   function guardExport(): boolean {
     if (!pro) {
-      setDataMsg(`数据导出是 Pro 功能，升级后可随时打包带走全部记录。${EXPORT_UNAVAILABLE_MESSAGE}`)
+      setDataMsg(`数据导出是 Pro 功能，升级后可随时打包带走全部记录。${EXPORT_EMAIL_FALLBACK}`)
       void openPaywall('数据导出是 Pro 功能，升级后可随时打包带走全部记录。')
       return false
     }
@@ -751,7 +754,7 @@ export default function ProfilePage() {
             onChange={(e) => void toggleNotif('checkin', e.detail.value)}
           />
         </View>
-        <View className='list-line'>
+        <View className='list-line list-line-noborder'>
           <View className='line-label-wrap'>
             <Text className='line-label'>饮水提醒</Text>
           </View>
@@ -761,6 +764,15 @@ export default function ProfilePage() {
             onChange={(e) => void toggleNotif('water', e.detail.value)}
           />
         </View>
+        {/* 🔴 2026-11-15：订阅消息未接入前如实告知「只存偏好、不会推送」。
+            对齐主端 ProfileScreen:689 的思路（宁可不显示假开关，也不让用户点了没反应）；
+            此处按用户拍板选「保留开关 + 加说明」—— 偏好本身对未来接入有意义，
+            删掉反而丢了用户意图。isNotifyPushAvailable 变 true（模板 ID 回填）后本行自动消失。 */}
+        {!isNotifyPushAvailable ? (
+          <View className='card-note'>
+            <Text className='hint'>{NOTIFY_UNAVAILABLE_NOTE}</Text>
+          </View>
+        ) : null}
       </View>
 
       {/* 数据与隐私 */}

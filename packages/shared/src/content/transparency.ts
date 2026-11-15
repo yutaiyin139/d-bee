@@ -107,13 +107,15 @@ export const CAPABILITY_NOTES: readonly TransparencyNote[] = [
 
 /**
  * P1.6 · 数据权与退款「可找到」。只指路，不替代法务条款。
- * 🔴 导出能力存在端差异（mini 的 `isExportAvailable=false`，入口显示「即将上线」），
- *    故本段**不承诺「现在就能导出」**，只讲入口位置与兜底权利，两端都成立。
+ * 📌 2026-11-15：数据导出此前存在端差异（mini 的 `isExportAvailable=false`，入口显示
+ *    「即将上线」），现已在小程序端实装（writeFileSync + shareFileMessage），四端均可导出。
+ *    导出方式各端不同（Web 浏览器下载 / 原生系统分享面板 / 小程序转发文件到聊天），
+ *    故本段只讲入口位置与兜底权利，不写死「下载到本地」这类单端措辞，两端都成立。
  */
 export const DATA_RIGHTS_NOTES: readonly TransparencyNote[] = [
   {
     label: '导出',
-    text: '导出入口在「我的 → 数据与隐私」，含全部数据（JSON）与饮食记录（CSV）；导出属 Pro 权益，具体可用状态以该页显示为准。免费版仍可通过隐私政策中的联系渠道申请数据副本。',
+    text: '导出入口在「我的 → 数据与隐私」，含全部数据（JSON）与饮食记录（CSV）；导出属 Pro 权益。Web/App 导出为下载或系统分享文件，小程序导出为生成文件后转发到微信聊天再保存。免费版仍可通过隐私政策中的联系渠道申请数据副本。',
   },
   {
     label: '清空',

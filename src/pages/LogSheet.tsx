@@ -27,7 +27,8 @@ import {
 } from '../lib/photoGuard'
 import { getTodayPhotoCount, getPhotoQuota } from '../lib/api'
 import { dismissUpsell, markUpsellShown, shouldShowUpsell } from '../lib/upsell'
-import { takePhoto } from '../lib/capture'
+import { takePhoto, primeCamera } from '../lib/capture'
+import { isNative } from '../lib/platform'
 import {
   FOOD_KEYWORD_RULE,
   GRAMS_LIMIT,
@@ -95,6 +96,13 @@ interface LogSheetProps {
 
 let keySeq = 0
 const nextKey = () => `d${++keySeq}`
+
+/**
+ * 拍照额度缓存有效期。
+ * 只用于「明确有额度时跳过一次网络预检」，绝不用于拦截；真闸门是
+ * handleFile 里的 claimAiQuota()（服务端原子占用，跨设备一致）。
+ */
+const QUOTA_CACHE_TTL_MS = 60_000
 
 function toDraft(d: DetectedFood, source: RecordSource): DraftItem {
   const g = Math.max(d.grams, 1)
@@ -365,6 +373,9 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   const [meal, setMeal] = useState<MealType>(initialMeal)
   const [items, setItems] = useState<DraftItem[]>([])
   const [busy, setBusy] = useState(false)
+  // 相机正在打开：iOS 首次有系统授权弹窗 + 相机冷启动，期间必须给即时反馈并防连点，
+  // 否则连点会重复 present UIImagePickerController（首次尤其容易卡住）。
+  const [openingCamera, setOpeningCamera] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   // 拍照分流提示：redeem=积分兑换 / inviteOrPro=拉人+Pro / pro=直接Pro
@@ -376,6 +387,9 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   const [todayPhotoCount, setTodayPhotoCount] = useState(0)
   // 上一次成功识别的结果摘要（用于反复拍照判定）
   const lastPhotoSummaryRef = useRef<PhotoSummary | null>(null)
+  // 拍照额度预取缓存：录入层挂载时后台拉一次，点击「拍照」时若明确有额度且新鲜，
+  // 直接放行，省掉一次网络往返（原本这段 RPC 串行排在调起相机之前）。
+  const quotaCacheRef = useRef<{ remaining: number; at: number } | null>(null)
   // 反复拍照提示
   const [dupHint, setDupHint] = useState<string | null>(null)
   // 覆盖确认：识别结果自动保存前，发现该餐次当天已有记录时弹确认
@@ -428,6 +442,17 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
       const n = await getTodayPhotoCount()
       if (alive) setTodayPhotoCount(n)
     })()
+    // iOS 首次拍照提速：把「额度预检」与「原生相机插件冷启动」移出点击路径。
+    // 两者都 fire-and-forget，不阻塞弹层渲染；失败静默，点击时原路径兜底。
+    // Pro 无限次，无需预取额度；免费用户才预取，省掉一次无用 RPC。
+    if (!pro) {
+      void getPhotoQuota().then((q) => {
+        if (alive) quotaCacheRef.current = { remaining: q.totalRemaining, at: Date.now() }
+      }).catch(() => {
+        // 预取失败：checkPhotoQuota 会照常查网络，额度正确性不受影响
+      })
+    }
+    void primeCamera()
     return () => {
       alive = false
     }
@@ -507,7 +532,16 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
     setQuotaHint(null)
     setDupHint(null)
 
+    // 🔴 缓存只用于「明确有额度」时的快速放行；额度为 0、缓存缺失或过期一律仍走网络
+    //    确认。绝不用过期缓存拦截拍照（白拍一张比多等一次 RPC 严重得多）。
+    //    真闸门始终是 handleFile 里的 claimAiQuota()：服务端原子占用，跨设备一致。
+    const cached = quotaCacheRef.current
+    if (cached && cached.remaining > 0 && Date.now() - cached.at < QUOTA_CACHE_TTL_MS) {
+      return true
+    }
+
     const quota = await getPhotoQuota().catch(() => null)
+    if (quota) quotaCacheRef.current = { remaining: quota.totalRemaining, at: Date.now() }
     const totalRemaining = quota ? quota.totalRemaining : (aiRemaining ?? FREE_DAILY_AI)
     if (totalRemaining > 0) return true
 
@@ -566,6 +600,11 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
       const guard = await guardAiQuota()
       if (!guard.ok) return
       claimed = true
+      // 用服务端原子占用返回的权威剩余额度刷新缓存：连拍时下一次也无需再查网络，
+      // 且避免「刚用完额度但缓存仍显示有」造成白拍。
+      quotaCacheRef.current = guard.remaining == null
+        ? null
+        : { remaining: guard.remaining, at: Date.now() }
       const dataUrl = await compressImage(file)
       setPreview(dataUrl)
       const res = await recognizeFoodFromImage(dataUrl, hint.trim() || undefined)
@@ -603,13 +642,20 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
   // 拍餐盘照片：先预检 AI 同意 + 识别额度（用完直接提示兑换/Pro，不调相机），有额度才调相机/选图。
   // 原生走 @capacitor/camera（绕开华为 WebView 对 <input capture> 的兼容问题），web 走 pickWithInput。
   async function handlePickMealPhoto() {
-    if (!hasAiConsent(profile)) {
-      setAiConsentOpen(true)
-      return
+    if (openingCamera) return
+    setError('')
+    setOpeningCamera(true)
+    try {
+      if (!hasAiConsent(profile)) {
+        setAiConsentOpen(true)
+        return
+      }
+      if (!(await checkPhotoQuota())) return
+      const f = await takePhoto({ preferCamera: true })
+      if (f) void handleFile(f)
+    } finally {
+      setOpeningCamera(false)
     }
-    if (!(await checkPhotoQuota())) return
-    const f = await takePhoto({ preferCamera: true })
-    if (f) void handleFile(f)
   }
 
   async function handleTextParse() {
@@ -694,8 +740,14 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
 
   // 原生端拍包装正面：走 @capacitor/camera（同 handlePickMealPhoto）
   async function handlePickPackagePhoto() {
-    const f = await takePhoto({ preferCamera: true })
-    if (f) void handlePackagePhoto(f)
+    if (openingCamera) return
+    setOpeningCamera(true)
+    try {
+      const f = await takePhoto({ preferCamera: true })
+      if (f) void handlePackagePhoto(f)
+    } finally {
+      setOpeningCamera(false)
+    }
   }
 
   function updateGrams(key: string, grams: number) {
@@ -1072,11 +1124,19 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
                 <button
                   className="dropzone"
                   style={{ display: 'block', width: '100%', cursor: 'pointer', font: 'inherit' }}
+                  disabled={openingCamera}
                   onClick={() => void handlePickMealPhoto()}
                 >
                   <strong>拍一张这一餐的照片</strong>
                   AI 会自动识别食物并估算热量
                 </button>
+              )}
+
+              {openingCamera && (
+                <div className="notice info" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span className="spinner" style={{ borderColor: 'rgba(107,74,8,.3)', borderTopColor: '#6b4a08' }} />
+                  {isNative() ? '正在打开相机，首次使用需允许相机权限…' : '正在打开相机，请稍候…'}
+                </div>
               )}
 
               {busy && (
@@ -1088,7 +1148,7 @@ export function LogSheet({ logDate, initialMeal, onClose, onSaved, budget, budge
 
               {preview && !busy && (
                 <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-                  <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => void handlePickMealPhoto()}>
+                  <button className="btn btn-ghost" style={{ flex: 1 }} disabled={openingCamera} onClick={() => void handlePickMealPhoto()}>
                     换一张照片
                   </button>
                 </div>
