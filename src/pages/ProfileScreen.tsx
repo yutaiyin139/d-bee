@@ -999,6 +999,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
           connected={!!profile.health_connected}
           connectable={isHealthConnectable()}
           vendorLabel={healthVendor.label}
+          vendorKey={healthVendor.vendor}
           steps={null}
           weightKg={profile.current_weight_kg}
           heightCm={profile.height_cm}

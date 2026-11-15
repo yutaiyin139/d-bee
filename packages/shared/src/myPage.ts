@@ -80,9 +80,10 @@ export function buildTodayTargetCore(input: {
 
 /* ── 智能设备 ─────────────────────────────────────────────────── */
 
-export type DeviceStatus = 'available' | 'guided' | 'planned'
+export type DeviceStatus = 'available' | 'in_progress' | 'guided' | 'planned'
 export const DEVICE_STATUS_LABEL: Record<DeviceStatus, string> = {
   available: '现在可连接',
+  in_progress: '接入中',
   guided: '引导查看',
   planned: '规划中',
 }
@@ -93,15 +94,25 @@ export interface DeviceCatalogItem {
   note: string
 }
 
-/** 健康应用目录。status 是唯一扩展点：未来接 SDK 只改状态，不改 UI 结构。 */
+/**
+ * 健康应用目录。status 是唯一扩展点：未来接 SDK 只改状态，不改 UI 结构。
+ * 🔴 2026-11-15 用户拍板：Apple 已真机验证 → available；华为/小米资质与 SDK
+ *    逐个推进中 → in_progress（零假功能，不标「现在可连接」）；vivo/OPPO 暂缓合作申请。
+ */
 export const HEALTH_APP_CATALOG: DeviceCatalogItem[] = [
-  { key: 'apple', label: 'Apple 健康', status: 'available', note: '真同步 · iOS' },
-  { key: 'huawei', label: '华为运动健康', status: 'available', note: '真同步 · 安卓' },
-  { key: 'xiaomi', label: '小米运动健康', status: 'available', note: '真同步 · 安卓' },
-  { key: 'vivo', label: 'vivo 健康', status: 'guided', note: '引导查看对应健康应用' },
-  { key: 'oppo', label: 'OPPO 健康', status: 'guided', note: '引导查看对应健康应用' },
+  { key: 'apple', label: 'Apple 健康', status: 'available', note: '真同步 · iOS · 已真机验证' },
+  { key: 'huawei', label: '华为运动健康', status: 'in_progress', note: '资质与 SDK 逐个推进' },
+  { key: 'xiaomi', label: '小米运动健康', status: 'in_progress', note: '资质与 SDK 逐个推进' },
+  { key: 'vivo', label: 'vivo 健康', status: 'guided', note: '暂缓 · 后续启动合作申请' },
+  { key: 'oppo', label: 'OPPO 健康', status: 'guided', note: '暂缓 · 后续启动合作申请' },
   { key: 'weapp', label: '微信运动', status: 'planned', note: '小程序 · 规划中' },
 ]
+
+/** 当前机型 vendor → 健康应用目录 key；无对应项返回空串（不显示连接按钮）。 */
+export function healthCatalogKeyForVendor(vendor: string): string {
+  const key = vendor === 'wechat-miniprogram' ? 'weapp' : vendor
+  return HEALTH_APP_CATALOG.some((d) => d.key === key) ? key : ''
+}
 
 /** 后续支持的硬件：全部 planned，零可点连接动作、零假功能。 */
 export const FUTURE_DEVICE_CATALOG: DeviceCatalogItem[] = [

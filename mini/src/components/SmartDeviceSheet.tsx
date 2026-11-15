@@ -5,7 +5,7 @@ import {
   SMART_DEVICE_SECTION_FUTURE, SMART_DEVICE_WEB_HINT, SMART_DEVICE_NOT_CONNECTED,
   SMART_DEVICE_CONNECTED, SMART_DEVICE_LABEL_STEPS, SMART_DEVICE_LABEL_ACTIVITY,
   SMART_DEVICE_FUTURE_NOTE, DEVICE_STATUS_LABEL,
-  HEALTH_APP_CATALOG, FUTURE_DEVICE_CATALOG,
+  HEALTH_APP_CATALOG, FUTURE_DEVICE_CATALOG, healthCatalogKeyForVendor,
   HEALTH_RECORD_LOAD_ERROR, HEALTH_RECORD_LABELS, HEALTH_RECORD_UNITS,
 } from '@dbee/shared'
 import { syncFromHealth, estimateActivityKcal } from '../lib/health'
@@ -16,6 +16,8 @@ interface SmartDeviceSheetProps {
   connected: boolean
   connectable: boolean
   vendorLabel: string
+  /** 当前机型 vendor；连接按钮只对目录中对应当前机型的那一行渲染 */
+  vendorKey: string
   steps: number | null
   weightKg: number | null
   heightCm: number | null
@@ -25,7 +27,7 @@ interface SmartDeviceSheetProps {
 
 /** 智能设备：只列真实可连接的健康应用，硬件目录全为「后续支持」，零假绑定按钮。 */
 export function SmartDeviceSheet({
-  onClose, connected, connectable, vendorLabel, steps, weightKg, heightCm, onConnect, onDisconnect,
+  onClose, connected, connectable, vendorLabel, vendorKey, steps, weightKg, heightCm, onConnect, onDisconnect,
 }: SmartDeviceSheetProps) {
   const [liveSteps, setLiveSteps] = useState<number | null>(steps)
   const [error, setError] = useState(false)
@@ -67,7 +69,7 @@ export function SmartDeviceSheet({
               <View className='mp-line' key={d.key}>
                 <Text>{d.label}</Text>
                 <Text className='mp-muted'>{DEVICE_STATUS_LABEL[d.status]} · {d.note}</Text>
-                {connectable && !connected && d.status === 'available' ? (
+                {connectable && !connected && d.status === 'available' && d.key === healthCatalogKeyForVendor(vendorKey) ? (
                   <Text className='mp-val' onClick={onConnect}>连接</Text>
                 ) : null}
               </View>

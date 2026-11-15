@@ -378,8 +378,12 @@ describe('智能设备 · 零假功能', () => {
     expect(HEALTH_APP_CATALOG.length).toBe(6)
   })
 
-  it('可真同步的仅 Apple / 华为 / 小米', () => {
-    expect(HEALTH_APP_CATALOG.filter((d) => d.status === 'available').map((d) => d.key)).toEqual(['apple', 'huawei', 'xiaomi'])
+  it('可真同步的仅 Apple（已真机验证）', () => {
+    expect(HEALTH_APP_CATALOG.filter((d) => d.status === 'available').map((d) => d.key)).toEqual(['apple'])
+  })
+
+  it('华为 / 小米为接入中，不得标成现在可连接', () => {
+    expect(HEALTH_APP_CATALOG.filter((d) => d.status === 'in_progress').map((d) => d.key)).toEqual(['huawei', 'xiaomi'])
   })
 
   it('vivo / OPPO 为引导查看，不给绑定', () => {
@@ -394,8 +398,8 @@ describe('智能设备 · 零假功能', () => {
     expect(FUTURE_DEVICE_CATALOG.length).toBe(6)
   })
 
-  it('状态标签三档齐全', () => {
-    expect(Object.keys(DEVICE_STATUS_LABEL).sort()).toEqual(['available', 'guided', 'planned'])
+  it('状态标签四档齐全', () => {
+    expect(Object.keys(DEVICE_STATUS_LABEL).sort()).toEqual(['available', 'guided', 'in_progress', 'planned'])
   })
 
   it('两端设备页零「绑定」字样', () => {
@@ -404,6 +408,22 @@ describe('智能设备 · 零假功能', () => {
 
   it('两端设备页都渲染 shared 设备目录', () => {
     expect([WEB_DEVICE(), MINI_DEVICE()].every((x) => x.includes('HEALTH_APP_CATALOG.map') && x.includes('FUTURE_DEVICE_CATALOG.map'))).toBe(true)
+  })
+
+  it('两端设备页连接按钮按当前机型目录项过滤', () => {
+    expect([WEB_DEVICE(), MINI_DEVICE()].every((x) => /d\.key === healthCatalogKeyForVendor\(vendorKey\)/.test(x))).toBe(true)
+  })
+
+  it('两端我的页向设备页传入当前机型', () => {
+    expect([WEB_PROFILE(), MINI_PROFILE()].every((x) => x.includes('vendorKey={healthVendor.vendor}'))).toBe(true)
+  })
+
+  it('mini 今日目标摘要不再硬写 22 号大字', () => {
+    expect(MINI_PROFILE().includes('fontSize: 22')).toBe(false)
+  })
+
+  it('mini 今日目标摘要复用 hint 弱化字体', () => {
+    expect(/<Text className='hint'>\{MY_PAGE_TODAY_HINT\}<\/Text>/.test(MINI_PROFILE())).toBe(true)
   })
 })
 

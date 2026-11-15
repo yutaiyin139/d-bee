@@ -622,7 +622,7 @@ export default function ProfilePage() {
             <View className='mp-dot' />
             <Text className='line-label'>{MY_PAGE_TODAY_TITLE}</Text>
           </View>
-          <Text className='line-val' style={{ fontSize: 22 }}>{MY_PAGE_TODAY_HINT}</Text>
+          <Text className='hint'>{MY_PAGE_TODAY_HINT}</Text>
         </View>
         <View className='stat-grid' style={{ padding: '0 12px 12px', margin: 0 }}>
           <View className='stat'>
@@ -1039,6 +1039,7 @@ export default function ProfilePage() {
           connected={!!healthConnected}
           connectable={isHealthConnectable()}
           vendorLabel={healthVendor.label}
+          vendorKey={healthVendor.vendor}
           steps={null}
           weightKg={profile.current_weight_kg}
           heightCm={profile.height_cm}
