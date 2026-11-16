@@ -1818,3 +1818,26 @@ stdin 脚本不落临时文件、不执行删除。⚠️ 首次红验证脚本�
 - 🟠 **备案链**：域名/ICP ✅；App / 小程序 / 算法 / 公安备案均管局审核中（前两项硬阻断 Android 上架、mini 发版+虚拟支付）。`applicationLabel` 仍 `D-Bee`，上商店前须改「自律蜜蜂」。
 - 🔴 **11-16 pull `8f6b981`**：🔴 **`health_vendor`「暂编号 0052」作废 → 须顺延 `0053`**；🔴 **pull 涉 `packages/shared/src` 必重跑其 build 再验门禁**（`dist` 陈旧 = 护栏读 src 假绿，第三次踩）。
 ```
+
+
+## 2026-11-16 21:53 迁入：MEMORY.md「剩余边界」条改写前原文逐字归档（mini 编译单目录决策）
+
+> 触发：用户指示「如果明天编译 V1.7.9 呢，是不是再给我搞一个目录出来；建议最好是一个目录；要不太麻烦了。」
+> 决策详版（三条硬证据 + V1.7.9 三步流程 + 版本现状实测 + 为何不必再建 prebuild-*）→ `2026-11-16.md` **P 节**（权威）。
+> 本节仅归档 MEMORY.md 被压缩替换掉的原文，保证零丢失。
+
+### 一、MEMORY.md 原第 24 行（len=178）逐字原文
+
+```
+- 🔴 **剩余边界**：mini 导出与通知说明**零真机实证**；mini 体验版须本人上传 **`prebuild-20261115-2230/mini-dist-v178`**（🔴 `mini/dist` 仍旧包 v1.7.7）；Android 公网分发待批准（A7）；模板 ID 回填后须补服务端 `subscribeMessage.send`。
+```
+
+### 二、压缩口径（改写后保留的触发线索）
+
+- **mini 编译只用 `mini/dist` 一个目录**（用户 11-16 21:53 决策）；勿再建 `prebuild-*`。权威配置：`mini/config/index.ts:118` `outputRoot: 'dist'`、`mini/project.config.json` `miniprogramRoot: "dist/"`；`mini/dist` 被 `mini/.gitignore:2` 忽略、git 跟踪 0 文件 → 覆盖不影响仓库。
+- `prebuild-*` **无任何脚本生成**（`grep -rln "prebuild-"` 于 `*.py/*.mjs/*.js/*.sh/*.ts` 零命中）＝历次发版会话**人工快照**，已累积 **15 个 / 68M**，均在**仓库外**父目录 `C:/Users/yuty/WorkBuddy/2026-10-13-09-29-42/`；`prebuild-20261115-2230/` 内是整次发版 **8 份**中间快照（不只 mini）。
+- **V1.7.9 标准流程（3 步、零新增目录）**：①改根 `package.json` version → 1.7.9（单一真相源，经 `__APP_VERSION__` 注入，`mini/config/index.ts:126-129` 刻意与 `vite.config.ts:64` 同名）②`cd mini && npm run build:weapp`（产物直接进 `mini/dist`，Taro 自动清空重建）③微信开发者工具导入 `mini/` → 上传，平台版本号填 1.7.9。
+- **版本现状（11-16 实测）**：根 `package.json` version = 1.7.8；`mini/dist` 产物探针 = **1.7.7 旧包**（69 文件，mtime 11-15 17:07）；`prebuild-20261115-2230/mini-dist-v178` = 1.7.8（70 文件，mtime 11-16 07:38）；两者 69 个共有文件 **64 一致 / 5 不一致**（`common.js`、`pages/paywall/paywall.js`、`pages/profile/profile.js`、`pages/profile/profile.wxss`、`project.config.json`＝导出实装 + 16px 修复）。
+- 🔴 故 `docs/发版留证-小程序导出实装与占位护栏-V1.7.8-vc26-2026-11-15.md:107` 写「**不要导入 `mini/dist`**（17:07 旧包）」；:125 确认 **mini 体验版上传仍待用户侧动作**。
+- 👉 **按新决策上传 v1.7.8 体验版**：`cd mini && npm run build:weapp` 让 `mini/dist` 就地刷新到 1.7.8 → 导入 `mini/` → 上传（**无需再用 v178 快照目录**）。
+- **为何以后不必建 prebuild-***：mini 侧比对新旧包用「版本号探针 + `git stash`」即可；真正需跨端留证的只有 web `dist/`（native 与 web 共用会互相覆盖），已由 `dist-stale-*` 移存机制覆盖且 11-16 已入 `.gitignore`；快照目录膨胀（68M/15 个）本身即维护负担。
