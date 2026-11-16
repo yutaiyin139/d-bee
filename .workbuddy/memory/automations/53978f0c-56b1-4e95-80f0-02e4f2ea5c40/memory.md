@@ -313,6 +313,12 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
 - 保留：Python 按 mtime 清 >30 天，**移除 0 份**；`db/backups/offsite/` 存量 **11 份**（11-05~11-14 daily + 11-08/11-15 weekly）。
 - 安全：`git status --porcelain db/` 为空；`git check-ignore` 命中 `.gitignore:61 backups/`；未读 dump 正文；未跑 deploy-gateway.sh。
 
+### 2026-11-16 07:31（第 32 次）· 自建 PG 第 11 次
+- 结果：**成功**。`deploy/pull-latest-backup.py` 一次通过，exit=0，服务器 11 份 → 新拉 1 / 已最新 0 / 失败 0。
+- 拉取：`dbee-daily-20261116-033001.dump`，203,235 B（198.5 KB，历史最大，较 11-15 weekly +742 B），sha256 `c5919e06b48f1582…` 与服务器 SHA256SUMS 一致（脚本逐字节校验）；本地独立复核 sha256 同值，`od` 魔数 `PGDMP` 正常。
+- 保留：Python 按 mtime 清 >30 天（cutoff 2026-10-17 07:31），**移除 0 份**；`db/backups/offsite/` 存量 **12 份**（11-05/06/07/09/10/11/12/13/14/16 daily + 11-08/11-15 weekly）。
+- 安全：`git status --porcelain db/` 为空；`git check-ignore` 命中 `.gitignore:61 backups/`；未读 dump 正文；未跑 deploy-gateway.sh。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。

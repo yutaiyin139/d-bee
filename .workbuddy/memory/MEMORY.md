@@ -14,56 +14,55 @@
 - 🔴🔴 **铁律 #13：「已完成」必须附生产侧实测证据**。**本地绿 ≠ 线上绿**，中间隔「提交→构建→部署」。取证 5 法见 REFERENCE.md。
 - 🔴🔴 **写库字段必须对齐生产库列**：`updateMealGrams` 曾写 `meal_entries.updated_at`（0030 漏列）→ `PGRST204 schema cache` → 前端误翻「服务版本不匹配」，四端编辑份量全崩（11-14 实证）。改 patch 先对 `information_schema.columns`；加列后必 `NOTIFY pgrst, 'reload schema'`。🔴 用户报「服务版本不匹配」**不是前端版本问题**，是 schema cache / function 不存在。
 
-## 现状（11-15 23:08 · V1.7.8 / vc26 已全量发版；下方 11-14 及更早条目为历史快照；详版 → REF）
+## 现状（11-16 21:05 · 0052 闸门全链路上线 + 三层只读复验全绿；V1.7.8/vc26；证据 → `2026-11-16.md` E–N；17:59 旧版逐字 → REF「11-16 21:05 迁入」）
 
-- ✅✅ **11-15 23:08 V1.7.8 / vc26 全量发版**（🔴 实证数字唯一权威 = `docs/发版留证-小程序导出实装与占位护栏-V1.7.8-vc26-2026-11-15.md`；原文 → REF §六）：四项拍板 **D1** mini 通知诚实说明（真源 `isNotifyPushAvailable = CHECKIN_TEMPLATE_ID.length > 0`）／**D2** mini 导出**实装**（`isExportAvailable=true`，留 PIPL 45 条邮箱兜底 + false 态回退）／**D3** 删死代码／**D4** 护栏 29（39 项 + 反漂移），红验证 9/9。门禁 **30 文件 / 1329 项**、typecheck 双 0；Web **`index-CIpsiX29.js`** 19/19 逐字节一致；APK **8,262,867 B / `223a31a4…`**、入口 `index-D6Ix1upI.js`。
-- 🔴 **剩余边界**：**mini 导出与通知说明零真机实证**（铁律 #13：本轮只证到「源码对 + 产物含实现 + 护栏绿 + Web 生产逐字节一致 + APK 三步实证」）；iOS 壳须 Mac + Xcode≥26 重打包；mini 体验版须本人上传 **`prebuild-20261115-2230/mini-dist-v178`**（🔴 **`mini/dist` 仍是 17:07 旧包 v1.7.7，导入即发旧版**）；Android 公网分发待批准（A7）；模板 ID 回填后**还须补服务端 `subscribeMessage.send`**。
-- 🔴 **11-15 新踩 5 坑（详版 → REF §二）**：`dbee-ssh.py putdir` 不可靠 → **发布改逐文件 put + 事后全量 sha256**；`dist/` 为 Web/native 共用 → `cp -a` 覆盖会得**混合产物**，须先移出再复制 + 校验；**法务 URL 是 `/legal/<name>/index.html`**（写 `*.html` 命中 SPA fallback ＝假红，拿不存在路径对照即可识别）；APK 的 `capacitor.plugins.json` 在 `assets/`；**探针字串须取源码常量原文**。
-- 📚 11-14 期口径（`0051` 编辑份量闭环 / `index-DfW2isy_.js` / 幽灵列探针）已归档 → REF §一（原文 §六）。**仍长期有效**：vite 把 2000 压成 `2e3`、5000 压成 `5e3` → 须匹配 `label:.份量.,min:1,max:…` 精确常量；验 schema cache 须真实 PATCH + 红验证；psql 用 `sudo -n … -f -`。
-- ✅✅ **云库废弃（REF 20:15）**：四端数据面全自建 PG、数据放弃迁移。🔴 释放差 2 步（用户本人）：① 重传 mini+重设体验版 ② 停用实例（不可逆）；实例**仍在线**。20:15 决策：数据可弃/免 T+7/走① → `docs/云库彻底释放执行单-*`。
-- 🔴🔴 **收款（原文 → REF §五；详版 → REF 11-08 / 11-09 节）**：mini xpay 与 Android `0047`+`apppay.mjs` 全链路就绪；两开关独立默认 false（`D_BEE_XPAY_ENABLED` / `D_BEE_APPPAY_ENABLED`，关闭态 Web 零引导字样）。铁律：补权益后必调 `/xpay/notify_provide_goods`；已扣款未确认 → `settling` **绝不报 error**；`signData` 原样透传；**发权益权威信号＝验签回调 `settle_app_payment`**；`verify_payment_order` 回调未到恒 false；幂等键 `out_trade_no`、拒「1 分钱买会员」；开启前置 6 项在 `mini/src/lib/xpayEnabled.ts` 头。🟠 资质未到位 → 开关保持 false、公网分发待批准（A7）。
-- 🔴🔴 **兑换码 P0 + 0048**（详版 → REFERENCE「2026-11-10 晚」）：3 张 lifetime 码明文进 public 历史 → 已 DELETE；0048 零止损但**已应用生产**。护栏只钉哈希、永不写明文（连注释都不行）；核验用库内 sha256 比对，绝不调 `redeem_by_code`（真烧码）；`--months`=兑换后时长 / `--expires-days`=可兑窗口，无日卡档。
-- 🔴🔴 **`psql`/脚本六铁律**（详版 → REFERENCE）：`-v` 走 `-f`+heredoc / 解析用 `-tA` / 变更类禁 `2>/dev/null` / **发码明文先落盘再写库** / 清理脚本用 `${VAR:?}` / sed 遇特殊密码静默不改 → 改 Python 临时脚本。
-- 🟠 **备案链**：域名/ICP ✅ 已下证；App / 小程序 / 算法 / 公安备案均管局审核中（前两项硬阻断 Android 上架、mini 发版+虚拟支付开通）。`四端收款堵点与政策依据详表`（**结论 #5 已作废**）与 `四端收费一致性核验与合规实施总纲`（L1~L3/护栏/发版验收仍有效）均加纠偏横幅。
-- 📚 11-13 过时快照（Web 0048/vc22/25 文件 975 项/11-11 mini 兑换/官网/首购半价回退）已逐字迁入 REFERENCE「11-14 迁入」；版本口径以上方 11-15（V1.7.8 / vc26）为准。
+- 🔴🔴 **当前生产状态（非发版）**：**0052 applied**（14:30:21；`llm_gate` SECDEF+`search_path=public`，ACL 仅 `postgres`/`dbee_app`）；**网关手术式部署**（`deploy/apply-llm-feature-walls.py`：换 `llm.mjs` + `app.mjs` 插 4 条 `features/*` 路由）；**Web 入口 `index-CsL-COWf.js`**；🔴 **APK `…-20261116-llmgate.apk`（vc26、入口 `index-DKoWPSKJ.js`）仅归档不分发**（`not_published` + 备案阻断）。门禁 **30 文件 / 1333 项** EXIT=0。
+- 🔴🔴 **21:05 三层只读复验全绿（零写入生产；详版 → `2026-11-16.md` N）**：四服务全 **`NRestarts=0`**/**OOM 0**/3 天 error **0 条**/网关·PG·postgrest **只监听回环**/🔴 **systemd 单元与 nginx 站点配置 mtime 全早于部署日＝未触碰**/回滚点在位/证书至 **2027-02-04**。代码层 `app.mjs` vs 部署前备份 **删 0 增 7**/`gateway.env` **未变**/22-C 实证（`dbee-feature` **0**）/`nginx -t` **successful**。公网 **19/19 逐字节一致**（含 `legal/` 三页）/🔴 **路由三层语义**：非法参数 **400**／无 token **401**（四条全中）／**伪造 JWT 亦 401**／未注册 **404**。
+- 🔴 **工具坑第 5 条**：`node --check` **从 stdin 读时对非法代码也返回 RC=0**（实测假绿）→ 必须取回**文件**再校验；ESM 可解析性改「静态提取 import 集合 vs lib 实存」法。
+- 🔴🔴 **发现⑦⑧**：⑦`/var/www/d-bee` 实有 **139 文件**、生效仅 19（历史 chunk 累积，`immutable`+哈希名**不影响正确性**；清理＝删除须先确认）。⑧用 `.env` **真实值**反查待提交清单：`deploy/gateway/.secrets.local` 含 LLM key 但被 `*.local` 忽略、**从未提交**；🔴 `REFERENCE.md:788` 含 `SMS_MASTER_CODE` 真实值＝**既存于 HEAD**（`ba831c4`）非本次新增 → public 仓库应轮换，**登记待拍板，未擅自改写历史**。
+- 🔴🔴 **发现③④①（详版 → `2026-11-16.md` H/I/K）**：③`apk-distribution.baseline.json` **自称护栏、全仓引用 0 处** → 可改 `published` 而门禁全绿；已加 `knownGap_guardrailNotWired`，🔴 **未擅自新增测试**。④**11-15 包与新网关不兼容、禁止分发** —— 仍带 `dbee-feature`、无 `llm/features/` → 装此包者复盘/计划/教练被重写为 `FOOD_SYSTEM`（**静默错位不报错**）；已移入 `supersededApks[]` 留证。①**0046/0047 生产漂移，刻意未夹带**：生产 `lib/` 缺 `xpay/apppay/wechatSession.mjs`、库无 0046/0047 → **收款链路生产未落地**。
+- 🔴 **剩余边界**：mini 导出与通知说明**零真机实证**；mini 体验版须本人上传 **`prebuild-20261115-2230/mini-dist-v178`**（🔴 `mini/dist` 仍旧包 v1.7.7）；Android 公网分发待批准（A7）；模板 ID 回填后须补服务端 `subscribeMessage.send`。
+- 🔴🔴 **四条既有铁律（全文已验在 REF）**：①**收款**（§五+11-08/09）＝开关默认 false / `settling` **绝不报 error** / **发权益权威信号＝验签回调 `settle_app_payment`**。②**兑换码 0048**（「2026-11-10 晚」）＝护栏**永不写明文** / **绝不调 `redeem_by_code`**（真烧码）。③**`psql`/脚本六铁律**＝变更类禁 `2>/dev/null` / 探针**不打印真实 uid** / `SUDO()` **不吞 stderr**。④🔴 **写 SQL 前必核 `information_schema.columns` 列名**（`schema_migrations`→`version` 非 `id`、`ai_usage`→`usage_date` 非 `day`）。
+- ✅✅ **云库废弃**：四端数据面全自建 PG、数据放弃迁移；释放差 2 步（用户本人）：①重传 mini+重设体验版 ②停用实例（不可逆）；实例**仍在线**。
+- 🟠 **备案链**：域名/ICP ✅；App/小程序/算法/公安备案均管局审核中（前两项硬阻断 Android 上架、mini 发版+虚拟支付）；`applicationLabel` 仍 `D-Bee`，上商店前须改「自律蜜蜂」。
+- 🔴 **11-16 pull `8f6b981`**：**`health_vendor`「暂编号 0052」作废 → 须顺延 `0053`**；🔴 **pull 涉 `packages/shared/src` 必重跑其 build 再验门禁**（`dist` 陈旧 = 护栏读 src 假绿，第三次踩）。
 
 ## 下一步 / 待拍板（详版 → REFERENCE.md）
 
-- ✅ **git 已闭环**（11-14 的「push 待网络恢复 / ahead 2」已解除）：11-15 三次 push 成功，`main...origin/main` = `0 0`。11-14 的 P0 / P1.4-1.6 / 21:50 透明化收起均已入库并随 V1.7.6~V1.7.8 发版；**「mini/dist 未重构建（P1.7）」已于 11-15 两轮解除**（但用户上传仍未完成）。四条原文 → REFERENCE「2026-11-15 23:08 迁入」§四。首购半价不再 commit。
-- 🔴 **主线 = iOS 上线**（权威 `docs/iOS上线依赖全景与实施步骤-2026-11-07.md`）：正式上架卡软著(30–60 工作日)/App 备案(7–20)/Mac 签名；最大交付 = **TestFlight 内部测试**（需 Mac+Team+重打包）。ASC 填报面几乎空白；Apple 硬闸门 Xcode 26 + iOS 26 SDK、新年龄分级问卷必答。🔴 壳内停在 11-04，apppay + A-5 真删号 + 16px 修复须 Mac 重打包。
+- 📚 **git 已闭环**：11-15 三次 push 成功；11-16 pull `8f6b981`（零冲突）。11-14 的 P0 / P1.4-1.6 / 21:50 透明化 / P1.7 均已入库随 V1.7.6~V1.7.8 发版 → REF「11-15 23:08 迁入」§四。
+- 🔴 **主线 = iOS 上线**（权威 `docs/iOS上线依赖全景与实施步骤-2026-11-07.md`）：正式上架卡软著(30–60 工作日)/App 备案(7–20)/Mac 签名；最大交付 = **TestFlight 内部测试**（需 Mac+Team+重打包）。ASC 填报面几乎空白；Apple 硬闸门 Xcode 26 + iOS 26 SDK、新年龄分级问卷必答。🔴 壳内停在 11-04，apppay + A-5 真删号 + 16px 修复待重打包。
 - 🔴 **只有用户本人能做**：软著 AI 条款、Mac 选 `DEVELOPMENT_TEAM`、证书入 `signing/`、mini 发版、云库停用、公安备案回填、ASC 填报、算法备案收尾、**支付资质申请**（微信移动应用 + 商户号 APP 支付 + 支付宝企业应用）。
-- 🔴 **三端晃动（REF「11-12 上午」）**：16px 在 `styles.css:83`；**Web ✅ / Android vc25 ✅ / mini ✅**；**iOS ❌**（壳内 11-04，须 Mac 重打包）。`100vw`/`100dvh` 未动。
-- 🔴 **四端分享修复（11-12，全文 → `docs/四端分享功能梳理与修复-2026-11-12.md`）**：iOS 微信拉不起/钉钉链接打不开 = 图片 base64 被塞进 Share 的 `url` → 改 Filesystem 写 Cache + `files`；原生邀请链接改用公网域名。护栏 19 红验证 + 23/908 绿、Android 壳内已同步。**iOS 未重打包**：须 Mac（壳内仍 11-04）。
-- 🟠 **对标薄荷 / 备案等待期**（11-12，详版 → REFERENCE「13:40」「14:22」）：§1.2 复核 + PCM #3 立项；Wave 4.1 图片指纹违隐私政策须删。计划 → `docs/备案等待期-差距缩减与超越实施计划-2026-11-12.md`（6–12 周 / A 不追·B 清零·C 反超 / D0 无度量 / P0~P2 + 9 项待拍板）。
-- 🟠 **待拍板**：隐私政策 §五 + `LEGAL_UPDATED`、mini 同意窗重确认载体、凭据轮换、网关模式收紧、Android vc25 公网分发、护栏 A9/A10、Apple 个人 vs 备案企业主体、仓库是否转 private。
-- ⚠️ 已决不再讨论：云库回迁自托管 / 老用户不迁移 / 存量 newbie bonus / 演示数据两套面 / App 名称=`自律蜜蜂` / 凭据不打进终端 / **mini 微信虚拟支付** / **Android 微信+支付宝 APP 支付** / **Web 暂不收费、ICP 经营许可证不办** / **不做渠道首月半价**（11-11 已回退）。
+- 🟠 **待拍板**：**0046/0047 生产漂移处置**（收款链路未上生产，补则走手术式脚本 + 开关默认 false）、**是否补 `tools/apk-distribution.test.ts`** 闭合发现③护栏缺口（须先红验证）、隐私政策 §五 + `LEGAL_UPDATED`、mini 同意窗重确认载体、凭据轮换、网关模式收紧、护栏 A9/A10、Apple 个人 vs 备案企业主体、仓库是否转 private。
+- 🔴 **11-12 两条（详版 → REF「11-12 上午/13:40/14:22」+ 两份 `docs/*-2026-11-12.md`）**：①**三端晃动 / 四端分享**：16px 在 `styles.css:83`，Web/Android/mini ✅ **iOS ❌**；iOS 分享修复（base64 误塞 `url` → 改 Filesystem 写 Cache + `files`）待 Mac 重打包；`100vw`/`100dvh` 未动。②**对标薄荷 / 备案等待期**：§1.2 复核 + **PCM #3 立项**（🔴 REF 无此 token，勿删）；Wave 4.1 图片指纹违隐私政策须删。
+- ✅ **发现⑤⑥已处置（详版 → `2026-11-16.md` L/O）**：`.gitignore` 已追加 `/Temp/`、`/dist-stale-*/`（仅加规则零删除，构建产物原地保留）；`apk-distribution.baseline.json` 已入库（用户跳过选项 → 按推荐执行）。
+- ⚠️ **已决不再讨论**：云库回迁自托管 / 老用户不迁移 / 存量 newbie bonus / 演示数据两套面 / App 名称=`自律蜜蜂` / 凭据不打进终端 / **mini 微信虚拟支付** / **Android 微信+支付宝 APP 支付** / **Web 暂不收费、ICP 经营许可证不办** / **不做渠道首月半价**（11-11 已回退）。
 - 三条主线：**开发**（看板=本文件「现状」，自动化每日收敛）；**备份两层**（cron 03:30 `pg_dump -Fc` + 异地副本，含真实健康数据**严禁 git add**）；**运营**（每周提醒）。
 
-## 已定技术路线（勿再讨论）
+## 已定技术路线（勿再讨论；全文 → REF）
 
 Capacitor 8.5.3 混合壳；React18+Vite5+TS；Windows 出 Android、Mac mini M4 出 iOS；Node≥22 / JDK21 / Xcode≥26。健康数据源只读系统平台（HealthKit / Health Connect / 华为需先上架华为市场 / 小米官方 SDK）。
-**决策（10-22 起）**：①主体=有限责任公司 ②未提交产物入库 ③LLM=DeepSeek ④短信=aliyun 真短信 ⑤网关=Node（`server/index.mjs`）⑥Apple 验签放 Node 网关（弃 pg_net）⑦ 收款路由见「已决不再讨论」（两开关同源驱动）。凭据只存本地 `.env`。
+**决策（10-22 起）**：①主体=有限责任公司 ②未提交产物入库 ③LLM=DeepSeek ④短信=aliyun ⑤网关=Node（`server/index.mjs`）⑥Apple 验签放 Node 网关（弃 pg_net）⑦收款路由见「已决不再讨论」。🔴 **凭据只存本地 `.env`**。
 
 ## 架构铁律（12 条全文 → REFERENCE.md）
 
-最易踩：⑤**StoreKit 2 服务端核销成功才 `finish()`**；③云端请求走 `OriginProxy` 注入 SDK `options.fetch`、勿 patch window.fetch；⑩原生包禁用 `npm run build`；⑧iOS 付费墙禁硬编码价兜底；⑪`addListenerNative` 三路设防。其余 ①平台差异只走 `src/lib/` ②`cloudConfig.ts` 零依赖 ④`validate.ts`/`errmsg.ts` ⑥原生能力禁吞成 0/空 ⑦`useModalA11y` ⑨OriginProxy 取消归一为 End ⑫跨引擎 message/stack 分开取 + `env(safe-area-inset-top)`。
+最易踩：⑤**StoreKit 2 服务端核销成功才 `finish()`**；③云端请求走 `OriginProxy` 注入 SDK `options.fetch`、勿 patch window.fetch；⑩原生包禁用 `npm run build`；⑧iOS 付费墙禁硬编码价兜底；⑪`addListenerNative` 三路设防。其余 ①②④⑥⑦⑨⑫ 全文逐字 → REFERENCE:840。
 
-## 云数据库安全铁律（最高优先级）
+## 云数据库安全铁律（最高优先级；全文 → REF）
 
 - 发权益函数必须 **SECURITY DEFINER + 入参白名单**；**涉权益表必须 REVOKE authenticated 的 INSERT/UPDATE/DELETE**（RLS 挡不住直写）。🔴 **0047 沿用此范式**。
 - **0039 闸门**：权益函数只改自建 migrations 单库；🔴 云库废弃后**不再双库同步**（`db/cloud-patch-0039/`、`tools/split-*-for-cloud.py`、`deploy/probe-0039-parity.sh` 仅历史存档，勿再执行）。nginx 唯一生效模板=`nginx.selfhost.conf.example`，改 nginx 只走 `deploy.sh APPLY_NGINX_CONF=1` 或 `switch-nginx-selfhost.sh`。`set_config` 混函数须 `WITH s AS MATERIALIZED`。
-- 🔴 **删号/身份类改动走 PostgREST SECDEF RPC，别改网关**（`app_users` FORCE RLS + 无 DELETE，只有属主 postgres 能删）；0045 范式 = 不带 owner_id 参数、只信 `auth.uid()`、`p_confirm` 闸门、`REVOKE PUBLIC/anon` + `GRANT authenticated`。删号后前端禁调 `saveProfile()`；新增含 `owner_id` 的表须同步 0045 `v_tables`（护栏 9 拦）。
+- 🔴 **删号/身份类改动走 PostgREST SECDEF RPC，别改网关**（`app_users` FORCE RLS + 无 DELETE）；0045 范式 = 不带 owner_id、只信 `auth.uid()`、`p_confirm` 闸门、`REVOKE PUBLIC/anon`+`GRANT authenticated`。删号后前端禁调 `saveProfile()`；新增含 `owner_id` 的表须同步 0045 `v_tables`（护栏 9 拦）。
 
-## 部署最高危（全量 → REFERENCE.md「部署侧坑」）
+## 部署最高危（全量 → REF「部署侧坑」；11-16 手术式范式详版 → `2026-11-16.md` E-补）
 
-- 🔴🔴 **`deploy-gateway.sh` 是全站永久锁死级地雷**（缺 `IDENT_PEPPER` 即 `rand_hex` 重置 → 全站身份永久失效）→ 改网关一律走手术式脚本（参照 `deploy/apply-vision-key-update.py`）；**只读/备份操作也绝不跑它**。
-- 🔴 视觉链路 `BASE_URL`/`MODEL`/`API_KEY` 须**成对更换**且同步 `gateway.env.template`+`.secrets.local`（否则部署静默回退）。
-- 🔴🔴 **nginx reload 有优雅退出窗口**：旧 worker 仍持旧配置 → 立即验证会「假红」。修法 `sleep 8` + 重试 3 次；补丁脚本必须可重入。🔴 服务器端验收脚本三坑（`gateway.env` 0640 需 `sudo -n` / 临时账号须 `trap cleanup EXIT` / Windows 禁 `wsl.exe`）。
+- 🔴🔴 **`deploy-gateway.sh` 是全站永久锁死级地雷**（缺 `IDENT_PEPPER` 即 `rand_hex` 重置 → 全站身份永久失效）→ 改网关一律走手术式脚本（**最新范式 = `deploy/apply-llm-feature-walls.py`**：13 道断言 + 自动回滚）；**只读/备份也绝不跑它**。🔴 手术式铁律：前后断言 `gateway.env` sha256 不变；**绝不整搬本地 `app.mjs`**（import 生产缺失的 `xpay/apppay.mjs` → ESM 顶层即崩 = 全站宕机），只对现网副本按唯一锚点插入；重启前必做 **ESM 预检**（补齐生产 `.mjs`+`package.json`+软链，只 import `app.mjs`）。
+- 🔴🔴 **「状态谎报」比失败更危险**：bash heredoc 内不得把 Python 常量名当 shell 变量（`set -u` 崩在赋值行 → 回滚分支不执行、兜底文案却打印「已回滚」）。纪律：**报了回滚就必须真回滚过**，回滚收敛到一个函数。
+- 🔴 视觉链路 `BASE_URL`/`MODEL`/`API_KEY` 须**成对更换**且同步 `gateway.env.template`+`.secrets.local`（否则静默回退）。
+- 🔴🔴 **nginx reload 有优雅退出窗口** → 立即验证会「假红」。修法 `sleep 8` + 重试 3 次；脚本必须可重入。🔴 验收三坑（`gateway.env` 0640 需 `sudo -n` / 临时账号须 `trap cleanup EXIT` / Windows 禁 `wsl.exe`）。
 
-## 环境备忘（🔴 全节逐字原文 → REFERENCE「环境备忘」全节逐字归档；此处只留一句话级触发线索）
+## 环境备忘（全节逐字 → REF「环境备忘·详版」；只留触发线索）
 
-- **连接/路径**：SSH `150.158.51.106`、`USER=ubuntu`+`SSH_PWD`（`.env` 的 `DBEE_USER=dbee_app` 认证失败）；验收打 `https://d-bee.cn/` **别打 IP**；APK 归档 `release/`；`db/backups/offsite/*.dump` 含真实健康数据 **严禁 git add**；push 遇 `schannel` 失败 → 单次 `git -c http.sslBackend=openssl push`。
-- **两条唯一权威**：数值口径 `src/lib/numfmt.ts`（禁自写 `toFixed`/`Math.round(n*f)/f`）；nginx **只反代 `/.cloud/` 与 `/auth/`** → 其余 POST 返 **405，405 不能判路由存在**。
-- **测试防假绿**：vitest 强制串行，跑完必核对 `Test Files` 数 == `ls tools/*.test.ts`；mini 类型检查单独跑；构建期护栏写在构建配置里；禁硬编码日期（同源取 `todayKey()`）；**小程序验收一律以体验版为准**（真机调试注入 Web API 掩盖 JSCore 缺口）；MAPE 达标 ≠ 无需处理（四指标并报，达标前不得对外表述精度）。
-- **护栏断言三铁律**：①一个 `it()` 只一条断言 ②匹配「实际使用」非「标识符出现」③断言在 `stripComments()` 后代码上做；新增/放宽**必须红验证**，且🔴 **须确认注入真生效**（`assert s.count(old)==1` 失败会静默跳过注入却仍全绿 → 按行号定位）；禁用域名是判据不是依赖（护栏 10c 白名单+正向断言）。
-- **产物判读三条**：①**中文形态分工具链**（mini=纯 ASCII `\uXXXX`→`unicode_escape`，勿 `latin1`；Web 主端=UTF-8 直存）②`import.meta.env.VITE_*` 字符串替换 grep 命中≠生效、`define` 布尔才被 terser 折叠 ③**裸串 grep 子串碰撞**（「下单」命中「预下单」）→用完整 CTA 短语；判数据面追「哪个常量被 `resolveEndpoint` 返回」。
+- **连接/路径**：SSH `150.158.51.106`、`USER=ubuntu`+`SSH_PWD`（`.env` 的 `DBEE_USER=dbee_app` 认证失败）；验收打 `https://d-bee.cn/` **别打 IP**；APK 归档 `release/`；`db/backups/offsite/*.dump` 含真实健康数据 **严禁 git add**；push 遇 `schannel` → 单次 `-c http.sslBackend=openssl`。
+- **两条唯一权威**：数值口径 `src/lib/numfmt.ts`（禁自写 `toFixed`）；nginx **只反代 `/.cloud/` 与 `/auth/`** → 其余 POST 返 **405，405 不能判路由存在**。
+- **防假绿**：vitest 强制串行，跑完核对 `Test Files` 数 == `ls tools/*.test.ts`；mini 类型检查单独跑；禁硬编码日期（同源取 `todayKey()`）；**小程序验收以体验版为准**；MAPE 达标 ≠ 无需处理（四指标并报）。护栏断言三铁律＝①一 `it()` 一断言 ②匹配「实际使用」③在 `stripComments()` 后做；新增/放宽**必红验证**且确认注入真生效；「两端都包含 X」须 `every()`。
+- **产物判读**：①中文形态分工具链（mini=`\uXXXX`→`unicode_escape`，勿 `latin1`；Web=UTF-8 直存）②`VITE_*` grep 命中≠生效，`define` 布尔才被 terser 折叠 ③裸串 grep 会子串碰撞（「下单」命中「预下单」）→用完整 CTA 短语；判数据面追「哪个常量被 `resolveEndpoint` 返回」。

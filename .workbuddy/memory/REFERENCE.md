@@ -1742,3 +1742,79 @@ stdin 脚本不落临时文件、不执行删除。⚠️ 首次红验证脚本�
 | MEMORY.md「≤9KB」按字节算 | 口径是 **≤9k 字符** |
 
 > 用途：这张表专治「按旧记忆办事」。任何与上表左列相符的说法（走 IP 不设 `DBEE_DOMAIN`、Android 包不可发布、护栏 190 项、App 名称未决、mini 走 cloud / 不引入在线支付 / Web 无条件引导下单、记忆体积按字节算）**一律以右列为准**。护栏数字右列会随发版滚动更新（11-15 23:08 = 30 文件 / 1329 项），核对以 `npm test` 实际输出为准。
+
+## 2026-11-16 11:43 迁入（MEMORY.md 体积压缩 · 零信息丢失）
+
+### 九、Android 分发基线文件详版（MEMORY 只留一行指针）
+
+`tools/apk-distribution.baseline.json`（11-16 建立，未跟踪 → 待提交）是 Android APK 公网分发「待办清单 A7」的**就绪状态登记基线**，与 `tools/release-readiness.baseline.json` 同范式。
+
+- **为什么入库**（文件内 `_why_in_git` 原文）：`release/` 被 `.gitignore` 排除（APK 不入库），故分发所需的元数据与合规闸门状态必须另有入库载体，否则换机器或重装后无法复现「哪个包可发、为什么还不能发」。
+- **性质**（文件内 `_about` 原文）：本文件是【预期基线 + 生产侧状态的人工登记】，**不是自动探测结果**。App 备案状态 / 服务器静态目录 / 备案编号都在仓库之外，本地静态扫描无法获知，必须由发版人核对后更新。
+- 🔴 **护栏边界**：护栏 30 只保证「登记的 sha256/字节数/版本号与真实 APK 逐字一致、合规闸门未就绪时不被静默改成已就绪、下载页在备案编号缺失时不渲染假号」。**护栏全绿不等于可以分发。**
+- **登记内容**：`apk.file = release/D-Bee-1.7.8-vc26-dbee.cn-FORMAL-20261115.apk`、`versionName 1.7.8` / `versionCode 26` / `packageName cn.com.dbee.app` / `bytes 8262867` / `sha256 223a31a4…` / `minSdk 24` / `targetSdk 36` / `signerMd5 0abe7fc5005987ed9b6eae9a45fb9dc9`；`complianceGates.appBeian.status = pending_authority_review`。
+- 🔴 **上商店前必改项**（文件内 `_check` 原文）：`applicationLabel` 仍是 **`D-Bee`**，而软著名 / App 备案名 / 商店上架名须逐字为「**自律蜜蜂**」（Android 清单 §6.4）——上商店前必须改，自建分发页同样应显示中文名。
+- **复核方法**（文件内 `_check` 原文）：`sha256sum <apk>` + `stat -c%s <apk>`；`aapt2 dump badging` 复核 versionCode/versionName/packageName/application-label；`apksigner verify --print-certs` 复核 MD5。
+
+### 十、迁移号 0052 占用冲突（🔴 推翻 11-15 拍板里的「暂编号 0052」）
+
+11-15 用户拍板 **D3 = `profiles.health_vendor` 合并一次迁移 0052**（原文见 `docs/接入实现规划-HealthConnect与微信运动-2026-11-15.md:226,268,279` 与 `.workbuddy/memory/2026-11-15.md:63,69,88`）。
+
+但 11-16 11:43 pull 进来的 `8f6b981` **已把 0052 用于 `db/migrations/0052-llm-feature-walls.sql`**（`CREATE OR REPLACE public.llm_gate(p_feature text)`：meal / recap 非 Pro 直接 `pro_required`；plan 非 Pro 终身 1 次，记在 `ai_usage` 的 `1970-01-01`，不按日清零，Pro 在前面的分支直接放行不占这 1 次；文件头注明「不改 0049 原文件，生产若已应用 0049 则用 CREATE OR REPLACE 覆盖 llm_gate」）。
+
+- 实证：`grep -ln "health_vendor" db/migrations/*.sql` → **无命中**（`health_vendor` 尚未被任何迁移创建）；迁移序列 `0047-app-payment-settlement` / `0048-redeem-code-hardening` / `0049-membership-server-gates` / `0050-plan-start-date` / `0051-meal-entries-updated-at` / `0052-llm-feature-walls` **连续无重号**。
+- 🔴 **结论：HC-2 / WX-4 开工时 `profiles.health_vendor` 必须顺延为 `0053`**，规划文档与 11-15 日志里的「暂编号 0052」已作废。历史先例同类：0042 原预留给数据同步 final，被 `0042-token-version.sql` 占用后顺延为 0043（10-31 记录）。
+
+### 十一、`packages/shared/dist` 陈旧坑（第三次踩到，务必记牢）
+
+11-16 pull 后 `packages/shared/src/rules/index.ts` mtime = 11-16 11:43，而 `dist/rules/index.js` 仍是 11-15 21:52 的旧产物。
+
+- **为何危险**：护栏从 `@dbee/shared` import 的是 **`packages/shared/dist` 构建产物**（`file:packages/shared` + `main: dist/index.js`），但护栏断言常读 `src` → 改 `src` 后不重建，护栏**全绿也发现不了**；而运行时经 `src/lib/entitlement.ts` 的 `export * from '@dbee/shared'` 解析到的是旧 `dist`。
+- **修法**：`cd packages/shared && npm run build`（tsc **覆盖式、非删除式**，不触发删除类确认），EXIT=0 后 dist mtime 更新。
+- **历史**：11-15 17:51 首次记录（旧 dist 备份 `../prebuild-20261115-1755/shared-dist-old/`）；11-15 22:05 再次踩到（备份 `../prebuild-20261115-2150/shared-dist-old/`）；11-16 本次。
+- 🔴 **纪律：凡 pull / 改动涉及 `packages/shared/src/**`，必须立刻重跑其构建，再跑门禁。**
+
+
+## 2026-11-16 19:35 迁入（MEMORY.md 体积压缩 · 零信息丢失）
+
+> 下列为 MEMORY.md「现状（11-15 23:08）」整节的**逐字原文**，因 11-16 17:59 方案 A 全链路上线后需要写入新结论、而 MEMORY.md 触及 ≤9k 上限而被压出。**原文一字未改**；每条自身已标注的「详版 → REF §x」指针仍然有效。11-16 的执行详版另见 `.workbuddy/memory/2026-11-16.md` E–K 节（含生产侧实测证据与留证文件路径）。
+
+### 一、原「现状（11-15 23:08 · V1.7.8 / vc26 已全量发版）」全节逐字
+
+- 📚 **11-15 23:08 V1.7.8 / vc26 全量发版**（原文 → REF §六，实证数字唯一权威 = `docs/发版留证-小程序导出实装与占位护栏-V1.7.8-vc26-2026-11-15.md`）：D1 mini 通知诚实说明／D2 mini 导出实装（PIPL 45 条邮箱兜底 + false 态回退）／D3 删死代码／D4 护栏 29（红验证 9/9）。Web **`index-CIpsiX29.js`** 19/19 逐字节一致；APK **8,262,867 B / `223a31a4…`**、入口 `index-D6Ix1upI.js`。
+- 🔴 **剩余边界**：**mini 导出与通知说明零真机实证**（铁律 #13：本轮只证到「源码对 + 产物含实现 + 护栏绿 + Web 生产逐字节一致 + APK 三步实证」）；iOS 壳须 Mac + Xcode≥26 重打包；mini 体验版须本人上传 **`prebuild-20261115-2230/mini-dist-v178`**（🔴 **`mini/dist` 仍是 17:07 旧包 v1.7.7，导入即发旧版**）；Android 公网分发待批准（A7）；模板 ID 回填后**还须补服务端 `subscribeMessage.send`**。
+- 🔴 **11-15 新踩 5 坑（详版 → REF §二）**：`dbee-ssh.py putdir` 不可靠 → **发布改逐文件 put + 事后全量 sha256**；`dist/` 为 Web/native 共用 → `cp -a` 覆盖会得**混合产物**，须先移出再复制 + 校验；**法务 URL 是 `/legal/<name>/index.html`**（写 `*.html` 命中 SPA fallback ＝假红）；APK 的 `capacitor.plugins.json` 在 `assets/`；**探针字串须取源码常量原文**。
+- 📚 11-14 期口径（`0051` 编辑份量闭环 / `index-DfW2isy_.js` / 幽灵列探针）已归档 → REF §一（原文 §六）。**仍长期有效**：vite 把 2000 压成 `2e3`、5000 压成 `5e3` → 须匹配 `label:.份量.,min:1,max:…` 精确常量；验 schema cache 须真实 PATCH + 红验证；psql 用 `sudo -n … -f -`。
+- ✅✅ **云库废弃（REF 20:15）**：四端数据面全自建 PG、数据放弃迁移。🔴 释放差 2 步（用户本人）：① 重传 mini+重设体验版 ② 停用实例（不可逆）；实例**仍在线**。20:15 决策：数据可弃/免 T+7/走① → `docs/云库彻底释放执行单-*`。
+- 🔴🔴 **收款（铁律逐字 → REF §五，详版 → REF 11-08/11-09 节）**：mini xpay 与 Android `0047`+`apppay.mjs` 全链路就绪；两开关独立默认 false（`D_BEE_XPAY_ENABLED`/`D_BEE_APPPAY_ENABLED`，关闭态 Web 零引导字样）。核心铁律：补权益后必调 `/xpay/notify_provide_goods`；`settling` **绝不报 error**；`signData` 原样透传；**发权益权威信号＝验签回调 `settle_app_payment`**；幂等键 `out_trade_no`、拒「1 分钱买会员」；开启前置 6 项在 `mini/src/lib/xpayEnabled.ts` 头。🟠 资质未到位 → 开关保持 false、公网分发待批准（A7）。
+- 🔴🔴 **兑换码 P0 + 0048**（详版 → REFERENCE「2026-11-10 晚」）：3 张 lifetime 码明文进 public 历史 → 已 DELETE；0048 零止损但**已应用生产**。护栏只钉哈希、永不写明文（连注释都不行）；核验用库内 sha256 比对，绝不调 `redeem_by_code`（真烧码）；`--months`=兑换后时长 / `--expires-days`=可兑窗口，无日卡档。
+- 🔴🔴 **`psql`/脚本六铁律**（详版 → REFERENCE）：`-v` 走 `-f`+heredoc / 解析用 `-tA` / 变更类禁 `2>/dev/null` / **发码明文先落盘再写库** / 清理脚本用 `${VAR:?}` / sed 遇特殊密码静默不改 → 改 Python 临时脚本。
+- 🟠 **备案链**：域名/ICP ✅ 已下证；App / 小程序 / 算法 / 公安备案均管局审核中（前两项硬阻断 Android 上架、mini 发版+虚拟支付开通）。`四端收款堵点与政策依据详表`（**结论 #5 已作废**）与 `四端收费一致性核验与合规实施总纲`（L1~L3/护栏/发版验收仍有效）均加纠偏横幅。
+- 🟠 **Android 分发基线（11-16，详版 → REF §九）**：`tools/apk-distribution.baseline.json`（人工登记）钉 vc26 sha256/版本 + 合规闸门；🔴 **护栏全绿 ≠ 可分发**；`applicationLabel` 仍 `D-Bee`，上商店前须改「自律蜜蜂」。
+- 🔴🔴 **11-16 pull `8f6b981`（详版 → REF §十/§十一）**：服务端 LLM 功能墙（新迁移 **`0052-llm-feature-walls`** + 两端 `llmFeature.ts`）。门禁 **30 文件 / 1333 项**、typecheck 双 0。🔴 **`health_vendor`「暂编号 0052」作废 → 须顺延 `0053`**。🔴 **pull 涉 `packages/shared/src` 必重跑其 build 再验门禁**（`dist` 陈旧 = 护栏读 src 假绿，第三次踩）。🔴 **生产未部署**：入口仍 `index-CIpsiX29.js`、`0052` 未应用生产库。（← 此句已被 11-16 17:59 上线结果推翻，见当日日志 E/F 节）
+- 📚 11-13 过时快照（Web 0048/vc22/25 文件 975 项/mini 兑换/官网/首购半价回退）已迁入 REFERENCE「11-14 迁入」；版本口径以 11-15（V1.7.8 / vc26）为准。
+
+### 二、11-16 19:35 压缩后 MEMORY.md「现状」保留的口径（供回溯压缩前后差异）
+
+压缩原则：①凡原文已自带「详版 → REF §x」指针的叙述性长句，收敛为「结论 + 指针」，详版仍在 REF 对应节，**信息未丢失**；②11-16 上线的新结论（0052 已上生产 / 网关+Web+APK 实测数字 / 发现③基线无护栏守护 / 发现④ 11-15 包不兼容禁分发 / 0046-0047 漂移 / 4 条工具坑）**新增写入**，其完整实证过程留在 `2026-11-16.md` E–K 节；③被推翻的旧结论（如「生产未部署」）在本节标注推翻去向，不在 MEMORY.md 保留。
+
+---
+
+## 2026-11-16 21:05 迁入：MEMORY.md「现状（11-16 17:59）」节逐字原文归档
+
+> 归档原因：11-16 20:39–21:05 完成用户指示的三层只读复验（Task#5/6/7 全绿）+ 门禁复跑 + 提交范围处置，MEMORY.md「现状」节需改写为 21:05 口径；因 ≤9k 上限，旧版整节**逐字**归档于此（零信息丢失）。实测证据详版在 `2026-11-16.md` E–N 节。
+
+```
+## 现状（11-16 17:59 · 0052 闸门全链路上线；V1.7.8 / vc26；详版+实测证据 → `2026-11-16.md` E–M；11-15 原文逐字 → REF「11-16 19:35 迁入」）
+
+- 🔴🔴 **方案 A 全链路上线完成（生产侧实测全绿，非发版；实测数字/回滚点/留证 → `2026-11-16.md` E/F/G）**：**0052 已 applied 生产库**（`llm_gate` SECDEF，仅 `postgres`/`dbee_app` 可 EXECUTE）；**网关手术式部署**（`deploy/apply-llm-feature-walls.py` 方案 Y 最小面）＝换 `llm.mjs` 整文件 + 对生产现网 `app.mjs` 副本插 4 条 `features/*` 路由，`inferTextFeature`/`dbee-feature` **0 残留**、`NRestarts=0`、🔴 **`gateway.env` 未变**、`lib/` 仍 **12 个 `.mjs`**（未夹带支付模块）；**Web 入口 → `index-CsL-COWf.js`**（19/19 逐字节，无 `Cache-Control` → 旧包窗口期已关）；**APK 归档 `…-20261116-llmgate.apk`**（vc26/1.7.8、入口 `index-DKoWPSKJ.js`、签名合基线、内嵌与 dist 一致）。门禁 **30 文件 / 1333 项** EXIT=0。🔴 APK **仅归档不分发**（`not_published` + 备案阻断）。
+- 🔴🔴 **发现③（详版 → `2026-11-16.md` H 节）：`tools/apk-distribution.baseline.json` 自称有护栏、实际全仓引用 0 处** → 可被改成 `published`/假备案号而门禁全绿（对照 `release-readiness.baseline.json` 有测试守护）。已加 `knownGap_guardrailNotWired` 登记，🔴 **未擅自新增测试**。
+- 🔴🔴 **发现④（详版 → I 节）：基线原登记的 11-15 包与 11-16 网关不兼容，禁止分发** —— 该包仍带 `dbee-feature` 自报标记、无 `llm/features/` 调用；网关已移除 `inferTextFeature`（护栏 22-C 锁死）→ 装此包者点复盘/计划/教练被重写为 `FOOD_SYSTEM` 得到食物识别（**静默错位不报错**）。已移入 `supersededApks[]`，文件保留仅作留证。
+- 🔴🔴 **发现①（详版 → K 节）：0046/0047 生产漂移，本次刻意未夹带**：生产 `lib/` 缺 `xpay/apppay/wechatSession.mjs`，库 `schema_migrations` **无 0046/0047**（最近 = …0051/**0052**）→ 生产落后仓库 2 特性版本，**收款链路在生产尚未落地**（代码就绪 ≠ 已上线）。
+- 🔴 **11-16 工具坑 4 条（详版 → `2026-11-16.md` J 节）**：核验 APK 用 **Python `zipfile`** 不用 `unzip 'dir/*'`；字节比对用 **`cmp -s`**、路径一律 POSIX、禁手抄哈希；门禁 **落盘再 tail** 不用管道；vite `emptyDir` 会 `ETIMEDOUT` → 构建前 `mv dist dist-stale-<ts>`。
+- 🔴 **剩余边界**：mini 导出与通知说明**零真机实证**；mini 体验版须本人上传 **`prebuild-20261115-2230/mini-dist-v178`**（🔴 `mini/dist` 仍是旧包 v1.7.7）；Android 公网分发待批准（A7）；模板 ID 回填后须补服务端 `subscribeMessage.send`。
+- 🔴🔴 **三条既有铁律（全文 → REF）**：①**收款**（REF §五 + 11-08/11-09）两开关默认 false；补权益后必调 `/xpay/notify_provide_goods`；`settling` **绝不报 error**；`signData` 原样透传；**发权益权威信号＝验签回调 `settle_app_payment`**；幂等键 `out_trade_no`。②**兑换码 P0 + 0048**（REF「2026-11-10 晚」）泄露码已 DELETE；护栏只钉哈希、**永不写明文**；核验用库内 sha256 比对，绝不调 `redeem_by_code`（真烧码）。③**`psql`/脚本六铁律**（REF）`-v` 走 `-f`+heredoc / 解析用 `-tA` / 变更类禁 `2>/dev/null` / 发码明文先落盘 / 清理脚本用 `${VAR:?}` / sed 遇特殊密码静默不改 → 改 Python；🔴 探针**不打印真实 uid**、`SUDO()` **不吞 stderr**。
+- ✅✅ **云库废弃**：四端数据面全自建 PG、数据放弃迁移。释放差 2 步（用户本人）：① 重传 mini+重设体验版 ② 停用实例（不可逆）；实例**仍在线**。
+- 🟠 **备案链**：域名/ICP ✅；App / 小程序 / 算法 / 公安备案均管局审核中（前两项硬阻断 Android 上架、mini 发版+虚拟支付）。`applicationLabel` 仍 `D-Bee`，上商店前须改「自律蜜蜂」。
+- 🔴 **11-16 pull `8f6b981`**：🔴 **`health_vendor`「暂编号 0052」作废 → 须顺延 `0053`**；🔴 **pull 涉 `packages/shared/src` 必重跑其 build 再验门禁**（`dist` 陈旧 = 护栏读 src 假绿，第三次踩）。
+```
