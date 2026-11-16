@@ -7,7 +7,7 @@ import { View, Text, Button } from '@tarojs/components'
 import './AiConsent.scss'
 
 interface AiConsentProps {
-  kind: 'photo' | 'coach'
+  kind: 'photo' | 'coach' | 'advice'
   onAgree: () => void
   onDecline: () => void
 }
@@ -20,6 +20,10 @@ const BODY: Record<AiConsentProps['kind'], { title: string; desc: string }> = {
   coach: {
     title: 'AI 饮食助手说明',
     desc: '使用「问问小蜜」时，你的提问与今日饮食记录摘要会发送至大模型，以生成个性化建议。对话内容不会被用于模型训练。',
+  },
+  advice: {
+    title: 'AI 建议说明',
+    desc: '使用「解读这一餐」或「重新生成建议」时，这一餐的热量数字或你的目标档案会发送至大模型，以生成文字建议。这些数字不会被用于模型训练。',
   },
 }
 

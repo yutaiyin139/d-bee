@@ -54,6 +54,7 @@ function stripComments(src: string): string {
 }
 
 const MIG = stripComments(read('db/migrations/0049-membership-server-gates.sql'))
+const MIG52 = stripComments(read('db/migrations/0052-llm-feature-walls.sql'))
 const SHARED = stripComments(read('packages/shared/src/constants/index.ts'))
 const LLM = stripComments(read('server/lib/llm.mjs'))
 const MAIN_API = stripComments(read('src/lib/api.ts'))
@@ -99,9 +100,26 @@ describe('护栏 22-B · 两端走 RPC', () => {
   })
 })
 
+describe('护栏 22-A2 · 0052 营养解读与计划再生成', () => {
+  it('meal / recap 非 Pro 直接拒绝，plan 终身 1 次记在 1970-01-01', () => {
+    expect(
+      /v_feature = 'recap' OR v_feature = 'meal'/.test(MIG52) &&
+        /DATE '1970-01-01', 'plan', 1/.test(MIG52) &&
+        /'0052', 'llm-feature-walls'/.test(MIG52),
+    ).toBe(true)
+  })
+})
+
 describe('护栏 22-C · 网关分功能 + fail-closed', () => {
-  it('网关按 system 标记识别 recap/coach', () => {
-    expect(/\[dbee-feature:recap\]/.test(LLM) && /\[dbee-feature:coach\]/.test(LLM)).toBe(true)
+  it('通用聊天锁食物模板，复盘/计划/问答走独立路由', () => {
+    expect(
+      /const FOOD_SYSTEM/.test(LLM) &&
+        /featureMeal/.test(LLM) &&
+        /featureRecap/.test(LLM) &&
+        /featurePlan/.test(LLM) &&
+        /featureCoach/.test(LLM) &&
+        !/\[dbee-feature:/.test(LLM),
+    ).toBe(true)
   })
 
   it('视觉无 claim 改打 llm_gate package，不 hit 内存 fallbackLimiter', () => {
@@ -116,12 +134,16 @@ describe('护栏 22-C · 网关分功能 + fail-closed', () => {
     expect(/coachMinuteLimiter/.test(LLM) && /windowMs: 60_000/.test(LLM) && /limit: 3/.test(LLM) && !/今日问答次数已用完/.test(LLM)).toBe(true)
   })
 
-  it('两端本期解读 / 问答 system 带 feature 标记', () => {
+  it('两端本期解读 / 问答 / 计划走功能路由，不再带 system 标记', () => {
     expect(
-      /\[dbee-feature:recap\]/.test(MAIN_AI) &&
-        /\[dbee-feature:recap\]/.test(MINI_AI) &&
-        /\[dbee-feature:coach\]/.test(MAIN_AI) &&
-        /\[dbee-feature:coach\]/.test(MINI_AI),
+      /completeFeature\('recap'/.test(MAIN_AI) &&
+        /completeFeature\('recap'/.test(MINI_AI) &&
+        /completeFeature\('coach'/.test(MAIN_AI) &&
+        /completeFeature\('coach'/.test(MINI_AI) &&
+        /completeFeature\('plan'/.test(MAIN_AI) &&
+        /completeFeature\('meal'/.test(MAIN_AI) &&
+        !/\[dbee-feature:/.test(MAIN_AI) &&
+        !/\[dbee-feature:/.test(MINI_AI),
     ).toBe(true)
   })
 })

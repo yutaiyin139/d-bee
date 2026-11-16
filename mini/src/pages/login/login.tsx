@@ -268,7 +268,7 @@ export default function Login() {
         与 index.tsx auth gate 复用同一个 LegalLinks 组件（单一真相源），
         避免两处各写一份文案日后漂移。
       */}
-      <LegalLinks compact hint='注册或登录前，请阅读以下协议与政策' />
+      <LegalLinks footer />
     </View>
   )
 }

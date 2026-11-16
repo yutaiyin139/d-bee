@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { View, Text, Button, Input } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import { generatePlan } from '../../lib/ai'
+import { generatePlan, LlmFeatureError } from '../../lib/ai'
 import { saveProfile, grantHoney } from '../../lib/api'
 import { HEALTH_PLAN_INTRO_FLAG_KEY } from '../../lib/healthPlan'
 import { ACTIVITY_LABELS, GOAL_LABELS, calcTarget } from '../../lib/nutrition'
@@ -130,7 +130,13 @@ export default function Onboarding() {
       })
       setPlan(res)
     } catch (e) {
-      setPlanError(e instanceof Error ? e.message : 'AI 计划生成失败')
+      if (e instanceof LlmFeatureError && e.code === 'pro_required') {
+        setPlanError('免费的一次建议已经用过。热量目标仍按公式计算，可以继续。')
+      } else if (e instanceof LlmFeatureError && e.code === 'gate_unavailable') {
+        setPlanError('AI 服务暂不可用，请稍后重试。热量目标已按公式算好，可以继续。')
+      } else {
+        setPlanError(e instanceof Error ? e.message : 'AI 计划生成失败')
+      }
     } finally {
       setPlanLoading(false)
     }

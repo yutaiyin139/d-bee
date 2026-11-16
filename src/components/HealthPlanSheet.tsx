@@ -53,6 +53,10 @@ interface HealthPlanSheetProps {
   onClose: () => void
   onChangeGoal?: () => void
   updatedLabel?: string
+  aiAdvice?: { summary: string; points: string[] } | null
+  onRegenerateAdvice?: () => void
+  regenerating?: boolean
+  adviceError?: string
 }
 
 const chipStyle: CSSProperties = {
@@ -92,7 +96,10 @@ const cellValueStyle: CSSProperties = { fontSize: 18, fontWeight: 500, color: 'v
 
 const dash = (n: number | null | undefined): string => (n == null ? '—' : String(n))
 
-export function HealthPlanSheet({ profile, mode, onClose, onChangeGoal, updatedLabel }: HealthPlanSheetProps) {
+export function HealthPlanSheet({
+  profile, mode, onClose, onChangeGoal, updatedLabel,
+  aiAdvice, onRegenerateAdvice, regenerating, adviceError,
+}: HealthPlanSheetProps) {
   const view = buildHealthPlanView(profile)
   const isIntro = mode === 'intro'
 
@@ -247,6 +254,23 @@ export function HealthPlanSheet({ profile, mode, onClose, onChangeGoal, updatedL
       </div>
 
       <TransparencyNotes title={HEALTH_PLAN_NOTES_TITLE} notes={view.notes} />
+
+      {!isIntro && onRegenerateAdvice && (
+        <div className="card" style={{ marginTop: 12 }}>
+          <span style={sectionTitleStyle}>模型建议</span>
+          {aiAdvice?.summary
+            ? <div style={{ marginTop: 10, lineHeight: 1.7 }}>{aiAdvice.summary}</div>
+            : <div className="helper" style={{ marginTop: 10 }}>还没有模型建议。</div>}
+          {aiAdvice?.points.map((line) => (
+            <div key={line} className="helper" style={{ marginTop: 6 }}>{line}</div>
+          ))}
+          <button className="btn-text" style={{ marginTop: 8 }} disabled={regenerating} onClick={onRegenerateAdvice}>
+            {regenerating ? '正在生成…' : '重新生成建议'}
+          </button>
+          <div className="helper" style={{ marginTop: 4 }}>只更新这段建议，不改每日热量与营养素目标。</div>
+          {adviceError ? <div className="notice err" style={{ marginTop: 8 }}>{adviceError}</div> : null}
+        </div>
+      )}
 
       {isIntro ? (
         <>

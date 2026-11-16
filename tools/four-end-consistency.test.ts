@@ -241,7 +241,8 @@ describe('护栏 3 · 数值口径禁止新增手写舍入（唯一权威 numfmt
       // 2026-11-14 我的页 v3：身份条 / 宫格 4 / 列表 4 / 今日目标摘要重排，
       // 方案入口与身体数据卡收进宫格，三行手写舍入内容未变，仅行号平移
       // → 174,175,540 → 207,208,594。
-      'src/pages/ProfileScreen.tsx:207,208,594',
+      // 2026-11-16 计划再生成：顶部增加建议解析与生成函数，三行手写舍入内容未变，仅行号平移。
+      'src/pages/ProfileScreen.tsx:270,271,657',
     ]
 
     expect(
@@ -282,7 +283,7 @@ describe('护栏 4 · 会员状态文案必须由 shared memberSubText 统一产
 })
 
 describe('护栏 5 · AI 同意门覆盖率快照（缺口 1 的量化跟踪）', () => {
-  const AI_CALLS = ['generatePlan', 'generateReportInsight', 'askCoach', 'recognizeFoodFromImage']
+  const AI_CALLS = ['generatePlan', 'generateReportInsight', 'askCoach', 'recognizeFoodFromImage', 'explainMeal']
 
   /** 扫两端页面 + 组件目录：AI 逻辑下沉到组件后也要纳入同意门覆盖统计。 */
   function scanAiGates() {
@@ -330,7 +331,7 @@ describe('护栏 5 · AI 同意门覆盖率快照（缺口 1 的量化跟踪）'
     )
 
     // 调用 AI 的页面总数也纳入快照：新增 AI 入口时这条会先红，提示同步评估是否需要门。
-    expect(withCall.length, '调用 AI 的页面数变化（新增/移除了 AI 入口？请重新评估同意门覆盖）').toBe(8)
+    expect(withCall.length, '调用 AI 的页面数变化（新增/移除了 AI 入口？请重新评估同意门覆盖）').toBe(12)
   })
 })
 
@@ -429,16 +430,13 @@ describe('护栏 7 · 合规公示可达性与版本号同源', () => {
     const comp = byPath('mini/src/components/LegalLinks.tsx')
     expect(comp, 'mini/src/components/LegalLinks.tsx 不存在 —— 入口组件被删了？').toBeTruthy()
 
-    // 三份文档的标签只允许出现在 LegalLinks 组件与「关于」卡片里。
-    // 若某天有人在新页面又手写一遍「用户协议/隐私政策/免责声明」三个链接，
-    // 就出现了第二份文案副本（护栏 4 防的正是这种漂移），本断言会红。
+    // 三份文档的标签只允许出现在 LegalLinks。页面必须复用组件，不得再手写一份。
     const LABELS = ['用户协议', '隐私政策', '免责声明']
     const dup = LOADED.filter(
       (f) =>
         f.path.startsWith('mini/src/') &&
         LABELS.every((l) => f.code.includes(l)) &&
         f.path !== 'mini/src/components/LegalLinks.tsx' &&
-        f.path !== 'mini/src/pages/profile/profile.tsx' && // 「关于」卡片：登录后的正入口
         f.path !== 'mini/src/content/legal.ts', // 文档标题定义处
     ).map((f) => f.path)
 
@@ -493,8 +491,10 @@ describe('护栏 7 · 合规公示可达性与版本号同源', () => {
       'web 页脚缺少「联系我们」入口 —— 注销提示与法律正文都在指路到它',
     ).toBe(true)
     expect(
-      /联系我们/.test(byPath('mini/src/pages/profile/profile.tsx')!.code),
-      'mini「关于」卡片缺少「联系我们」入口 —— 注销提示与法律正文都在指路到它',
+      /联系我们/.test(byPath('mini/src/components/LegalLinks.tsx')!.code) &&
+        /<LegalLinks[\s/>]/.test(byPath('mini/src/pages/profile/profile.tsx')!.code) &&
+        (byPath('mini/src/pages/index/index.tsx')!.code.match(/<LegalLinks/g) || []).length >= 2,
+      'mini 今日页与「我的」页必须渲染 LegalLinks 页脚，且页脚含「联系我们」',
     ).toBe(true)
 
     // ② 失实指引不得复活：「关于 → 联系我们」这个路径两端都不存在

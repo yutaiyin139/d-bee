@@ -43,7 +43,11 @@ import {
   consumePendingInvite, getPendingInvite, readInviteFromEnterOptions,
   readInviteFromParams, setPendingInvite,
 } from '../../lib/inviteLink'
-import { STREAK_BONUS_AMOUNT, fmtNum, isPro, ACTIVITY_EATBACK_RATIO, DEFAULT_STEP_GOAL } from '@dbee/shared'
+import { STREAK_BONUS_AMOUNT, fmtNum, isPro, ACTIVITY_EATBACK_RATIO, DEFAULT_STEP_GOAL, MEAL_PAYWALL_REASON } from '@dbee/shared'
+import { explainMeal, LlmFeatureError } from '../../lib/ai'
+import { openPaywall } from '../../lib/upsell'
+import { AiConsent } from '../../components/AiConsent'
+import { grantAiConsent, hasAiConsent } from '../../lib/aiConsent'
 import { GRAMS_LIMIT, checkNumber, sanitizeNumeric, clampNumeric } from '../../lib/validate'
 import './index.scss'
 
@@ -72,6 +76,10 @@ export default function Index() {
   const [recentMeals, setRecentMeals] = useState<MealSlim[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [mealNote, setMealNote] = useState('')
+  const [mealBusy, setMealBusy] = useState(false)
+  const [mealErr, setMealErr] = useState('')
+  const [mealConsentOpen, setMealConsentOpen] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [inviteCode, setInviteCode] = useState('')
 
@@ -400,6 +408,36 @@ export default function Index() {
   }, [entries])
 
   const dayInsight = useMemo(() => summarizeEntries(entries, categoryOf), [entries])
+
+  async function explainThisMeal() {
+    const ent = await getEntitlement().catch(() => null)
+    if (!isPro(ent)) {
+      void openPaywall(MEAL_PAYWALL_REASON)
+      return
+    }
+    if (!hasAiConsent(profile)) {
+      setMealConsentOpen(true)
+      return
+    }
+    setMealBusy(true)
+    setMealErr('')
+    try {
+      const text = await explainMeal({
+        kcal: Math.round(totals.kcal),
+        protein: Math.round(totals.p),
+        carb: Math.round(totals.c),
+        fat: Math.round(totals.f),
+        foods: entries.map((e) => e.food_name).filter(Boolean).slice(0, 12),
+      })
+      setMealNote(text)
+    } catch (e) {
+      if (e instanceof LlmFeatureError && e.code === 'pro_required') void openPaywall(MEAL_PAYWALL_REASON)
+      else if (e instanceof LlmFeatureError && e.code === 'gate_unavailable') setMealErr('AI 服务暂不可用，请稍后重试')
+      else setMealErr(e instanceof Error ? e.message : '解读失败，请稍后重试')
+    } finally {
+      setMealBusy(false)
+    }
+  }
   const eatenMeals = useMemo(() => new Set<string>(entries.map((e) => e.meal_type)), [entries])
   const advice = useMemo(() => nextMealAdvice(remain, eatenMeals), [remain, eatenMeals])
 
@@ -558,7 +596,7 @@ export default function Index() {
             个人信息处理存在争议，也与本项目「文案如实化」纪律相悖（P0-C 已清过一批
             虚假承诺）。此处只做中性告知，不替用户宣称其已同意。
           */}
-          <LegalLinks hint='注册或登录前，请阅读以下协议与政策' />
+          <LegalLinks footer />
         </View>
       </View>
     )
@@ -720,6 +758,11 @@ export default function Index() {
               <Text className='helper'>
                 按营养成分与烹调方式本地推算{dayInsight.aiAssisted > 0 ? `，其中 ${dayInsight.aiAssisted} 项参考了 AI 评分` : ''}，不消耗 AI 次数。仅供参考，不构成医疗建议。
               </Text>
+              <Button className='btn-text' style={{ marginTop: 8 }} disabled={mealBusy} onClick={() => void explainThisMeal()}>
+                {mealBusy ? '正在解读…' : '解读这一餐'}
+              </Button>
+              {mealNote ? <Text className='hint' style={{ marginTop: 8 }}>模型建议：{mealNote}</Text> : null}
+              {mealErr ? <Text className='field-err' style={{ marginTop: 8 }}>{mealErr}</Text> : null}
             </View>
           </View>
         </View>
@@ -968,6 +1011,17 @@ export default function Index() {
 
       <View className='bottom-space' />
 
+      {mealConsentOpen ? (
+        <AiConsent
+          kind='advice'
+          onAgree={async () => {
+            await grantAiConsent(profile)
+            setMealConsentOpen(false)
+            void explainThisMeal()
+          }}
+          onDecline={() => setMealConsentOpen(false)}
+        />
+      ) : null}
       {/* 统一「记一餐」弹层：单一 bottom sheet，对齐主工程 LogSheet */}
       {logSheetMeal && (
         <LogSheet
@@ -981,6 +1035,8 @@ export default function Index() {
       {introPlan && profile ? (
         <HealthPlanSheet profile={profile} mode='intro' onClose={() => setIntroPlan(false)} />
       ) : null}
+
+      <LegalLinks footer />
 
       {/* 主操作「记一餐」吸底悬浮：打开统一录入弹层 */}
       <Button className='btn fab-meal' onClick={() => openLogSheet()}>

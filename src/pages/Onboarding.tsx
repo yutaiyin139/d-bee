@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { generatePlan } from '../lib/ai'
+import { generatePlan, LlmFeatureError } from '../lib/ai'
 import { saveProfile } from '../lib/api'
 import { ACTIVITY_LABELS, GOAL_LABELS, calcTarget } from '../lib/nutrition'
 import {
@@ -165,7 +165,13 @@ export function Onboarding({ nickname, onDone }: OnboardingProps) {
       })
       setPlan(res)
     } catch (e) {
-      setPlanError(errText(e, 'AI 计划生成失败'))
+      if (e instanceof LlmFeatureError && e.code === 'pro_required') {
+        setPlanError('免费的一次建议已经用过。热量目标仍按公式计算，可以继续。')
+      } else if (e instanceof LlmFeatureError && e.code === 'gate_unavailable') {
+        setPlanError('AI 服务暂不可用，请稍后重试。热量目标已按公式算好，可以继续。')
+      } else {
+        setPlanError(errText(e, 'AI 计划生成失败'))
+      }
     } finally {
       setPlanLoading(false)
     }

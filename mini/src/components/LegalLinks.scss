@@ -44,6 +44,25 @@
   }
 }
 
+.legal-links--footer {
+  margin-top: 52px;
+  padding-top: 32px;
+  border-top: 1px solid $line;
+
+  .legal-links-meta {
+    display: block;
+    margin-top: 8px;
+    font-size: 23px;
+    line-height: 1.9;
+    color: $ink-3;
+  }
+
+  .legal-links-icp {
+    color: $honey-dark;
+    text-decoration: underline;
+  }
+}
+
 // 紧凑形态：登录页底部空间紧，缩小上边距与字号
 .legal-links--compact {
   margin-top: 28px;

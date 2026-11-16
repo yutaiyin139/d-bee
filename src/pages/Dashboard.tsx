@@ -24,9 +24,11 @@ import {
   unlockBadge,
   updateMealGrams,
 } from '../lib/api'
-import type { CoachContext } from '../lib/ai'
+import { explainMeal, LlmFeatureError, type CoachContext } from '../lib/ai'
+import { AiConsent } from '../components/AiConsent'
+import { grantAiConsent, hasAiConsent } from '../lib/aiConsent'
 import { STREAK_BADGES } from '../lib/badge'
-import { AI_REDEEM_DAILY_LIMIT, FREE_DAILY_AI, HEALTH_SYNC_INTERVAL_MS, proDaysLeft } from '../lib/entitlement'
+import { AI_REDEEM_DAILY_LIMIT, FREE_DAILY_AI, HEALTH_SYNC_INTERVAL_MS, MEAL_PAYWALL_REASON, proDaysLeft } from '../lib/entitlement'
 import { categoryOf } from '../lib/foods'
 import { LEVEL_LABELS, levelOfScore, nextMealAdvice, summarizeEntries } from '../lib/foodInsight'
 import { ACTIVITY_EATBACK_RATIO, connectHealth, DEFAULT_STEP_GOAL, estimateActivityKcal, getHealthVendor, healthStatusHint, isHealthConnectable, isHealthConnected, isUsableHealthStatus, syncFromHealth } from '../lib/health'
@@ -78,6 +80,10 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   const [inviteOpen, setInviteOpen] = useState(false)
   // 站内轻榜单（P2-1）：首页直达入口
   const [leaderboardOpen, setLeaderboardOpen] = useState(false)
+  const [mealNote, setMealNote] = useState('')
+  const [mealBusy, setMealBusy] = useState(false)
+  const [mealErr, setMealErr] = useState('')
+  const [mealConsentOpen, setMealConsentOpen] = useState(false)
 
   // 原位编辑与删除确认：避免竞品「提交后不能改」「误触删除」两个差评点
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -332,6 +338,35 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
 
   /** 当日饮食体检：规则引擎本地计算，离线可用、不消耗 AI 额度 */
   const dayInsight = useMemo(() => summarizeEntries(entries, categoryOf), [entries])
+
+  async function explainThisMeal() {
+    if (!pro) {
+      openPaywall(MEAL_PAYWALL_REASON)
+      return
+    }
+    if (!hasAiConsent(profile)) {
+      setMealConsentOpen(true)
+      return
+    }
+    setMealBusy(true)
+    setMealErr('')
+    try {
+      const text = await explainMeal({
+        kcal: Math.round(totals.kcal),
+        protein: Math.round(totals.p),
+        carb: Math.round(totals.c),
+        fat: Math.round(totals.f),
+        foods: entries.map((e) => e.food_name).filter(Boolean).slice(0, 12),
+      })
+      setMealNote(text)
+    } catch (e) {
+      if (e instanceof LlmFeatureError && e.code === 'pro_required') openPaywall(MEAL_PAYWALL_REASON)
+      else if (e instanceof LlmFeatureError && e.code === 'gate_unavailable') setMealErr('AI 服务暂不可用，请稍后重试')
+      else setMealErr(errText(e, '解读失败，请稍后重试'))
+    } finally {
+      setMealBusy(false)
+    }
+  }
 
   /** 卡路里追踪：把剩余额度按还没吃的餐次拆开，给出下一餐的参考上限 */
   const eatenMeals = useMemo(() => new Set<string>(entries.map((e) => e.meal_type)), [entries])
@@ -717,6 +752,11 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
                 {dayInsight.aiAssisted > 0 ? `，其中 ${dayInsight.aiAssisted} 项参考了 AI 评分` : ''}，
                 不消耗 AI 次数。仅供参考，不构成医疗建议。
               </div>
+              <button className="btn-text" style={{ marginTop: 8 }} disabled={mealBusy} onClick={() => void explainThisMeal()}>
+                {mealBusy ? '正在解读…' : '解读这一餐'}
+              </button>
+              {mealNote && <div className="helper" style={{ marginTop: 8, lineHeight: 1.7 }}>模型建议：{mealNote}</div>}
+              {mealErr && <div className="notice err" style={{ marginTop: 8 }}>{mealErr}</div>}
             </div>
           </div>
         </>
@@ -1144,6 +1184,17 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
       )}
 
       {coachOpen && <CoachSheet ctx={coachCtx} onClose={() => setCoachOpen(false)} />}
+      {mealConsentOpen && (
+        <AiConsent
+          kind="advice"
+          onAgree={async () => {
+            await grantAiConsent(profile)
+            setMealConsentOpen(false)
+            void explainThisMeal()
+          }}
+          onDecline={() => setMealConsentOpen(false)}
+        />
+      )}
 
       {/* 首页也放页脚：备案号与法律文档入口必须在首页可达 */}
       <SiteFooter onOpen={onOpenLegal} />

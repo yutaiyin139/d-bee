@@ -54,6 +54,10 @@ interface HealthPlanSheetProps {
   onClose: () => void
   onChangeGoal?: () => void
   updatedLabel?: string
+  aiAdvice?: { summary: string; points: string[] } | null
+  onRegenerateAdvice?: () => void
+  regenerating?: boolean
+  adviceError?: string
 }
 
 const chipStyle: CSSProperties = {
@@ -87,7 +91,10 @@ const cellValueStyle: CSSProperties = { fontSize: 18, fontWeight: 500 }
 
 const dash = (n: number | null | undefined): string => (n == null ? '—' : String(n))
 
-export function HealthPlanSheet({ profile, mode, onClose, onChangeGoal, updatedLabel }: HealthPlanSheetProps) {
+export function HealthPlanSheet({
+  profile, mode, onClose, onChangeGoal, updatedLabel,
+  aiAdvice, onRegenerateAdvice, regenerating, adviceError,
+}: HealthPlanSheetProps) {
   const view = buildHealthPlanView(profile)
   const isIntro = mode === 'intro'
 
@@ -264,6 +271,23 @@ export function HealthPlanSheet({ profile, mode, onClose, onChangeGoal, updatedL
           </View>
 
           <TransparencyNotes title={HEALTH_PLAN_NOTES_TITLE} notes={view.notes} />
+
+          {!isIntro && onRegenerateAdvice ? (
+            <View className='hp-card' style={{ marginTop: 12 }}>
+              <Text className='hp-section-chip'>模型建议</Text>
+              {aiAdvice?.summary
+                ? <Text style={{ marginTop: 10 }}>{aiAdvice.summary}</Text>
+                : <Text className='hp-helper' style={{ marginTop: 10 }}>还没有模型建议。</Text>}
+              {aiAdvice?.points.map((line) => (
+                <Text key={line} className='hp-helper' style={{ marginTop: 6 }}>{line}</Text>
+              ))}
+              <View className='hp-btn' style={{ marginTop: 10 }} onClick={regenerating ? undefined : onRegenerateAdvice}>
+                <Text>{regenerating ? '正在生成…' : '重新生成建议'}</Text>
+              </View>
+              <Text className='hp-helper' style={{ marginTop: 4 }}>只更新这段建议，不改每日热量与营养素目标。</Text>
+              {adviceError ? <Text className='field-err' style={{ marginTop: 8 }}>{adviceError}</Text> : null}
+            </View>
+          ) : null}
 
           {isIntro ? (
             <View>

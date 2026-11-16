@@ -116,6 +116,10 @@ export function createApp(deps) {
   if (llm) {
     router.on('GET', '/.cloud/llm/models', wrap(llm.listModels))
     router.on('POST', '/.cloud/llm/chat/completions', wrap(llm.chatCompletions))
+    router.on('POST', '/.cloud/llm/features/meal', wrap(llm.featureMeal))
+    router.on('POST', '/.cloud/llm/features/recap', wrap(llm.featureRecap))
+    router.on('POST', '/.cloud/llm/features/plan', wrap(llm.featurePlan))
+    router.on('POST', '/.cloud/llm/features/coach', wrap(llm.featureCoach))
   }
 
   if (iap) {

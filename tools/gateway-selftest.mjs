@@ -1041,19 +1041,51 @@ section('HTTP · LLM 闸门（llm_gate）与包装识别兜底')
   r = await gpost({ messages: [{ role: 'user', content: '你好' }] })
   assert('库异常时文本请求 fail-closed 503', r.status === 503, `实际 ${r.status}`)
 
-  // ⑥c recap 标记 + 非 Pro → 402 pro_required
-  gatePool.setMode({ allowed: false, pro: false, feature: 'recap', reason: 'pro_required' })
+  // ⑥c 通用聊天忽略客户端 system。复盘文案塞进来也只按食物换算，feature=text。
+  gatePool.setMode({ allowed: true, pro: false, feature: 'text' })
   r = await gpost({
     messages: [
       { role: 'system', content: '[dbee-feature:recap]\n解读饮食统计' },
       { role: 'user', content: '请点评' },
     ],
   })
+  assert('通用聊天忽略复盘标记，feature=text', gatePool.state.features.at(-1) === 'text', String(gatePool.state.features.at(-1)))
+  assert('通用聊天到达上游 502', r.status === 502, `实际 ${r.status}`)
+
+  const feat = (name) => G.replace('/chat/completions', `/features/${name}`)
+  const recapBody = { days: 7, avgKcal: 1800, targetKcal: 1600, loggedDays: 5, goal: 'lose' }
+  const mealBody = { kcal: 520, protein: 22, carb: 48, fat: 16, foods: ['米饭', '青菜'] }
+  const planBody = { calories: 1600, age: 30, goal: '减脂', gender: 'female', heightCm: 165, weightKg: 62, targetWeightKg: 55, activity: '轻度', barriers: [] }
+
+  gatePool.setMode({ allowed: false, pro: false, feature: 'recap', reason: 'pro_required' })
+  r = await post(feat('recap'), recapBody, GH)
   assert('本期解读非 Pro → 402 pro_required', r.status === 402, `实际 ${r.status}`)
   {
     const jj = await r.json()
     assert('402 错误码 = pro_required', jj.error?.code === 'pro_required', JSON.stringify(jj.error))
   }
+  r = await post(feat('meal'), mealBody, GH)
+  assert('解读这一餐非 Pro → 402', r.status === 402, `实际 ${r.status}`)
+
+  let planHits = 0
+  gatePool.setMode((feature) => {
+    if (feature !== 'plan') return { allowed: true, pro: false, feature }
+    planHits += 1
+    if (planHits === 1) return { allowed: true, pro: false, feature: 'plan', remaining: 0 }
+    return { allowed: false, pro: false, feature: 'plan', reason: 'pro_required' }
+  })
+  r = await post(feat('plan'), planBody, GH)
+  assert('计划第一次非 Pro → 502（到达上游）', r.status === 502, `实际 ${r.status}`)
+  r = await post(feat('plan'), planBody, GH)
+  assert('计划第二次非 Pro → 402', r.status === 402, `实际 ${r.status}`)
+
+  gatePool.setMode({ allowed: true, pro: true, feature: 'recap' })
+  r = await post(feat('recap'), recapBody, GH)
+  assert('Pro 复盘到达上游 502', r.status === 502, `实际 ${r.status}`)
+
+  gatePool.setMode('query-throw')
+  r = await post(feat('meal'), mealBody, GH)
+  assert('功能路由闸门异常 → 503', r.status === 503, `实际 ${r.status}`)
 
   // ⑦ 输入限制：图片数超限（默认 4）→ 400 input_too_large，且不消耗兜底额度
   gatePool.setMode({ allowed: false, pro: false, reason: 'quota_not_claimed' })

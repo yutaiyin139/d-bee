@@ -48,6 +48,22 @@ import {
 import { exportJSON, exportText, isExportAvailable, EXPORT_UNAVAILABLE_MESSAGE, EXPORT_EMAIL_FALLBACK } from '../../lib/share'
 import { isHealthConnectable, getHealthVendor, connectHealth, disconnectHealth } from '../../lib/health'
 import { openPaywall } from '../../lib/upsell'
+import { generatePlan, LlmFeatureError } from '../../lib/ai'
+import { AiConsent } from '../../components/AiConsent'
+import { grantAiConsent, hasAiConsent } from '../../lib/aiConsent'
+
+function readAdvice(raw: string | null | undefined): { summary: string; points: string[] } | null {
+  if (!raw) return null
+  try {
+    const o = JSON.parse(raw) as { summary?: unknown; advice?: unknown }
+    const summary = typeof o.summary === 'string' ? o.summary : ''
+    const points = Array.isArray(o.advice) ? o.advice.map((x) => String(x)) : []
+    if (!summary && points.length === 0) return null
+    return { summary, points }
+  } catch {
+    return null
+  }
+}
 import { openManageSubscriptions } from '../../lib/manageSubscription'
 import { HONEY_PRICE } from '../../lib/invite'
 import {
@@ -55,15 +71,15 @@ import {
   DATA_RIGHTS_NOTES,
   MINI_RECORDING_CAPS,
   isPro,
+  PLAN_REGEN_REASON,
   isLifetime,
   memberSubText,
   DEFAULT_STEP_GOAL,
   quotaNotes,
 } from '@dbee/shared'
 import { TransparencyNotes } from '../../components/TransparencyNotes'
+import { LegalLinks } from '../../components/LegalLinks'
 import { signOut } from '../../lib/auth'
-import { SITE } from '../../content/legal'
-import { copyText } from '../../lib/clipboard'
 import { getNotifyPrefs, setNotifyPrefs, enableCheckinNotify, disableCheckinNotify, enableWaterNotify, disableWaterNotify, isNotifyPushAvailable, NOTIFY_UNAVAILABLE_NOTE } from '../../lib/notifications'
 import './profile.scss'
 import '../../components/MyPageSheets.scss'
@@ -79,6 +95,10 @@ export default function ProfilePage() {
   // 四页早就这么做了，只有本页漏掉）。
   const [entitlement, setEntitlement] = useState<Entitlement | null>(null)
   const pro = useMemo(() => isPro(entitlement), [entitlement])
+  const [regenBusy, setRegenBusy] = useState(false)
+  const [regenErr, setRegenErr] = useState('')
+  const [adviceConsentOpen, setAdviceConsentOpen] = useState(false)
+  const aiAdvice = useMemo(() => readAdvice(profile?.plan_summary), [profile?.plan_summary])
   const lifetime = useMemo(() => isLifetime(entitlement), [entitlement])
   /**
    * 今日剩余拍照次数。null = 未加载完成、读不到（降级）或 Pro（不限次，无需展示数字）。
@@ -99,6 +119,49 @@ export default function ProfilePage() {
   const [editing, setEditing] = useState(false)
   // 体重管理方案：单态 Sheet（只读 profile.goal）；改目标确认写库后自动回到新目标态
   const [planOpen, setPlanOpen] = useState(false)
+
+  async function regenerateAdvice() {
+    if (!profile) return
+    if (!pro) {
+      void openPaywall(PLAN_REGEN_REASON)
+      return
+    }
+    if (!hasAiConsent(profile)) {
+      setAdviceConsentOpen(true)
+      return
+    }
+    const calories = profile.daily_calorie_target
+    const age = profile.age
+    if (!calories || !age) {
+      setRegenErr('请先补全身高、体重和目标，再生成建议')
+      return
+    }
+    const level = (profile.activity_level ?? 'light') as keyof typeof ACTIVITY_LABELS
+    const goalKey = (profile.goal ?? 'lose') as keyof typeof GOAL_LABELS
+    setRegenBusy(true)
+    setRegenErr('')
+    try {
+      const res = await generatePlan({
+        goal: GOAL_LABELS[goalKey],
+        gender: profile.gender ?? 'female',
+        age,
+        heightCm: profile.height_cm ?? 165,
+        weightKg: profile.current_weight_kg ?? profile.start_weight_kg ?? 60,
+        targetWeightKg: profile.target_weight_kg ?? profile.current_weight_kg ?? 60,
+        activity: ACTIVITY_LABELS[level] ?? level,
+        barriers: profile.barriers ? profile.barriers.split(',').filter(Boolean) : [],
+        calories,
+      })
+      const saved = await saveProfile({ plan_summary: JSON.stringify(res) })
+      setProfile(saved)
+    } catch (e) {
+      if (e instanceof LlmFeatureError && e.code === 'pro_required') void openPaywall(PLAN_REGEN_REASON)
+      else if (e instanceof LlmFeatureError && e.code === 'gate_unavailable') setRegenErr('AI 服务暂不可用，请稍后重试')
+      else setRegenErr(e instanceof Error ? e.message : '生成建议失败，请稍后重试')
+    } finally {
+      setRegenBusy(false)
+    }
+  }
   const [planUpdated, setPlanUpdated] = useState('')
   const [barriers] = useState<string[]>([])
 
@@ -484,20 +547,6 @@ export default function ProfilePage() {
     }
   }
 
-  /**
-   * 复制公示邮箱（「联系我们」行）。小程序无 mailto，复制是唯一可行路径。
-   * 反馈文案与 legal.ts「四、个人信息的查阅、复制…联系我们」条目的承诺口径一致：
-   * 「我们将在 15 个工作日内答复」—— 两处若不一致就等于给用户两个不同的时限。
-   */
-  async function copyContactEmail() {
-    const ok = await copyText(SITE.contactEmail)
-    Taro.showToast({
-      title: ok ? `邮箱已复制：${SITE.contactEmail}` : `复制失败，请手动记录：${SITE.contactEmail}`,
-      icon: 'none',
-      duration: ok ? 2500 : 4000,   // 失败时给足时间手抄
-    })
-  }
-
   function goInvite() {
     Taro.navigateTo({ url: '/pages/invite/invite' })
   }
@@ -840,41 +889,6 @@ export default function ProfilePage() {
         <Button className='btn btn-ghost signout-btn' onClick={() => setConfirmSignOut(true)}>退出登录</Button>
       )}
 
-      {/* 关于与协议 */}
-      <View className='section-title' style={{ marginTop: 24 }}><Text>关于</Text></View>
-      <View className='card'>
-        <View className='list-line' onClick={() => Taro.navigateTo({ url: '/pages/legal/legal?id=terms' })}>
-          <Text className='line-label'>用户协议</Text>
-          <Text className='line-val'><Text className='arrow'>›</Text></Text>
-        </View>
-        <View className='list-line' onClick={() => Taro.navigateTo({ url: '/pages/legal/legal?id=privacy' })}>
-          <Text className='line-label'>隐私政策</Text>
-          <Text className='line-val'><Text className='arrow'>›</Text></Text>
-        </View>
-        <View className='list-line' onClick={() => Taro.navigateTo({ url: '/pages/legal/legal?id=disclaimer' })}>
-          <Text className='line-label'>免责声明</Text>
-          <Text className='line-val'><Text className='arrow'>›</Text></Text>
-        </View>
-        {/*
-          🔴 「联系我们」（2026-11-05 补）。此前本卡片只有三条法律文档，但注销账号的
-          提示文案（下方 confirmDeleteAcct 分支）与 legal.ts 正文都指引用户
-          「通过『关于 → 联系我们』与客服联系」—— 而该入口在两端都**不存在**，
-          属四端共有的失实指引（web 端连「关于」区块都没有）。本次两端一并补齐。
-          🔴 2026-11-08 更正：注销已改为 App 内真删号（0045 RPC），本行邮箱现在**只作
-          公示联系方式**，不再是注销的替代路径；下方注销提示不得再引导用户转客服。
-
-          邮箱刻意**默认直接显示**在行内而非点击后才弹出：法律要求公示联系方式应
-          「以显著方式」呈现，藏在交互后面等于没公示。点击整行 = 复制到剪贴板
-          （小程序无 DOM、无 mailto，不能直接唤起邮件客户端，故复制是唯一可行路径，
-          与 legal.tsx 备案号的既有交互口径一致）。
-        */}
-        <View className='list-line' onClick={() => void copyContactEmail()}>
-          <Text className='line-label'>联系我们</Text>
-          <Text className='line-val contact-val'>{SITE.contactEmail}</Text>
-        </View>
-        <View className='helper'>点击邮箱可复制；我们将在 15 个工作日内答复</View>
-      </View>
-
       {/* 账号管理 */}
       <View className='section-title' style={{ marginTop: 24 }}><Text>账号管理</Text></View>
       <View className='card'>
@@ -906,6 +920,8 @@ export default function ProfilePage() {
       <TransparencyNotes title='你的数据与退款' notes={DATA_RIGHTS_NOTES} />
       <TransparencyNotes title='这些能力怎么算' notes={CAPABILITY_NOTES} />
       <TransparencyNotes title='次数怎么算' notes={quotaNotes(MINI_RECORDING_CAPS)} />
+
+      <LegalLinks footer />
 
       <View className='bottom-space' />
 
@@ -1032,11 +1048,27 @@ export default function ProfilePage() {
         </View>
       ) : null}
 
+      {adviceConsentOpen ? (
+        <AiConsent
+          kind='advice'
+          onAgree={async () => {
+            await grantAiConsent(profile)
+            setAdviceConsentOpen(false)
+            void regenerateAdvice()
+          }}
+          onDecline={() => setAdviceConsentOpen(false)}
+        />
+      ) : null}
+
       {planOpen && profile ? (
         <HealthPlanSheet
           profile={profile}
           mode='normal'
           updatedLabel={planUpdated}
+          aiAdvice={aiAdvice}
+          regenerating={regenBusy}
+          adviceError={regenErr}
+          onRegenerateAdvice={() => void regenerateAdvice()}
           onClose={() => { setPlanOpen(false); setPlanUpdated('') }}
           onChangeGoal={() => { setPlanOpen(false); setPlanUpdated(''); setEditing(true) }}
         />

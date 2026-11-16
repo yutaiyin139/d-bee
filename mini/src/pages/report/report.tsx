@@ -11,7 +11,7 @@ import { View, Text, Button, Input } from '@tarojs/components'
 import { useDidShow } from '@tarojs/taro'
 import { BarChart, LineChart, RatioBar, C_HONEY, C_BLUE, C_GREEN } from '../../components/Charts'
 import { IconLock, IconWeight } from '../../components/Icons'
-import { generateReportInsight } from '../../lib/ai'
+import { generateReportInsight, LlmFeatureError } from '../../lib/ai'
 import { AiLabel } from '../../components/AiLabel'
 import { getProfile, listLoggedMeals, listMealsBetween, listWeightLogsAsc, saveWeight, getEntitlement, type MealEntry, type MealSlim, type Profile, type WeightLog } from '../../lib/api'
 import { shiftDate, todayKey, monthGrid } from '../../lib/nutrition'
@@ -205,7 +205,9 @@ export default function ReportPage() {
       })
       setInsight(res)
     } catch (e) {
-      setInsightError(e instanceof Error ? e.message : '生成解读失败，请重试')
+      if (e instanceof LlmFeatureError && e.code === 'pro_required') void openPaywall(INSIGHT_PAYWALL_REASON)
+      else if (e instanceof LlmFeatureError && e.code === 'gate_unavailable') setInsightError('AI 服务暂不可用，请稍后重试')
+      else setInsightError(e instanceof Error ? e.message : '生成解读失败，请重试')
     } finally {
       setInsightBusy(false)
     }

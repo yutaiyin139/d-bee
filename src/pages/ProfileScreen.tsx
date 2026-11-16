@@ -44,6 +44,23 @@ import {
 import type { Profile, WeightLog } from '../types'
 import { InviteCenter } from './InviteCenter'
 import { errText } from '../lib/errmsg'
+import { generatePlan, LlmFeatureError } from '../lib/ai'
+import { AiConsent } from '../components/AiConsent'
+import { grantAiConsent, hasAiConsent } from '../lib/aiConsent'
+import { PLAN_REGEN_REASON } from '../lib/entitlement'
+
+function readAdvice(raw: string | null | undefined): { summary: string; points: string[] } | null {
+  if (!raw) return null
+  try {
+    const o = JSON.parse(raw) as { summary?: unknown; advice?: unknown }
+    const summary = typeof o.summary === 'string' ? o.summary : ''
+    const points = Array.isArray(o.advice) ? o.advice.map((x) => String(x)) : []
+    if (!summary && points.length === 0) return null
+    return { summary, points }
+  } catch {
+    return null
+  }
+}
 import { HealthPlanSheet } from '../components/HealthPlanSheet'
 import { HEALTH_PLAN_CHANGE_WILL, HEALTH_PLAN_CHANGE_WONT, HEALTH_PLAN_EDIT_CURRENT_PREFIX, HEALTH_PLAN_EDIT_CONFIRM_TAIL, HEALTH_PLAN_EDIT_WILL_PREFIX, HEALTH_PLAN_EDIT_WONT_PREFIX, HEALTH_PLAN_UPDATED_PREFIX } from '../lib/healthPlan'
 import {
@@ -70,12 +87,58 @@ interface ProfileScreenProps {
 
 export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged, onSignOut, onOpenReport }: ProfileScreenProps) {
   const { pro, lifetime, aiRemaining, openPaywall, entitlement } = usePlan()
+  const [regenBusy, setRegenBusy] = useState(false)
+  const [regenErr, setRegenErr] = useState('')
+  const [adviceConsentOpen, setAdviceConsentOpen] = useState(false)
+  const aiAdvice = useMemo(() => readAdvice(profile.plan_summary), [profile.plan_summary])
   const todayTarget = useMemo(() => buildTodayTarget(profile), [profile])
   // 四个新弹层共用一个状态：少一个状态就少一处分叉，四端更易对齐
   const [activeSheet, setActiveSheet] = useState<'record' | 'food' | 'week' | 'device' | null>(null)
   const [editing, setEditing] = useState(false)
   // 体重管理方案：单态 Sheet（只读 profile.goal）；改目标确认写库后自动回到新目标态
   const [planOpen, setPlanOpen] = useState(false)
+
+  async function regenerateAdvice() {
+    if (!pro) {
+      openPaywall(PLAN_REGEN_REASON)
+      return
+    }
+    if (!hasAiConsent(profile)) {
+      setAdviceConsentOpen(true)
+      return
+    }
+    const calories = profile.daily_calorie_target
+    const age = profile.age
+    if (!calories || !age) {
+      setRegenErr('请先补全身高、体重和目标，再生成建议')
+      return
+    }
+    const level = (profile.activity_level ?? 'light') as keyof typeof ACTIVITY_LABELS
+    const goalKey = (profile.goal ?? 'lose') as keyof typeof GOAL_LABELS
+    setRegenBusy(true)
+    setRegenErr('')
+    try {
+      const res = await generatePlan({
+        goal: GOAL_LABELS[goalKey],
+        gender: profile.gender ?? 'female',
+        age,
+        heightCm: profile.height_cm ?? 165,
+        weightKg: profile.current_weight_kg ?? profile.start_weight_kg ?? 60,
+        targetWeightKg: profile.target_weight_kg ?? profile.current_weight_kg ?? 60,
+        activity: ACTIVITY_LABELS[level] ?? level,
+        barriers: profile.barriers ? profile.barriers.split(',').filter(Boolean) : [],
+        calories,
+      })
+      const saved = await saveProfile({ plan_summary: JSON.stringify(res) })
+      onProfileChanged(saved)
+    } catch (e) {
+      if (e instanceof LlmFeatureError && e.code === 'pro_required') openPaywall(PLAN_REGEN_REASON)
+      else if (e instanceof LlmFeatureError && e.code === 'gate_unavailable') setRegenErr('AI 服务暂不可用，请稍后重试')
+      else setRegenErr(errText(e, '生成建议失败，请稍后重试'))
+    } finally {
+      setRegenBusy(false)
+    }
+  }
   const [planUpdated, setPlanUpdated] = useState('')
   const [barriers] = useState<string[]>(() => (profile.barriers ? profile.barriers.split(',') : []))
 
@@ -985,11 +1048,26 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
           profile={profile}
           mode="normal"
           updatedLabel={planUpdated}
+          aiAdvice={aiAdvice}
+          regenerating={regenBusy}
+          adviceError={regenErr}
+          onRegenerateAdvice={() => void regenerateAdvice()}
           onClose={() => { setPlanOpen(false); setPlanUpdated('') }}
           onChangeGoal={() => { setPlanOpen(false); setPlanUpdated(''); setEditing(true) }}
         />
       )}
 
+      {adviceConsentOpen && (
+        <AiConsent
+          kind="advice"
+          onAgree={async () => {
+            await grantAiConsent(profile)
+            setAdviceConsentOpen(false)
+            void regenerateAdvice()
+          }}
+          onDecline={() => setAdviceConsentOpen(false)}
+        />
+      )}
       {activeSheet === 'record' && <HealthRecordSheet profile={profile} onClose={() => setActiveSheet(null)} />}
       {activeSheet === 'food' && <MyFoodSheet onClose={() => setActiveSheet(null)} />}
       {activeSheet === 'week' && <WeekRecipeSheet onClose={() => setActiveSheet(null)} />}

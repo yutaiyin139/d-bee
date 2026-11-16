@@ -17,16 +17,19 @@
  * 📌 刻意**不做**勾选框「已阅读并同意」：微信对强制勾选有额外规范要求，
  * 且需同步改后台「用户隐私保护指引」，属独立决策项，不在本次修复范围。
  */
+import { useState } from 'react'
 import { View, Text } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import type { DocId } from '../content/legal'
+import { SITE, type DocId } from '../content/legal'
+import { copyText } from '../lib/clipboard'
 import './LegalLinks.scss'
 
-/** 三份文档的展示顺序与文案，与主端 SiteFooter.tsx:14-27 逐字一致。 */
-const LINKS: { id: DocId; label: string }[] = [
+/** 与主端 SiteFooter 的法律入口同一顺序。会员定价只在网页页脚，小程序不放第二份标价。 */
+const LINKS: { id: DocId | 'contact'; label: string }[] = [
   { id: 'terms', label: '用户协议' },
   { id: 'privacy', label: '隐私政策' },
   { id: 'disclaimer', label: '免责声明' },
+  { id: 'contact', label: '联系我们' },
 ]
 
 interface LegalLinksProps {
@@ -34,17 +37,43 @@ interface LegalLinksProps {
   hint?: string
   /** 紧凑形态：字号更小、间距更紧，用于登录页底部 */
   compact?: boolean
+  /**
+   * 登录后的页脚，对齐主端 SiteFooter：同一行入口，外加版本、邮箱和备案号。
+   * 小程序打不开政府备案站，备案号改为复制查询网址。
+   */
+  footer?: boolean
 }
 
-export function LegalLinks({ hint, compact }: LegalLinksProps) {
-  function open(id: DocId) {
-    // legal 页是普通页面（非 tabBar），navigateTo 即可；与 profile.tsx 同一路径口径。
+export function LegalLinks({ hint, compact, footer }: LegalLinksProps) {
+  const [icpMsg, setIcpMsg] = useState('')
+
+  function open(id: DocId | 'contact') {
+    if (id === 'contact') {
+      void copyContact()
+      return
+    }
     void Taro.navigateTo({ url: `/pages/legal/legal?id=${id}` })
   }
 
+  async function copyContact() {
+    const ok = await copyText(SITE.contactEmail)
+    Taro.showToast({
+      title: ok ? `邮箱已复制：${SITE.contactEmail}` : `复制失败，请手动记录：${SITE.contactEmail}`,
+      icon: 'none',
+      duration: ok ? 2500 : 4000,
+    })
+  }
+
+  async function copyIcp() {
+    const ok = await copyText(`${SITE.icpUrl} （备案号：${SITE.icp}）`)
+    setIcpMsg(ok ? '查询网址与备案号已复制，请在浏览器打开核验' : '复制失败，请手动记录备案号后到浏览器查询')
+  }
+
+  const cls = ['legal-links', compact ? 'legal-links--compact' : '', footer ? 'legal-links--footer' : ''].filter(Boolean).join(' ')
+
   return (
-    <View className={compact ? 'legal-links legal-links--compact' : 'legal-links'}>
-      {hint ? <Text className='legal-links-hint'>{hint}</Text> : null}
+    <View className={cls}>
+      {!footer && hint ? <Text className='legal-links-hint'>{hint}</Text> : null}
       <View className='legal-links-row'>
         {LINKS.map((l, i) => (
           <View className='legal-links-item' key={l.id}>
@@ -55,6 +84,18 @@ export function LegalLinks({ hint, compact }: LegalLinksProps) {
           </View>
         ))}
       </View>
+      {footer ? (
+        <View>
+          <Text className='legal-links-meta'>{SITE.nameEn}（{SITE.name}）{SITE.version} · {SITE.contactEmail} · 营养数据仅供参考，不构成医疗建议</Text>
+          {SITE.icp ? (
+            <Text className='legal-links-meta legal-links-icp' onClick={() => void copyIcp()}>{SITE.icp}</Text>
+          ) : null}
+          {SITE.police ? (
+            <Text className='legal-links-meta legal-links-icp' onClick={() => void copyIcp()}>{SITE.police}</Text>
+          ) : null}
+          {icpMsg ? <Text className='legal-links-meta'>{icpMsg}</Text> : null}
+        </View>
+      ) : null}
     </View>
   )
 }

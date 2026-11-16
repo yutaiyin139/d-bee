@@ -230,6 +230,14 @@ export function quotaExhaustedReason(caps: RecordingCaps = FULL_RECORDING_CAPS):
 export const INSIGHT_PAYWALL_REASON =
   '「本期解读」是 AI 长文本复盘，属于 Pro 会员专属功能。升级后可无限次生成。'
 
+/** 饮食体检下方的「解读这一餐」。本地体检仍免费，这一句模型建议仅 Pro。 */
+export const MEAL_PAYWALL_REASON =
+  '「解读这一餐」是模型根据刚记下的数字写的建议，属于 Pro 会员。饮食体检本身仍然免费。'
+
+/** 体重方案页重新生成建议。公式热量目标不走这条，始终免费重算。 */
+export const PLAN_REGEN_REASON =
+  '更改目标后重新生成建议属于 Pro 会员。每日热量与营养素目标仍按公式免费计算。'
+
 /* ── 拍照额度阶梯 + 反复拍照判定（多端共用纯函数）────────────────── */
 
 /**

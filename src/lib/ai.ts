@@ -1,6 +1,9 @@
 import { cloud } from '../cloud'
 import { roundTo } from './numfmt'
 import type { DetectedFood } from '../types'
+import { completeFeature, LlmFeatureError } from './llmFeature'
+
+export { LlmFeatureError }
 
 /**
  * AI 能力封装：拍照识别食物、文字解析食物、生成个性化计划。
@@ -179,11 +182,6 @@ export async function recognizeFoodFromImage(dataUrl: string, hint?: string): Pr
   return items
 }
 
-const PLAN_SYSTEM = `你是一位务实的中式减脂教练。用简体中文输出，语气直接、具体、不打鸡血。
-只输出一个 JSON 对象，不要代码围栏。格式：
-{"summary":"一句话总目标","advice":["建议1","建议2","建议3"]}
-每条建议不超过 40 字，必须针对用户给出的阻碍因素，给出可当天执行的动作。`
-
 export async function generatePlan(input: {
   goal: string
   gender: string
@@ -195,21 +193,7 @@ export async function generatePlan(input: {
   barriers: string[]
   calories: number
 }): Promise<{ summary: string; advice: string[] }> {
-  const user = `用户情况：
-- 目标：${input.goal}
-- 性别/年龄：${input.gender === 'male' ? '男' : '女'} / ${input.age} 岁
-- 身高体重：${input.heightCm} cm / ${input.weightKg} kg，目标体重 ${input.targetWeightKg} kg
-- 活动水平：${input.activity}
-- 每日推荐热量：${input.calories} kcal
-- 主要阻碍：${input.barriers.join('、') || '未填写'}
-请给出总目标和 3 条针对性建议。`
-  const reply = await collectText(
-    [
-      { role: 'system', content: PLAN_SYSTEM },
-      { role: 'user', content: user },
-    ],
-    0.6,
-  )
+  const reply = await completeFeature('plan', { ...input })
   const obj = extractJson(reply) as { summary?: string; advice?: unknown }
   return {
     summary: String(obj.summary ?? '').trim() || '先稳住三餐，再谈热量缺口。',
@@ -255,16 +239,6 @@ export async function identifyPackagedFood(dataUrl: string, barcode?: string): P
   return items
 }
 
-const REPORT_SYSTEM = `[dbee-feature:recap]
-你是一位务实的中式饮食教练，正在给用户解读他的饮食统计。
-只输出一个 JSON 对象，不要代码围栏。格式：
-{"summary":"一句话总评，不超过 30 字","points":["点评1","点评2","点评3"]}
-要求：
-1. 每一条点评不超过 45 字，必须引用用户数据里的具体数字，不要空泛。
-2. 先指出最值得改的一个问题，再给一条能明天就执行的动作。
-3. 数据正常的地方也要肯定一句，不要只批评。
-4. 不要建议吃补剂、代餐或极端节食。`
-
 export interface ReportStats {
   days: number
   loggedDays: number
@@ -283,39 +257,15 @@ export interface ReportStats {
   goal: string
 }
 
-/** 把统计结果交给模型生成针对性点评 */
+/** 把统计数字交给网关，由服务端组提示词后生成点评 */
 export async function generateReportInsight(stats: ReportStats): Promise<{ summary: string; points: string[] }> {
-  const goalText = stats.goal === 'lose' ? '减脂' : stats.goal === 'gain' ? '增重增肌' : '保持体重'
-  const user = `统计区间：最近 ${stats.days} 天，其中 ${stats.loggedDays} 天有记录。
-目标：${goalText}，每日热量预算 ${stats.targetKcal} kcal。
-- 日均摄入：${stats.avgKcal} kcal（达标 ${stats.onTargetDays} 天，超标 ${stats.overDays} 天）
-- 日均蛋白质：${stats.avgProtein} g（目标 ${stats.proteinTarget} g）
-- 三大营养素供能比：蛋白 ${stats.proteinRatio}%、碳水 ${stats.carbRatio}%、脂肪 ${stats.fatRatio}%
-- 餐次热量分布：${stats.mealSplit.map((m) => `${m.name} ${m.kcal} kcal`).join('，') || '无数据'}
-- 出现最多的食物：${stats.topFoods.map((f) => `${f.name}(${f.count} 次)`).join('，') || '无数据'}
-- 体重变化：${stats.weightChange === null ? '没有记录' : `${stats.weightChange > 0 ? '+' : ''}${stats.weightChange} kg`}
-请给出总评与 3 条点评。`
-  const reply = await collectText(
-    [
-      { role: 'system', content: REPORT_SYSTEM },
-      { role: 'user', content: user },
-    ],
-    0.5,
-  )
+  const reply = await completeFeature('recap', { ...stats })
   const obj = extractJson(reply) as { summary?: unknown; points?: unknown }
   return {
     summary: String(obj.summary ?? '').trim(),
     points: Array.isArray(obj.points) ? obj.points.map((p) => String(p)).slice(0, 4) : [],
   }
 }
-
-const COACH_SYSTEM = `[dbee-feature:coach]
-你是一位务实、亲切的中式饮食教练「D-Bee 小蜜」，在聊天里回答用户关于饮食、热量、营养的问题。
-要求：
-1. 用简体中文口语化回答，每次不超过 120 字，给可执行的建议，不说教、不打鸡血。
-2. 会引用用户的实时数据（今日已摄入、剩余额度、目标），让建议贴合当下。
-3. 涉及疾病、药物、孕期等医疗问题时，明确建议咨询医生，不做诊断。
-4. 不建议吃补剂、代餐或极端节食。`
 
 export interface CoachContext {
   goal: string
@@ -337,26 +287,18 @@ export async function askCoach(
   ctx: CoachContext,
   onDelta?: (delta: string) => void,
 ): Promise<string> {
-  const goalText = ctx.goal === 'lose' ? '减脂' : ctx.goal === 'gain' ? '增重增肌' : '保持体重'
-  const net = Math.round(ctx.eatenKcal - ctx.burnedKcal)
-  const remain = Math.round(ctx.targetKcal - net)
-  const user = `我的实时状态：
-- 目标：${goalText}，每日热量预算 ${ctx.targetKcal} kcal
-- 今日已摄入 ${Math.round(ctx.eatenKcal)} kcal，运动消耗 ${Math.round(ctx.burnedKcal)} kcal，净摄入 ${net} kcal（还能吃约 ${remain} kcal）
-- 蛋白质 ${Math.round(ctx.proteinEaten)}/${ctx.proteinTarget} g，饮水 ${ctx.waterMl}/${ctx.waterTarget} ml
-- 最近常吃：${ctx.topFoods.slice(0, 4).join('、') || '暂无'}
-- 我的困难：${ctx.barriers.join('、') || '暂无'}
+  return completeFeature('coach', { question, ...ctx }, onDelta)
+}
 
-我的问题：${question}`
-  return collectText(
-    [
-      { role: 'system', content: COACH_SYSTEM },
-      { role: 'user', content: user },
-    ],
-    0.55,
-    undefined,
-    onDelta,
-  )
+export async function explainMeal(input: {
+  kcal: number
+  protein: number
+  carb: number
+  fat: number
+  foods: string[]
+}): Promise<string> {
+  const text = await completeFeature('meal', { ...input })
+  return text.trim()
 }
 
 /** 把图片压缩到合理尺寸，避免上传过大的 base64 拖慢识别。

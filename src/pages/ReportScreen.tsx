@@ -3,7 +3,7 @@ import { CalendarHeatmap } from '../components/Calendar'
 import { BarChart, LineChart, RatioBar } from '../components/Charts'
 import { IconLock, IconPlus, IconWeight } from '../components/Icons'
 import { AiLabel } from '../components/AiLabel'
-import { generateReportInsight } from '../lib/ai'
+import { generateReportInsight, LlmFeatureError } from '../lib/ai'
 import { listLoggedMeals, listMealsBetween, listWeightLogsAsc, saveWeight } from '../lib/api'
 import { FREE_REPORT_DAYS, PRO_REPORT_DAYS, INSIGHT_PAYWALL_REASON } from '../lib/entitlement'
 import { shiftDate, todayKey } from '../lib/nutrition'
@@ -227,7 +227,9 @@ export function ReportScreen({ profile }: ReportScreenProps) {
       })
       setInsight(res)
     } catch (e) {
-      setInsightError(errText(e, '生成解读失败，请重试'))
+      if (e instanceof LlmFeatureError && e.code === 'pro_required') openPaywall(INSIGHT_PAYWALL_REASON)
+      else if (e instanceof LlmFeatureError && e.code === 'gate_unavailable') setInsightError('AI 服务暂不可用，请稍后重试')
+      else setInsightError(errText(e, '生成解读失败，请重试'))
     } finally {
       setInsightBusy(false)
     }
