@@ -1870,3 +1870,17 @@ stdin 脚本不落临时文件、不执行删除。⚠️ 首次红验证脚本�
 - 🔴🔴 **21:05 三层只读复验全绿（零写入生产）**：四服务 `NRestarts=0`/OOM 0/systemd 与 nginx 配置 mtime **早于部署日＝未触碰**；`gateway.env` 未变、`app.mjs` 删 0 增 7、22-C（`dbee-feature` 0）；公网 **19/19 逐字节**、路由 **400→401→404**。明细 → `2026-11-16.md` N。
 - 🔴🔴 **发现③④①（详版 → `2026-11-16.md` H/I/K）**：③`apk-distribution.baseline.json` **自称护栏、全仓引用 0 处**→ 可改 `published` 而门禁全绿；已加 `knownGap_guardrailNotWired`，🔴 **未擅自新增测试**。④**11-15 包不兼容新网关、禁止分发**（仍带 `dbee-feature`、无 `llm/features/` → 复盘/计划/教练被静默重写为 `FOOD_SYSTEM`）；已入 `supersededApks[]`。①**0046/0047 生产漂移，刻意未夹带**（生产 `lib/` 缺 `xpay/apppay/wechatSession.mjs` → **收款链路生产未落地**）。
 ```
+
+
+### R 节压缩前原文（11-17 07:45，line17 现状标题 / line24 剩余边界）
+
+> 触发：用户问「mini 端可以编译了吗？」+ 拍板方案 A（移存 v178）。
+> 压缩理由：v178 已由 `prebuild-20261115-2230/` 移存至 `backup/prebuild-20261115-2230-mini-dist-v178`
+> （`os.rename` 同盘原子移动＝可逆，70/70 sha256 一致，同级 7 份快照含 Web 回滚点零变动），
+> MEMORY.md 需反映该状态变更；slack 仅 29 故压缩。
+> 详版落点：本轮全过程 → `2026-11-16.md` **R 节**；mini/dist 重建 → 同文件 **Q 节**。
+
+```
+## 现状（11-16 23:20 · 0052 闸门全链路上线 + mini/dist 已重建为最新；V1.7.8/vc26；证据 → `2026-11-16.md` E–Q；旧版 → REF「11-16 21:05 迁入」）
+- 🔴 **剩余边界**：mini 导出/通知说明**零真机实证**；🔴 **mini 只用 `mini/dist` 一目录**（11-16 决策，勿再建 `prebuild-*`）→ **23:17 已从当前 HEAD 重建为最新 v1.7.8**（**69 文件**，含 `8f6b981` 服务端拦截改造，8/8 探针命中、`dbee-feature` 0、mtime 全新鲜）；🔴 **v178 快照与 1.7.7 旧包均已过时、不可上传**；体验版**仍须用户本人**导入 `mini/` 上传（详 → `2026-11-16.md` Q）；Android 分发待批（A7）；模板 ID 回填后须补 `subscribeMessage.send`。
+```
