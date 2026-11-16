@@ -1841,3 +1841,32 @@ stdin 脚本不落临时文件、不执行删除。⚠️ 首次红验证脚本�
 - 🔴 故 `docs/发版留证-小程序导出实装与占位护栏-V1.7.8-vc26-2026-11-15.md:107` 写「**不要导入 `mini/dist`**（17:07 旧包）」；:125 确认 **mini 体验版上传仍待用户侧动作**。
 - 👉 **按新决策上传 v1.7.8 体验版**：`cd mini && npm run build:weapp` 让 `mini/dist` 就地刷新到 1.7.8 → 导入 `mini/` → 上传（**无需再用 v178 快照目录**）。
 - **为何以后不必建 prebuild-***：mini 侧比对新旧包用「版本号探针 + `git stash`」即可；真正需跨端留证的只有 web `dist/`（native 与 web 共用会互相覆盖），已由 `dist-stale-*` 移存机制覆盖且 11-16 已入 `.gitignore`；快照目录膨胀（68M/15 个）本身即维护负担。
+
+
+## 2026-11-16 23:20 迁入：MEMORY.md 六行压缩前逐字原文（mini/dist 重建 + 工具坑 9/10 入库）
+
+> 触发：用户指令「清理 `prebuild-20261115-2230/mini-dist-v178`，确保 `mini/dist` 是 mini 端最新编译目录；不能随便换目录」。
+> 压缩理由：新增**工具坑第 9 条**（中文进程名 ASCII grep 假阴性）与**第 10 条**（Taro 输出目录与开发者工具工作目录同为 `mini/dist` 互相干扰）需入库，而体积已 8958/9000。
+> 详版权威落点：本轮全过程 → `2026-11-16.md` **Q 节**；工具坑 5–8 → 同文件 **P-补2 / P-补4**。
+
+### 压缩前原文（line17 标题 / line19 生产状态 / line20 复验 / line21 工具坑 5–8 / line22 发现⑦⑧ / line24 剩余边界）
+
+```
+## 现状（11-16 21:05 · 0052 闸门全链路上线；V1.7.8/vc26；证据 → `2026-11-16.md` E–N；旧版 → REF「11-16 21:05 迁入」）
+- 🔴🔴 **当前生产状态（非发版）**：**0052 applied**（14:30:21；`llm_gate` SECDEF+`search_path=public`，ACL 仅 `postgres`/`dbee_app`）；**网关手术式部署**（`deploy/apply-llm-feature-walls.py`：换 `llm.mjs`+`app.mjs` 插 4 条 `features/*`）；**Web 入口 `index-CsL-COWf.js`**；🔴 **APK `…-20261116-llmgate.apk`（vc26、入口 `index-DKoWPSKJ.js`）仅归档不分发**（`not_published`+备案阻断）。门禁 **30 文件/1333 项** EXIT=0。
+- 🔴🔴 **21:05 三层只读复验全绿（零写入生产）**：四服务 `NRestarts=0`/OOM 0/systemd 与 nginx 配置 mtime **早于部署日＝未触碰**；`gateway.env` 未变、`app.mjs` 删 0 增 7、22-C（`dbee-feature` 0）；公网 **19/19 逐字节**、路由 **400→401→404**。🔴 **明细 → `2026-11-16.md` N**。
+- 🔴 **工具坑 5–8（详版 → `2026-11-16.md` P-补2/4）**：⑤`node --check` **读 stdin 时对非法代码也返回 RC=0**（假绿）→ 必取回**文件**再校验，ESM 改「静态提取 import 集合 vs lib 实存」；⑥**Edit 尾部换行陷阱**（`old_string` 以 `\n` 结尾会把相邻 bullet 合并＝行数减少+单行暴涨）→ 多行改写用 `Write` 全量或 Python 按行替换，改完复核 bullet 数与逐行 len；⑦**查环境变量禁用宽泛 `grep -i proxy` 过滤 `env`**（连带打印含 Bearer token 的整块 JSON）→ 只按具名白名单取值、含凭据变量不打印；⑧构建工具「清空」普遍 `catch {}` 吞异常（Taro 实测）→ **退出码 0 ≠ 输出目录纯净**，复用产物目录须验文件数+版本探针+mtime。
+- 🔴🔴 **发现⑦⑧（详版 → `2026-11-16.md` L）**：⑦`/var/www/d-bee` 实有 **139 文件**、生效仅 19（历史 chunk 累积，`immutable`+哈希名**不影响正确性**）。⑧`REFERENCE.md:788` 含 `SMS_MASTER_CODE` **真实值**＝**既存于 HEAD** 非本次新增 → public 仓库应轮换，**登记待拍板，未擅自改写历史**。
+- 🔴 **剩余边界**：mini 导出/通知说明**零真机实证**；🔴 **mini 只用 `mini/dist` 一目录**（11-16 决策，勿再建 `prebuild-*`），现仍旧包 **1.7.7**，传体验版＝**先备份 `mini/dist`+关开发者工具** → `npm run build:weapp`（Taro 源码确证**全量清空**，1.7.7 被销毁）→ 核文件数（1.7.8=**70**）→ 导入 `mini/` 上传（详 → `2026-11-16.md` P-补4）；Android 分发待批（A7）；模板 ID 回填后须补 `subscribeMessage.send`。
+```
+
+
+### 二次收敛前原文（23:40，line20 三层复验结论 / line23 发现③④①）
+
+> 压缩理由：Q 节新增工具坑 9/10 条后 slack 仅 1，需腾出健康余量。
+> 详版落点：三层复验 → `2026-11-16.md` **N**；发现③④① → 同文件 **H/I/K**。
+
+```
+- 🔴🔴 **21:05 三层只读复验全绿（零写入生产）**：四服务 `NRestarts=0`/OOM 0/systemd 与 nginx 配置 mtime **早于部署日＝未触碰**；`gateway.env` 未变、`app.mjs` 删 0 增 7、22-C（`dbee-feature` 0）；公网 **19/19 逐字节**、路由 **400→401→404**。明细 → `2026-11-16.md` N。
+- 🔴🔴 **发现③④①（详版 → `2026-11-16.md` H/I/K）**：③`apk-distribution.baseline.json` **自称护栏、全仓引用 0 处**→ 可改 `published` 而门禁全绿；已加 `knownGap_guardrailNotWired`，🔴 **未擅自新增测试**。④**11-15 包不兼容新网关、禁止分发**（仍带 `dbee-feature`、无 `llm/features/` → 复盘/计划/教练被静默重写为 `FOOD_SYSTEM`）；已入 `supersededApks[]`。①**0046/0047 生产漂移，刻意未夹带**（生产 `lib/` 缺 `xpay/apppay/wechatSession.mjs` → **收款链路生产未落地**）。
+```
