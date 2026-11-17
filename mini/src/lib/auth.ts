@@ -48,8 +48,8 @@ export function currentPlatformName(): string {
   return '当前平台'
 }
 
-/** 拿微信小程序 appid（试用/正式两套独立，必须取当前账号的 appid） */
-function getWechatAppId(): string {
+/** 拿微信小程序 appid（试用/正式两套独立，必须取当前账号的 appid）。WX-2 微信运动同步复用 */
+export function getWechatAppId(): string {
   try {
     const info = Taro.getAccountInfoSync()
     return info?.miniProgram?.appId || ''

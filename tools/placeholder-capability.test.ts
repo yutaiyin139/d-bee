@@ -165,6 +165,7 @@ const RUNTIME_PROBES = [
   'isHealthKitAvailable',            // iOS HealthKit 插件是否就绪
   'isAndroidVendorHealthAvailable',  // 安卓厂商健康插件是否就绪
   'isOriginProxyAvailable',          // iOS 原生回源代理插件是否就绪
+  'isWerunSupported',                // WX-2 宿主是否支持 wx.getWeRunData（false→提示升级微信，非占位）
 ] as const
 
 describe('护栏 29-A · 能力开关单一真源', () => {

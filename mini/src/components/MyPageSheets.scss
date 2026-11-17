@@ -61,6 +61,34 @@
 .mp-line:last-child { border-bottom: none; }
 .mp-val { color: #6b655c; font-size: 26px; }
 .mp-muted { color: #757067; font-size: 22px; }
+/* 我的食物：可记一餐 / 可删除的收入行（与主端食谱能力对齐） */
+.mp-food-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 88px;
+  padding: 16px 0;
+  border-bottom: 1px solid rgba(42, 39, 35, 0.09);
+  font-size: 26px;
+  color: #2a2723;
+}
+.mp-food-row:last-child { border-bottom: none; }
+.mp-food-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.mp-food-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+.mp-food-actions .btn-text {
+  display: inline-block;
+  width: auto;
+  min-width: 0;
+  padding: 6px 0;
+  font-size: 24px;
+  color: #b9740d;
+  background: transparent;
+  border: none;
+  line-height: 1.4;
+  &::after { border: none; }
+  &.confirming { color: #d05c4e; font-weight: 600; }
+}
 .mp-dot {
   width: 12px; height: 12px;
   border-radius: 99px;

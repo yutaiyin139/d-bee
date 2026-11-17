@@ -7,13 +7,16 @@
  *    而主端早已为微信小程序预留了 brand 识别（wechat-miniprogram / 微信运动 / canSync）
  *    与 connectHealth、syncFromHealth 的分支。门面形状不同会让「诚实降级」措辞四端不一致。
  *
- * 现在的取舍（区分「真做不到」与「只是没做」）：
+ * 2026-11-17 WX-0~WX-3：微信运动已真接入（隐私指引审核通过 + 网关解密端点 + 主动同步）。
  *  - 门面形状、vendor 识别、状态枚举、降级文案、状态提示：**完全对齐主端**。
- *  - 真同步步数：做不到。wx.getWeRunData 需「运动健康」类目资质、返回加密数据须服务端
- *    用 session_key 解密、且只有步数无 activeEnergyBurned 粒度 → 诚实返回 no_plugin，
- *    绝不伪装成已连接或已同步（与主端小程序分支逐字一致）。
+ *  - 🔴 纠偏旧结论：读取方向的硬前置是《用户隐私保护指引》声明 + 用户授权，
+ *    **不是**「运动健康」类目资质（那类目限制的是「写入/分享到微信运动」，D6 已决定不做）。
+ *  - 真同步步数：connectHealth() 由用户主动点击触发完整链路（隐私→授权→login→
+ *    getWeRunData→网关解密），syncFromHealth() 自动路径只读本地缓存，绝不自动调 getWeRunData
+ *    （平台规范）。步数只有步数、无 activeKcal 粒度 → activeKcal 恒 0，由步幅法兜底。
  */
 import { getProfile, saveProfile } from '../api'
+import { syncWechatStepsActive, readWechatStepsCache } from '../werun'
 
 export interface HealthVendorInfo {
   vendor: 'wechat-miniprogram' | 'apple' | 'huawei' | 'xiaomi' | 'none'
@@ -57,21 +60,44 @@ export interface ConnectResult {
   vendor: HealthVendorInfo['vendor']
 }
 
-/** 主端 connectHealth:165-172 的小程序分支逐字同源：不写云端连接态、不误导为已连接 */
+/**
+ * 用户主动点「同步微信运动」时调用：走完整主动同步链路（WX-2）。
+ * 🔴 只有拿到真实数据（status ok/empty）才写云端连接态，授权拒绝/错误不写，
+ *    避免把「点了一下」误标成「已连接」（零假功能）。
+ * 自动路径（首页轮询）不会调到这里——那里走 syncFromHealth() 读缓存。
+ */
 export async function connectHealth(): Promise<ConnectResult> {
-  return {
-    ok: false,
-    message: '微信运动接入正在准备中，当前请先手动记录运动。',
-    vendor: 'wechat-miniprogram',
+  const r = await syncWechatStepsActive()
+  if (r.status === 'ok' || r.status === 'empty') {
+    // 真同步成功（含「今天真的 0 步」）→ 写云端连接态，下次进入据此显示已连接
+    try {
+      await saveProfile({ health_connected: true })
+    } catch {
+      // 写状态失败不阻断本次结果展示
+    }
+    return {
+      ok: true,
+      message: r.status === 'empty'
+        ? '已连接微信运动，今天还没有步数数据。'
+        : `已连接微信运动，今日 ${r.steps} 步已同步。`,
+      vendor: 'wechat-miniprogram',
+    }
   }
+  return { ok: false, message: r.message || '微信运动同步未成功，请稍后重试。', vendor: 'wechat-miniprogram' }
 }
 
-/** 与主端同形状；未接入前不写云端状态 */
+/** 解除连接：清云端状态 + 本地步数缓存，UI 恢复「连接」入口 */
 export async function disconnectHealth(): Promise<void> {
   try {
     await saveProfile({ health_connected: false })
   } catch {
     // 状态清除失败不抛出：下次连接会重新覆盖
+  }
+  try {
+    const { kvRemove } = await import('../kv')
+    await kvRemove('dbee:werun:cache')
+  } catch {
+    // 缓存清理失败不阻断
   }
 }
 
@@ -84,11 +110,24 @@ export interface HealthSyncData {
   activeKcal: number
   status: HealthSyncStatus
   message?: string
+  /** 微信运动快照时间（ISO）；UI 据此标「更新于 HH:mm」，不宣称实时（仅小程序端有值） */
+  syncedAt?: string
 }
 
-/** 主端 syncFromHealth:203-205 的小程序分支同源 */
+/**
+ * 自动路径（首页登录同步 / 60s 定时 / onShow）走这里：只读本地缓存，
+ * 🔴 绝不触发 wx.getWeRunData —— 平台要求用户主动触发，且微信运动只在用户进入时更新。
+ * 无缓存/过期 → status:'empty'（UI 提示「点一下同步」，不弹系统授权框）。
+ * 数值由 connectHealth() 主动同步后写入缓存；activeKcal 恒 0，由步幅法兜底。
+ */
 export async function syncFromHealth(): Promise<HealthSyncData> {
-  return { steps: 0, activeKcal: 0, status: 'no_plugin' }
+  const cached = await readWechatStepsCache()
+  return {
+    steps: cached.steps,
+    activeKcal: 0,
+    status: cached.status as HealthSyncStatus,
+    syncedAt: cached.syncedAt,
+  } as HealthSyncData
 }
 
 /** 是否应把数值写回 UI（denied/error/unavailable/not_ready 时保留旧值，避免闪成 0） */

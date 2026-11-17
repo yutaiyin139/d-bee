@@ -6,6 +6,26 @@
 >
 > 🔴 本轮**只做规划，零功能代码改动、零构建、零生产变更**。
 > 外部能力以 2026-11-15 现查的官方文档 / 微信开放社区为准，社区技术文仅作实现参考。
+>
+> ✅ **2026-11-17 状态更新（用户告知，本会话未复核后台截图）**：WX-0「微信运动」用户隐私保护指引**已审核通过**
+> —— 微信运动接入的硬前置解除。
+>
+> ✅ **2026-11-17 11:xx 代码落地（WX-1~WX-3，源码级，未发版）**：
+> - **WX-1**：`server/lib/werun.mjs` 新增 `POST /.cloud/auth/v1/werun/sync`（Bearer + 归属校验
+>   `wx:<openid>=ownerId` + 只收四元组绝不读客户端 steps + AES-128-CBC 解密 + watermark.appid 校验 +
+>   北京时间当天取一步数 + session_key 内存瞬时不落库不下发不进日志）；`server/lib/auth.mjs` 暴露
+>   `exchangeWechatCode` 复用同批次 code2session；`tools/werun-selftest.mjs` 27/27 全过。
+> - **WX-2**：`mini/src/lib/gateway.ts`（公共 Bearer 请求器）+ `mini/src/lib/werun.ts`
+>   （隐私→scope.werun→login→getWeRunData→网关解密→写缓存；code 失效自动重试一次；只传四元组）。
+> - **WX-3**：`mini/src/lib/health/index.ts` 门面改为「connectHealth 真主动同步 / syncFromHealth 只读缓存，
+>   自动路径零 getWeRunData」；主端文案同步纠偏（读取方向不需类目资质）；`privacy.ts`/`myPage.ts` 旧结论纠偏。
+> - 护栏先红后绿（my-page + four-end + 退化测试 4 精准红），两端 typecheck 0，全量门禁绿。
+>
+> 🔴 **仍未完成（铁律 #13，本地绿 ≠ 线上绿）**：
+> `HEALTH_APP_CATALOG.weapp` 仍 `planned`（note 改为「代码就绪待真机验收」）——
+> 须**真机**上传体验版 + 首同步拿到 `encryptedData + iv` + 步数对齐微信运动榜单 + 确认不报 errno 112
+> （后台设置页与提审页两处声明须一致，见 §16.2），验收通过后才能把 status 改 `available`（D7）。
+> 本轮**未 commit / 未 push / 未构建 Web / 未重建 mini/dist / 未部署 / 未碰网关 nginx**。
 
 ---
 

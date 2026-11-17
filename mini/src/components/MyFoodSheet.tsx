@@ -1,27 +1,97 @@
 import { useEffect, useState } from 'react'
-import { View, Text } from '@tarojs/components'
+import { View, Text, Button } from '@tarojs/components'
 import {
   MY_FOOD_TITLE, MY_FOOD_HINT, MY_FOOD_EMPTY, MY_FOOD_UNIT_COUNT, MY_FOOD_UNIT_KCAL,
+  MY_FOOD_ACTION_LOG, MY_FOOD_ACTION_DELETE, MY_FOOD_ACTION_DELETE_CONFIRM,
+  MY_FOOD_ACTION_LOGGING, MY_FOOD_LOGGED, MY_FOOD_LOG_ERROR, MY_FOOD_DELETE_ERROR,
   HEALTH_RECORD_LOADING, HEALTH_RECORD_LOAD_ERROR,
   buildMyFoodViewCore, type MyFoodView,
 } from '@dbee/shared'
-import { listRecipes } from '../lib/api'
+import { listRecipes, deleteRecipe, insertMeals, type Recipe } from '../lib/api'
+import { todayKey, guessMealType } from '../lib/nutrition'
+import { checkStatBadges } from '../lib/badgeCheck'
 import './MyPageSheets.scss'
 
-/** 「我的食物」：只读 recipes 表，与主端同构。 */
+/**
+ * 「我的食物」：常吃的一餐模板，与主端食谱能力对齐。
+ * 只读展示 recipes 表；每行可「记一餐」（直接落库当天）与「删除」（二次确认）。
+ * 写入口径与 mini/src/pages/recipes 一致：营养为实际摄入量，source=manual。
+ */
 export function MyFoodSheet({ onClose }: { onClose: () => void }) {
   const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading')
+  const [recipes, setRecipes] = useState<Recipe[]>([])
   const [rows, setRows] = useState<MyFoodView[]>([])
+  const [msg, setMsg] = useState('')
+  const [busyId, setBusyId] = useState<number | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<number | null>(null)
 
   useEffect(() => {
     let alive = true
     void listRecipes().then((r) => {
       if (!alive) return
+      setRecipes(r)
       setRows(buildMyFoodViewCore(r))
       setState('ok')
     }).catch(() => { if (alive) setState('error') })
     return () => { alive = false }
   }, [])
+
+  // 删除确认态 3 秒自动复位
+  useEffect(() => {
+    if (pendingDelete == null) return
+    const t = setTimeout(() => setPendingDelete(null), 3000)
+    return () => clearTimeout(t)
+  }, [pendingDelete])
+
+  /** 从食谱记一餐：食材按实际摄入量直接落库为当天饮食记录 */
+  async function logMeal(r: Recipe) {
+    if (r.id == null) return
+    setMsg('')
+    setBusyId(r.id)
+    try {
+      await insertMeals(r.items.map((it) => ({
+        log_date: todayKey(),
+        meal_type: guessMealType(),
+        food_name: it.food_name,
+        quantity_text: it.quantity_text || `${it.grams} 克`,
+        grams: it.grams,
+        calories: it.calories,
+        protein_g: it.protein_g,
+        carb_g: it.carb_g,
+        fat_g: it.fat_g,
+        sodium_mg: it.sodium_mg ?? null,
+        fiber_g: it.fiber_g ?? null,
+        added_sugar_g: it.added_sugar_g ?? null,
+        source: 'manual',
+      })))
+      setMsg(MY_FOOD_LOGGED(r.name, r.items.length))
+      void checkStatBadges()
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : MY_FOOD_LOG_ERROR)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  /** 删除食谱（二次确认防误触） */
+  async function handleDelete(r: Recipe) {
+    const id = r.id
+    if (id == null) return
+    if (pendingDelete !== id) {
+      setPendingDelete(id)
+      return
+    }
+    setPendingDelete(null)
+    setMsg('')
+    try {
+      await deleteRecipe(id)
+      setRecipes((prev) => prev.filter((x) => x.id !== id))
+      setRows((prev) => prev.filter((_, i) => recipes[i]?.id !== id))
+      void checkStatBadges()
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : MY_FOOD_DELETE_ERROR)
+    }
+  }
 
   return (
     <View className='mp-mask' onClick={onClose}>
@@ -32,17 +102,34 @@ export function MyFoodSheet({ onClose }: { onClose: () => void }) {
         </View>
         <View className='mp-body'>
           <Text className='mp-helper'>{MY_FOOD_HINT}</Text>
+          {msg ? <Text className='mp-helper'>{msg}</Text> : null}
           {state === 'loading' ? <Text className='mp-helper'>{HEALTH_RECORD_LOADING}</Text> : null}
           {state === 'error' ? <Text className='mp-helper'>{HEALTH_RECORD_LOAD_ERROR}</Text> : null}
           {state === 'ok' && rows.length === 0 ? <Text className='mp-helper'>{MY_FOOD_EMPTY}</Text> : null}
           {state === 'ok' && rows.length > 0 ? (
             <View className='mp-card'>
-              {rows.map((r, i) => (
-                <View className='mp-line' key={`${r.name}-${i}`}>
-                  <Text>{r.name}</Text>
-                  <Text className='mp-val'>{r.itemCount} {MY_FOOD_UNIT_COUNT} · {r.calories} {MY_FOOD_UNIT_KCAL}</Text>
-                </View>
-              ))}
+              {rows.map((r, i) => {
+                const recipe = recipes[i]
+                return (
+                  <View className='mp-food-row' key={`${r.name}-${i}`}>
+                    <View className='mp-food-main'>
+                      <Text>{r.name}</Text>
+                      <Text className='mp-val'>{r.itemCount} {MY_FOOD_UNIT_COUNT} · {r.calories} {MY_FOOD_UNIT_KCAL}</Text>
+                    </View>
+                    <View className='mp-food-actions'>
+                      <Button
+                        className='btn-text'
+                        disabled={busyId === recipe?.id}
+                        onClick={() => void logMeal(recipe)}
+                      >{busyId === recipe?.id ? MY_FOOD_ACTION_LOGGING : MY_FOOD_ACTION_LOG}</Button>
+                      <Button
+                        className={`btn-text ${pendingDelete === recipe?.id ? 'confirming' : ''}`}
+                        onClick={() => void handleDelete(recipe)}
+                      >{pendingDelete === recipe?.id ? MY_FOOD_ACTION_DELETE_CONFIRM : MY_FOOD_ACTION_DELETE}</Button>
+                    </View>
+                  </View>
+                )
+              })}
             </View>
           ) : null}
         </View>

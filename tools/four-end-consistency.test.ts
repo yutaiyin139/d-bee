@@ -903,13 +903,18 @@ describe('护栏 12 · SSE 取消 / 健康门面 / 数值常量同源', () => {
     ).toBe(true)
   })
 
-  it('🔴 mini 健康门面必须与主端同形状（微信运动 / no_plugin / 诚实降级）', () => {
+  it('🔴 mini 健康门面必须与主端同形状（微信运动 / 真连接 / 诚实降级）', () => {
+    // 2026-11-17 WX-0 隐私指引审核通过、WX-1~WX-3 真接入后放宽：
+    //   旧断言钉死「恒 no_plugin +『接入正在准备中』」，那是零实现时的诚实降级；
+    //   如今真同步已落地，门面必须改钉「走主动同步 + 缓存优先」，否则会把真功能挡回去。
+    //   注意「真连接」仍需真机验收（目录 weapp 保持 planned），这里只钉门面代码形状。
     expect(
       /wechat-miniprogram/.test(miniHealth) && /label: '微信运动'/.test(miniHealth) &&
-        /status: 'no_plugin'/.test(miniHealth) &&
-        /微信运动接入正在准备中，当前请先手动记录运动。/.test(miniHealth) &&
+        /syncWechatStepsActive\(\)/.test(miniHealth) &&
+        /readWechatStepsCache\(\)/.test(miniHealth) &&
+        !/微信运动接入正在准备中/.test(miniHealth) &&
         /isHealthConnectable\(\)[\s\S]{0,120}return true/.test(miniHealth),
-      'mini 健康门面又退回「恒 false + 裸占位」→ 四端降级措辞与入口显隐不一致',
+      'mini 健康门面未真接入（恒 no_plugin / 准备中文案）或形状与主端分叉',
     ).toBe(true)
   })
 

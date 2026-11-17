@@ -39,6 +39,8 @@ export interface HealthSyncData {
   status: HealthSyncStatus
   /** 原生层透传的错误描述（仅 denied / error / not_ready 有值） */
   message?: string
+  /** 数据快照时间（ISO，仅微信运动小程序端有值）；UI 据此标「更新于 HH:mm」，不宣称实时 */
+  syncedAt?: string
 }
 
 /** 授权流程的降级原因（原生插件透传） */

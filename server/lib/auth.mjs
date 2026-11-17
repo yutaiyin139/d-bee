@@ -375,6 +375,12 @@ export function createAuthHandlers(deps) {
   return {
     refresh,
 
+    // WX-1（2026-11-17）：微信运动步数解密端点 werun.mjs 复用同一套
+    //   appid 白名单 + jscode2session + 错误码归类， session_key 仅内存瞬时。
+    //   暴露函数本身而非结果，保证「同批次 code 即时换 session_key」（规划 §9 方案 A）：
+    //   外部注入的 fetchImpl（自测 mock）也随 createAuthHandlers 一并生效。
+    exchangeWechatCode,
+
     /** ── 发码 ───────────────────────────────────────────── */
     async sendVerification(req, res, body) {
       if (!checkAccessKey(req)) return cloudError(res, 401, 'invalid access key', 'invalid_api_key')

@@ -15,6 +15,9 @@ import { createLlmHandlers } from './llm.mjs'
 import { createIapHandlers } from './iap.mjs'
 import { createXpayHandlers } from './xpay.mjs'
 import { createAppPayHandlers } from './apppay.mjs'
+// WX-1（2026-11-17）：微信运动步数解密端点。复用 createAuthHandlers 暴露的
+// exchangeWechatCode / authOwnerIdStrict，不重复 code2session 逻辑。
+import { createWerunHandlers } from './werun.mjs'
 
 /**
  * @param {object} deps
@@ -28,7 +31,7 @@ import { createAppPayHandlers } from './apppay.mjs'
  * @param {boolean} [deps.enableIap=true]
  * @param {typeof globalThis.fetch} [deps.fetchImpl] 自测注入（iap 外呼 Apple 用）
  * @param {typeof globalThis.fetch} [deps.wechatFetchImpl] 自测注入（auth 外呼微信 jscode2session 用；与 fetchImpl 分离，见装配处注释）
- * @returns {{server: http.Server, router: Router, otp: OtpStore, auth: object, llm: object, iap: object, limiters: object}}
+ * @returns {{server: http.Server, router: Router, otp: OtpStore, auth: object, werun: object, llm: object, iap: object, limiters: object}}
  */
 export function createApp(deps) {
   const { cfg, pool, gatewayPool, logger } = deps
@@ -57,6 +60,9 @@ export function createApp(deps) {
     // 收到微信 URL 会抛 → 两个自测互相污染。都不注入时 auth.mjs 内回落 globalThis.fetch。
     ...(deps.wechatFetchImpl ? { fetchImpl: deps.wechatFetchImpl } : {}),
   })
+  // WX-1：werun 复用 auth 的 exchangeWechatCode（同批次 session_key）+ authOwnerIdStrict。
+  // 无需条件装配：未登录/未配置 appid 时端点自身返回 401/503（同 login-wechat 范式）。
+  const werun = createWerunHandlers({ cfg, logger, auth })
   const dbProxy = deps.enableDbProxy === false ? null : createDbProxy({ cfg, logger, gatewayPool })
   // LLM 用业务池（dbee_app）：0039 的 llm_gate 只授 dbee_app EXECUTE。
   // gatewayPool 用于 token_version 校验（安全审计①），与业务池分离。
@@ -108,6 +114,8 @@ export function createApp(deps) {
   // 微信小程序登录（A1）：SDK AUTH_PATHS.loginWechat='/v1/login-wechat'，
   // baseUrl=endpoint+'/.cloud/auth' → 完整路径与 A 前缀拼接逐字对齐（2026-11-05 实证）
   router.on('POST', `${A}/login-wechat`, wrap(auth.loginWechat))
+  // WX-1：微信运动步数同步（需 Bearer + 用户主动触发，服务端解密只返回当天步数）
+  router.on('POST', `${A}/werun/sync`, wrap(werun.sync))
   router.on('POST', `${A}/signup`, wrap(auth.signUp))
   router.on('POST', `${A}/token`, wrap(auth.token))
   router.on('GET', `${A}/user/me`, wrap(auth.userMe))
@@ -268,7 +276,7 @@ export function createApp(deps) {
   })
 
   return {
-    server, router, otp, auth, llm, dbProxy, iap, xpay, apppay,
+    server, router, otp, auth, werun, llm, dbProxy, iap, xpay, apppay,
     limiters: { limiterIdent, limiterIp, limiterApi, usageLimiter },
   }
 }

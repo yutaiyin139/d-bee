@@ -163,10 +163,12 @@ export async function connectHealth(): Promise<ConnectResult> {
   }
 
   if (v.vendor === 'wechat-miniprogram') {
-    // 微信运动接入规划中：当前诚实引导，不写云端连接态、不误导为「已连接」。
+    // WX-1~WX-3（2026-11-17）：微信运动真接入在**小程序端**实现（mini/src/lib/health）。
+    // 主端 bundle 若在微信 WebView 里被加载，引导用户到微信运动入口主动同步；
+    // 本端无 wx.getWeRunData 通道，不伪造连接成功（零假功能）。
     return {
       ok: false,
-      message: '微信运动接入正在准备中，当前请先手动记录运动。',
+      message: '请在微信小程序内点「同步微信运动」连接；当前可先手动记录运动。',
       vendor: 'wechat-miniprogram',
     }
   }
@@ -200,8 +202,9 @@ export async function syncFromHealth(): Promise<HealthSyncData> {
     if (!isAndroidVendorHealthAvailable()) return { steps: 0, activeKcal: 0, status: 'no_plugin' }
     return fetchAndroidVendorToday()
   }
-  // 微信小程序（wechat-miniprogram）：微信运动真同步规划中，当前返回 no_plugin，
-  // 不影响任何现有端；接入后在此补 wx.getWeRunData 拉取。
+  // 微信小程序（wechat-miniprogram）：真同步在小程序端 mini/src/lib/health 独立实现
+  // （用户主动触发 + 本地缓存）。主端 bundle 无 wx.getWeRunData 通道，保持 no_plugin
+  // 静默降级，不影响任何现有端。
   return { steps: 0, activeKcal: 0, status: 'no_plugin' }
 }
 

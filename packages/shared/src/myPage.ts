@@ -105,7 +105,9 @@ export const HEALTH_APP_CATALOG: DeviceCatalogItem[] = [
   { key: 'xiaomi', label: '小米运动健康', status: 'in_progress', note: '资质与 SDK 逐个推进' },
   { key: 'vivo', label: 'vivo 健康', status: 'guided', note: '暂缓 · 后续启动合作申请' },
   { key: 'oppo', label: 'OPPO 健康', status: 'guided', note: '暂缓 · 后续启动合作申请' },
-  { key: 'weapp', label: '微信运动', status: 'planned', note: '小程序 · 规划中' },
+  // WX-1~WX-3（2026-11-17）：网关解密 + 小程序主动同步已落地源码，
+  // 但 status 保持 planned —— 须真机验收（上传体验版 + 对齐微信运动榜单）后才改 available（D7 零假绿）。
+  { key: 'weapp', label: '微信运动', status: 'planned', note: '小程序 · 代码就绪待真机验收' },
 ]
 
 /** 当前机型 vendor → 健康应用目录 key；无对应项返回空串（不显示连接按钮）。 */
@@ -135,13 +137,57 @@ export const SMART_DEVICE_LABEL_STEPS = '今日步数'
 export const SMART_DEVICE_LABEL_ACTIVITY = '活动消耗'
 export const SMART_DEVICE_FUTURE_NOTE = '仅列出目录，暂不提供连接'
 
+/**
+ * 智能手表 · 手表端蜜蜂健康 App 绑定。
+ *
+ * 🔴 诚实原则：D-Bee 不直连手表硬件，只读系统健康平台（已拍板决策）。
+ * 这里每个手表品牌的「绑定」= 连接其对应的系统健康应用（与 HEALTH_APP_CATALOG 同一真源），
+ * 绝不提供「扫码绑定硬件」的假按钮。5 品牌顺序对齐竞品图，但状态复用真目录。
+ */
+export interface WatchCatalogItem {
+  /** 映射到 HEALTH_APP_CATALOG 的 key */
+  key: string
+  /** 手表展示名（对齐竞品图顺序与措辞） */
+  label: string
+  /** 该手表当前的具体进度说明（杜绝「规划中」三个字敷衍） */
+  statusNote: string
+}
+export const WATCH_CATALOG: WatchCatalogItem[] = [
+  { key: 'oppo', label: 'OPPO Watch', statusNote: '合作申请暂缓 · 生态对接待启动' },
+  { key: 'huawei', label: 'HUAWEI WATCH', statusNote: '资质与 SDK 逐个推进中' },
+  { key: 'apple', label: 'Apple Watch', statusNote: '连接 Apple 健康后自动同步手表数据' },
+  { key: 'vivo', label: 'VIVO Watch', statusNote: '合作申请暂缓 · 生态对接待启动' },
+  { key: 'xiaomi', label: 'XIAOMI WATCH', statusNote: '资质与 SDK 逐个推进中' },
+]
+
+/** 智能设备页「其他」分组里的手表入口卡片文案 */
+export const WATCH_SECTION_OTHER = '其他'
+export const WATCH_BIND_ENTRY = '手表端蜜蜂健康App绑定'
+export const WATCH_BIND_TITLE = '智能手表'
+export const WATCH_BIND_HINT = '自律蜜蜂支持以下手表，连接后自动同步运动数据'
+export const WATCH_BIND_NOT_BOUND = '未绑定'
+export const WATCH_BIND_BOUND = '已绑定'
+export const WATCH_BIND_ACTION_CONNECT = '连接'
+export const WATCH_BIND_ACTION_PROGRESS = '查看进度'
+export const WATCH_BIND_HC_NOTE = '安卓手表可走系统健康服务（Health Connect），一次授权读取多种手表与手环的运动数据，正在接入中。'
+export const WATCH_BIND_BACK = '返回'
+export const WATCH_BIND_PROGRESS_NOTE = '该品牌健康数据的接入进度可在「健康应用」一栏查看；当前请先用手动记录运动。'
+
 /* ── 我的食物 ─────────────────────────────────────────────────── */
 
 export const MY_FOOD_TITLE = '我的食物'
-export const MY_FOOD_HINT = '记录饮食时可一键复记常吃的一餐'
+export const MY_FOOD_HINT = '这里是你存过的常吃一餐，可一键记到今天，也可删除'
 export const MY_FOOD_EMPTY = '还没有保存常吃的一餐'
 export const MY_FOOD_UNIT_COUNT = '项食物'
 export const MY_FOOD_UNIT_KCAL = 'kcal'
+/** 我的食物操作文案（两端同构，护栏取真值） */
+export const MY_FOOD_ACTION_LOG = '记一餐'
+export const MY_FOOD_ACTION_DELETE = '删除'
+export const MY_FOOD_ACTION_DELETE_CONFIRM = '确认删除?'
+export const MY_FOOD_ACTION_LOGGING = '记录中…'
+export const MY_FOOD_LOGGED = (name: string, count: number): string => `已把「${name}」记入今天（${count} 项）`
+export const MY_FOOD_LOG_ERROR = '记一餐失败，请重试'
+export const MY_FOOD_DELETE_ERROR = '删除失败，请重试'
 export interface MyFoodView { name: string; itemCount: number; calories: number }
 
 export function buildMyFoodViewCore(

@@ -17,7 +17,7 @@
  * 运行：npx vitest run tools/my-page-health-record-consistency.test.ts
  */
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -25,8 +25,9 @@ import {
   MY_PAGE_GRID_ITEMS, MY_PAGE_LIST_ITEMS,
   MY_PAGE_INVITE_LABEL, MY_PAGE_REPORT_ARIA,
   MY_PAGE_TODAY_TITLE, MY_PAGE_TODAY_HINT, MY_PAGE_TODAY_ARIA,
-  MY_PAGE_TODAY_LABELS,
+  MY_PAGE_TODAY_LABELS, MY_FOOD_HINT,
   HEALTH_APP_CATALOG, FUTURE_DEVICE_CATALOG, DEVICE_STATUS_LABEL,
+  WATCH_CATALOG, WATCH_BIND_ENTRY, WATCH_BIND_TITLE,
   HEALTH_RECORD_ANCHORS, HEALTH_RECORD_COMPLETION,
   HEALTH_RECORD_COMPLETION_NOTE, HEALTH_RECORD_COMPLETION_FIELDS,
   HEALTH_RECORD_DISCLAIMER, HEALTH_RECORD_NO_MEDICAL,
@@ -38,6 +39,8 @@ import {
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 const read = (p: string): string => readFileSync(join(ROOT, p), 'utf8')
+// 新文件在「先红」阶段尚不存在：此时返回空串让断言自然失败，而不是抛错中断整份护栏
+const readMaybe = (p: string): string => existsSync(join(ROOT, p)) ? readFileSync(join(ROOT, p), 'utf8') : ''
 
 function stripComments(src: string): string {
   return src
@@ -57,6 +60,11 @@ const WEB_WEEK = (): string => stripComments(read('src/components/WeekRecipeShee
 const MINI_WEEK = (): string => stripComments(read('mini/src/components/WeekRecipeSheet.tsx'))
 const WEB_DEVICE = (): string => stripComments(read('src/components/SmartDeviceSheet.tsx'))
 const MINI_DEVICE = (): string => stripComments(read('mini/src/components/SmartDeviceSheet.tsx'))
+// WX-1~WX-3：微信运动网关端点 / 小程序主动同步 / 门面缓存优先
+const WERUN_SERVER = (): string => stripComments(readMaybe('server/lib/werun.mjs'))
+const WERUN_MINI = (): string => stripComments(readMaybe('mini/src/lib/werun.ts'))
+const MINI_HEALTH_WX = (): string => stripComments(read('mini/src/lib/health/index.ts'))
+const SERVER_APP_WX = (): string => stripComments(read('server/lib/app.mjs'))
 const SHARED_MY = (): string => stripComments(read('packages/shared/src/myPage.ts'))
 const SHARED_HR = (): string => stripComments(read('packages/shared/src/healthRecord.ts'))
 const SHARED_INDEX = (): string => stripComments(read('packages/shared/src/index.ts'))
@@ -465,5 +473,207 @@ describe('shared 单一真源 / 数值口径', () => {
 
   it('mini 样式表触控目标 ≥88px（designWidth 750 的 2 倍）', () => {
     expect(MINI_SCSS().includes('min-height: 88px')).toBe(true)
+  })
+})
+
+/* ── 七、我的食物 · 能力对齐（可记一餐 / 可删除）────────────────── */
+// 背景：旧「我的食物」只读，但文案写「可一键复记」，用户点进去啥也做不了。
+// 与主端食谱能力对齐后，两端须都提供「记一餐」「删除」的真实现。
+
+describe('我的食物 · 能力对齐', () => {
+  // 匹配 import 行而非裸串，避免「删了 import、调用残留」的假绿
+  const apiImport = (x: string) => x.match(/import \{[^}]*\} from ['"][^'"]*api['"]/)?.[0] ?? ''
+
+  it('两端都从 api import insertMeals（记一餐真落库）', () => {
+    expect([WEB_FOOD(), MINI_FOOD()].every((x) => apiImport(x).includes('insertMeals'))).toBe(true)
+  })
+
+  it('两端都从 api import deleteRecipe（删除食谱）', () => {
+    expect([WEB_FOOD(), MINI_FOOD()].every((x) => apiImport(x).includes('deleteRecipe'))).toBe(true)
+  })
+
+  it('两端都有二次确认态 pendingDelete', () => {
+    expect([WEB_FOOD(), MINI_FOOD()].every((x) => x.includes('pendingDelete'))).toBe(true)
+  })
+
+  it('两端都有记一餐处理函数 logMeal', () => {
+    expect([WEB_FOOD(), MINI_FOOD()].every((x) => x.includes('logMeal'))).toBe(true)
+  })
+
+  it('两端都有删除处理函数 handleDelete', () => {
+    expect([WEB_FOOD(), MINI_FOOD()].every((x) => x.includes('handleDelete'))).toBe(true)
+  })
+
+  it('两端都从 @dbee/shared 取操作文案常量', () => {
+    expect([WEB_FOOD(), MINI_FOOD()].every((x) => x.includes('MY_FOOD_LOGGED') && x.includes('MY_FOOD_ACTION_'))).toBe(true)
+  })
+
+  it('我的食物提示文案不再误导为「记录饮食时」', () => {
+    expect(MY_FOOD_HINT.includes('记录饮食时')).toBe(false)
+  })
+})
+
+/* ── 八、智能手表 · 手表端蜜蜂健康 App 绑定 ───────────────────── */
+// 入口卡片「其他 → 手表端蜜蜂健康App绑定」→ 打开「智能手表」页，列 5 个品牌。
+// 诚实原则：D-Bee 不直连手表硬件；每个品牌的「绑定」= 连接其对应的系统健康平台，
+// 状态复用 HEALTH_APP_CATALOG（单一真源）。零假「扫码绑定」按钮。
+
+describe('智能手表 · 手表端绑定', () => {
+  it('手表目录恰好 5 个品牌', () => {
+    expect(WATCH_CATALOG.length).toBe(5)
+  })
+
+  it('手表品牌顺序与竞品图一致（OPPO/HUAWEI/Apple/VIVO/XIAOMI）', () => {
+    expect(WATCH_CATALOG.map((w) => w.key)).toEqual(['oppo', 'huawei', 'apple', 'vivo', 'xiaomi'])
+  })
+
+  it('每个手表品牌都映射到健康应用目录（复用真状态，不另起炉灶）', () => {
+    expect(WATCH_CATALOG.every((w) => HEALTH_APP_CATALOG.some((d) => d.key === w.key))).toBe(true)
+  })
+
+  it('手表品牌说明不含「规划中」三个字（给具体进度）', () => {
+    expect(WATCH_CATALOG.every((w) => !w.statusNote.includes('规划中'))).toBe(true)
+  })
+
+  it('两端设备页都从 @dbee/shared 取手表目录', () => {
+    expect([WEB_DEVICE(), MINI_DEVICE()].every((x) => x.includes('WATCH_CATALOG'))).toBe(true)
+  })
+
+  it('两端设备页都渲染手表目录（WATCH_CATALOG.map）', () => {
+    expect([WEB_DEVICE(), MINI_DEVICE()].every((x) => x.includes('WATCH_CATALOG.map'))).toBe(true)
+  })
+
+  it('两端都有手表视图切换状态 watchView', () => {
+    expect([WEB_DEVICE(), MINI_DEVICE()].every((x) => x.includes('watchView'))).toBe(true)
+  })
+
+  it('两端入口卡片文案取自 shared 的 WATCH_BIND_ENTRY', () => {
+    expect([WEB_DEVICE(), MINI_DEVICE()].every((x) => x.includes('WATCH_BIND_ENTRY'))).toBe(true)
+  })
+
+  it('两端手表页零假「扫码绑定」按钮', () => {
+    expect([WEB_DEVICE(), MINI_DEVICE()].every((x) => !x.includes('扫码绑定'))).toBe(true)
+  })
+
+  it('两端手表页标题取自 shared 的 WATCH_BIND_TITLE', () => {
+    expect([WEB_DEVICE(), MINI_DEVICE()].every((x) => x.includes('WATCH_BIND_TITLE'))).toBe(true)
+  })
+
+  it('两端手表页 Apple 行连接真走 onConnect（不是假绑定）', () => {
+    const hasRealConnect = (x: string) => x.split('\n').some((line) => line.includes('WATCH_BIND_ACTION_CONNECT') && line.includes('onConnect'))
+    expect([WEB_DEVICE(), MINI_DEVICE()].every(hasRealConnect)).toBe(true)
+  })
+
+  it('两端手表页都展示系统健康服务多设备路径说明', () => {
+    expect([WEB_DEVICE(), MINI_DEVICE()].every((x) => x.includes('WATCH_BIND_HC_NOTE'))).toBe(true)
+  })
+
+  it('手表入口卡片的「绑定」字样来自 shared 常量（组件零中文绑定字面量）', () => {
+    expect([WEB_DEVICE(), MINI_DEVICE()].every((x) => !x.includes('手表端蜜蜂健康App绑定'))).toBe(true)
+  })
+})
+
+/* ══════════════════════════════════════════════════════════════════════
+ * 护栏 WX · 微信运动接入 WX-1~WX-3（2026-11-17，WX-0 隐私指引已过）
+ * 业务代码只从服务端解密值取步数，客户端不得传 steps；同步必须用户主动触发，
+ * 自动轮询只读本地缓存、绝不调 wx.getWeRunData（平台规范 + 零假功能）。
+ * ══════════════════════════════════════════════════════════════════════ */
+describe('护栏 WX · 微信运动网关端点与小程序主动同步', () => {
+  // ── WX-1 网关端点 werun.mjs ────────────────────────────────
+  it('WX-1 网关注册 werun/sync 端点（app.mjs）', () => {
+    expect(SERVER_APP_WX().includes('werun/sync')).toBe(true)
+  })
+
+  it('WX-1 端点只接受 code/appid/encryptedData/iv，绝不读客户端 steps', () => {
+    const c = WERUN_SERVER()
+    expect(/body\.steps|body\?\.steps|['"]steps['"]\s*:\s*body/.test(c)).toBe(false)
+  })
+
+  it('WX-1 端点校验 Bearer 归属（authOwnerId/Strict）', () => {
+    expect(/authOwnerId(Strict)?\s*\(/.test(WERUN_SERVER())).toBe(true)
+  })
+
+  it('WX-1 端点校验 openid 归属与 token owner 一致（403 防串号）', () => {
+    expect(/wx:\$\{|403|forbidden/.test(WERUN_SERVER())).toBe(true)
+  })
+
+  it('WX-1 端点 AES-128-CBC 解密（createDecipheriv + aes-128-cbc）', () => {
+    const c = WERUN_SERVER()
+    expect(c.includes('createDecipheriv') && c.includes('aes-128-cbc')).toBe(true)
+  })
+
+  it('WX-1 端点校验 watermark.appid 防串包', () => {
+    expect(/watermark/.test(WERUN_SERVER())).toBe(true)
+  })
+
+  it('WX-1 端点 session_key 瞬时内存，不落库不下发（无 saveSessionKey/loadSessionKey）', () => {
+    const c = WERUN_SERVER()
+    expect(!c.includes('saveSessionKey') && !c.includes('loadSessionKey')).toBe(true)
+  })
+
+  it('WX-1 端点只返回当天单条步数（无 stepInfoList 全量回传）', () => {
+    const c = WERUN_SERVER()
+    expect(/stepInfoList/.test(c) && !/body:\s*\{[^}]*stepInfoList/.test(c)).toBe(true)
+  })
+
+  // ── WX-2 小程序主动同步 werun.ts ──────────────────────────
+  it('WX-2 小程序 werun.ts 存在且暴露主动同步函数', () => {
+    expect(/export async function syncWechatStepsActive/.test(WERUN_MINI())).toBe(true)
+  })
+
+  it('WX-2 主动同步走隐私授权门禁', () => {
+    expect(/ensurePrivacyAuthorized/.test(WERUN_MINI())).toBe(true)
+  })
+
+  it('WX-2 主动同步请求 scope.werun 授权', () => {
+    expect(/scope\.werun/.test(WERUN_MINI())).toBe(true)
+  })
+
+  it('WX-2 主动同步调用 wx.login 取同批次 code', () => {
+    expect(/Taro\.login|wx\.login/.test(WERUN_MINI())).toBe(true)
+  })
+
+  it('WX-2 主动同步调 getWeRunData 取密文', () => {
+    expect(/getWeRunData/.test(WERUN_MINI())).toBe(true)
+  })
+
+  it('WX-2 上传网关的 payload 只含密文四元组，绝不含 steps', () => {
+    const c = WERUN_MINI()
+    // 精准匹配「传给 gatewayPost 的 payload 对象」这一处，而非全文（本地结果体/缓存里的 steps 是合法的）
+    const payload = c.match(/const payload\s*=\s*\{([^}]*)\}/)?.[1] ?? ''
+    expect(
+      /code/.test(payload) && /appid/.test(payload) &&
+        /encryptedData/.test(payload) && /\biv\b/.test(payload) && !/steps/.test(payload),
+      '上传给网关的 payload 必须只有 code/appid/encryptedData/iv，steps 只能来自服务端解密',
+    ).toBe(true)
+  })
+
+  it('WX-2 code 失效自动重试一次', () => {
+    expect(/retry|重试|attempt|invalid_grant/.test(WERUN_MINI())).toBe(true)
+  })
+
+  it('WX-2 同步结果写本地缓存（kvSet 或等价），带 syncedAt', () => {
+    expect(/kvSet/.test(WERUN_MINI()) && /syncedAt/.test(WERUN_MINI())).toBe(true)
+  })
+
+  // ── WX-3 门面缓存优先 + 零自动 getWeRunData ────────────────
+  it('WX-3 mini 门面 syncFromHealth 真调用缓存读取（非仅 import 标识符）', () => {
+    expect(/readWechatStepsCache\(\)/.test(MINI_HEALTH_WX())).toBe(true)
+  })
+
+  it('WX-3 mini 门面在自动路径绝不触发 getWeRunData（门面文件零调用）', () => {
+    expect(!/getWeRunData/.test(MINI_HEALTH_WX())).toBe(true)
+  })
+
+  it('WX-3 mini 门面 connectHealth 真调用主动同步（非仅 import 标识符）', () => {
+    expect(/syncWechatStepsActive\(\)/.test(MINI_HEALTH_WX())).toBe(true)
+  })
+
+  it('WX-3 主端 wechat-miniprogram 分支文案不再说「接入正在准备中」', () => {
+    expect(!read('src/lib/health/index.ts').includes('微信运动接入正在准备中')).toBe(true)
+  })
+
+  it('WX-3 weapp 目录 status 仍 planned（真机验收前不标 available，零假绿）', () => {
+    expect(HEALTH_APP_CATALOG.find((d) => d.key === 'weapp')?.status).toBe('planned')
   })
 })

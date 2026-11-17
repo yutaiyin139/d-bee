@@ -178,6 +178,12 @@ select {
   font-weight: 500;
 }
 
+/* 我的食物 · 删除二次确认态 */
+.btn-text.danger {
+  color: var(--red);
+  font-weight: 600;
+}
+
 .field {
   margin-bottom: 14px;
 }

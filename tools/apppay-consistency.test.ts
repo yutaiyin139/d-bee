@@ -387,7 +387,8 @@ describe('护栏 20-F · 网关路由装配正确（notify 不走 wrap、限流�
   })
 
   it('apppay 实例挂在 createApp 返回值上（自测可注入、可断言）', () => {
-    expect(/server, router, otp, auth, llm, dbProxy, iap, xpay, apppay,/.test(APP_MJS.code)).toBe(true)
+    // WX-1（2026-11-17）：createApp 返回值新增 werun（微信运动解密 handler），顺序 auth 之后
+    expect(/server, router, otp, auth, werun, llm, dbProxy, iap, xpay, apppay,/.test(APP_MJS.code)).toBe(true)
   })
 })
 
