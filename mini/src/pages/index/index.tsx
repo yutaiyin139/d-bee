@@ -761,8 +761,12 @@ export default function Index() {
               <Button className='btn-text' style={{ marginTop: 8 }} disabled={mealBusy} onClick={() => void explainThisMeal()}>
                 {mealBusy ? '正在解读…' : '解读这一餐'}
               </Button>
-              {mealNote ? <Text className='hint' style={{ marginTop: 8 }}>模型建议：{mealNote}</Text> : null}
-              {mealErr ? <Text className='field-err' style={{ marginTop: 8 }}>{mealErr}</Text> : null}
+              {/* 🔴 类名必须用 helper / notice err（对齐主工程 Dashboard:758-759）：
+                  index.scss 里 .hint 只有嵌套作用域（.section-title / .cal-title 内），
+                  .field-err 只在 profile.scss 定义 → 在本 .checkup-detail 内两者均零规则命中，
+                  字号会回落到小程序默认（≈32rpx）而明显大于周围 23px 文字（11-17 用户实测反馈）。 */}
+              {mealNote ? <Text className='helper' style={{ marginTop: 8 }}>模型建议：{mealNote}</Text> : null}
+              {mealErr ? <Text className='notice err' style={{ marginTop: 8 }}>{mealErr}</Text> : null}
             </View>
           </View>
         </View>
