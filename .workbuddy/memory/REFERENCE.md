@@ -1894,3 +1894,62 @@ stdin 脚本不落临时文件、不执行删除。⚠️ 首次红验证脚本�
 ```
 - 🔴🔴 **四条既有铁律（全文已验在 REF）**：①**收款**（§五+11-08/09）＝开关默认 false / `settling` **绝不报 error** / **发权益权威信号＝验签回调 `settle_app_payment`**。②**兑换码 0048**（「2026-11-10 晚」）＝护栏**永不写明文** / **绝不调 `redeem_by_code`**（真烧码）。③**`psql`/脚本六铁律**＝变更类禁 `2>/dev/null` / 探针**不打印真实 uid** / `SUDO()` **不吞 stderr**。④🔴 **写 SQL 前必核 `information_schema.columns` 列名**（`schema_migrations`→`version` 非 `id`、`ai_usage`→`usage_date` 非 `day`）。
 ```
+
+
+### S 节 slack 收敛前原文（11-17 21:20，现状 line20「21:05 三层只读复验」）
+
+> 压缩理由：为写入「微信运动无法同步全链路清查（4 断点 + 0053 跳号 + 整搬 app.mjs 全站宕机）」腾 slack。
+> 该行指向的详版证据本就在 `2026-11-16.md` N 节，故此处逐字归档为零丢失。
+
+```
+- 🔴🔴 **21:05 三层只读复验全绿（零写入生产）**：四服务 `NRestarts=0`/OOM 0/systemd 与 nginx mtime 未触碰/`gateway.env` 未变/`app.mjs` 删 0 增 7/22-C/公网 **19/19 逐字节**/路由 **400→401→404**。明细 → `2026-11-16.md` N。
+```
+
+
+### T 节 slack 收敛前原文（11-17 21:20，为写入「微信运动无法同步全链路清查」腾空间）
+
+> 压缩理由：MEMORY.md 已满 9000/9000，写入 21:10 微信运动清查结论（4 断点 + 0053 跳号 + 整搬 app.mjs 全站宕机）必须先腾 slack。
+> 三条自身均已标注「详版 → `2026-11-16.md` 某节」，故此处逐字归档为零丢失；压缩只删冗余表述，不动任何触发线索与指针。
+
+**现状 line21「工具坑 5–10」**（485 字符）
+
+```
+- 🔴 **工具坑 5–10（详版 → `2026-11-16.md` P-补2/4、Q）**：⑤`node --check` 读 stdin 假绿 / ⑥Edit `old_string` 尾带 `\n` 合并 bullet / ⑦`grep -i proxy` 过滤 `env` 泄漏 Bearer / ⑧构建工具「清空」`catch {}` 吞异常（退出码 0 ≠ 目录纯净）；⑨**中文进程名禁用 ASCII 关键字 grep**（`grep -i wechat` 对「微信开发者工具.exe」报 `NONE`＝**假阴性**，实测 17 进程在跑）→ `tasklist //V //FO CSV` + Python 多编码解码 + 双向匹配；🔴 `/tmp` 对 Windows Python 不可见 → 跨工具传文件用 `$TEMP`；⑩**Taro 输出目录与开发者工具工作目录同为 `mini/dist`，互相读写干扰**（实测关工具后 69→20 文件）→ 构建前必关工具，**不得把工具当前显示的 dist 当产物真相**，验收只认构建刚结束那次。
+```
+
+**现状 line22「发现⑦⑧」**（176 字符）
+
+```
+- 🔴🔴 **发现⑦⑧（详版 → `2026-11-16.md` L）**：⑦`/var/www/d-bee` 实有 **139 文件**、生效仅 19（哈希名+`immutable`，**不影响正确性**）。⑧`REFERENCE.md:788` 含 `SMS_MASTER_CODE` 真实值＝**既存于 HEAD** → 应轮换，**待拍板**。
+```
+
+**现状 line24「剩余边界」**（390 字符）
+
+```
+- 🔴 **剩余边界**：mini 导出/通知说明**零真机实证**；🔴 **mini 只用 `mini/dist` 一目录**（勿再建 `prebuild-*`）→ 已是含 `8f6b981` 的最新 **v1.7.8**（69 文件、8/8 探针、`dbee-feature` 0、07:44 跨夜复测一致），**无需再编译**；体验版**须用户本人**导入 `mini/` 上传；🔴 **v178 已移存** `backup/prebuild-20261115-2230-mini-dist-v178`（`os.rename` 可逆、70/70 一致、同级 7 份含 Web 回滚点零变动）；1.7.7 旧包不可上传；docs 4 处 v178 引用待批注（方案 B）；Android 分发待批（A7）；模板 ID 回填后补 `subscribeMessage.send`。
+```
+
+
+**现状 line23「发现③④①」**（337 字符，11-17 21:20 归档）
+
+```
+- 🔴🔴 **发现③④①（详版 → `2026-11-16.md` H/I/K）**：③`apk-distribution.baseline.json` **自称护栏、全仓引用 0 处** → 可改 `published` 而门禁全绿；已加 `knownGap_guardrailNotWired`，🔴 **未擅自新增测试**。④**11-15 包不兼容新网关、禁止分发**（仍带 `dbee-feature` → 被静默重写为 `FOOD_SYSTEM`）；已入 `supersededApks[]`。①**0046/0047 生产漂移，刻意未夹带**（生产 `lib/` 缺 `xpay/apppay/wechatSession.mjs` → **收款链路未落地**）。
+```
+
+**现状「11-16 pull 8f6b981」**（154 字符，11-17 21:20 归档）
+
+```
+- 🔴 **11-16 pull `8f6b981`**：**`health_vendor`「暂编号 0052」作废 → 须顺延 `0053`**；🔴 **pull 涉 `packages/shared/src` 必重跑其 build 再验门禁**（`dist` 陈旧 = 护栏读 src 假绿，第三次踩）。
+```
+
+**现状「云库废弃」**（83 字符，11-17 21:20 归档）
+
+```
+- ✅✅ **云库废弃**：四端数据面全自建 PG、数据放弃迁移；释放差 2 步（用户本人）：①重传 mini+重设体验版 ②停用实例（不可逆）；实例**仍在线**。
+```
+
+**现状「当前生产状态（非发版）」**（391 字符，11-17 21:20 归档）
+
+```
+- 🔴🔴 **当前生产状态（非发版）**：**0052 applied**（`llm_gate` SECDEF+`search_path=public`，ACL 仅 `postgres`/`dbee_app`）；**网关手术式部署**（`apply-llm-feature-walls.py`：换 `llm.mjs`+`app.mjs` 插 4 条 `features/*`）；**Web 入口 `index-hSfB-d28.js`（11-17 14:00 发布 v1.7.9、生产实测全绿）**；🔴 **APK `…-llmgate.apk`（vc26、入口 `index-DKoWPSKJ.js`）仅归档不分发**（`not_published`+备案阻断）。门禁 **31 文件/1413 项** EXIT=0；**0054/0055 已应用**（FEFO+补分，34一致）
+```
