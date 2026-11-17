@@ -14,9 +14,9 @@
 - 🔴🔴 **铁律 #13：「已完成」必须附生产侧实测证据**。**本地绿 ≠ 线上绿**，中间隔「提交→构建→部署」。取证 5 法见 REFERENCE.md。
 - 🔴🔴 **写库字段必须对齐生产库列**：`updateMealGrams` 曾写 `meal_entries.updated_at`（0030 漏列）→ `PGRST204 schema cache` → 前端误翻「服务版本不匹配」，四端编辑份量全崩（11-14 实证）。改 patch 先对 `information_schema.columns`；加列后必 `NOTIFY pgrst, 'reload schema'`。🔴 用户报「服务版本不匹配」**不是前端版本问题**，是 schema cache / function 不存在。
 
-## 现状（11-17 16:56·**V1.7.9 Web 已发布上线**+0054FEFO；mini/dist 仍 v1.7.8；V1.7.9/vc27；证据→`2026-11-17.md`）
+## 现状（11-17 17:18·**V1.7.9 Web 已发布上线**+0054FEFO+0055补分;mini/dist 仍 v1.7.8；V1.7.9/vc27；证据→`2026-11-17.md`）
 
-- 🔴🔴 **当前生产状态（非发版）**：**0052 applied**（`llm_gate` SECDEF+`search_path=public`，ACL 仅 `postgres`/`dbee_app`）；**网关手术式部署**（`apply-llm-feature-walls.py`：换 `llm.mjs`+`app.mjs` 插 4 条 `features/*`）；**Web 入口 `index-hSfB-d28.js`（11-17 14:00 发布 v1.7.9、生产实测全绿）**；🔴 **APK `…-llmgate.apk`（vc26、入口 `index-DKoWPSKJ.js`）仅归档不分发**（`not_published`+备案阻断）。门禁 **31 文件/1413 项** EXIT=0；**0054 已应用**（honey_balance→FEFO，0→34）。
+- 🔴🔴 **当前生产状态（非发版）**：**0052 applied**（`llm_gate` SECDEF+`search_path=public`，ACL 仅 `postgres`/`dbee_app`）；**网关手术式部署**（`apply-llm-feature-walls.py`：换 `llm.mjs`+`app.mjs` 插 4 条 `features/*`）；**Web 入口 `index-hSfB-d28.js`（11-17 14:00 发布 v1.7.9、生产实测全绿）**；🔴 **APK `…-llmgate.apk`（vc26、入口 `index-DKoWPSKJ.js`）仅归档不分发**（`not_published`+备案阻断）。门禁 **31 文件/1413 项** EXIT=0；**0054/0055 已应用**（FEFO+补分，34一致）
 - 🔴🔴 **21:05 三层只读复验全绿（零写入生产）**：四服务 `NRestarts=0`/OOM 0/systemd 与 nginx mtime 未触碰/`gateway.env` 未变/`app.mjs` 删 0 增 7/22-C/公网 **19/19 逐字节**/路由 **400→401→404**。明细 → `2026-11-16.md` N。
 - 🔴 **工具坑 5–10（详版 → `2026-11-16.md` P-补2/4、Q）**：⑤`node --check` 读 stdin 假绿 / ⑥Edit `old_string` 尾带 `\n` 合并 bullet / ⑦`grep -i proxy` 过滤 `env` 泄漏 Bearer / ⑧构建工具「清空」`catch {}` 吞异常（退出码 0 ≠ 目录纯净）；⑨**中文进程名禁用 ASCII 关键字 grep**（`grep -i wechat` 对「微信开发者工具.exe」报 `NONE`＝**假阴性**，实测 17 进程在跑）→ `tasklist //V //FO CSV` + Python 多编码解码 + 双向匹配；🔴 `/tmp` 对 Windows Python 不可见 → 跨工具传文件用 `$TEMP`；⑩**Taro 输出目录与开发者工具工作目录同为 `mini/dist`，互相读写干扰**（实测关工具后 69→20 文件）→ 构建前必关工具，**不得把工具当前显示的 dist 当产物真相**，验收只认构建刚结束那次。
 - 🔴🔴 **发现⑦⑧（详版 → `2026-11-16.md` L）**：⑦`/var/www/d-bee` 实有 **139 文件**、生效仅 19（哈希名+`immutable`，**不影响正确性**）。⑧`REFERENCE.md:788` 含 `SMS_MASTER_CODE` 真实值＝**既存于 HEAD** → 应轮换，**待拍板**。
