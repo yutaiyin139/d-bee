@@ -28,7 +28,7 @@
  * owner_id 一律不传，由数据库 DEFAULT auth.uid() 填充，RLS 负责隔离（与主工程一致）。
  */
 import { cloud } from './cloud'
-import { FREE_DAILY_AI, BONUS_TTL_DAYS, SCAN_FEATURE, roundTo, type Entitlement, type UserPlan } from '@dbee/shared'
+import { FREE_DAILY_AI, BONUS_TTL_DAYS, SCAN_FEATURE, roundTo, computeHoneyBalance, type Entitlement, type UserPlan } from '@dbee/shared'
 import { zh } from './errmsg'
 
 /* ── 类型（与主工程 src/types.ts 一致，这里精简内联）──────────────── */
@@ -527,21 +527,13 @@ export async function getHoneyBalance(): Promise<HoneyBalance> {
       }
     }
   } catch { /* RPC 不存在（0040 未应用）→ 走下方回退 */ }
-  const { data, error } = await db('honey_ledger').select('amount, expires_at')
+  // 🔴 2026-11-17 修双扣：改用 @dbee/shared 的 FEFO 口径重算，
+  //    不再用「排除过期正流水 + 纳入 expire 冲正」的旧循环（会双扣）。
+  //    需 reason 字段以忽略物理冲正流水 reason='expire'。
+  const { data, error } = await db('honey_ledger').select('amount, reason, expires_at, created_at, id')
   if (error) throw new Error(`读取积分失败：${error.message ?? ''}`)
-  const rs = rows<{ amount: number; expires_at: string | null }>(data)
-  const now = Date.now()
-  let balance = 0
-  let earned = 0
-  let spent = 0
-  for (const r of rs) {
-    const amt = Number(r.amount) || 0
-    if (amt >= 0) earned += amt
-    else spent += -amt
-    if (amt > 0 && r.expires_at && new Date(r.expires_at).getTime() <= now) continue
-    balance += amt
-  }
-  return { balance: Math.max(0, balance), totalEarned: earned, totalSpent: spent }
+  const rs = rows<{ amount: number; reason: string; expires_at: string | null; created_at?: string; id?: number }>(data)
+  return computeHoneyBalance(rs, Date.now())
 }
 
 export type RedeemOutcome = { ok: boolean; message: string }

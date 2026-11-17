@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { View, Text, Button } from '@tarojs/components'
-import Taro, { useShareAppMessage, useShareTimeline } from '@tarojs/taro'
+import Taro, { useDidShow, useShareAppMessage, useShareTimeline } from '@tarojs/taro'
 import { BADGES } from '../../lib/badge'
 import { checkStatBadges } from '../../lib/badgeCheck'
 import {
@@ -75,6 +75,22 @@ export default function InvitePage() {
       alive = false
     }
   }, [])
+
+  // 🔴 2026-11-17 修复：此前只有挂载时 useEffect([]) 读一次余额，
+  //    从兑换弹窗/其他页返回时页面仍在栈中 → 余额显示旧值。
+  //    与打卡页/我的页一致，补 useDidShow 在页面重新可见时刷新余额与流水。
+  useDidShow(() => {
+    void (async () => {
+      try {
+        const b = await getHoneyBalance()
+        setBalance(b)
+        const l = await listHoneyLedger(50)
+        setLedger(l)
+      } catch {
+        /* 静默：与首屏一致的容错 */
+      }
+    })()
+  })
 
   async function handleRedeem(kind: 'pro1Day' | 'pro30Day' | 'ai1Scan', cost: number) {
     setRedeeming(kind)

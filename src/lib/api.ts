@@ -3,6 +3,7 @@ import { publicConfig } from '../cloudConfig'
 import type { Badge, Entitlement, ExerciseLog, HoneyBalance, HoneyLedger, InviteLink, MealEntry, MealSlim, Profile, Recipe, WaterLog, WeightLog } from '../types'
 import { BONUS_TTL_DAYS, FREE_DAILY_AI, SCAN_FEATURE } from './entitlement'
 import { zh } from './errmsg'
+import { computeHoneyBalance } from './honeyLedger'
 import { todayKey } from './nutrition'
 import { roundTo } from './numfmt'
 import { createNativeFetch } from './originProxy'
@@ -772,24 +773,15 @@ export async function getHoneyBalance(): Promise<HoneyBalance> {
       }
     }
   } catch { /* RPC 不存在（0040 未应用）→ 走下方回退 */ }
-  // 回退：旧全量路径（0040 应用前的库仍可用）
+  // 回退：旧全量路径（RPC 不可用时的兜底）。
+  // 🔴 2026-11-17 修双扣：改用 @dbee/shared 的 FEFO 口径重算，
+  //    不再用「排除过期正流水 + 纳入 expire 冲正」的旧循环（会双扣）。
+  //    需 reason 字段以忽略物理冲正流水 reason='expire'。
   const { data, error } = await db('honey_ledger')
-    .select('amount, expires_at')
+    .select('amount, reason, expires_at, created_at, id')
   if (error) throw new Error(zh(error.message, '读取积分失败'))
-  const rows_ = rows<{ amount: number; expires_at: string | null }>(data)
-  const now = Date.now()
-  let balance = 0
-  let earned = 0
-  let spent = 0
-  for (const r of rows_) {
-    const amt = Number(r.amount) || 0
-    if (amt >= 0) earned += amt
-    else spent += -amt
-    // 只有「未过期」的入账计入可用余额；负流水（消耗）不受过期影响
-    if (amt > 0 && r.expires_at && new Date(r.expires_at).getTime() <= now) continue
-    balance += amt
-  }
-  return { balance: Math.max(0, balance), totalEarned: earned, totalSpent: spent }
+  const rows_ = rows<{ amount: number; reason: string; expires_at: string | null; created_at?: string; id?: number }>(data)
+  return computeHoneyBalance(rows_, Date.now())
 }
 
 /** 读取积分流水（倒序，最多 200 条） */
