@@ -252,3 +252,29 @@ describe('护栏 25-E · 说明区块默认收起、可展开，且仍逐条渲�
     expect(MAIN).toContain('aria-expanded={open}')
   })
 })
+
+// ── WX-5 微信运动法务告知（2026-11-17）───────────────────────────
+describe('护栏 25-WX5 · 微信运动单独告知 + 撤销即删', () => {
+  const legal = (): string => read('src/content/legal.ts')
+
+  it('WX-5 隐私政策「收集信息」补微信运动单独告知（小程序·服务端解密·只取当天步数）', () => {
+    const c = legal()
+    expect(/微信运动/.test(c) && /服务端解密|服务端.{0,6}解密/.test(c) && /当天/.test(c)).toBe(true)
+  })
+
+  it('WX-5 明确微信运动步数用途（计算活动消耗/热量缺口）', () => {
+    expect(/微信运动/.test(legal()) && /活动消耗|热量缺口/.test(legal())).toBe(true)
+  })
+
+  it('WX-5 补撤销即删：解除连接后清除来源与缓存', () => {
+    expect(/撤销授权|撤回授权|解除连接/.test(legal()) && /清除|删除/.test(legal())).toBe(true)
+  })
+
+  it('WX-5 不构成医疗诊断红线未破（步数不得宣称疗效/诊断）', () => {
+    expect(legal().includes('不构成医疗') || legal().includes('不提供医疗诊断')).toBe(true)
+  })
+
+  it('WX-5 未刷新 LEGAL_UPDATED（仍刻意不动本值，避免老用户重弹同意窗）', () => {
+    expect(legal()).toContain('刻意不动本值')
+  })
+})

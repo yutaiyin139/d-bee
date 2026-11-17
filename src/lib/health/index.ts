@@ -27,6 +27,8 @@ import {
 import { isWechatMiniProgram } from '../platform'
 import { getProfile, saveProfile } from '../api'
 import type { HealthSyncData } from './types'
+import { healthVendorToDb, isVendorConnected } from '@dbee/shared'
+import type { HealthVendorDb } from '@dbee/shared'
 
 export type { HealthVendor, HealthVendorInfo } from './brand'
 export type { HealthSyncData, HealthSyncStatus, HealthAuthResult, HealthAuthReason } from './types'
@@ -63,13 +65,23 @@ export function isHealthConnectable(): boolean {
 }
 
 /**
- * 是否已连接 Apple 健康（读云端 profile.health_connected）。
- * 已连接时 UI 隐藏「连接」按钮；下次登录据此自动拉取数据。
+ * 是否已连接健康数据源（读云端 profile）。
+ *
+ * WX-4（0053）：按「本端期望的来源」判定，杜绝跨端串台——
+ * iPhone App 连了 Apple 健康后，小程序传 expectedVendor='werun'，
+ * 读到的 health_vendor='apple' 不匹配 → 不算已连接（真机验收判据）。
+ *
+ * @param expectedVendor 本端期望来源；省略时按当前机型自动推断。
+ *   旧数据（health_vendor 为空）回退布尔，兼容 0053 之前的旧包（见 shared isVendorConnected）。
  */
-export async function isHealthConnected(): Promise<boolean> {
+export async function isHealthConnected(expectedVendor?: HealthVendorDb): Promise<boolean> {
   try {
     const p = await getProfile()
-    return p?.health_connected === true
+    if (!p) return false
+    const expect = expectedVendor ?? healthVendorToDb(detectHealthVendor().vendor)
+    // 本端无对应来源（如 Web / vivo / oppo）：按旧布尔口径，不阻断现有端
+    if (!expect) return p.health_connected === true
+    return isVendorConnected(p.health_connected, p.health_vendor, expect)
   } catch {
     return false
   }
@@ -121,9 +133,9 @@ export async function connectHealth(): Promise<ConnectResult> {
       }
     }
 
-    // 授权流程完成 → 存云端连接状态（跨设备一致）
+    // 授权流程完成 → 存云端连接状态（跨设备一致）+ 来源（WX-4 防串台）
     try {
-      await saveProfile({ health_connected: true, health_connected_at: new Date().toISOString() })
+      await saveProfile({ health_connected: true, health_connected_at: new Date().toISOString(), health_vendor: 'apple' })
     } catch {
       // 存状态失败不阻断；本地连接态未落云端时按钮仍在，可重试
     }
@@ -153,9 +165,14 @@ export async function connectHealth(): Promise<ConnectResult> {
       }
     }
 
-    // 授权流程完成 → 存云端连接状态（跨设备一致，与 Apple 端同一字段）
+    // 授权流程完成 → 存云端连接状态（跨设备一致，与 Apple 端同一字段）+ 来源（WX-4 防串台）
+    const dbVendor = healthVendorToDb(v.vendor) // huawei | xiaomi
     try {
-      await saveProfile({ health_connected: true, health_connected_at: new Date().toISOString() })
+      await saveProfile({
+        health_connected: true,
+        health_connected_at: new Date().toISOString(),
+        ...(dbVendor ? { health_vendor: dbVendor } : {}),
+      })
     } catch {
       // 存状态失败不阻断；本地连接态未落云端时按钮仍在，可重试
     }
@@ -240,7 +257,7 @@ export function healthStatusHint(status: HealthSyncData['status'], vendorLabel: 
  */
 export async function disconnectHealth(): Promise<void> {
   try {
-    await saveProfile({ health_connected: false, health_connected_at: null })
+    await saveProfile({ health_connected: false, health_connected_at: null, health_vendor: null })
   } catch {
     // 状态清除失败不抛出：下次连接会重新覆盖
   }

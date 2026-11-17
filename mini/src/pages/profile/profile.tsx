@@ -28,6 +28,7 @@ import {
   MY_PAGE_GRID_ITEMS, MY_PAGE_LIST_ITEMS, MY_PAGE_INVITE_LABEL, MY_PAGE_INVITE_VIEW,
   MY_PAGE_REPORT_ARIA, MY_PAGE_TODAY_TITLE, MY_PAGE_TODAY_HINT, MY_PAGE_TODAY_ARIA,
   MY_PAGE_TODAY_LABELS, MY_PAGE_TODAY_UNITS,
+  isVendorConnected,
   type MyPageGridKey, type MyPageListKey,
 } from '@dbee/shared'
 import { buildTodayTarget } from '../../lib/myPage'
@@ -220,7 +221,8 @@ export default function ProfilePage() {
 
   // 健康数据源状态机（严格对齐主端 ProfileScreen:76-137 / 578-604）
   const healthVendor = useMemo(() => getHealthVendor(), [])
-  const healthConnected = profile?.health_connected === true
+  // WX-4 防串台：按来源判定，iPhone App 连 Apple 健康后这里不显示「微信运动已连接」
+  const healthConnected = isVendorConnected(profile?.health_connected, profile?.health_vendor, 'werun')
 
   async function handleConnectHealth() {
     if (healthBusy) return
@@ -228,7 +230,7 @@ export default function ProfilePage() {
     try {
       const r = await connectHealth()
       setHealthMsg(r.message)
-      if (r.ok) setProfile((p) => (p ? { ...p, health_connected: true } : p))
+      if (r.ok) setProfile((p) => (p ? { ...p, health_connected: true, health_vendor: 'werun' } : p))
     } catch {
       setHealthMsg('连接失败，请稍后重试。')
     } finally {
@@ -241,7 +243,7 @@ export default function ProfilePage() {
     setHealthBusy(true)
     try {
       await disconnectHealth()
-      setProfile((p) => (p ? { ...p, health_connected: false } : p))
+      setProfile((p) => (p ? { ...p, health_connected: false, health_vendor: null } : p))
       setHealthMsg('已解除连接，步数不再自动同步。')
     } catch {
       setHealthMsg('解除连接失败，请稍后重试。')

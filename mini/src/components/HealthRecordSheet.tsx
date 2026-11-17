@@ -10,6 +10,7 @@ import {
   buildMealSplitCore, buildExerciseWeekCore, buildWaterCore, buildTodayKcalCore, buildMacroRatioCore,
   HEALTH_PLAN_BMI_BANDS, HEALTH_PLAN_BMI_ARIA_PREFIX, HEALTH_PLAN_BMI_ARIA_TAIL,
   calcBmiCore, calcBmrCore, bmiBandOf, roundTo,
+  isVendorConnected,
 } from '@dbee/shared'
 import type { Profile, MealEntry, WaterLog, ExerciseLog, WeightLog } from '../lib/api'
 import {
@@ -38,6 +39,12 @@ export function HealthRecordSheet({ profile, onClose }: HealthRecordSheetProps) 
   const [weights, setWeights] = useState<WeightLog[]>([])
   const [steps, setSteps] = useState<number | null>(null)
 
+  // WX-4 防串台：小程序恒只认 werun 来源（iPhone 连 Apple 后这里不算已连接）
+  const healthConnected = useMemo(
+    () => isVendorConnected(profile.health_connected, profile.health_vendor, 'werun'),
+    [profile.health_connected, profile.health_vendor],
+  )
+
   useEffect(() => {
     let alive = true
     void (async () => {
@@ -50,7 +57,7 @@ export function HealthRecordSheet({ profile, onClose }: HealthRecordSheetProps) 
           listWeightLogsAsc(8),
         ])
         let st: number | null = null
-        if (profile.health_connected) {
+        if (healthConnected) {
           try { st = (await syncFromHealth()).steps } catch { st = null }
         }
         if (!alive) return
@@ -65,7 +72,7 @@ export function HealthRecordSheet({ profile, onClose }: HealthRecordSheetProps) 
       }
     })()
     return () => { alive = false }
-  }, [profile.health_connected])
+  }, [healthConnected])
 
   const completion = useMemo(() => buildCompletion(profile), [profile])
   const bmi = calcBmiCore(profile.height_cm, profile.current_weight_kg)
@@ -160,8 +167,8 @@ export function HealthRecordSheet({ profile, onClose }: HealthRecordSheetProps) 
               <View id='hr-1'>
                 <Text className='mp-section'>{HEALTH_RECORD_ANCHORS[1]}</Text>
                 <View className='mp-card'>
-                  <View className='mp-line'><Text>{HEALTH_RECORD_LABELS.healthStatus}</Text><Text className='mp-val'>{profile.health_connected ? '已连接' : '未连接'}</Text></View>
-                  {profile.health_connected ? (
+                  <View className='mp-line'><Text>{HEALTH_RECORD_LABELS.healthStatus}</Text><Text className='mp-val'>{healthConnected ? '已连接' : '未连接'}</Text></View>
+                  {healthConnected ? (
                     <>
                       <View className='mp-line'><Text>{HEALTH_RECORD_LABELS.steps}</Text><Text className='mp-val'>{steps ?? 0} {HEALTH_RECORD_UNITS.step}</Text></View>
                       <View className='mp-line'><Text>{HEALTH_RECORD_LABELS.activityKcal}</Text><Text className='mp-val'>{activeKcal} {HEALTH_RECORD_UNITS.kcal}</Text></View>

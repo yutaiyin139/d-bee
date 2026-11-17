@@ -17,6 +17,8 @@
  */
 import { getProfile, saveProfile } from '../api'
 import { syncWechatStepsActive, readWechatStepsCache } from '../werun'
+import { isVendorConnected } from '@dbee/shared'
+import type { HealthVendorDb } from '@dbee/shared'
 
 export interface HealthVendorInfo {
   vendor: 'wechat-miniprogram' | 'apple' | 'huawei' | 'xiaomi' | 'none'
@@ -44,11 +46,18 @@ export function isHealthConnectable(): boolean {
   return true
 }
 
-/** 是否已连接（读云端 profile.health_connected，与主端同口径） */
-export async function isHealthConnected(): Promise<boolean> {
+/**
+ * 是否已连接微信运动（读云端 profile，WX-4 防串台）。
+ *
+ * 小程序恒只认 werun 来源：iPhone App 连了 Apple 健康后 health_vendor='apple'，
+ * 这里按来源判定不算已连接 → 不显示「微信运动已连接」（真机验收判据）。
+ * 旧数据（health_vendor 为空）回退布尔，兼容 0053 之前只写布尔的旧包。
+ */
+export async function isHealthConnected(expectedVendor?: HealthVendorDb): Promise<boolean> {
   try {
     const p = await getProfile()
-    return p?.health_connected === true
+    if (!p) return false
+    return isVendorConnected(p.health_connected, p.health_vendor, expectedVendor ?? 'werun')
   } catch {
     return false
   }
@@ -69,9 +78,10 @@ export interface ConnectResult {
 export async function connectHealth(): Promise<ConnectResult> {
   const r = await syncWechatStepsActive()
   if (r.status === 'ok' || r.status === 'empty') {
-    // 真同步成功（含「今天真的 0 步」）→ 写云端连接态，下次进入据此显示已连接
+    // 真同步成功（含「今天真的 0 步」）→ 写云端连接态 + 来源 werun（WX-4 防串台），
+    // 下次进入据此显示已连接；旧数据无来源时回退布尔，兼容先前版本
     try {
-      await saveProfile({ health_connected: true })
+      await saveProfile({ health_connected: true, health_vendor: 'werun' })
     } catch {
       // 写状态失败不阻断本次结果展示
     }
@@ -89,7 +99,7 @@ export async function connectHealth(): Promise<ConnectResult> {
 /** 解除连接：清云端状态 + 本地步数缓存，UI 恢复「连接」入口 */
 export async function disconnectHealth(): Promise<void> {
   try {
-    await saveProfile({ health_connected: false })
+    await saveProfile({ health_connected: false, health_vendor: null })
   } catch {
     // 状态清除失败不抛出：下次连接会重新覆盖
   }

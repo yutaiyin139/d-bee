@@ -35,6 +35,7 @@ import {
   HEALTH_PLAN_TITLE,
   buildTodayTargetCore, buildCompletionCore, buildWeekRecipeViewCore,
   buildMyFoodViewCore, buildMealSplitCore, buildExerciseWeekCore,
+  HEALTH_VENDOR_DB_VALUES, healthVendorToDb, isVendorConnected,
 } from '@dbee/shared'
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -675,5 +676,78 @@ describe('护栏 WX · 微信运动网关端点与小程序主动同步', () => 
 
   it('WX-3 weapp 目录 status 仍 planned（真机验收前不标 available，零假绿）', () => {
     expect(HEALTH_APP_CATALOG.find((d) => d.key === 'weapp')?.status).toBe('planned')
+  })
+})
+
+// ── WX-4 连接态串台：health_vendor 来源判定（2026-11-17）──────────
+// 验收：iPhone App 连 Apple 健康后，小程序不显示「微信运动已连接」。
+describe('护栏 28-WX4 · health_vendor 跨端串台防护', () => {
+  // 真源纯函数断言（shared 已实现，应为绿）
+  it('WX-4 合法来源值恰好 5 个（apple/health_connect/huawei/xiaomi/werun）', () => {
+    expect([...HEALTH_VENDOR_DB_VALUES].sort().join(',')).toBe('apple,health_connect,huawei,werun,xiaomi')
+  })
+
+  it('WX-4 品牌→来源映射：apple/huawei/xiaomi/wechat-miniprogram 各有来源，web 无', () => {
+    expect(
+      healthVendorToDb('apple') === 'apple' && healthVendorToDb('huawei') === 'huawei' &&
+        healthVendorToDb('xiaomi') === 'xiaomi' && healthVendorToDb('wechat-miniprogram') === 'werun' &&
+        healthVendorToDb('web') === null,
+    ).toBe(true)
+  })
+
+  it('WX-4 新数据按来源严格判定：apple 来源在微信运动端不算已连接（杜绝串台）', () => {
+    expect(isVendorConnected(true, 'apple', 'werun')).toBe(false)
+  })
+
+  it('WX-4 新数据同来源算已连接', () => {
+    expect(isVendorConnected(true, 'werun', 'werun')).toBe(true)
+  })
+
+  it('WX-4 旧数据无来源回退布尔（兼容旧包，不丢连接态）', () => {
+    expect(isVendorConnected(true, null, 'werun')).toBe(true)
+  })
+
+  it('WX-4 未连接恒 false', () => {
+    expect(isVendorConnected(false, 'werun', 'werun')).toBe(false)
+  })
+
+  // 文件落地断言（实现前应为红）
+  it('WX-4 存在 0053 迁移文件（0052 已占用，编号顺延）', () => {
+    expect(existsSync(join(ROOT, 'db/migrations/0053-health-vendor.sql'))).toBe(true)
+  })
+
+  it('WX-4 迁移加 health_vendor 列', () => {
+    expect(readMaybe('db/migrations/0053-health-vendor.sql')).toMatch(/ADD COLUMN(\s+IF NOT EXISTS)?\s+health_vendor\s+text/i)
+  })
+
+  it('WX-4 迁移对来源值加 CHECK 约束（只认合法值）', () => {
+    expect(/CHECK[\s\S]*health_vendor|health_vendor[\s\S]*CHECK/i.test(readMaybe('db/migrations/0053-health-vendor.sql'))).toBe(true)
+  })
+
+  it('WX-4 两端连接成功都写 health_vendor（来源落库；词边界排除注释/改名）', () => {
+    const main = stripComments(read('src/lib/health/index.ts'))
+    // 主端 apple 分支必须写死 'apple'，huawei/xiaomi 分支走 dbVendor 变量
+    expect(/health_vendor:\s*'apple'/.test(main) && /health_vendor:\s*dbVendor/.test(main) &&
+      /health_vendor:\s*'werun'/.test(MINI_HEALTH_WX())).toBe(true)
+  })
+
+  it('WX-4 两端断开连接都清 health_vendor（来源复位）', () => {
+    expect([MINI_HEALTH_WX(), stripComments(read('src/lib/health/index.ts'))]
+      .every((x) => /health_vendor:\s*null/.test(x))).toBe(true)
+  })
+
+  it('WX-4 两端 isHealthConnected 都真调用 isVendorConnected（词边界排除 MUT_ 前缀）', () => {
+    expect([MINI_HEALTH_WX(), stripComments(read('src/lib/health/index.ts'))]
+      .every((x) => /\bisVendorConnected\(/.test(x))).toBe(true)
+  })
+
+  it('WX-4 两端 api.ts 都把 health_vendor 列入可写白名单', () => {
+    expect([read('src/lib/api.ts'), read('mini/src/lib/api.ts')]
+      .every((x) => /'health_vendor'/.test(x))).toBe(true)
+  })
+
+  it('WX-4 mini 连接态展示真调用 isVendorConnected（词边界排除改名）', () => {
+    const c = MINI_PROFILE()
+    expect(/\bisVendorConnected\(profile\?\.health_connected/.test(c)).toBe(true)
   })
 })

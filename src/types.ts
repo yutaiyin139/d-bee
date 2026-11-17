@@ -37,6 +37,8 @@ export interface Profile {
   health_connected?: boolean | null
   /** Apple 健康连接时间 */
   health_connected_at?: string | null
+  /** 健康数据来源（WX-4 · 0053）；连接成功写入来源、解除置 null，读取端据此防跨端串台 */
+  health_vendor?: 'apple' | 'health_connect' | 'huawei' | 'xiaomi' | 'werun' | null
   /** 每日步数目标（运动卡片进度条；默认 6000，可在「我的」里设置） */
   step_goal?: number | null
   /** 是否已同意 AI 处理个人数据（拍照识别 / AI 问答） */

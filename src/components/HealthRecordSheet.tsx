@@ -10,13 +10,14 @@ import {
   buildMealSplitCore, buildExerciseWeekCore, buildWaterCore, buildTodayKcalCore, buildMacroRatioCore,
   HEALTH_PLAN_BMI_BANDS, HEALTH_PLAN_BMI_ARIA_PREFIX, HEALTH_PLAN_BMI_ARIA_TAIL,
   calcBmiCore, calcBmrCore, bmiBandOf, roundTo,
+  isVendorConnected, healthVendorToDb,
 } from '@dbee/shared'
 import type { MealEntry, WaterLog, ExerciseLog, WeightLog, Profile } from '../types'
 import {
   listMealsByDate, listWaterByDate, listExerciseByDate, listWeightLogsAsc,
 } from '../lib/api'
 import { buildCompletion, currentWeekDates } from '../lib/myPage'
-import { syncFromHealth, estimateActivityKcal } from '../lib/health'
+import { syncFromHealth, estimateActivityKcal, getHealthVendor } from '../lib/health'
 import { todayKey } from '../lib/nutrition'
 
 interface HealthRecordSheetProps {
@@ -36,6 +37,13 @@ export function HealthRecordSheet({ profile, onClose }: HealthRecordSheetProps) 
   const [weights, setWeights] = useState<WeightLog[]>([])
   const [steps, setSteps] = useState<number | null>(null)
 
+  // WX-4 防串台：按来源判定连接态（与主端 ProfileScreen 同口径）
+  const healthConnected = useMemo(() => {
+    const expect = healthVendorToDb(getHealthVendor().vendor)
+    if (!expect) return profile.health_connected === true
+    return isVendorConnected(profile.health_connected, profile.health_vendor, expect)
+  }, [profile.health_connected, profile.health_vendor])
+
   useEffect(() => {
     let alive = true
     void (async () => {
@@ -48,7 +56,7 @@ export function HealthRecordSheet({ profile, onClose }: HealthRecordSheetProps) 
           listWeightLogsAsc(8),
         ])
         let st: number | null = null
-        if (profile.health_connected) {
+        if (healthConnected) {
           try { st = (await syncFromHealth()).steps } catch { st = null }
         }
         if (!alive) return
@@ -63,7 +71,7 @@ export function HealthRecordSheet({ profile, onClose }: HealthRecordSheetProps) 
       }
     })()
     return () => { alive = false }
-  }, [profile.health_connected])
+  }, [healthConnected])
 
   const completion = useMemo(() => buildCompletion(profile), [profile])
   const bmi = calcBmiCore(profile.height_cm, profile.current_weight_kg)
@@ -171,9 +179,9 @@ export function HealthRecordSheet({ profile, onClose }: HealthRecordSheetProps) 
             <div className="card" style={{ marginBottom: 12 }}>
               <div className="list-line">
                 <span>{HEALTH_RECORD_LABELS.healthStatus}</span>
-                <span className="val">{profile.health_connected ? '已连接' : '未连接'}</span>
+                <span className="val">{healthConnected ? '已连接' : '未连接'}</span>
               </div>
-              {profile.health_connected ? (
+              {healthConnected ? (
                 <>
                   <div className="list-line">
                     <span>{HEALTH_RECORD_LABELS.steps}</span>

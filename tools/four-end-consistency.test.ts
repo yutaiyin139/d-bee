@@ -242,7 +242,7 @@ describe('护栏 3 · 数值口径禁止新增手写舍入（唯一权威 numfmt
       // 方案入口与身体数据卡收进宫格，三行手写舍入内容未变，仅行号平移
       // → 174,175,540 → 207,208,594。
       // 2026-11-16 计划再生成：顶部增加建议解析与生成函数，三行手写舍入内容未变，仅行号平移。
-      'src/pages/ProfileScreen.tsx:270,271,657',
+      'src/pages/ProfileScreen.tsx:281,282,668',
     ]
 
     expect(
@@ -1156,7 +1156,7 @@ describe('护栏 16 · 微信运动 / 管理订阅 / 免费·订阅逻辑四端�
 
   it('🔴 健康数据源页必须有连接状态机（已连接 / 重连 / 解除连接）', () => {
     expect(
-      /healthConnected\s*=\s*profile\?\.health_connected/.test(miniProfile) &&
+      /const healthConnected\s*=/.test(miniProfile) &&
         /handleDisconnectHealth\s*\(/.test(miniProfile) &&
         /handleConnectHealth\s*\(/.test(miniProfile),
       '退回「只有一个连接按钮 + 一句占位」→ 与主端 ProfileScreen:578-604 状态机分叉',

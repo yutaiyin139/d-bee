@@ -68,6 +68,7 @@ import {
   MY_PAGE_GRID_ITEMS, MY_PAGE_LIST_ITEMS, MY_PAGE_INVITE_LABEL, MY_PAGE_INVITE_VIEW,
   MY_PAGE_REPORT_ARIA, MY_PAGE_TODAY_TITLE, MY_PAGE_TODAY_HINT, MY_PAGE_TODAY_ARIA,
   MY_PAGE_TODAY_LABELS, MY_PAGE_TODAY_UNITS,
+  isVendorConnected, healthVendorToDb,
   type MyPageGridKey, type MyPageListKey,
 } from '@dbee/shared'
 import { buildTodayTarget } from '../lib/myPage'
@@ -157,6 +158,13 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
 
   // 健康数据源（可重连 / 可解除连接；连接意图存云端 profiles.health_connected）
   const healthVendor = useMemo(() => getHealthVendor(), [])
+  // WX-4 防串台：按来源判定（反向：小程序连了微信运动后，本端不误显示 Apple 已连接）
+  const healthConnected = useMemo(() => {
+    if (!profile) return false
+    const expect = healthVendorToDb(healthVendor.vendor)
+    if (!expect) return profile.health_connected === true // Web 等无来源端退布尔
+    return isVendorConnected(profile.health_connected, profile.health_vendor, expect)
+  }, [profile, healthVendor.vendor])
 
   // 通知提醒偏好（本地 kv）；P0.7 首帧默认关，随后由 useEffect 读 kv 覆盖（老用户已存 '1' 仍显示为开）
   const [notifCheckin, setNotifCheckin] = useState(false)
@@ -205,7 +213,10 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
       const res = await connectHealth()
       if (res.message) setHealthTip(res.message)
       if (res.ok) {
-        onProfileChanged({ ...profile, health_connected: true, health_connected_at: new Date().toISOString() })
+        onProfileChanged({
+          ...profile, health_connected: true, health_connected_at: new Date().toISOString(),
+          health_vendor: healthVendorToDb(healthVendor.vendor),
+        })
       }
     } finally {
       setHealthBusy(false)
@@ -216,7 +227,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
     setHealthBusy(true)
     try {
       await disconnectHealth()
-      onProfileChanged({ ...profile, health_connected: false, health_connected_at: null })
+      onProfileChanged({ ...profile, health_connected: false, health_connected_at: null, health_vendor: null })
       setHealthTip('已解除连接，可随时重新连接。')
     } finally {
       setHealthBusy(false)
@@ -725,13 +736,13 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
               </span>
               <span className="val" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>
-                  {healthBusy ? '处理中…' : profile.health_connected ? '已连接 · 点击重新授权' : healthVendor.canSync ? '连接' : '查看'}
+                  {healthBusy ? '处理中…' : healthConnected ? '已连接 · 点击重新授权' : healthVendor.canSync ? '连接' : '查看'}
                 </span>
                 <span className="arrow">›</span>
               </span>
             </div>
             {healthTip && <div className="notice" style={{ margin: 10, fontSize: 13 }}>{healthTip}</div>}
-            {profile.health_connected && (
+            {healthConnected && (
               <div className="list-line" onClick={handleDisconnectHealth} onKeyDown={onActivateKey(() => void handleDisconnectHealth())} role="button" tabIndex={0} aria-disabled={healthBusy}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 16 }}>解除连接</span>
@@ -1074,7 +1085,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
       {activeSheet === 'device' && (
         <SmartDeviceSheet
           onClose={() => setActiveSheet(null)}
-          connected={!!profile.health_connected}
+          connected={!!healthConnected}
           connectable={isHealthConnectable()}
           vendorLabel={healthVendor.label}
           vendorKey={healthVendor.vendor}
