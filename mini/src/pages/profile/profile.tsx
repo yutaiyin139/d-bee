@@ -218,6 +218,8 @@ export default function ProfilePage() {
   const [stepGoal, setStepGoal] = useState(String(DEFAULT_STEP_GOAL))
   const [healthMsg, setHealthMsg] = useState('')
   const [healthBusy, setHealthBusy] = useState(false)
+  // 🔴 连接成功后由 connectHealth() 返回值直填，立即刷新弹层步数（见 handleConnectHealth）
+  const [healthSteps, setHealthSteps] = useState<number | null>(null)
 
   // 健康数据源状态机（严格对齐主端 ProfileScreen:76-137 / 578-604）
   const healthVendor = useMemo(() => getHealthVendor(), [])
@@ -230,7 +232,14 @@ export default function ProfilePage() {
     try {
       const r = await connectHealth()
       setHealthMsg(r.message)
-      if (r.ok) setProfile((p) => (p ? { ...p, health_connected: true, health_vendor: 'werun' } : p))
+      if (r.ok) {
+        setProfile((p) => (p ? { ...p, health_connected: true, health_vendor: 'werun' } : p))
+        // 🔴 2026-11-18 用户实测反馈修复：连接成功后今日步数不刷新。
+        //   connectHealth() 本来就已解密拿到当天步数，旧版只把它写进 message 文案，
+        //   数值没流到 UI → 弹层仍显示旧值/0，用户以为「连上了但没同步」。
+        //   现在直接回传给 SmartDeviceSheet，立即刷新，不依赖缓存回读时序。
+        setHealthSteps(typeof r.steps === 'number' ? r.steps : null)
+      }
     } catch {
       setHealthMsg('连接失败，请稍后重试。')
     } finally {
@@ -245,6 +254,8 @@ export default function ProfilePage() {
       await disconnectHealth()
       setProfile((p) => (p ? { ...p, health_connected: false, health_vendor: null } : p))
       setHealthMsg('已解除连接，步数不再自动同步。')
+      // 解除连接后清掉展示值，避免继续显示上一份步数（disconnectHealth 已清缓存）
+      setHealthSteps(null)
     } catch {
       setHealthMsg('解除连接失败，请稍后重试。')
     } finally {
@@ -1086,7 +1097,7 @@ export default function ProfilePage() {
           connectable={isHealthConnectable()}
           vendorLabel={healthVendor.label}
           vendorKey={healthVendor.vendor}
-          steps={null}
+          steps={healthSteps}
           weightKg={profile.current_weight_kg}
           heightCm={profile.height_cm}
           onConnect={() => void handleConnectHealth()}

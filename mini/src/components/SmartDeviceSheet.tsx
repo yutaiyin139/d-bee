@@ -37,10 +37,19 @@ export function SmartDeviceSheet({
   const [error, setError] = useState(false)
   const [watchView, setWatchView] = useState(false)
 
+  // 🔴 2026-11-18 修复「连接成功后今日步数不刷新」的另一半：
+  //   liveSteps 原本只在 useState 初始化时读一次 props.steps，父组件连接成功后
+  //   传进来的新步数**不会**同步进来；而 shownSteps = liveSteps ?? steps，
+  //   旧的 liveSteps（非 null）会把新值盖住 → 用户看到的仍是连接前的数字。
+  useEffect(() => {
+    if (steps != null) setLiveSteps(steps)
+  }, [steps])
+
   useEffect(() => {
     if (!connected || steps != null) return
     let alive = true
-    void syncFromHealth().then((h) => { if (alive) setLiveSteps(h.steps) })
+    // live 实时同步：弹层打开就是「用户主动查看」，此时取微信运动当时的步数（零弹框）
+    void syncFromHealth({ live: true }).then((h) => { if (alive) setLiveSteps(h.steps) })
       .catch(() => { if (alive) setError(true) })
     return () => { alive = false }
   }, [connected, steps])

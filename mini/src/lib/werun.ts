@@ -4,13 +4,20 @@
  * ── 平台硬约束（规划 §8/§10，逐条对应代码）──────────────────────────
  *   ① 唯一读取出口 wx.getWeRunData()，返回 encryptedData + iv（项目 selfhost 无云开发，
  *      拿不到 cloudID，必须走服务端解密 —— 见 WX-1 werun.mjs）。
- *   ② 🔴 **必须用户主动点击触发**，禁止在 onLoad/定时/onShow 自动调用（平台规范，
- *      违反审核不通过）。本文件的 syncWechatStepsActive() 只由门面 connectHealth()
- *      在用户点「同步微信运动」时调用；自动路径只读 readWechatStepsCache()。
+ *   ② 🔴 **授权弹窗必须由用户主动动作触发**，禁止凭生命周期弹框（平台规范）。
+ *      但「读取步数」本身并不要求每次都点一下 —— 已授权用户可以静默读取。
+ *      故本文件提供两条路径，区别只在**会不会弹框**：
+ *        · syncWechatStepsActive() —— 用户点「同步微信运动」时调：未授权会弹
+ *          授权框/跳设置页（主动动作触发，合规）。
+ *        · syncWechatStepsSilent() —— 登录/进入时调：🔴 **零弹框**，仅在隐私已同意
+ *          且 scope.werun 已授权时才读取；任一未授权立即静默放弃（返回 null），
+ *          绝不触发 wx.authorize / wx.openSetting / requirePrivacyAuthorize。
  *   ③ 读取前置：隐私授权指引已声明「微信运动步数」(WX-0，用户后台审核通过) +
  *      scope.werun 用户授权。拒绝 → status:'denied'，引导 wx.openSetting。
  *   ④ 更新时机：微信运动只在用户进入小程序时更新，服务端不存在定时拉取。
- *      故 UI 必须标 syncedAt，绝不宣称实时。
+ *      故 UI 必须标 syncedAt，绝不宣称实时。🔴 也正因如此，「实时刷新」的正确
+ *      时机是**登录/进入小程序**这些真实节点，而不是 60s 轮询（轮询拿到的仍是
+ *      同一份快照，白耗流量与网关调用）。
  *
  * ── 与网关的契约（WX-1）──────────────────────────────────────────────
  *   只上传 {code, appid, encryptedData, iv} 四元组 —— 🔴 绝不上传 steps（可伪造，
@@ -123,8 +130,49 @@ async function writeCache(data: WerunGatewayResult): Promise<void> {
   }
 }
 
-/* ── 主动同步全链路（仅用户点击调用）───────────────────────────────── */
+/* ── 授权检查：主动路径（可弹框）与静默路径（零弹框）──────────────── */
 
+/**
+ * 读 scope.werun 当前授权态。🔴 只读不写：getSetting 不弹框，安全。
+ */
+function readWerunScope(): Promise<boolean | undefined> {
+  const wx = getWx()
+  if (!wx || typeof wx.getSetting !== 'function') return Promise.resolve(undefined)
+  return new Promise<boolean | undefined>((resolve) => {
+    try {
+      wx.getSetting!({
+        success: (r) => resolve((r ?? {}).authSetting?.['scope.werun']),
+        fail: () => resolve(undefined),
+      })
+    } catch {
+      resolve(undefined)
+    }
+  })
+}
+
+/**
+ * 静默路径的隐私门禁：🔴 **只查不弹**。
+ * ensurePrivacyAuthorized() 在 needAuthorization=true 时会调 requirePrivacyAuthorize
+ * 弹框 —— 静默路径绝不能走它，只能读一次 getPrivacySetting：
+ *   needAuthorization=false（已同意过 / 后台未声明）→ 放行；否则一律静默放弃。
+ */
+async function isPrivacyAlreadyGranted(): Promise<boolean> {
+  try {
+    if (typeof Taro.getPrivacySetting !== 'function') return true
+    const s = await new Promise<{ needAuthorization?: boolean }>((resolve) => {
+      Taro.getPrivacySetting({ success: (r) => resolve(r ?? {}), fail: () => resolve({}) })
+    })
+    return !s.needAuthorization
+  } catch {
+    // 查询自身故障 → 静默放弃（不是 fail-open：这里放行只会多一次必然失败的外呼）
+    return false
+  }
+}
+
+/**
+ * 主动路径授权（用户点了「同步微信运动」）：未授权则弹框/跳设置页。
+ * @returns 'ok' 已授权 · 'denied' 被拒 · 'unavailable' 环境不支持
+ */
 async function ensureWerunAuth(): Promise<'ok' | 'denied' | 'unavailable'> {
   const wx = getWx()
   if (!wx || typeof wx.getWeRunData !== 'function' || typeof wx.getSetting !== 'function') {
@@ -135,17 +183,8 @@ async function ensureWerunAuth(): Promise<'ok' | 'denied' | 'unavailable'> {
   if (!privacy.ok) return 'denied'
 
   // ② scope.werun 授权状态
-  const setting = await new Promise<WerunSettingRes>((resolve) => {
-    try {
-      wx.getSetting!({
-        success: (r) => resolve(r ?? {}),
-        fail: () => resolve({}),
-      })
-    } catch {
-      resolve({})
-    }
-  })
-  if (setting.authSetting?.['scope.werun'] === false) {
+  const scope = await readWerunScope()
+  if (scope === false) {
     // 用户曾拒绝 → 引导去设置页开启，返回 denied 让 UI 提示
     try {
       wx.openSetting?.({ success: () => {}, fail: () => {} })
@@ -154,7 +193,7 @@ async function ensureWerunAuth(): Promise<'ok' | 'denied' | 'unavailable'> {
     }
     return 'denied'
   }
-  if (setting.authSetting?.['scope.werun'] !== true && typeof wx.authorize === 'function') {
+  if (scope !== true && typeof wx.authorize === 'function') {
     const granted = await new Promise<boolean>((resolve) => {
       try {
         wx.authorize!({
@@ -168,6 +207,20 @@ async function ensureWerunAuth(): Promise<'ok' | 'denied' | 'unavailable'> {
     })
     if (!granted) return 'denied'
   }
+  return 'ok'
+}
+
+/**
+ * 静默路径授权：🔴 **零弹框**。只在「隐私已同意 + scope.werun 已授权」时返回 'ok'，
+ * 其余一律 'silent_skip'（调用方据此回退缓存，绝不提示、绝不弹窗）。
+ */
+async function checkWerunAuthSilent(): Promise<'ok' | 'silent_skip'> {
+  const wx = getWx()
+  if (!wx || typeof wx.getWeRunData !== 'function') return 'silent_skip'
+  if (!(await isPrivacyAlreadyGranted())) return 'silent_skip'
+  // 🔴 只有**明确 true** 才继续；false（曾拒绝）与 undefined（从未授权/查询失败）
+  //   都静默跳过 —— 两者都会导致 getWeRunData 失败或触发弹框，均不可接受。
+  if ((await readWerunScope()) !== true) return 'silent_skip'
   return 'ok'
 }
 
@@ -193,31 +246,13 @@ async function freshLoginCode(): Promise<string> {
 }
 
 /**
- * 用户主动点击「同步微信运动」时调用 —— 完整链路：
- *   隐私授权 → scope.werun → wx.login → wx.getWeRunData → 网关解密 → 写缓存
- * 🔴 禁止在页面生命周期/定时器里调用本函数。
+ * 授权通过之后的共用同步核心：wx.login → getWeRunData → 网关解密 → 写缓存。
+ * 主动路径与静默路径**共用这一份**，避免两条链路漂移（各自实现迟早不一致）。
+ *
+ * 🔴 上传 payload 只含密文四元组，绝不含 steps —— 步数只来自服务端解密值，
+ *   客户端伪造 steps 不影响净摄入/可吃回额度（与 WX-1 服务端红线③对应）。
  */
-export async function syncWechatStepsActive(): Promise<WerunSyncData> {
-  if (!isWerunSupported()) {
-    return { steps: 0, activeKcal: 0, status: 'unavailable', message: '当前环境不支持微信运动同步。' }
-  }
-
-  const auth = await ensureWerunAuth()
-  if (auth === 'unavailable') {
-    return { steps: 0, activeKcal: 0, status: 'unavailable', message: '当前微信版本不支持微信运动同步，请升级后重试。' }
-  }
-  if (auth === 'denied') {
-    return {
-      steps: 0, activeKcal: 0, status: 'denied',
-      message: '未获得微信运动授权，请在「设置 > 关于 > 权限管理」中开启后重试。',
-    }
-  }
-
-  const appid = getWechatAppId()
-  if (!appid) {
-    return { steps: 0, activeKcal: 0, status: 'error', message: '未获取到小程序 AppID，请重启微信后重试。' }
-  }
-
+async function syncWithGateway(appid: string): Promise<WerunSyncData> {
   let code = ''
   try {
     code = await freshLoginCode()
@@ -273,4 +308,54 @@ export async function syncWechatStepsActive(): Promise<WerunSyncData> {
     const msg = e instanceof Error ? e.message : String(e)
     return { steps: 0, activeKcal: 0, status: 'error', message: `同步失败：${msg.slice(0, 60)}` }
   }
+}
+
+/**
+ * 用户主动点击「同步微信运动」时调用 —— 完整链路：
+ *   隐私授权 → scope.werun（未授权会弹框）→ syncWithGateway()
+ * 🔴 本函数**可能弹授权框**，故只能由用户主动动作触发，禁止放生命周期/定时器。
+ */
+export async function syncWechatStepsActive(): Promise<WerunSyncData> {
+  if (!isWerunSupported()) {
+    return { steps: 0, activeKcal: 0, status: 'unavailable', message: '当前环境不支持微信运动同步。' }
+  }
+
+  const auth = await ensureWerunAuth()
+  if (auth === 'unavailable') {
+    return { steps: 0, activeKcal: 0, status: 'unavailable', message: '当前微信版本不支持微信运动同步，请升级后重试。' }
+  }
+  if (auth === 'denied') {
+    return {
+      steps: 0, activeKcal: 0, status: 'denied',
+      message: '未获得微信运动授权，请在「设置 > 关于 > 权限管理」中开启后重试。',
+    }
+  }
+
+  const appid = getWechatAppId()
+  if (!appid) {
+    return { steps: 0, activeKcal: 0, status: 'error', message: '未获取到小程序 AppID，请重启微信后重试。' }
+  }
+
+  return syncWithGateway(appid)
+}
+
+/**
+ * 🔴 **静默实时同步**（用户「每次登录都要看到当时步数」的诉求，2026-11-18）。
+ *
+ * 与 syncWechatStepsActive 的唯一区别是**零弹框**：只在隐私已同意且 scope.werun
+ * 已授权时才真的去读；任一条件不满足立即返回 null（= 本次没试），由门面回退本地缓存。
+ * 这样已连接用户每次进入/登录都能拿到微信运动当时的步数，而新用户绝不会
+ * 在进小程序时莫名弹出一个授权框（那才是平台规范要禁的行为）。
+ *
+ * @returns null 表示「未授权/不支持，本次未尝试」，调用方应回退缓存而非报 0
+ */
+export async function syncWechatStepsSilent(): Promise<WerunSyncData | null> {
+  if (!isWerunSupported()) return null
+  if ((await checkWerunAuthSilent()) !== 'ok') return null
+  const appid = getWechatAppId()
+  if (!appid) return null
+  const r = await syncWithGateway(appid)
+  // 静默路径的失败不该打扰用户：denied/error 一律降级为 null 走缓存兜底，
+  // 只有真拿到数据（ok/empty）才回传给 UI。
+  return r.status === 'ok' || r.status === 'empty' ? r : null
 }

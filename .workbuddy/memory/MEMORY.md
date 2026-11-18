@@ -14,23 +14,23 @@
 - 🔴🔴 **铁律 #13：「已完成」必须附生产侧实测证据**。**本地绿 ≠ 线上绿**，中间隔「提交→构建→部署」。取证 5 法见 REFERENCE.md。
 - 🔴🔴 **写库字段必须对齐生产库列**：`updateMealGrams` 曾写 `meal_entries.updated_at`（0030 漏列）→ `PGRST204 schema cache` → 前端误翻「服务版本不匹配」，四端编辑份量全崩（11-14 实证）。改 patch 先对 `information_schema.columns`；加列后必 `NOTIFY pgrst, 'reload schema'`。🔴 用户报「服务版本不匹配」**不是前端版本问题**，是 schema cache / function 不存在。
 
-## 现状（11-17 21:20·V1.7.9 Web 已上线+0054/0055+微信运动 4 断点已定位;mini/dist 仍 v1.7.8;证据→`2026-11-17.md`）
+## 现状（11-18 10:30·V1.7.9 Web 上线+0053~0055+微信运动 WX-1/WX-6 落地;mini/dist 已重建含实时刷新;证据→`2026-11-18.md`）
 
-- 🔴🔴 **当前生产状态**：**0052 applied**；网关手术式部署（`apply-llm-feature-walls.py`：换 `llm.mjs`+`app.mjs` 插 4 条 `features/*`）；**Web 入口 `index-CIf_RcMj.js`（17:50 重发含 FEFO，生产实测全绿）**；🔴 APK `…-llmgate.apk`(vc26) 仅归档不分发。门禁 **31 文件/1413 项** EXIT=0；**0054/0055 已应用**（34 一致）。原文 → REF。
-- 🔴🔴 **11-16 21:05 三层只读复验全绿**（零写入）：四服务 `NRestarts=0`、`gateway.env` 未变、公网 **19/19 逐字节**。原文 → REF S 节，明细 → `2026-11-16.md` N。
+- 🔴🔴 **当前生产状态**：**0052 applied**；网关手术式部署（`apply-llm-feature-walls.py`：换 `llm.mjs`+`app.mjs` 插 4 条 `features/*`）；**Web 入口 `index-CIf_RcMj.js`（17:50 重发含 FEFO，生产实测全绿）**。门禁 **31 文件/1421 项** EXIT=0；**0053/0054/0055 已应用**（34 一致）；四服务 `NRestarts=0`、`gateway.env` 未变。原文 → REF。
 - 🔴 **工具坑 5–10（详版 → `2026-11-16.md` P-补2/4、Q；原文 → REF T 节）**：⑤`node --check` 读 stdin 假绿 ⑥Edit `old_string` 尾带 `\n` 合并 bullet ⑦宽泛 `grep -i proxy` 泄漏 Bearer ⑧构建工具 `catch {}` 吞异常（退出码 0 ≠ 目录纯净）⑨**中文进程名禁 ASCII grep**（`grep -i wechat` 对「微信开发者工具.exe」假阴性）→ `tasklist //V //FO CSV`+Python 多编码；`/tmp` 对 Windows Python 不可见 → 跨工具用 `$TEMP` ⑩**Taro 输出目录与开发者工具工作目录同为 `mini/dist` 互写** → 构建前必关工具，验收只认构建刚结束那次。
 - 🔴🔴 **发现⑦⑧（详版 → `2026-11-16.md` L；原文 → REF T 节）**：⑦`/var/www/d-bee` 实有 **139 文件**、生效仅 19（哈希名+`immutable`，**不影响正确性**）⑧`REFERENCE.md:788` 含 `SMS_MASTER_CODE` 真实值＝既存于 HEAD → 应轮换，**待拍板**。
 - 🔴🔴 **发现③④①（详版 → `2026-11-16.md` H/I/K；原文 → REF T 节）**：③`apk-distribution.baseline.json` 自称护栏但全仓引用 0 处（已加 `knownGap_guardrailNotWired`，**未擅自新增测试**）④11-15 包不兼容新网关、禁分发（已入 `supersededApks[]`）①**0046/0047 生产漂移刻意未夹带**（生产缺 `xpay/apppay/wechatSession.mjs`→收款未落地）。
-- 🔴🔴 **微信运动无法同步＝4 断点（详版 → `2026-11-17.md` 21:10）**：①`mini/dist`(11-16 23:17)早于 werun 源码(12:51)→旧包 `connectHealth` 是死桩恒返「接入准备中」、**不发请求** ②生产 `werun/sync` **404**（同前缀 `login-wechat`→401 证网关活）③lib 无 `werun.mjs`、`auth.mjs` 未导出 `exchangeWechatCode`（本地 `:382` 才有）④**0053 跳号**（有 0054/0055）→`health_vendor` 列缺→新包写入 PGRST204。✅密钥非空、0 新增 env。🔴 **整搬 `app.mjs`＝全站宕机**（import xpay/apppay/werun 生产全缺）→ 手术式三文件同批。
-- 🔴 **剩余边界**：mini 导出/通知说明**零真机实证**；🔴 **只用 `mini/dist` 一目录**（勿再建 `prebuild-*`）；v178 已移存 `backup/prebuild-20261115-2230-mini-dist-v178`（可逆、70/70 一致）；1.7.7 旧包不可上传；体验版**须用户本人**导入 `mini/`；docs 4 处 v178 引用待批注；Android 分发待批（A7）；模板 ID 回填后补 `subscribeMessage.send`。原文 → REF T 节。
+- 🔴🔴 **微信运动已落地（WX-1 三步 `5bea9d2` + WX-6 静默实时同步 11-18，详版 → `2026-11-18.md`）**：0053 迁移生产应用（根因＝缺三件套被跳号）；网关手术式部署（9 闸门全绿，`werun/sync`→401 已挂载）；mini/dist 直建（10:26，69 文件，探针 6/6）。🔴 **整搬 `app.mjs`＝全站宕机**（生产缺 xpay/apppay/werun.mjs）→ 三文件同批缺一不可。
+- 🔴🔴 **WX-6 两缺陷已修（连接后不刷新 / 登录不实时）**：根因①connectHealth 的 steps 无 UI 承接 ②误读平台规范——真实规则＝「授权**弹窗**须用户操作触发」，已授权用户可**零弹窗静默读**。修法＝`syncWechatStepsSilent()`（隐私+scope 只读双闸）+ `syncFromHealth({live})` 默认实时、轮询 `live:false`（防 jscode2session 45011）+ 首页 `useDidShow` 实时刷（tabBar 不 remount）；🔴 **登录路径刻意不调 refreshHealth**（`[loggedIn]` effect 已首刷，双调＝双倍 wx.login）。
+- 🔴 **剩余边界**：mini 导出/通知**零真机实证**；🔴🔴 **构建只落 `mini/dist`，禁再建 `prebuild-*`**（用户 11-18 明令）；werun 端到端**仍零真机实证**（铁律 #13）→ 待用户导入 `mini/dist` 传体验版复验；1.7.7 旧包不可上传；docs 4 处 v178 引用待批注；Android 分发待批（A7）；模板 ID 回填后补 `subscribeMessage.send`。原文 → REF T 节。
 - 🔴🔴 **四条既有铁律（全文已验在 REF）**：①**收款**（§五+11-08/09）＝开关默认 false / `settling` **绝不报 error** / **发权益权威信号＝验签回调 `settle_app_payment`**。②**兑换码 0048**＝护栏**永不写明文** / **绝不调 `redeem_by_code`**（真烧码）。③**`psql`/脚本六铁律**＝变更类禁 `2>/dev/null` / 探针**不打印真实 uid** / `SUDO()` **不吞 stderr**。④🔴 **写 SQL 前必核 `information_schema.columns` 列名**（例：`schema_migrations`→`version` 非 `id`）。
 - ✅✅ **云库废弃**：数据面全自建 PG、放弃迁移；释放差 2 步（用户本人）＝重传 mini+重设体验版、停用实例（不可逆）；实例**仍在线**。原文 → REF。
 - 🟠 **备案链**：域名/ICP ✅；App/小程序/算法/公安备案均管局审核中（前两项硬阻断 Android 上架、mini 发版+虚拟支付）；`applicationLabel` 仍 `D-Bee`，上商店前须改「自律蜜蜂」。
-- 🔴 **0053 顺延**：`health_vendor`「暂编号 0052」已作废；🔴 **pull 涉 `packages/shared/src` 必重跑其 build 再验门禁**（`dist` 陈旧＝护栏读 src 假绿，第三次踩）。原文 → REF。
+- 🔴 **0053 已应用**（11-17 22:50 补全三件套后落地，`health_vendor` 列+约束+登记齐备）；🔴 **pull 涉 `packages/shared/src` 必重跑其 build 再验门禁**（`dist` 陈旧＝护栏读 src 假绿，第三次踩）。原文 → REF。
 
 ## 下一步 / 待拍板（详版 → REFERENCE.md）
 
-- 📚 **git 已闭环**：11-16 上线留证已 commit + push（8 文件，`origin/main` 同步、无待推送）；此前 11-15 三次 push、11-16 pull 零冲突。11-14 的 P0 / P1.4-1.6 / P1.7 均已入库随 V1.7.6~V1.7.8 发版 → REF「11-15 23:08 迁入」§四。
+- 📚 **git**：`5bea9d2` 已 push；11-18 WX-6 改动待提交；11-14 P0/P1.4-1.6/P1.7 随 V1.7.6~V1.7.8 发版 → REF「11-15 23:08 迁入」§四。
 - 🔴 **主线 = iOS 上线**（权威 `docs/iOS上线依赖全景与实施步骤-2026-11-07.md`）：正式上架卡软著(30–60 工作日)/App 备案(7–20)/Mac 签名；最大交付 = **TestFlight 内部测试**（需 Mac+Team+重打包）。ASC 填报面几乎空白；Apple 硬闸门 Xcode 26 + iOS 26 SDK、新年龄分级问卷必答。🔴 壳内停在 11-04，apppay + A-5 真删号 + 16px 修复待重打包。
 - 🔴 **只有用户本人能做**：软著 AI 条款、Mac 选 `DEVELOPMENT_TEAM`、证书入 `signing/`、mini 发版、云库停用、公安备案回填、ASC 填报、算法备案收尾、**支付资质申请**（微信移动应用 + 商户号 APP 支付 + 支付宝企业应用）。
 - 🟠 **待拍板**：**0046/0047 生产漂移处置**（收款链路未上生产，补则走手术式脚本 + 开关默认 false）、**是否补 `tools/apk-distribution.test.ts`** 闭合发现③护栏缺口（须先红验证）、隐私政策 §五 + `LEGAL_UPDATED`、mini 同意窗重确认载体、凭据轮换、网关模式收紧、护栏 A9/A10、Apple 个人 vs 备案企业主体、仓库是否转 private。

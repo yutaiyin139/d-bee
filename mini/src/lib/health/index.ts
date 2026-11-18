@@ -12,11 +12,14 @@
  *  - 🔴 纠偏旧结论：读取方向的硬前置是《用户隐私保护指引》声明 + 用户授权，
  *    **不是**「运动健康」类目资质（那类目限制的是「写入/分享到微信运动」，D6 已决定不做）。
  *  - 真同步步数：connectHealth() 由用户主动点击触发完整链路（隐私→授权→login→
- *    getWeRunData→网关解密），syncFromHealth() 自动路径只读本地缓存，绝不自动调 getWeRunData
- *    （平台规范）。步数只有步数、无 activeKcal 粒度 → activeKcal 恒 0，由步幅法兜底。
+ *    getWeRunData→网关解密）；syncFromHealth() 默认**静默实时**同步（已授权才读，
+ *    绝不弹框），未授权/失败回退本地缓存。🔴 2026-11-18 修正：旧版恒只读缓存，
+ *    把「授权须由用户主动动作触发」误读成「读取也须每次点一下」，导致用户反馈的
+ *    「连接成功但今日步数不刷新 / 登录不实时」。平台约束的真实边界见 werun.ts 头注②。
+ *    步数只有步数、无 activeKcal 粒度 → activeKcal 恒 0，由步幅法兜底。
  */
 import { getProfile, saveProfile } from '../api'
-import { syncWechatStepsActive, readWechatStepsCache } from '../werun'
+import { syncWechatStepsActive, syncWechatStepsSilent, readWechatStepsCache } from '../werun'
 import { isVendorConnected } from '@dbee/shared'
 import type { HealthVendorDb } from '@dbee/shared'
 
@@ -67,13 +70,19 @@ export interface ConnectResult {
   ok: boolean
   message: string
   vendor: HealthVendorInfo['vendor']
+  /**
+   * 🔴 本次连接实际同步到的当天步数（2026-11-18 用户反馈修复）。
+   * 此前只把 steps 塞进 message 文案，UI 拿不到数值 → 「连接成功但今日步数不刷新」。
+   * 现在回传出来，profile/SmartDeviceSheet 可立即 setState，不必等缓存回读。
+   */
+  steps?: number
+  syncedAt?: string
 }
 
 /**
  * 用户主动点「同步微信运动」时调用：走完整主动同步链路（WX-2）。
  * 🔴 只有拿到真实数据（status ok/empty）才写云端连接态，授权拒绝/错误不写，
  *    避免把「点了一下」误标成「已连接」（零假功能）。
- * 自动路径（首页轮询）不会调到这里——那里走 syncFromHealth() 读缓存。
  */
 export async function connectHealth(): Promise<ConnectResult> {
   const r = await syncWechatStepsActive()
@@ -91,6 +100,9 @@ export async function connectHealth(): Promise<ConnectResult> {
         ? '已连接微信运动，今天还没有步数数据。'
         : `已连接微信运动，今日 ${r.steps} 步已同步。`,
       vendor: 'wechat-miniprogram',
+      // 连接成功即回传数值：调用方立刻刷新今日步数（不等轮询、不等缓存回读）
+      steps: r.steps,
+      syncedAt: r.syncedAt,
     }
   }
   return { ok: false, message: r.message || '微信运动同步未成功，请稍后重试。', vendor: 'wechat-miniprogram' }
@@ -125,12 +137,39 @@ export interface HealthSyncData {
 }
 
 /**
- * 自动路径（首页登录同步 / 60s 定时 / onShow）走这里：只读本地缓存，
- * 🔴 绝不触发 wx.getWeRunData —— 平台要求用户主动触发，且微信运动只在用户进入时更新。
- * 无缓存/过期 → status:'empty'（UI 提示「点一下同步」，不弹系统授权框）。
- * 数值由 connectHealth() 主动同步后写入缓存；activeKcal 恒 0，由步幅法兜底。
+ * 读取当前步数（首页登录/进入、健康档案、智能设备弹层共用）。
+ *
+ * 🔴 2026-11-18 语义修正（用户实测反馈：连接后今日步数不刷新、登录不实时）：
+ *   旧版**恒只读本地缓存**，把「平台要求授权由用户主动动作触发」误当成
+ *   「读取也必须每次点一下」。实际约束是**不得凭生命周期弹授权框**，
+ *   已授权用户静默读取完全合规且不弹框（见 werun.ts checkWerunAuthSilent）。
+ *
+ * 现在的行为（默认 live=true）：
+ *   已授权 → 静默实时同步，拿到微信运动**当时**的步数；
+ *   未授权/不支持/本次同步失败 → 回退本地缓存，UI 保留上次数值（不闪 0、不弹框、不报错）。
+ *
+ * @param opts.live 传 false 表示只读缓存（🔴 仅 60s 轮询用：微信运动只在进入小程序时
+ *   更新，轮询做实时同步拿到的仍是同一份快照，却每分钟一次 wx.login + 网关调用，
+ *   会撞 jscode2session 频控 errcode 45011 → 把本来正常的登录链路拖成 503）。
  */
-export async function syncFromHealth(): Promise<HealthSyncData> {
+export async function syncFromHealth(opts?: { live?: boolean }): Promise<HealthSyncData> {
+  const live = opts?.live !== false
+  if (live) {
+    try {
+      const fresh = await syncWechatStepsSilent()
+      // null = 未授权/不支持/失败（静默路径刻意不区分，一律不打扰用户）→ 落到缓存兜底
+      if (fresh) {
+        return {
+          steps: fresh.steps,
+          activeKcal: 0,
+          status: fresh.status as HealthSyncStatus,
+          syncedAt: fresh.syncedAt,
+        }
+      }
+    } catch {
+      // 实时路径任何异常都不该让用户看不到步数 → 缓存兜底
+    }
+  }
   const cached = await readWechatStepsCache()
   return {
     steps: cached.steps,

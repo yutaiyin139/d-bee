@@ -58,7 +58,8 @@ export function HealthRecordSheet({ profile, onClose }: HealthRecordSheetProps) 
         ])
         let st: number | null = null
         if (healthConnected) {
-          try { st = (await syncFromHealth()).steps } catch { st = null }
+          // 用户主动打开健康档案 → 取微信运动当时的步数（零弹框；未授权自动回退缓存）
+          try { st = (await syncFromHealth({ live: true })).steps } catch { st = null }
         }
         if (!alive) return
         setMeals(m)

@@ -49,6 +49,43 @@ function stripComments(src: string): string {
     .replace(/(^|[^:])\/\/.*$/gm, '$1 ')
 }
 
+/**
+ * 取出某个 function 声明的**函数体**（含外层大括号），找不到返回空串。
+ *
+ * 🔴 为什么必须按函数体断言，而不是全文 grep：
+ *   werun.ts 里主动路径（ensureWerunAuth）**必须**保留 authorize/openSetting，
+ *   静默路径（checkWerunAuthSilent/isPrivacyAlreadyGranted/syncWechatStepsSilent）
+ *   **绝不能**出现它们。全文 grep 无法区分两者 → 要么放过违规，要么冤枉合法代码。
+ * 实现细节：先配对参数列表括号，再跳过返回类型注解里的泛型（`Promise<{a:b}>`
+ * 这种类型字面量的 `{` 不是函数体开头），最后做大括号配对。
+ */
+function fnBody(src: string, name: string): string {
+  const m = new RegExp(`(?:export\\s+)?(?:async\\s+)?function\\s+${name}\\s*\\(`).exec(src)
+  if (!m) return ''
+  let i = m.index + m[0].length - 1 // 指向参数列表的 '('
+  let p = 0
+  for (; i < src.length; i++) {
+    const ch = src[i]
+    if (ch === '(') p++
+    else if (ch === ')') { p--; if (p === 0) { i++; break } }
+  }
+  let g = 0
+  let start = -1
+  for (; i < src.length; i++) {
+    const ch = src[i]
+    if (ch === '<') g++
+    else if (ch === '>') g = Math.max(0, g - 1)
+    else if (ch === '{' && g === 0) { start = i; break }
+  }
+  if (start < 0) return ''
+  let d = 0
+  for (let j = start; j < src.length; j++) {
+    if (src[j] === '{') d++
+    else if (src[j] === '}') { d--; if (d === 0) return src.slice(start, j + 1) }
+  }
+  return src.slice(start)
+}
+
 const WEB_PROFILE = (): string => stripComments(read('src/pages/ProfileScreen.tsx'))
 const MINI_PROFILE = (): string => stripComments(read('mini/src/pages/profile/profile.tsx'))
 const WEB_LIB = (): string => stripComments(read('src/lib/myPage.ts'))
@@ -65,6 +102,8 @@ const MINI_DEVICE = (): string => stripComments(read('mini/src/components/SmartD
 const WERUN_SERVER = (): string => stripComments(readMaybe('server/lib/werun.mjs'))
 const WERUN_MINI = (): string => stripComments(readMaybe('mini/src/lib/werun.ts'))
 const MINI_HEALTH_WX = (): string => stripComments(read('mini/src/lib/health/index.ts'))
+// WX-3（2026-11-18）：首页刷新时机断言用 —— 实时刷新只在登录/进入，轮询读缓存
+const MINI_INDEX_WX = (): string => stripComments(read('mini/src/pages/index/index.tsx'))
 const SERVER_APP_WX = (): string => stripComments(read('server/lib/app.mjs'))
 const SHARED_MY = (): string => stripComments(read('packages/shared/src/myPage.ts'))
 const SHARED_HR = (): string => stripComments(read('packages/shared/src/healthRecord.ts'))
@@ -657,17 +696,67 @@ describe('护栏 WX · 微信运动网关端点与小程序主动同步', () => 
     expect(/kvSet/.test(WERUN_MINI()) && /syncedAt/.test(WERUN_MINI())).toBe(true)
   })
 
-  // ── WX-3 门面缓存优先 + 零自动 getWeRunData ────────────────
-  it('WX-3 mini 门面 syncFromHealth 真调用缓存读取（非仅 import 标识符）', () => {
+  // ── WX-3 门面：实时静默同步（已授权）+ 缓存兜底（未授权）──────────
+  it('WX-3 mini 门面 syncFromHealth 真调用缓存读取作为兜底（非仅 import 标识符）', () => {
     expect(/readWechatStepsCache\(\)/.test(MINI_HEALTH_WX())).toBe(true)
-  })
-
-  it('WX-3 mini 门面在自动路径绝不触发 getWeRunData（门面文件零调用）', () => {
-    expect(!/getWeRunData/.test(MINI_HEALTH_WX())).toBe(true)
   })
 
   it('WX-3 mini 门面 connectHealth 真调用主动同步（非仅 import 标识符）', () => {
     expect(/syncWechatStepsActive\(\)/.test(MINI_HEALTH_WX())).toBe(true)
+  })
+
+  /* 🔴 2026-11-18 修订：原「门面文件零 getWeRunData」已失效且变成假绿。
+   *   旧断言的**意图**是「自动路径不得凭生命周期弹授权框」，但它用「门面文件里
+   *   不出现 getWeRunData 字面量」来代理该意图。用户实测反馈「连接后步数不刷新 /
+   *   登录不实时」后，门面改为默认静默实时同步：getWeRunData 仍只写在 werun.ts，
+   *   门面经 syncWechatStepsSilent() 间接调用 → 旧断言**字面照样通过，意图已被推翻**。
+   *   故改为直接断言真实意图：静默路径零弹框 + 只有明确已授权才读取。 */
+  it('WX-3 静默路径 checkWerunAuthSilent 存在且被 syncWechatStepsSilent 真实调用', () => {
+    const c = WERUN_MINI()
+    expect(
+      /export async function syncWechatStepsSilent/.test(c) &&
+        fnBody(c, 'syncWechatStepsSilent').includes('checkWerunAuthSilent()'),
+    ).toBe(true)
+  })
+
+  it('WX-3 静默路径只在 scope.werun 明确为 true 时才读取（false/undefined 一律跳过）', () => {
+    expect(fnBody(WERUN_MINI(), 'checkWerunAuthSilent').includes('(await readWerunScope()) !== true')).toBe(true)
+  })
+
+  it('WX-3 静默路径零弹框：不出现 authorize / openSetting / requirePrivacyAuthorize', () => {
+    const c = WERUN_MINI()
+    const silent = ['checkWerunAuthSilent', 'isPrivacyAlreadyGranted', 'syncWechatStepsSilent']
+      .map((n) => fnBody(c, n)).join('\n')
+    // silent.length>0 防「函数名写错→取到空串→断言恒真」的假绿
+    expect(silent.length > 0 && !/\.authorize!?\s*\(|openSetting|requirePrivacyAuthorize/.test(silent)).toBe(true)
+  })
+
+  it('WX-3 静默门禁用只读的 getPrivacySetting（needAuthorization 为真即放弃，不弹框）', () => {
+    const b = fnBody(WERUN_MINI(), 'isPrivacyAlreadyGranted')
+    expect(b.includes('getPrivacySetting') && b.includes('!s.needAuthorization')).toBe(true)
+  })
+
+  it('WX-3 主动路径仍会请求授权（ensureWerunAuth 保留 authorize/openSetting，两条路径不混）', () => {
+    const b = fnBody(WERUN_MINI(), 'ensureWerunAuth')
+    // 🔴 代码形态是 `wx.authorize!({…})`（TS 非空断言），正则必须容忍那个 `!`，
+    //   否则写成 /\.authorize\(/ 会漏匹配 → 断言假红（本轮实测踩过）
+    expect(/\.authorize!?\s*\(/.test(b) && /openSetting/.test(b)).toBe(true)
+  })
+
+  it('WX-3 门面 syncFromHealth 支持 live 开关，且默认走实时（未显式传 false 即实时）', () => {
+    expect(/opts\?\.live !== false/.test(MINI_HEALTH_WX())).toBe(true)
+  })
+
+  it('WX-3 门面把 connectHealth 当次步数回传给调用方（连接成功即刻刷新，不等缓存）', () => {
+    expect(/steps: r\.steps/.test(MINI_HEALTH_WX())).toBe(true)
+  })
+
+  it('WX-3 首页 60s 轮询只读缓存（live:false），实时刷新仅用于登录/进入时机', () => {
+    expect(/setInterval\(\(\) => \{ void refreshHealth\(false\) \}/.test(MINI_INDEX_WX())).toBe(true)
+  })
+
+  it('WX-3 首页在 useDidShow 里实时刷新（tabBar 页不重新 mount，否则跨页返回步数不更新）', () => {
+    expect(/void refreshHealth\(true\)/.test(MINI_INDEX_WX())).toBe(true)
   })
 
   it('WX-3 主端 wechat-miniprogram 分支文案不再说「接入正在准备中」', () => {

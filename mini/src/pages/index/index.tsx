@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { View, Text, Button, Input } from '@tarojs/components'
 import Taro, { useDidShow, useLoad, useRouter, useShareAppMessage, useShareTimeline } from '@tarojs/taro'
 import {
@@ -38,6 +38,7 @@ import { isSignedIn } from '../../lib/auth'
 import {
   syncFromHealth, isHealthConnected, isUsableHealthStatus, healthStatusHint,
   estimateActivityKcal, getHealthVendor, HEALTH_SYNC_INTERVAL_MS,
+  type HealthSyncData,
 } from '../../lib/health'
 import {
   consumePendingInvite, getPendingInvite, readInviteFromEnterOptions,
@@ -108,44 +109,63 @@ export default function Index() {
 
   const today = todayKey()
 
-  /* ── 健康数据源自动同步（严格对齐主端 Dashboard:125-165）── */
+  /* ── 健康数据源同步 ──────────────────────────────────────────────────
+   * 🔴 2026-11-18 改造（用户实测反馈：连接后今日步数不刷新 / 登录不实时）：
+   *   旧版把整段同步锁在 useEffect([]) 内，**只在 mount 跑一次**。而首页是 tabBar 页，
+   *   从「我的」连完微信运动切回来不会重新 mount → 步数纹丝不动，必须杀掉小程序重进。
+   *   现拆成可反复调用的 refreshHealth(live)，并在三个真实时机触发：
+   *     ① 登录态确立（useEffect[loggedIn]）② 每次进入首页（useDidShow）③ 60s 轮询
+   *   live 参数区分两档：
+   *     · live=true  → 静默实时同步，取微信运动**当时**的步数（①②用，零弹框）
+   *     · live=false → 只读本地缓存（③用）。微信运动只在用户进入小程序时更新，
+   *       轮询做实时同步拿到的仍是同一份快照，却每分钟一次 wx.login + 网关调用，
+   *       会撞 jscode2session 频控（errcode 45011）把正常登录链路拖成 503。
+   */
+  const healthAliveRef = useRef(true)
   useEffect(() => {
-    let alive = true
-    let timer: ReturnType<typeof setInterval> | undefined
-    const vendor = getHealthVendor()
-
-    /** 只有可用状态才写回数值：授权被拒 / 查询报错时返回的 0 会抹掉已有步数 */
-    function applySync(data: Awaited<ReturnType<typeof syncFromHealth>>) {
-      if (!alive) return
-      if (isUsableHealthStatus(data.status)) {
-        setHealthSteps(data.steps)
-        setHealthActiveKcal(data.activeKcal)
-        setHealthSyncHint('')
-      } else {
-        setHealthSyncHint(healthStatusHint(data.status, vendor.label))
-      }
-    }
-
-    async function refreshHealth() {
-      const connected = await isHealthConnected()
-      if (!alive || !connected) return
-      applySync(await syncFromHealth())
-    }
-
-    void refreshHealth()
-    // 仅在已连接时轮询：未连接时无数据可拉，避免空跑云端请求
-    timer = setInterval(() => {
-      void isHealthConnected().then((connected) => {
-        if (!alive || !connected) return
-        void syncFromHealth().then(applySync)
-      })
-    }, HEALTH_SYNC_INTERVAL_MS)
-
-    return () => {
-      alive = false
-      if (timer) clearInterval(timer)
-    }
+    healthAliveRef.current = true
+    return () => { healthAliveRef.current = false }
   }, [])
+
+  const healthVendor = useMemo(() => getHealthVendor(), [])
+
+  /** 只有可用状态才写回数值：授权被拒 / 查询报错时返回的 0 会抹掉已有步数 */
+  const applyHealthSync = useCallback((data: HealthSyncData) => {
+    if (!healthAliveRef.current) return
+    if (isUsableHealthStatus(data.status)) {
+      setHealthSteps(data.steps)
+      setHealthActiveKcal(data.activeKcal)
+      setHealthSyncHint('')
+    } else {
+      setHealthSyncHint(healthStatusHint(data.status, healthVendor.label))
+    }
+  }, [healthVendor.label])
+
+  /**
+   * 拉一次步数。未连接微信运动时直接返回（不发无意义请求）。
+   * 任何异常都吞掉并保留旧值 —— 步数展示不该因一次网络抖动变成报错页。
+   */
+  const refreshHealth = useCallback(async (live: boolean) => {
+    if (!healthAliveRef.current) return
+    let connected = false
+    try {
+      connected = await isHealthConnected()
+    } catch {
+      connected = false
+    }
+    if (!healthAliveRef.current || !connected) return
+    try {
+      applyHealthSync(await syncFromHealth({ live }))
+    } catch { /* 保留旧值 */ }
+  }, [applyHealthSync])
+
+  // 登录态确立 → 立即实时刷新，并挂上轮询（轮询只读缓存，见上方 live 说明）
+  useEffect(() => {
+    if (!loggedIn) return
+    void refreshHealth(true)
+    const timer = setInterval(() => { void refreshHealth(false) }, HEALTH_SYNC_INTERVAL_MS)
+    return () => clearInterval(timer)
+  }, [loggedIn, refreshHealth])
 
   // 分享卡片落地：从 query 读邀请码（?invite=CODE，兼容旧版 ?inviter=CODE）。
   // router.params 只在冷启动可靠；热启动（后台时点新卡片）只触发 onShow，
@@ -228,12 +248,24 @@ export default function Index() {
       // 登录页已绑过码则这里是空操作；若当时会话未就绪（非终态）留了码，
       // 回首页这一刻会话通常已稳定，补一次消费。
       captureLandedInvite(true)
+      // 🔴 这里**刻意不调** refreshHealth：setLoggedIn(true) 会让下面
+      //   [loggedIn] 的 useEffect 立即跑一次实时刷新（毫秒级，用户无感）。
+      //   若两处都调，登录瞬间会打两次 wx.login + 两次网关解密 —— 与轮询
+      //   特意降级为读缓存以避免 jscode2session 频控（45011）的设计自相矛盾。
       shownOnceRef.current = true
       return
     }
     // 热启动（从聊天卡片切回）也要补读落地码
     captureLandedInvite(true)
-    if (shownOnceRef.current) void load()
+    // 🔴 shownOnceRef 守卫与上面的 load() 同一理由：冷启动 onLoad 与 onShow 会先后
+    //   各触发一次，此时 [loggedIn] 的 useEffect 已经负责首刷，这里跳过以免双请求
+    //   （双请求 = 两次 wx.login + 两次网关解密，白耗且可能撞 jscode2session 频控）。
+    //   非首次 onShow（tab 切回 / 热启动）才实时刷新 —— 这正是用户反馈的
+    //   「在『我的』连完微信运动切回首页，步数不更新」的场景：tabBar 页不重新 mount。
+    if (shownOnceRef.current) {
+      void load()
+      void refreshHealth(true)
+    }
     shownOnceRef.current = true
   })
 
