@@ -61,7 +61,23 @@ function getPlugin(): HealthPlugin | null {
   return candidate as HealthPlugin
 }
 
-/** 是否具备 Android 厂商健康数据运行条件（Android 原生 + 可同步厂商 + 插件已注入） */
+/**
+ * 是否具备 Android 厂商健康数据运行条件（Android 原生 + 可同步厂商 + 插件已注入）。
+ *
+ * 🔴🔴 **本函数只回答「桥在不在」，不回答「桥那头通不通」**（2026-11-18 华为 P40 踩坑）：
+ *   它检查的是 isAndroid() + 品牌在白名单 + DbeeHealth 插件已注入，**完全不校验厂商
+ *   资质是否获批**。而原生侧 `requestAuthorization` 恒返回 `reason='not_ready'`、
+ *   `fetchToday` 恒返回 `not_ready`（Health Kit 资质未接）→ 本函数在华为/小米上
+ *   一律返回 **true**。
+ *
+ *   后果：`isHealthConnectable()` 拿到 true → 健康卡片显示 → 按钮显示「连接」，
+ *   而点了必然失败。用户实测反馈「点击连接没有任何反应」即由此而来（违反铁律 #13）。
+ *
+ *   🔴 因此调用方**不得**用本函数判断「能不能真连」，必须同时看
+ *   `detectHealthVendor().canSync`（资质就绪才为 true），或直接用
+ *   `requestAndroidVendorAuthorization()` 返回的 notReady 做运行时判定。
+ *   门面 `connectHealth()` 已按此收紧（canSync=false 时不调原生、直接给可操作说明）。
+ */
 export function isAndroidVendorHealthAvailable(): boolean {
   return isAndroid() && SYNCABLE_ANDROID_VENDORS.has(detectHealthVendor().vendor) && getPlugin() !== null
 }

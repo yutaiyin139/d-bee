@@ -31,7 +31,8 @@ import { STREAK_BADGES } from '../lib/badge'
 import { AI_REDEEM_DAILY_LIMIT, FREE_DAILY_AI, HEALTH_SYNC_INTERVAL_MS, MEAL_PAYWALL_REASON, proDaysLeft } from '../lib/entitlement'
 import { categoryOf } from '../lib/foods'
 import { LEVEL_LABELS, levelOfScore, nextMealAdvice, summarizeEntries } from '../lib/foodInsight'
-import { ACTIVITY_EATBACK_RATIO, connectHealth, DEFAULT_STEP_GOAL, estimateActivityKcal, getHealthVendor, healthStatusHint, isHealthConnectable, isHealthConnected, isUsableHealthStatus, syncFromHealth } from '../lib/health'
+import { ACTIVITY_EATBACK_RATIO, connectHealth, DEFAULT_STEP_GOAL, estimateActivityKcal, getHealthVendor, healthStatusHint, isHealthConnectable, isHealthConnected, isUsableHealthStatus, probeHealthConnectAvailability, syncFromHealth, type HealthSyncData } from '../lib/health'
+import { isAndroid } from '../lib/platform'
 import { CHECKIN_EXERCISE, CHECKIN_MEAL, CHECKIN_WATER, dailyCheckinHoney, streakMilestoneHoney } from '../lib/invite'
 import { errText } from '../lib/errmsg'
 import { kvGet, kvSet } from '../lib/kv'
@@ -64,6 +65,43 @@ const MACRO_META = [
 const STREAK_WINDOW_DAYS = 185
 
 // 健康数据自动同步间隔已下沉 @dbee/shared（HEALTH_SYNC_INTERVAL_MS），四端同源。
+
+/**
+ * 把一次同步结果翻译成「该写回哪些状态」。
+ *
+ * 🔴 抽成模块级纯函数而非在组件里写两遍：自动轮询（applySync）与手动连接
+ *    （handleConnectHealth）必须**逐条同规则**，否则会出现「轮询说空、手动连接说
+ *    正在读取」的自相矛盾。单一真相源也便于单测直接覆盖分支。
+ *
+ * 规则：
+ *  · isUsableHealthStatus（ok/empty/no_plugin）→ 写回数值；其中 **empty 也要给一句
+ *    可见说明**（今天确实没数据 ≠ 功能坏了，静默会让用户误判）。
+ *  · 其余（denied/error/unavailable/not_ready，error 含读数超时降级）→ **不写回数值**
+ *    （原生此时回 0，写回会把用户已有步数抹成 0），只显示引导文案。
+ */
+function healthSyncView(
+  data: HealthSyncData,
+  vendorLabel: string,
+  isHealthConnectVendor: boolean,
+): { steps: number; activeKcal: number; hint: string; writeValues: boolean } {
+  if (isUsableHealthStatus(data.status)) {
+    return {
+      steps: data.steps,
+      activeKcal: data.activeKcal,
+      hint:
+        data.status === 'empty'
+          ? healthStatusHint(data.status, vendorLabel, isHealthConnectVendor)
+          : '',
+      writeValues: true,
+    }
+  }
+  return {
+    steps: 0,
+    activeKcal: 0,
+    hint: healthStatusHint(data.status, vendorLabel, isHealthConnectVendor),
+    writeValues: false,
+  }
+}
 
 export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   const { pro, lifetime, entitlement, aiRemaining, openPaywall, grantStreakBonus } = usePlan()
@@ -99,10 +137,26 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   }, [pendingDeleteId])
 
   // 健康连接：品牌识别 + 连接状态（云端）+ 步数/活动能量 + 提示
-  const healthVendor = useMemo(() => getHealthVendor(), [])
-  // 是否支持健康数据源连接（仅原生 App：iOS HealthKit / 华为·小米 Health Kit）。
+  // HC probe 时序：Health Connect 可用性是异步探测的跨进程查询，缓存未热时
+  // getHealthVendor()/isHealthConnectable() 读到的是保守 false。故挂载时 probe 一次，
+  // 完成后置 hcReady 触发这两个 useMemo 重算（非 Android 恒不触发，零开销；
+  // probe 幂等且结果缓存，重复挂载不重复打跨进程查询）。
+  const [hcReady, setHcReady] = useState(false)
+  useEffect(() => {
+    let alive = true
+    if (isAndroid()) {
+      void probeHealthConnectAvailability().then(() => {
+        if (alive) setHcReady(true)
+      })
+    }
+    return () => {
+      alive = false
+    }
+  }, [])
+  const healthVendor = useMemo(() => getHealthVendor(), [hcReady])
+  // 是否支持健康数据源连接（仅原生 App：iOS HealthKit / 华为·小米 Health Kit / Health Connect）。
   // Web 端恒 false：不显示任何健康同步/连接相关提示。
-  const healthConnectable = useMemo(() => isHealthConnectable(), [])
+  const healthConnectable = useMemo(() => isHealthConnectable(), [hcReady])
   const [healthConnected, setHealthConnected] = useState(false)
   const [healthSteps, setHealthSteps] = useState(0)
   const [healthActiveKcal, setHealthActiveKcal] = useState(0)
@@ -110,10 +164,23 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   // 同步异常提示（授权被拒/出错/资质未就绪等）；与 healthTip（连接动作反馈）分开，
   // 避免自动轮询的异常提示把用户刚看到的连接结果顶掉
   const [healthSyncHint, setHealthSyncHint] = useState('')
+  /**
+   * 🔴 首次读数是否**已有结论**（成功/空/出错/超时都算），默认 false。
+   *
+   * 为什么必须有：旧实现只靠 `!hasHealthData`（步数与活动能量都为 0）来判断
+   * 「还在读取中」，但「读完了、今天确实是 0 步 / 读数超时降级」**同样**满足
+   * `!hasHealthData` → 「正在读取今天的步数，稍候自动展示」这句永驻不消失，
+   * 用户看到的就是「连接成功了，但一直没有反应」（2026-11-18 小米 15 Ultra 实测）。
+   * 「读取进行中」与「读取已结束但无数据」是两种必须区分开的状态，
+   * 只有真实拿到过一次读数结果才允许把文案从「正在读取」切走。
+   */
+  const [healthSyncSettled, setHealthSyncSettled] = useState(false)
   // 步数目标：优先用户自定义（profile.step_goal），缺省用默认值
   const stepGoal = profile.step_goal && profile.step_goal > 0 ? profile.step_goal : DEFAULT_STEP_GOAL
   // 是否已有健康数据（步数或活动能量任一 > 0）：决定是否渲染健康数据块，避免空块观感差
   const hasHealthData = healthSteps > 0 || healthActiveKcal > 0
+  // 数据源是否为 Health Connect（Android 统一层）：denied 的权限入口措辞与 iOS 不同
+  const isHealthConnectVendor = healthVendor.vendor === 'health_connect'
 
   // 饮食体检伸缩：默认展开，点击右上角折叠/展开详情区；折叠偏好记忆到本地，下次打开保持
   const [checkupCollapsed, setCheckupCollapsed] = useState(false)
@@ -132,18 +199,18 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
      * ⚠️ 只有 isUsableHealthStatus 才写回数值：授权被拒 / 查询报错 / 设备不支持时，
      * 原生返回的 steps 是 0，直接写回会把用户已有的步数抹成 0（且看不出原因）。
      * 这些情况改为显示 healthStatusHint 的引导文案，数值保持上一次成功读到的结果。
+     * 🔴 任何分支都必须置 healthSyncSettled=true：读数一旦有了结论（哪怕是「今天
+     * 真的 0 步」或「超时降级」），UI 就不能再声称「正在读取」。
      */
     function applySync(data: Awaited<ReturnType<typeof syncFromHealth>>) {
       if (!alive) return
-      if (isUsableHealthStatus(data.status)) {
-        setHealthSteps(data.steps)
-        setHealthActiveKcal(data.activeKcal)
-        setHealthSyncHint('')
-      } else {
-        // 'empty' 属可用状态（今天真的还没数据），不走到这里；
-        // no_plugin 也不该打扰用户（Web 端 / 旧版包），故此处只剩 denied/error/unavailable/not_ready
-        setHealthSyncHint(healthStatusHint(data.status, healthVendor.label))
+      setHealthSyncSettled(true)
+      const v = healthSyncView(data, healthVendor.label, isHealthConnectVendor)
+      if (v.writeValues) {
+        setHealthSteps(v.steps)
+        setHealthActiveKcal(v.activeKcal)
       }
+      setHealthSyncHint(v.hint)
     }
 
     async function refreshHealth() {
@@ -176,7 +243,10 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
       if (timer) clearInterval(timer)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [])
+    // 依赖 healthConnectable/healthVendor：hcReady 翻转后（HC probe 完成）重跑一次，
+    // 使轮询与提示读到 probe 后的正确值；两者均为 useMemo 稳定值，正常只跑一次。
+    // isHealthConnectVendor 由 healthVendor 派生，列出仅为满足 exhaustive-deps。
+  }, [healthConnectable, healthVendor, isHealthConnectVendor])
 
   // 折叠偏好：挂载时从本地读取一次，之后用户切换时写回（异步、静默，失败不影响交互）
   useEffect(() => {
@@ -525,17 +595,46 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
       if (res.ok) {
         setHealthConnected(true)
         const data = await syncFromHealth()
-        // 与自动同步同一套规则：读不到数据时不覆盖已有数值，转为显示引导
-        if (isUsableHealthStatus(data.status)) {
-          setHealthSteps(data.steps)
-          setHealthActiveKcal(data.activeKcal)
-          setHealthSyncHint('')
-        } else {
-          setHealthSyncHint(healthStatusHint(data.status, healthVendor.label))
+        // 与自动同步共用 healthSyncView（单一真相源，两路不可能规则漂移）。
+        // 🔴 读数一有结论就置 settled（含「今天 0 步」/「超时降级」），
+        //    否则「正在读取今天的步数」会永驻 —— 用户看到的就是「连上了但没反应」。
+        setHealthSyncSettled(true)
+        const v = healthSyncView(data, healthVendor.label, isHealthConnectVendor)
+        if (v.writeValues) {
+          setHealthSteps(v.steps)
+          setHealthActiveKcal(v.activeKcal)
         }
+        setHealthSyncHint(v.hint)
       }
     } finally {
       setHealthConnecting(false)
+    }
+  }
+
+  /**
+   * 🔴 手动「重新读取」：读数超时 / 出错 / 今天为空时给用户的主动出口。
+   *
+   * 为什么必须有：自动轮询 60s 一次，但用户盯着「今天还没有系统健康数据」时
+   * 不会想到要等一分钟；而超时降级后更需要一个立刻重试的按钮，否则用户只能
+   * 杀进程重开（体感＝功能坏了）。与自动轮询同一套 healthSyncView，规则不漂移。
+   */
+  const [healthRefreshing, setHealthRefreshing] = useState(false)
+  async function handleRefreshHealth() {
+    if (healthRefreshing || !healthConnectable) return
+    setHealthRefreshing(true)
+    // 重新读取时先收回「已有结论」，让 UI 回到「正在读取」态（诚实反映真实进行中）
+    setHealthSyncSettled(false)
+    try {
+      const data = await syncFromHealth()
+      setHealthSyncSettled(true)
+      const v = healthSyncView(data, healthVendor.label, isHealthConnectVendor)
+      if (v.writeValues) {
+        setHealthSteps(v.steps)
+        setHealthActiveKcal(v.activeKcal)
+      }
+      setHealthSyncHint(v.hint)
+    } finally {
+      setHealthRefreshing(false)
     }
   }
 
@@ -866,7 +965,13 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
             ) : healthConnectable && hasHealthData ? (
               <span style={{ fontSize: 13 }}>今日 <b>{healthSteps.toLocaleString()}</b> 步</span>
             ) : healthConnectable && healthConnected ? (
-              <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>正在同步步数…</span>
+              // 🔴 读数已有结论（含「今天确实 0 步」/「超时降级」）就不能再声称「正在同步」，
+              //    否则这句与卡片里的「正在读取」一起永驻 = 用户看到的「一直没有反应」。
+              healthSyncSettled ? (
+                <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>今日 <b>0</b> 步</span>
+              ) : (
+                <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>正在同步步数…</span>
+              )
             ) : healthConnectable ? (
               <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>连接运动健康，自动同步步数</span>
             ) : null}
@@ -876,6 +981,11 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
         {healthConnectable && !healthConnected && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 10px' }}>
+              {/* 🔴 按钮文案必须受 canSync 约束（2026-11-18 华为 P40）：
+                  原先恒显示「连接{label}」，不看 canSync —— 而华为/无 HC 的小米机型
+                  厂商通道恒返回 not_ready，永远连不上，等于给一个点了必然失败的按钮
+                  （违反铁律 #13 零假功能）。canSync=false 时如实降级为「查看说明」。
+                  ProfileScreen 的同名按钮早已按 canSync 分叉，这里此前漏了 → 两处口径不一致。 */}
               <button
                 className="chip chip-connect"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}
@@ -883,23 +993,34 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
                 onClick={handleConnectHealth}
               >
                 <IconRun color="var(--green)" size={13} />
-                {healthConnecting ? '连接中…' : `连接${healthVendor.label}`}
+                {healthConnecting
+                  ? '处理中…'
+                  : healthVendor.canSync
+                    ? `连接${healthVendor.label}`
+                    : `查看${healthVendor.label}说明`}
               </button>
               <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
-                同步步数与活动能量，自动计入活动消耗
+                {healthVendor.canSync
+                  ? '同步步数与活动能量，自动计入活动消耗'
+                  : '本机型暂不支持自动同步，可手动记录运动'}
               </span>
             </div>
+            {/* 🔴 必须带修饰类（notice warn）：`.notice` 基类只有圆角/内边距/字号，
+                **没有 background 与 color** → 裸 className="notice" 渲染出的是一段
+                与卡片同底色的普通小字，插在一条语义雷同的常驻说明上方，用户完全看不出
+                变化，观感就是「点了没反应」（2026-11-18 华为 P40 实测根因之一）。 */}
             {healthTip && (
-              <div className="notice" style={{ margin: '0 0 10px', fontSize: 13 }}>{healthTip}</div>
+              <div className="notice warn" style={{ margin: '0 0 10px', fontSize: 13 }}>{healthTip}</div>
             )}
           </>
         )}
 
         {/* 同步异常引导：授权被拒 / 读取出错 / 厂商资质未就绪。
             与「连接结果提示（healthTip）」独立展示——自动轮询发现的问题不该静默吞掉，
-            否则用户只看到步数不动，误以为「同步功能坏了」。 */}
+            否则用户只看到步数不动，误以为「同步功能坏了」。
+            🔴 同样补 warn 修饰类，理由见上。 */}
         {healthConnectable && healthSyncHint && (
-          <div className="notice" style={{ margin: '0 0 10px', fontSize: 13 }}>{healthSyncHint}</div>
+          <div className="notice warn" style={{ margin: '0 0 10px', fontSize: 13 }}>{healthSyncHint}</div>
         )}
 
         {healthConnectable && healthConnected && hasHealthData && (
@@ -948,7 +1069,23 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
 
         {healthConnectable && healthConnected && !hasHealthData && (
           <div style={{ margin: '8px 0 12px', fontSize: 13, color: 'var(--ink-3)' }}>
-            已连接 {healthVendor.label}，正在读取今天的步数，稍候自动展示。
+            {healthSyncSettled ? (
+              <>
+                {/* 读数已有结论但无数值（empty / error / denied / unavailable）：
+                    如实说明 + 给「重新读取」出口，绝不再声称「正在读取」。 */}
+                已连接 {healthVendor.label}，但今天还没读到步数数据。
+                <button
+                  className="btn-text"
+                  style={{ marginLeft: 6 }}
+                  disabled={healthRefreshing}
+                  onClick={() => void handleRefreshHealth()}
+                >
+                  {healthRefreshing ? '读取中…' : '重新读取'}
+                </button>
+              </>
+            ) : (
+              <>已连接 {healthVendor.label}，正在读取今天的步数，稍候自动展示。</>
+            )}
           </div>
         )}
 

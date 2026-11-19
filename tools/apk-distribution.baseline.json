@@ -1,21 +1,22 @@
 {
   "_about": "Android APK 公网分发（待办清单 A7）就绪状态登记。建立于 2026-11-16，与 tools/release-readiness.baseline.json 同范式：本文件是【预期基线 + 生产侧状态的人工登记】，不是自动探测结果。App 备案状态 / 服务器静态目录 / 备案编号都在仓库之外，本地静态扫描无法获知，必须由发版人核对后更新。护栏 30 只保证：登记的 sha256/字节数/版本号与真实 APK 逐字一致、合规闸门未就绪时不被静默改成已就绪、下载页在备案编号缺失时不渲染假号。护栏全绿不等于可以分发。",
   "_why_in_git": "release/ 被 .gitignore 排除（APK 不入库），故分发所需的元数据与合规闸门状态必须另有入库载体，否则换机器或重装后无法复现「哪个包可发、为什么还不能发」。",
-  "updatedAt": "2026-11-16",
+  "updatedAt": "2026-11-19",
   "apk": {
-    "file": "release/D-Bee-1.7.8-vc26-dbee.cn-FORMAL-20261116-llmgate.apk",
-    "versionName": "1.7.8",
-    "versionCode": 26,
+    "file": "release/D-Bee-1.7.9-vc30-dbee.cn-FORMAL-20261119.apk",
+    "versionName": "1.7.9",
+    "versionCode": 30,
     "packageName": "cn.com.dbee.app",
-    "bytes": 8263231,
-    "sha256": "e63f1364c91262dc93678e2fae45f841f09a6ffbd065d9c2c43f6fcbec9cce0d",
-    "webEntry": "index-DKoWPSKJ.js",
+    "bytes": 9800341,
+    "sha256": "5b51362c5c53eb8fb98337a92b169e734badaafed7b1e264ab5b08d7ffc54ac9",
+    "webEntry": "index-Bi5hyWXh.js",
     "applicationLabel": "D-Bee",
-    "minSdk": 24,
+    "minSdk": 26,
     "targetSdk": 36,
     "signerMd5": "0abe7fc5005987ed9b6eae9a45fb9dc9",
     "_check": "发版人用 sha256sum <apk> 与 stat -c%s <apk> 复核；aapt2 dump badging 复核 versionCode/versionName/packageName/application-label；apksigner verify --print-certs 复核 MD5。🔴 applicationLabel 仍是 D-Bee，而软著名/App 备案名/商店上架名须逐字为「自律蜜蜂」（Android 清单 §6.4）——上商店前必须改，自建分发页同样应显示中文名。",
-    "_verify_2026_11_16": "本包为 0052 LLM 闸门全链路上线后重打的产物（非发版，仅归档）。生产侧实测：apksigner Verifies（v2 签名，MD5 0abe7fc5005987ed9b6eae9a45fb9dc9 与本登记一致）；aapt2 badging = cn.com.dbee.app / versionCode 26 / versionName 1.7.8 / targetSdk 36 / label D-Bee；APK 内 assets/public 与本地 dist 16 文件逐字节一致（Python zipfile 比对，不用 unzip 通配符——`*` 不跨 `/` 会漏子目录造成假缺失）；入口 index-DKoWPSKJ.js 内含 llm/features/ 新路由 1 处、dbee-feature 自报标记 0 处（全部分包均为 0）、版本串 1.7.8、端点 https://d-bee.cn 3 处；capacitor.config.json appId/androidScheme=https/CapacitorHttp=true，运行时插件 9 个与 capacitor.config.ts 的 android.includePlugins 白名单一致；legal/ 静态文件 0 个（native 既有设计，法律页走 SPA 路由）。门禁 30 文件 / 1333 项全绿。"
+    "_verify_2026_11_19": "本包为【华为 P40「连接」无反应根因修复 + App 备案号落地】后重打的产物（已归档，未分发）。本机实测证据：① apksigner verify --print-certs = V2 Signer，证书 MD5 0abe7fc5005987ed9b6eae9a45fb9dc9（与既有签名一致，未换证书）；② aapt2 dump badging = cn.com.dbee.app / versionCode 30 / versionName 1.7.9 / targetSdkVersion 36 / application-label D-Bee；③ Python zipfile 比对 APK 内 assets/public（18 文件）与本地 dist：不一致 0、双向差集仅 cordova.js 与 cordova_plugins.js（Capacitor 注入，dist 中本就没有，属既有设计非缺失）；④ 解包全部 js 分包探针（UTF-8 直读，中文未转义故无需 \\uXXXX 解码）：App备案号「京ICP备2026075565号-3A」1 处、网站ICP「京ICP备2026075565号-2」1 处、华为中性 tip「本机型暂不支持自动同步步数」2 处、中性 label「手机健康数据」2 处、荣耀独立分支 android-other 2 处、端点 https://d-bee.cn 6 处、版本串 1.7.9 1 处；⑤ dexdump -d classes.dex 方法名实证 HC-3 异步加固已编入：createPermissionIntentAsync 86 次、buildPermissionIntent 8 次、deliverIntent 9 次、sdkStatusWithTimeout 91 次、clientWithTimeout 91 次（classes2.dex 为 0，插件在主 dex）；⑥ 门禁 31 文件 / 1467 项全绿（含 HW-1 华为修复 10 项断言 + 护栏 8 App 备案 8 项断言，均已做过红验证）。🔴🔴 铁律 #13 未满足：以上全部是【本机产物侧证据】，华为/小米真机安装验证与 App 备案号在真机页脚的肉眼可见确认仍为 0 次，不得宣称「已修复上线」。",
+    "_verify_2026_11_16": "上一归档包 release/D-Bee-1.7.8-vc26-dbee.cn-FORMAL-20261116-llmgate.apk（8263231 B / sha256 e63f1364c91262dc93678e2fae45f841f09a6ffbd065d9c2c43f6fcbec9cce0d / 入口 index-DKoWPSKJ.js / minSdk 24 / versionCode 26）为 0052 LLM 闸门全链路上线后重打的产物（非发版，仅归档）。当时生产侧实测：apksigner Verifies（v2 签名，MD5 0abe7fc5005987ed9b6eae9a45fb9dc9）；aapt2 badging = cn.com.dbee.app / versionCode 26 / versionName 1.7.8 / targetSdk 36 / label D-Bee；APK 内 assets/public 与本地 dist 16 文件逐字节一致（Python zipfile 比对，不用 unzip 通配符——`*` 不跨 `/` 会漏子目录造成假缺失）；入口 index-DKoWPSKJ.js 内含 llm/features/ 新路由 1 处、dbee-feature 自报标记 0 处（全部分包均为 0）、版本串 1.7.8、端点 https://d-bee.cn 3 处；capacitor.config.json appId/androidScheme=https/CapacitorHttp=true，运行时插件 9 个与 capacitor.config.ts 的 android.includePlugins 白名单一致；legal/ 静态文件 0 个（native 既有设计，法律页走 SPA 路由）。门禁 30 文件 / 1333 项全绿。"
   },
   "supersededApks": [
     {
@@ -36,11 +37,12 @@
   },
   "complianceGates": {
     "appBeian": {
-      "status": "pending_authority_review",
-      "beianNumber": "",
-      "blockPublicDistribution": true,
+      "status": "issued",
+      "beianNumber": "京ICP备2026075565号-3A",
+      "issuedAt": "2026-11-18",
+      "blockPublicDistribution": false,
       "_basis": "工信部《关于开展移动互联网应用程序备案工作的通知》：「网络接入服务提供者、应用分发平台、智能终端生产企业不得为未履行备案手续的 APP 提供网络接入、分发、预置等服务」；「APP 主办者应在显著位置标注其备案编号，分发平台应在显著位置标注其分发的 APP 备案编号」。项目既有口径 docs/四端正式上线前置条件与实施序列-2026-11-11.md:37：备案审核期间开发版/体验版/真机调试不受限，仅禁正式发布。",
-      "_check": "🔴 未下证前不得对不特定公众开放下载页。beianNumber 为空时 tools/gen-download-page.mjs 必须不渲染备案编号行（展示假备案号属违规，与 POLICE_BEIAN 同理）。拿到编号后须四处同步：① 填本字段并把 blockPublicDistribution 改 false ② 在 packages/shared/src/constants/index.ts **新增** APP_BEIAN 常量（当前不存在；照 POLICE_BEIAN 空串范式）供 App 内页脚公示 ③ 重跑 shared 构建（dist 被 gitignore，不重建则护栏读 src 假绿）④ 重跑构建与护栏。护栏 30 钉「基线 beianNumber ↔ shared APP_BEIAN」一致，防两处漂移。"
+      "_check": "✅ 2026-11-18 下证（用户告知，审核通过）。原四处同步清单已全部完成，但落地常量名与原计划不同：① 本字段已填且 blockPublicDistribution 改 false（2026-11-19）② shared 常量以 **APP_ICP_BEIAN** 落地（非原计划的 APP_BEIAN），packages/shared/src/constants/index.ts:107，含与网站号 ICP_BEIAN_D_BEE_CN 的辨析注释 ③ shared 已重建 ④ 已重跑构建与护栏（31 文件 / 1467 项全绿，护栏 8 含 8 项 App 备案断言且已红验证）。渲染门控：SiteFooter.tsx 用 isNative() 门控，仅原生壳渲染 App 备案号，Web 不渲染（防 verify-legal.mjs 域名一一对应校验 FAIL）；verify-legal.mjs 备案号正则已放宽为 号(?:-\\d+[A-Za-z]?)? 以匹配字母后缀 -3A。🔴 遗留：本字段与 shared APP_ICP_BEIAN 的一致性目前【无自动护栏钉死】（knownGap_guardrailNotWired 仍未闭合），改号须人工双处同步；下载页生成器 tools/gen-download-page.mjs 尚未实现，实现时须从 shared 常量取号。"
     },
     "icpBeian": {
       "status": "issued",
@@ -50,10 +52,11 @@
       "_check": "已下证（2026-11-06），域名与 HTTPS 就绪 → 载体侧无阻断。真源 packages/shared/src/constants/index.ts 的 ICP_BEIAN_D_BEE_CN，下载页从该常量取值，严禁在本文件另抄一份（会漂移）。"
     },
     "softwareCopyright": {
-      "status": "not_submitted",
+      "status": "submitted",
+      "submittedAt": "2026-11-19",
       "blockPublicDistribution": false,
       "blockStoreListing": true,
-      "_check": "软著卡 2026-03-15 新规 AI 条款（须本人致电版权中心问口径 + 亲笔手抄承诺），只阻塞商店上架，不阻塞自建分发页。"
+      "_check": "🟢 2026-11-19 用户告知【已启动申请】→ status 由 not_submitted 改 submitted（受理号/证书号用户尚未提供，取得后回填并改 issued）。🔴 blockStoreListing 仍为 true —— 未取得证书前 app_store 渠道仍被阻塞；🟢 blockPublicDistribution 仍为 false，自建分发页（public_site）不受软著影响，现在即可走。周期 30–60 工作日＝全局最长边。仍卡 2026-03-15 新规 AI 条款（须本人致电版权中心问口径 + 亲笔手抄承诺），材料清单见 docs/软著登记-完整申请材料清单-2026-11-04.md。App 名须逐字为「自律蜜蜂」，与 applicationLabel 改名（步骤 2 / vc31）同批核对。"
     }
   },
   "distribution": {

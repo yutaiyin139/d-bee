@@ -1004,6 +1004,13 @@ select {
   font-size: 13px;
   line-height: 1.55;
   margin-bottom: 14px;
+  /* 🔴 基类必须自带可见底色与文字色（2026-11-18 华为 P40「点了没反应」直接根因）：
+     原先基类只有圆角/内边距/字号，background 与 color 全靠 .err/.ok/.info/.warn 修饰类给。
+     一旦有人写裸 className="notice"（Dashboard 连接提示、ProfileScreen 健康提示等多处），
+     渲染出的就是与卡片同底色的透明小字 —— 用户完全看不出变化，观感即「功能坏了」。
+     默认走 info（蜂蜜底）语义：这类裸用法几乎都是「操作结果/引导说明」，info 最贴切。 */
+  background: var(--honey-soft);
+  color: var(--info-ink);
 }
 
 .notice.err {

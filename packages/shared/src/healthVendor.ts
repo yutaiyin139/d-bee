@@ -20,10 +20,16 @@ export const HEALTH_VENDOR_DB_VALUES: readonly HealthVendorDb[] = [
  * 品牌 vendor（各端 detectHealthVendor().vendor）→ 云端来源值。
  * 仅映射**会写连接态**的真同步端；其余（web / vivo / oppo / android-other / none）
  * 返回 null —— 这些端不写也不参与来源判定，调用方据此隐藏连接入口。
+ *
+ * 🔴 `health_connect`（2026-11-18 HC-1 补）：Android 走 Health Connect 统一层时
+ * 必须映射到自身，否则返回 null → 门面 `...(dbVendor ? {health_vendor} : {})`
+ * 把字段整个省略 → 写成「有 connected、无 vendor」→ isVendorConnected 命中
+ * 「旧数据回退布尔」分支 → WX-4 刚修的跨端串台在 HC 上复发。
  */
 export function healthVendorToDb(vendor: string): HealthVendorDb | null {
   switch (vendor) {
     case 'apple': return 'apple'
+    case 'health_connect': return 'health_connect'
     case 'huawei': return 'huawei'
     case 'xiaomi': return 'xiaomi'
     case 'wechat-miniprogram': return 'werun'

@@ -56,6 +56,12 @@ export interface Profile {
   plan_summary: string | null
   onboarded: boolean
   health_connected?: boolean | null
+  /**
+   * 健康数据源连接时间（ISO）。2026-11-19 四端一致性审计补齐：白名单
+   * （PROFILE_WRITABLE）早已包含该字段，但 Profile 接口漏声明 → connectHealth
+   * 写入时 tsc 报 TS2561。主端 src/types.ts:39 有同名字段，两端类型形状必须一致。
+   */
+  health_connected_at?: string | null
   health_vendor?: 'apple' | 'health_connect' | 'huawei' | 'xiaomi' | 'werun' | null
   step_goal?: number | null
   invited_by?: string | null

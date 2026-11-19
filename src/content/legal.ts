@@ -23,6 +23,7 @@
  */
 
 import {
+  APP_ICP_BEIAN,
   ICP_BEIAN_D_BEE_CN,
   ICP_QUERY_URL,
   POLICE_BEIAN,
@@ -55,6 +56,21 @@ export const SITE = {
    */
   icp: env('VITE_ICP_BEIAN') || ICP_BEIAN_D_BEE_CN,
   icpUrl: ICP_QUERY_URL,
+  /**
+   * 🔴 **App 备案号**（2026-11-18 下证，后缀 `-3A` 的 A 即 App 类）。
+   *
+   * 与 `icp`（网站 ICP，绑域名）是两个不同性质的号：
+   *   工信部《关于开展移动互联网应用程序备案工作的通知》要求 App 在**显著位置**
+   *   标注其备案号，故 SiteFooter 会渲染本字段。
+   *
+   * 🔴🔴 **仅原生端（iOS / Android）渲染**：本号绑定的是「应用」而非「域名」，
+   *   挂到 d-bee.cn 页脚会触发 `deploy/verify-legal.mjs` 的「备案号须与域名一一对应，
+   *   出现期望号之外的其他备案号 = 疑似错填」双向校验 → 整项 FAIL。
+   *   门控写在 SiteFooter 的 `isNative()` 判断里，不写在这里（本对象四端共用）。
+   *
+   * 真相源在 `@dbee/shared`（不放 .env，理由同 icp）。`VITE_APP_ICP_BEIAN` 是覆盖口。
+   */
+  appIcp: env('VITE_APP_ICP_BEIAN') || APP_ICP_BEIAN,
   /** 公安联网备案号（ICP 备案通过后 30 日内办理；拿到前留空 = 该行不渲染） */
   police: env('VITE_POLICE_BEIAN') || POLICE_BEIAN,
   policeUrl: POLICE_QUERY_URL,

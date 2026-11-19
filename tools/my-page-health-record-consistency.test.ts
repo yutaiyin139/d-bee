@@ -50,6 +50,23 @@ function stripComments(src: string): string {
 }
 
 /**
+ * 从一段 brand.ts 分支源码里，只提取**用户可见文案**（label / tip 的单引号字符串字面量）。
+ *
+ * 🔴 为什么不能直接对整段断言「不含品牌字样」（HW-1 首版就是这么写的 → 假红）：
+ *   整段里必然含 `vendor: 'huawei'` / `vendor: 'xiaomi'` 这个**内部路由枚举值** ——
+ *   它是分派依据、必须保留，与华为资质驳回理由所指的「在入口或提示消息中显示品牌名」
+ *   完全不是一回事。合规约束只针对 label / tip 这两个渲染给用户的字段。
+ */
+function userFacingText(seg: string): string {
+  const out: string[] = []
+  for (const key of ['label', 'tip']) {
+    const m = new RegExp(`${key}:\\s*'((?:[^'\\\\]|\\\\.)*)'`).exec(seg)
+    if (m) out.push(m[1])
+  }
+  return out.join(' ')
+}
+
+/**
  * 取出某个 function 声明的**函数体**（含外层大括号），找不到返回空串。
  *
  * 🔴 为什么必须按函数体断言，而不是全文 grep：
@@ -422,16 +439,26 @@ describe('健康档案 · 四段 / 合规 / 零编造', () => {
 /* ── 五、智能设备诚实降级 ─────────────────────────────────────── */
 
 describe('智能设备 · 零假功能', () => {
-  it('健康应用目录 6 项', () => {
-    expect(HEALTH_APP_CATALOG.length).toBe(6)
+  it('健康应用目录 7 项', () => {
+    expect(HEALTH_APP_CATALOG.length).toBe(7)
   })
 
   it('可真同步的仅 Apple（已真机验证）', () => {
     expect(HEALTH_APP_CATALOG.filter((d) => d.status === 'available').map((d) => d.key)).toEqual(['apple'])
   })
 
-  it('华为 / 小米为接入中，不得标成现在可连接', () => {
-    expect(HEALTH_APP_CATALOG.filter((d) => d.status === 'in_progress').map((d) => d.key)).toEqual(['huawei', 'xiaomi'])
+  it('华为 / 小米 / Health Connect 为接入中，不得标成现在可连接', () => {
+    expect(HEALTH_APP_CATALOG.filter((d) => d.status === 'in_progress').map((d) => d.key)).toEqual(['health_connect', 'huawei', 'xiaomi'])
+  })
+
+  // HC-1（2026-11-18）：Health Connect 行必须存在且**不得**标 available。
+  // 原生未接 SDK、零真机验收前标 available = 假功能（同 D7 原则）。
+  it('HC-1 目录含 Health Connect 行（D1-A 拍板：单独一行，跨品牌统一层）', () => {
+    expect(HEALTH_APP_CATALOG.some((d) => d.key === 'health_connect')).toBe(true)
+  })
+
+  it('HC-1 Health Connect 行未真机验收前禁止标 available（防假功能）', () => {
+    expect(HEALTH_APP_CATALOG.find((d) => d.key === 'health_connect')?.status).toBe('in_progress')
   })
 
   it('vivo / OPPO 为引导查看，不给绑定', () => {
@@ -800,6 +827,355 @@ describe('护栏 28-WX4 · health_vendor 跨端串台防护', () => {
     expect(isVendorConnected(false, 'werun', 'werun')).toBe(false)
   })
 
+  // HC-1（2026-11-18）：Health Connect 来源映射。缺此映射时 HC 连接态会写成
+  // 「有 connected、无 vendor」→ isVendorConnected 命中「旧数据回退布尔」→ WX-4 串台复发。
+  it('HC-1 healthVendorToDb 映射 health_connect → health_connect（消除串台复发陷阱）', () => {
+    expect(healthVendorToDb('health_connect')).toBe('health_connect')
+  })
+
+  it('HC-1 health_connect 来源在微信运动端不算已连接（杜绝串台）', () => {
+    expect(isVendorConnected(true, 'health_connect', 'werun')).toBe(false)
+  })
+
+  // ── HC-1 前端形状（2026-11-18）：第三适配器与门面分派，与 iOS 侧同构 ──
+
+  it('HC-1 适配器接口三方法全可选（旧插件无方法 → 零回归）', () => {
+    const src = stripComments(read('src/lib/health/connect.ts'))
+    expect(/healthConnectStatus\?:\s*\(\)\s*=>\s*Promise<\{\s*available:\s*boolean/.test(src) &&
+      /requestHealthConnectAuthorization\?:\s*\(\)\s*=>\s*Promise</.test(src) &&
+      /fetchHealthConnectToday\?:\s*\(\)\s*=>\s*Promise</.test(src)).toBe(true)
+  })
+
+  it('HC-1 可用性走「异步 probe + 模块级缓存」，同步读缓存（跨进程查询不打满热路径）', () => {
+    const src = stripComments(read('src/lib/health/connect.ts'))
+    expect(/let availabilityCache: boolean \| null = null/.test(src) &&
+      /export async function probeHealthConnectAvailability\(force = false\): Promise<boolean>/.test(src) &&
+      /if \(availabilityCache !== null && !force\) return availabilityCache/.test(src) &&
+      /export function isHealthConnectAvailable\(\): boolean \{\s*return isAndroid\(\) && availabilityCache === true/.test(src)).toBe(true)
+  })
+
+  it('HC-1 门面 Android 分派 Health Connect 优先于厂商 SDK', () => {
+    const body = fnBody(stripComments(read('src/lib/health/index.ts')), 'getHealthVendor')
+    expect(/if \(isHealthConnectAvailable\(\)\) return HEALTH_CONNECT_INFO\s*\n\s*return detectHealthVendor\(\)/.test(body)).toBe(true)
+  })
+
+  it('HC-1 连接/同步/已连接判定在取 vendor 前先 await probe（消除缓存未热的时序误判）', () => {
+    const src = stripComments(read('src/lib/health/index.ts'))
+    const fns = ['connectHealth', 'syncFromHealth', 'isHealthConnected'].map((n) => fnBody(src, n))
+    expect(fns.every((b) => b.includes('await probeHealthConnectAvailability()'))).toBe(true)
+  })
+
+  it('HC-1 连接成功写 health_vendor: health_connect（来源落库，防 WX-4 串台）', () => {
+    const body = fnBody(stripComments(read('src/lib/health/index.ts')), 'connectHealth')
+    expect(/health_vendor:\s*'health_connect'/.test(body)).toBe(true)
+  })
+
+  it('HC-1 两端健康页挂载时 probe 并以 hcReady 触发 useMemo 重算（UI 入口时序）', () => {
+    const pages = ['src/pages/Dashboard.tsx', 'src/pages/ProfileScreen.tsx'].map((p) => stripComments(read(p)))
+    expect(pages.every((x) =>
+      /if \(isAndroid\(\)\) \{\s*void probeHealthConnectAvailability\(\)\.then\(/.test(x) &&
+      x.includes('const healthVendor = useMemo(() => getHealthVendor(), [hcReady])'))).toBe(true)
+  })
+
+  it('HC-1 mini 端不引入 Health Connect 适配器（小程序无 HC，形状钉死）', () => {
+    // ⚠️ 词边界：health_connected（已连接布尔列）含 health_connect 前缀，须排除
+    expect(MINI_PROFILE().includes('probeHealthConnectAvailability') ||
+      /\bhealth_connect\b(?!ed)/.test(MINI_HEALTH_WX())).toBe(false)
+  })
+
+  // ── HC-3 读数挂起兜底（2026-11-18 小米 15 Ultra 实测「连上但一直没反应」）──
+  //
+  // 根因两条，缺一不可：
+  //  ① `aggregate()` 是跨进程 suspend 调用，厂商 ROM 上可能**永不返回**。原生侧的
+  //     CoroutineExceptionHandler 只能兜「抛异常」，兜不住「一直挂起」→ Promise
+  //     不 settle → syncFromHealth() 不返回 → UI 永停在「正在读取」。
+  //  ② UI 只用 `!hasHealthData` 判「还在读取中」，但「读完且今天真是 0 步 / 超时
+  //     降级」**同样**满足该条件 → 文案永驻不消失。
+  // 两条都修完，用户才可能看到「读数结论」而不是无限转圈。
+
+  it('HC-3 读数跨进程调用必须套硬超时（挂起不返回时如实降级，绝不用假数据填空）', () => {
+    const src = stripComments(read('src/lib/health/connect.ts'))
+    expect(
+      /const HC_FETCH_TIMEOUT_MS = 8_000/.test(src) &&
+        /function withTimeout<T>\(p: Promise<T>, ms: number, onTimeout: \(\) => T\): Promise<T>/.test(src) &&
+        fnBody(src, 'fetchHealthConnectToday').includes('withTimeout(plugin.fetchHealthConnectToday(), HC_FETCH_TIMEOUT_MS'),
+      'aggregate() 挂起不返回 → Promise 永不 settle → UI 永停「正在读取」',
+    ).toBe(true)
+  })
+
+  it('HC-3 超时降级为 error 而非「0 步」（零假功能：挂起不等于今天没运动）', () => {
+    const body = fnBody(stripComments(read('src/lib/health/connect.ts')), 'fetchHealthConnectToday')
+    expect(
+      /status: 'error'/.test(body) && /数据超时/.test(body) && !/status: 'ok'/.test(body),
+      '超时伪装成 0 步 → 用户以为自己没运动，且永远看不出读数其实失败了',
+    ).toBe(true)
+  })
+
+  it('HC-3 withTimeout 不用 Promise.race（race 会让迟到的 rejection 逃逸成 unhandledrejection）', () => {
+    // 🔴 这条**不能用 fnBody**：withTimeout 是泛型声明 `function withTimeout<T>(…)`，
+    //    fnBody 的正则要求名字后紧跟 `(` → 匹配不到，返回空串 → 断言假红。
+    //    改为全文件断言，且「不含 Promise.race」在全文口径下反而更严（整份适配器都不许用）。
+    const src = stripComments(read('src/lib/health/connect.ts'))
+    expect(
+      !src.includes('Promise.race') &&
+        /function withTimeout<T>\(p: Promise<T>, ms: number, onTimeout: \(\) => T\): Promise<T> \{[\s\S]*?let settled = false[\s\S]*?p\.then\(/.test(src),
+      'race 超时后不消费 p 的迟到 rejection → WebView 报 unhandledrejection',
+    ).toBe(true)
+  })
+
+  it('HC-3 probe 超时不写缓存（一次系统卡顿不得把 HC 永久判死，下次仍可重探）', () => {
+    const body = fnBody(stripComments(read('src/lib/health/connect.ts')), 'probeHealthConnectAvailability')
+    expect(
+      /withTimeout<HealthConnectProbeResult>\(/.test(body) &&
+        /if \(res\?\.timedOut === true\) return false/.test(body),
+      'probe 超时后缓存 false → 用户重开 App 也永远看不到 HC 入口',
+    ).toBe(true)
+  })
+
+  it('HC-3 UI 必须区分「读取进行中」与「读取已结束但无数据」（healthSyncSettled）', () => {
+    const src = stripComments(read('src/pages/Dashboard.tsx'))
+    expect(
+      /const \[healthSyncSettled, setHealthSyncSettled\] = useState\(false\)/.test(src) &&
+        /healthConnectable && healthConnected && !hasHealthData && \(\s*<div[\s\S]{0,300}healthSyncSettled \?/.test(src),
+      '只用 !hasHealthData 判「正在读取」→「今天真 0 步」与「超时降级」也永显正在读取',
+    ).toBe(true)
+  })
+
+  it('HC-3 三条落状态路径（轮询 / 手动连接 / 重新读取）共用同一纯函数，规则不得各写一份', () => {
+    const src = stripComments(read('src/pages/Dashboard.tsx'))
+    const sites = [
+      fnBody(src, 'applySync'),
+      fnBody(src, 'handleConnectHealth'),
+      fnBody(src, 'handleRefreshHealth'),
+    ]
+    expect(
+      sites.every((b) => b.length > 0 && b.includes('healthSyncView(data, healthVendor.label, isHealthConnectVendor)') &&
+        b.includes('setHealthSyncSettled(true)')),
+      '三路各写一份 if/else 必然漂 → 出现「轮询说空、手动连接说正在读取」的自相矛盾',
+    ).toBe(true)
+  })
+
+  it('HC-3 读数已有结论后不得再声称「正在读取」（顶栏文案受 settled 约束）', () => {
+    const src = stripComments(read('src/pages/Dashboard.tsx'))
+    expect(
+      /healthSyncSettled \? \(\s*<span style=\{\{ color: 'var\(--ink-3\)', fontSize: 13 \}\}>今日 <b>0<\/b> 步<\/span>\s*\) : \(\s*<span style=\{\{ color: 'var\(--ink-3\)', fontSize: 13 \}\}>正在同步步数…<\/span>\s*\)/.test(src),
+      '顶栏「正在同步步数…」永驻 → 与卡片文案一起构成「连接成功但一直没反应」',
+    ).toBe(true)
+  })
+
+  it('HC-3 empty 状态必须有可见说明（今天真 0 步 ≠ 功能坏了，静默会让用户误判）', () => {
+    // 🔴 同样不能用 fnBody：healthSyncView 的返回类型是**对象字面量类型**
+    //    `): { steps: number; … }`，fnBody 的「跳过泛型尖括号」启发式会把类型体的 `{`
+    //    当函数体开头 → 取到的 body 是类型而非实现 → 断言假红。
+    //    故按「函数名之后的一段实现」定位，避开该 helper 的盲区（不改 helper：
+    //    它被大量既有断言依赖，为两条新断言改共享工具的风险远大于收益）。
+    const src = stripComments(read('src/pages/Dashboard.tsx'))
+    const at = src.indexOf('function healthSyncView(')
+    const body = at >= 0 ? src.slice(at, at + 1200) : ''
+    expect(
+      body.length > 0 &&
+        /data\.status === 'empty'\s*\?\s*healthStatusHint\(data\.status, vendorLabel, isHealthConnectVendor\)\s*:\s*''/.test(body) &&
+        /writeValues: true/.test(body) && /writeValues: false/.test(body),
+      'empty 静默 → 用户看到步数 0 且无任何提示，以为同步坏了',
+    ).toBe(true)
+  })
+
+  it('HC-3 读数失败/无数据时必须给「重新读取」出口（不能让用户只能杀进程重开）', () => {
+    const src = stripComments(read('src/pages/Dashboard.tsx'))
+    expect(
+      /async function handleRefreshHealth\(\)/.test(src) &&
+        /onClick=\{\(\) => void handleRefreshHealth\(\)\}/.test(src) &&
+        /重新读取/.test(src),
+      '无重试出口 → 用户体感「功能坏了」，只能杀进程重开 App',
+    ).toBe(true)
+  })
+
+  it('HC-3 HC 的 empty 文案必须点明「中转层需数据源先写入」（否则用户只会干等）', () => {
+    const body = fnBody(stripComments(read('src/lib/health/index.ts')), 'healthStatusHint')
+    expect(
+      /case 'empty':\s*return isHealthConnect\s*\?[\s\S]{0,400}?中转层/.test(body),
+      'HC 只是中转层：只说「今天还没有数据」→ 用户不知道要去开数据源共享，永远等不到步数',
+    ).toBe(true)
+  })
+
+  // ── HC-3 原生侧：分段超时（真机排查线索的唯一来源）──
+
+  it('HC-3 原生 aggregate / 权限查询必须分段超时（挂起时给出卡在哪个阶段）', () => {
+    const src = read('native-plugins/dbee-health/android/src/main/java/com/dbee/health/HealthConnectReader.kt')
+    expect(
+      /private const val CALL_TIMEOUT_MS = 6_000L/.test(src) &&
+        /private suspend fun <T> withStageTimeout\(stage: String, block: suspend \(\) -> T\): T = try \{\s*withTimeout\(CALL_TIMEOUT_MS\) \{ block\(\) \}/.test(src) &&
+        /withStageTimeout\("permission_query"\)/.test(src) &&
+        /withStageTimeout\("aggregate"\)/.test(src) &&
+        /withStageTimeout\("probe_permission_query"\)/.test(src),
+      '跨进程调用无超时 → 协程泄漏 + 前端 Promise 永不 settle（且查不出卡在哪一步）',
+    ).toBe(true)
+  })
+
+  it('HC-3 原生超时必须转自定义异常（TimeoutCancellationException 是 CancellationException 子类，宽泛 catch 会吞掉）', () => {
+    const src = read('native-plugins/dbee-health/android/src/main/java/com/dbee/health/HealthConnectReader.kt')
+    expect(
+      /catch \(e: TimeoutCancellationException\) \{\s*throw HcTimeoutException\(stage\)/.test(src) &&
+        /catch \(e: HcTimeoutException\) \{[\s\S]{0,400}?out\["status"\] = "error"[\s\S]{0,200}?reason"\] = "timeout:\$\{e\.stage\}"/.test(src),
+      '不转自定义异常 → 超时被当成普通取消/异常吞掉，前端拿不到「卡在哪个阶段」',
+    ).toBe(true)
+  })
+
+  it('HC-3 原生超时上报 status=error 而非「0 步」（与前端零假功能口径一致）', () => {
+    // 🔴 必须从 `fun fetchToday` 起定位：文件里有**两处** catch (e: HcTimeoutException)
+    //    （probe 的在前、fetchToday 的在后），直接 indexOf 会取到 probe 那处 →
+    //    断言打到错的代码块（本轮实测假红，已修正）。
+    const src = read('native-plugins/dbee-health/android/src/main/java/com/dbee/health/HealthConnectReader.kt')
+    const from = src.indexOf('fun fetchToday(')
+    const at = src.indexOf('catch (e: HcTimeoutException)', from)
+    const seg = at >= 0 ? src.slice(at, at + 600) : ''
+    expect(
+      from > 0 && seg.length > 0 &&
+        seg.includes('out["status"] = "error"') &&
+        seg.includes('读数超时'),
+      '超时若落到默认 steps=0 → 用户看到「今天 0 步」，永远看不出是读数挂了',
+    ).toBe(true)
+  })
+
+  it('HC-3 probe 超时不得把 HC 判成不可用（SDK 已确认可用，只是权限查询卡住）', () => {
+    // 🔴 按代码形态断言，不断言注释文字：probe 的 HcTimeoutException 分支只写 reason，
+    //    **不得**写 available=false（那会让 UI 连「连接系统健康」按钮都不显示）。
+    const src = read('native-plugins/dbee-health/android/src/main/java/com/dbee/health/HealthConnectReader.kt')
+    const at = src.indexOf('catch (e: HcTimeoutException) {', src.indexOf('fun checkAvailability'))
+    const seg = at >= 0 ? src.slice(at, src.indexOf('} catch', at + 10)) : ''
+    expect(
+      seg.length > 0 &&
+        /out\["reason"\] = "timeout:\$\{e\.stage\}"/.test(seg) &&
+        !seg.includes('out["available"] = false'),
+      'probe 超时写 available=false → 用户连「连接系统健康」按钮都看不到，比读数挂起更难排查',
+    ).toBe(true)
+  })
+
+  it('HC-3 原生分段超时（6s）必须短于前端硬超时（8s），让带阶段的结论先返回', () => {
+    const native = read('native-plugins/dbee-health/android/src/main/java/com/dbee/health/HealthConnectReader.kt')
+    const fe = stripComments(read('src/lib/health/connect.ts'))
+    const n = /private const val CALL_TIMEOUT_MS = (\d+)_000L/.exec(native)
+    const f = /const HC_FETCH_TIMEOUT_MS = (\d+)_000/.exec(fe)
+    expect(
+      n !== null && f !== null && Number(n[1]) < Number(f[1]),
+      '前端先超时 → 只能给「读数超时」这种无阶段信息的笼统结论，真机排查失去线索',
+    ).toBe(true)
+  })
+
+  // ── HW-1 华为机型「点连接没反应」（2026-11-18 华为 P40 实测）──
+  //
+  // 根因四层，缺一不可（任一层单独修都不能解决用户看到的现象）：
+  //  ① Health Connect 在华为上**根本不可用**：需 Google Play services，华为无 GMS；
+  //     且华为运动健康不向 HC 写数据（HMS/GMS 生态隔离）。
+  //  ② 厂商 Health Kit 恒 not_ready（资质未获批），但 `canSync: true` → 按钮显示「连接」
+  //     = 点了必然失败的假按钮（违反铁律 #13）；而 `isAndroidVendorHealthAvailable()`
+  //     只检查「插件在不在」，不检查「厂商通道通不通」，所以挡不住。
+  //  ③ 反馈不可见：`.notice` 基类无 background/color，裸用渲染成与卡片同底色的透明小字，
+  //     插在一条语义雷同的常驻说明上方 → 用户看不出任何变化。
+  //  ④ Dashboard 的连接按钮完全不看 canSync，恒显示「连接{label}」，与 ProfileScreen 口径不一致。
+
+  it('HW-1 华为 canSync 必须为 false（厂商通道恒 not_ready，标 true 就是假连接按钮）', () => {
+    const src = stripComments(read('src/lib/health/brand.ts'))
+    // 取 huawei 分支体：从 vendor: 'huawei' 到该分支结束的 tip 行
+    const seg = src.slice(src.indexOf("vendor: 'huawei'"), src.indexOf("if (/HONOR/i.test(ua))"))
+    expect(seg.length > 0, '定位华为分支失败').toBe(true)
+    expect(/canSync:\s*false/.test(seg), '华为标 canSync:true → 按钮显示「连接」但永远连不上').toBe(true)
+    expect(/canSync:\s*true/.test(seg)).toBe(false)
+  })
+
+  it('HW-1 华为分支文案不得出现厂商品牌字样（华为将其列为资质申请驳回理由）', () => {
+    const src = stripComments(read('src/lib/health/brand.ts'))
+    const seg = src.slice(src.indexOf("vendor: 'huawei'"), src.indexOf("if (/HONOR/i.test(ua))"))
+    // 🔴 只查**用户可见文案**（label / tip 的字符串字面量），不查整段：
+    //   整段里必然含 `vendor: 'huawei'` 这个内部路由枚举值 —— 它是分派依据、必须保留，
+    //   与「在入口/提示消息中显示品牌名」不是一回事（直接对整段断言是假红）。
+    const visible = userFacingText(seg)
+    expect(visible.length > 0, '未提取到 label/tip 文案，断言形同虚设').toBe(true)
+    // 🔴 Incorrect Brand Icon Usage：「入口或提示消息中出现 Huawei / 华为运动健康 等字样」
+    expect(/华为|HUAWEI|Huawei/i.test(visible), `用户可见文案含品牌字样: ${visible}`).toBe(false)
+  })
+
+  it('HW-1 小米厂商分支 canSync 同样为 false，且文案不含品牌字样（与华为同口径）', () => {
+    const src = stripComments(read('src/lib/health/brand.ts'))
+    const seg = src.slice(src.indexOf("vendor: 'xiaomi'"), src.indexOf("if (/vivo/i.test(ua))"))
+    expect(seg.length > 0, '定位小米分支失败').toBe(true)
+    expect(/canSync:\s*false/.test(seg)).toBe(true)
+    const visible = userFacingText(seg)
+    expect(visible.length > 0, '未提取到 label/tip 文案').toBe(true)
+    expect(/小米|Xiaomi|Redmi|MIUI|HyperOS/i.test(visible), `用户可见文案含品牌字样: ${visible}`).toBe(false)
+  })
+
+  it('HW-1 荣耀（HONOR）不得被识别为华为（已独立厂商、带 GMS，误标会被华为文案连坐）', () => {
+    const src = stripComments(read('src/lib/health/brand.ts'))
+    // 🔴 华为分支的正则里不得再含 HONOR；且必须存在独立的 HONOR 分支
+    const hwRe = /if \(\/([^/]*HUAWEI[^/]*)\/i\.test\(ua\)\)/.exec(src)
+    expect(hwRe !== null, '定位华为 UA 正则失败').toBe(true)
+    expect(/HONOR/i.test(hwRe![1]), 'HONOR 仍在华为正则里 → 荣耀机型被误标为华为').toBe(false)
+    expect(/if \(\/HONOR\/i\.test\(ua\)\)/.test(src), '缺少独立的 HONOR 分支').toBe(true)
+  })
+
+  it('HW-1 connectHealth 在 canSync=false 时不得调原生授权（零假功能：不假装尝试连接）', () => {
+    const src = stripComments(read('src/lib/health/index.ts'))
+    const seg = src.slice(
+      src.indexOf("if (v.vendor === 'huawei' || v.vendor === 'xiaomi')"),
+      src.indexOf("if (v.vendor === 'wechat-miniprogram')"),
+    )
+    expect(seg.length > 0, '定位厂商分支失败').toBe(true)
+    // 拦截必须在 isAndroidVendorHealthAvailable() 之前，否则那个函数返回 true 会绕过
+    const guardAt = seg.indexOf('if (!v.canSync)')
+    const bridgeAt = seg.indexOf('isAndroidVendorHealthAvailable()')
+    expect(guardAt >= 0, '缺少 canSync 拦截 → 会一路走到恒 not_ready 的原生授权').toBe(true)
+    expect(bridgeAt >= 0 && guardAt < bridgeAt, 'canSync 拦截必须在插件可用性检查之前').toBe(true)
+  })
+
+  it('HW-1 Dashboard 连接按钮文案必须受 canSync 约束（与 ProfileScreen 口径一致）', () => {
+    const src = stripComments(read('src/pages/Dashboard.tsx'))
+    // 🔴 原先恒为 `连接${healthVendor.label}`，不看 canSync → 华为上是点了必然失败的假按钮
+    expect(/healthVendor\.canSync/.test(src), 'Dashboard 未读 canSync → 不可连机型仍显示「连接」').toBe(true)
+    expect(/连接\$\{healthVendor\.label\}/.test(src)).toBe(true) // 可连时仍是原文案（零回归）
+  })
+
+  it('HW-1 两端点击反馈都必须带可见修饰类（裸 .notice 无底色 = 用户看不出变化）', () => {
+    // 🔴 这是「点了没反应」的直接技术原因，两端都踩过
+    expect(
+      [read('src/pages/Dashboard.tsx'), read('src/pages/ProfileScreen.tsx')].every((x) =>
+        /className="notice warn"[^>]*>\{healthTip\}/.test(x),
+      ),
+      'healthTip 用了裸 className="notice" → 渲染成透明小字',
+    ).toBe(true)
+  })
+
+  it('HW-1 .notice 基类必须自带可见底色与文字色（防止任何裸用法再次隐形）', () => {
+    const css = read('src/styles.css')
+    const seg = css.slice(css.indexOf('.notice {'), css.indexOf('.notice.err'))
+    expect(seg.length > 0, '定位 .notice 基类失败').toBe(true)
+    expect(/background:\s*var\(--/.test(seg), '基类无 background → 裸用与卡片同底色').toBe(true)
+    expect(/color:\s*var\(--/.test(seg), '基类无 color → 文字色不可控').toBe(true)
+  })
+
+  it('HW-1 原生授权 Intent 必须异步构造（@PluginMethod 在主线程，同步阻塞 = ANR）', () => {
+    const kt = read('native-plugins/dbee-health/android/src/main/java/com/dbee/health/HealthConnectReader.kt')
+    const java = read('native-plugins/dbee-health/android/src/main/java/com/dbee/health/DbeeHealthPlugin.java')
+    expect(/fun createPermissionIntentAsync\(/.test(kt), '缺少异步版构造入口').toBe(true)
+    // 异步版内部必须走超时保护的 sdkStatus/client（阻塞调用不得裸调）
+    const asyncSeg = kt.slice(kt.indexOf('fun createPermissionIntentAsync('))
+    expect(/sdkStatusWithTimeout\(/.test(asyncSeg) && /clientWithTimeout\(/.test(asyncSeg)).toBe(true)
+    // Java 侧必须调异步版，且不得再同步调阻塞版
+    expect(/createPermissionIntentAsync\(/.test(java)).toBe(true)
+    expect(/Intent intent = HealthConnectReader\.createPermissionIntent\(/.test(java), 'Java 侧仍在主线程同步构造 Intent → ANR').toBe(false)
+  })
+
+  it('HW-1 原生 sdkStatus / client 必须有超时保护版，且 fetchToday 内不得裸调', () => {
+    const kt = read('native-plugins/dbee-health/android/src/main/java/com/dbee/health/HealthConnectReader.kt')
+    expect(/private suspend fun sdkStatusWithTimeout\(/.test(kt)).toBe(true)
+    expect(/private suspend fun clientWithTimeout\(/.test(kt)).toBe(true)
+    // 🔴 fetchToday 里原先 `val status = sdkStatus(app)` 在 try **之外**：挂起时既不抛异常
+    //   也不走 catch → callback 永不触发 → 前端永驻「正在读取」（HC-3 的遗漏项）
+    const seg = kt.slice(kt.indexOf('fun fetchToday('))
+    expect(/sdkStatusWithTimeout\("sdk_status"/.test(seg), 'fetchToday 仍裸调 sdkStatus').toBe(true)
+    expect(/clientWithTimeout\("client_create"/.test(seg), 'fetchToday 仍裸调 client').toBe(true)
+  })
+
   // 文件落地断言（实现前应为红）
   it('WX-4 存在 0053 迁移文件（0052 已占用，编号顺延）', () => {
     expect(existsSync(join(ROOT, 'db/migrations/0053-health-vendor.sql'))).toBe(true)
@@ -838,5 +1214,68 @@ describe('护栏 28-WX4 · health_vendor 跨端串台防护', () => {
   it('WX-4 mini 连接态展示真调用 isVendorConnected（词边界排除改名）', () => {
     const c = MINI_PROFILE()
     expect(/\bisVendorConnected\(profile\?\.health_connected/.test(c)).toBe(true)
+  })
+})
+
+/**
+ * WX-5 · 四端健康绑定一致性审计（2026-11-19 新增）。
+ * 用户指令：「再次详细梳理4端，针对运动的健康绑定，确保4端实现逻辑一致，都能连接正常」。
+ *
+ * 审计结论：Web 无连接入口（vendor='web' 恒不可连，刻意设计）；iOS/Android 主端
+ * 三分支（apple / health_connect / 厂商兜底）连接都写 health_connected_at +
+ * health_vendor、断开都清；mini 走微信运动主动/静默双路径。本轮修了 3 处 mini
+ * 「抄主端抄出来的错误引导」+ 1 处类型漂移：
+ *   ① denied 指向 iOS「系统设置 > 健康」—— 微信小程序没有该路径，用户照着找
+ *      必然找不到（与小米 15 Ultra「授权成功但一直没反应」同类误导）；
+ *   ② empty 称「会自动读取」—— 微信运动只在用户进入小程序时更新（werun.ts
+ *      头注④），不存在自动刷新，用户会干等一个永不发生的更新；
+ *   ③ connect/disconnect 漏写/漏清 health_connected_at（0022 审计字段）→
+ *      werun 来源的行时间戳恒 NULL，「何时连接的」跨端口径不一致；
+ *   ④ mini Profile 接口漏声明 health_connected_at（白名单却有）→ tsc TS2561。
+ *
+ * 🔴 denied/empty 按端分叉是**刻意设计**（主端同样按 isHealthConnect 参数分叉），
+ *   护栏 12 钉的 not_ready 句两端同源不变（mini 该分支是死分支：werun status
+ *   枚举无 not_ready）。本组把「分叉的正确方向」钉死：谁为了「统一」把 mini
+ *   文案改回主端版本，这里立刻红。
+ */
+describe('WX-5 · mini 健康绑定错误引导修复 + 审计字段对齐（2026-11-19）', () => {
+  const miniHealth = MINI_HEALTH_WX()
+  const mainHealth = stripComments(read('src/lib/health/index.ts'))
+  const miniApi = stripComments(read('mini/src/lib/api.ts'))
+
+  it('WX-5a mini denied 必须指向小程序权限管理路径，不得抄 iOS「系统设置 > 健康」', () => {
+    const body = fnBody(miniHealth, 'healthStatusHint')
+    expect(
+      /权限管理/.test(body) && !/系统设置\s*>\s*健康/.test(body),
+      'mini denied 又指回 iOS 系统设置路径 → 微信用户找不到开关，误判功能坏了',
+    ).toBe(true)
+  })
+
+  it('WX-5b mini empty 必须给出主动出口（同步微信运动），不得声称「会自动读取」', () => {
+    const body = fnBody(miniHealth, 'healthStatusHint')
+    expect(
+      /同步微信运动/.test(body) && !/会自动读取/.test(body),
+      'mini empty 声称自动读取 → 微信运动只在进入小程序时更新，用户会干等',
+    ).toBe(true)
+  })
+
+  it('WX-5c mini connectHealth 必须写 health_connected_at（与主端三分支对齐）', () => {
+    expect(/health_connected_at:\s*new Date\(\)\.toISOString\(\)/.test(fnBody(miniHealth, 'connectHealth'))).toBe(true)
+  })
+
+  it('WX-5d mini disconnectHealth 必须清 health_connected_at（不得残留上次连接时间）', () => {
+    expect(/health_connected_at:\s*null/.test(fnBody(miniHealth, 'disconnectHealth'))).toBe(true)
+  })
+
+  it('WX-5e 两端 error/unavailable 措辞必须同源（not_ready 同源由护栏 12 钉）', () => {
+    expect(
+      ['读取健康数据时出错，请稍后重试；步数暂时保持上次结果。', '当前设备不支持健康数据同步，请手动记录运动。']
+        .every((s) => miniHealth.includes(s) && mainHealth.includes(s)),
+      'error/unavailable 被单端改写 → 同一状态两端说法不同，用户以为是两个问题',
+    ).toBe(true)
+  })
+
+  it('WX-5f mini Profile 接口必须声明 health_connected_at 且列入可写白名单', () => {
+    expect(/health_connected_at\?:\s*string\s*\|\s*null/.test(miniApi) && /'health_connected_at'/.test(miniApi)).toBe(true)
   })
 })

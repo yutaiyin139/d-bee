@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { DocId } from '../content/legal'
 import { SITE } from '../content/legal'
-import { isWeb } from '../lib/platform'
+import { isNative, isWeb } from '../lib/platform'
 import { PricingSheet } from '../pages/PricingSheet'
 
 /**
@@ -40,6 +40,14 @@ export function SiteFooter({ onOpen }: { onOpen: (id: DocId) => void }) {
    */
   const [pricingOpen, setPricingOpen] = useState(false)
   const showPricingEntry = isWeb()
+
+  /**
+   * 🔴 App 备案号**只在原生壳渲染**（详见下方 JSX 处的注释：绑「应用」而非「域名」，
+   *   在 Web 页面渲染会触发 verify-legal 的号段错配校验）。
+   *   另外必须排除「Web 页面被塞进第三方 WebView」的情形——`isNative()` 判的是
+   *   Capacitor 原生容器，微信内置浏览器打开 d-bee.cn 时它仍为 false，符合预期。
+   */
+  const showAppBeian = isNative() && Boolean(SITE.appIcp)
 
   return (
     <footer className="site-footer">
@@ -89,6 +97,22 @@ export function SiteFooter({ onOpen }: { onOpen: (id: DocId) => void }) {
               <span className="dot">·</span>
               <a href={SITE.policeUrl} target="_blank" rel="noreferrer noopener">
                 {SITE.police}
+              </a>
+            </>
+          )}
+          {/* 🔴 App 备案号（2026-11-18 下证，后缀 -3A）：工信部要求 App 在显著位置标注。
+              门控 isNative() 是**硬性**的，不是样式偏好：
+                · 网站 ICP（-2）绑域名 d-bee.cn → Web 页脚必须渲染；
+                · App 备案（-3A）绑「应用」而非域名 → 在 Web 页面渲染属号段错配，
+                  会被 deploy/verify-legal.mjs 的「出现期望号之外的其他备案号 = 疑似错填」
+                  双向校验判 FAIL（它还会把 -3A 匹配成 -3，更难排查）。
+              页脚由四端共用（AuthScreen / Dashboard / ProfileScreen 各渲染一次），
+              一处接入即原生端全页面可达，满足「显著位置」要求。 */}
+          {showAppBeian && (
+            <>
+              <span className="dot">·</span>
+              <a href={SITE.icpUrl} target="_blank" rel="noreferrer noopener">
+                App备案号 {SITE.appIcp}
               </a>
             </>
           )}

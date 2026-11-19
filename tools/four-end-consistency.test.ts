@@ -242,7 +242,13 @@ describe('护栏 3 · 数值口径禁止新增手写舍入（唯一权威 numfmt
       // 方案入口与身体数据卡收进宫格，三行手写舍入内容未变，仅行号平移
       // → 174,175,540 → 207,208,594。
       // 2026-11-16 计划再生成：顶部增加建议解析与生成函数，三行手写舍入内容未变，仅行号平移。
-      'src/pages/ProfileScreen.tsx:281,282,668',
+      // 2026-11-18 HC-1：新增 platform import + hcReady probe 块（注释/state/useEffect）
+      // + healthHint 增 health_connect 分支 → 281,282,668 → 300,301,687。内容仍未变。
+      // 2026-11-18 HW-1（华为 P40「点连接没反应」）：healthHint 的 huawei/xiaomi 分支改为
+      // 中性措辞（厂商品牌字样属华为资质驳回理由），上方补 5 行合规注释
+      // → 300,301,687 → 305,306,692。🔴 已用 git HEAD 逐行比对确认三处 Math.round
+      // **代码逐字节相同**，纯行号平移，非新增违规。
+      'src/pages/ProfileScreen.tsx:305,306,692',
     ]
 
     expect(
@@ -623,6 +629,118 @@ describe('护栏 8 · ICP 备案号单一真相源 + 后缀不得错配', () => 
       /export const POLICE_BEIAN\s*=\s*'[^']*'/.test(raw),
       'shared 缺少 POLICE_BEIAN 常量（生效代码中）—— 两端 legal.ts 都引用它；' +
         '公安联网备案须在 ICP 下证后 30 日内办理（2026-12-06 前）',
+    ).toBe(true)
+  })
+
+  // ── App 备案号（2026-11-18 下证，后缀 -3A）──────────────────────────────
+  //
+  // 🔴 与网站 ICP 是**两个不同性质的号**，混用即合规违规：
+  //   · `京ICP备2026075565号-2`  = 网站 ICP，绑**域名** d-bee.cn，Web 页脚必须公示；
+  //   · `京ICP备2026075565号-3A` = App 备案，绑**应用**，工信部要求在 App 显著位置标注。
+  // 因此 App 备案号在 Web 页面渲染属号段错配，会触发本护栏 + verify-legal 双向校验。
+
+  /** 本站 App 备案号（后缀 -3A，A = App 类） */
+  const APP_ICP = '京ICP备2026075565号-3A'
+
+  it('shared 必须导出 APP_ICP_BEIAN，且值 = App 备案号（后缀 -3A）', () => {
+    const raw = sharedCode()
+    const m = raw.match(/export const APP_ICP_BEIAN\s*=\s*'([^']*)'/)
+    expect(
+      m,
+      'packages/shared/src/constants/index.ts 缺少 APP_ICP_BEIAN 导出（生效代码中）—— ' +
+        'App 备案号须与网站 ICP 分开存放，两者性质不同、渲染位置不同',
+    ).not.toBeNull()
+    expect(
+      m![1],
+      `APP_ICP_BEIAN = '${m![1]}'，正确值应为 '${APP_ICP}'。` +
+        `🔴 不得填网站号 '${ICP_SELF}'（那是绑域名的，不是绑应用的），` +
+        `也不得填官网号 '${ICP_PORTAL}'`,
+    ).toBe(APP_ICP)
+  })
+
+  it('App 备案号必须与网站 ICP 备案号是两个不同的值（防把 -2 当 App 号填）', () => {
+    const raw = sharedCode()
+    const site = /export const ICP_BEIAN_D_BEE_CN\s*=\s*'([^']*)'/.exec(raw)
+    const app = /export const APP_ICP_BEIAN\s*=\s*'([^']*)'/.exec(raw)
+    expect(site && app, '两个备案号常量都必须在生效代码中存在').not.toBeNull()
+    expect(
+      site![1] !== app![1],
+      `网站 ICP 与 App 备案号不得同值（实为 ${site![1]}）——` +
+        '同值意味着有人把绑域名的号当成绑应用的号用了',
+    ).toBe(true)
+  })
+
+  it('legal.ts 的 SITE.appIcp 必须引用 shared 常量，禁止写死备案号字面量', () => {
+    const f = byPath('src/content/legal.ts')!
+    const assign = f.code.match(/^\s*appIcp:\s*(.+?),?\s*$/m)
+    expect(assign, 'src/content/legal.ts 找不到 SITE.appIcp 赋值行').not.toBeNull()
+    // 🔴🔴 必须用词边界 `\b`，不能用裸子串（红验证当场抓出的假绿）：
+    //   env 覆盖口名叫 `VITE_APP_ICP_BEIAN`，它**包含** `APP_ICP_BEIAN` 子串 →
+    //   `/APP_ICP_BEIAN/.test("env('VITE_APP_ICP_BEIAN') || '京ICP备…-3A'")` 命中 env 名，
+    //   即使回退值已写死成字面量也判绿（工具坑 11：标识符互为前缀时子串断言必假阳）。
+    //   加 `\b` 后：`_` 与 `A` 同为 word char、其间无边界 → 不会命中 VITE_ 前缀的那个。
+    //   （对照：既有 SITE.icp 断言不需要词边界，因其 env 名 VITE_ICP_BEIAN 不含常量名。）
+    expect(
+      /\bAPP_ICP_BEIAN\b/.test(assign![1]),
+      `SITE.appIcp 赋值为「${assign![1].trim()}」，未引用 APP_ICP_BEIAN。` +
+        '可保留 env 覆盖口，但**回退值必须是 shared 常量**（同 SITE.icp 口径）',
+    ).toBe(true)
+  })
+
+  it('🔴 App 备案号必须用 isNative() 门控，禁止在 Web 页脚渲染（号段错配）', () => {
+    const code = stripComments(readFileSync(join(ROOT, 'src/components/SiteFooter.tsx'), 'utf8'))
+    // 门控变量：isNative() && Boolean(SITE.appIcp)
+    const gate = /const showAppBeian\s*=\s*isNative\(\)\s*&&\s*Boolean\(SITE\.appIcp\)/.test(code)
+    expect(
+      gate,
+      'SiteFooter 缺少 `showAppBeian = isNative() && Boolean(SITE.appIcp)` 门控。' +
+        '🔴 App 备案号绑「应用」而非「域名」，在 Web 页面渲染会被 verify-legal.mjs 的' +
+        '「备案号须与域名一一对应，出现期望号之外的其他号 = 疑似错填」双向校验判 FAIL',
+    ).toBe(true)
+  })
+
+  it('App 备案号渲染处必须真的受 showAppBeian 约束（门控不得形同虚设）', () => {
+    const code = stripComments(readFileSync(join(ROOT, 'src/components/SiteFooter.tsx'), 'utf8'))
+    // 渲染表达式必须是 {showAppBeian && (…)} 且块内确实输出 SITE.appIcp
+    expect(
+      /showAppBeian\s*&&\s*\([\s\S]*?SITE\.appIcp[\s\S]*?\)/.test(code),
+      'showAppBeian 定义了但没用于门控 SITE.appIcp 的渲染 → 门控形同虚设，' +
+        'App 备案号会无条件出现在四端页脚（含 Web）',
+    ).toBe(true)
+  })
+
+  it('静态法律页生成器不得渲染 App 备案号（静态页属 Web 域名，同属号段错配）', () => {
+    const code = stripComments(readFileSync(join(ROOT, 'tools/gen-legal-static.mjs'), 'utf8'))
+    expect(
+      /appIcp/.test(code),
+      'tools/gen-legal-static.mjs 出现了 appIcp —— 静态法律页挂在 d-bee.cn 下，' +
+        '渲染 App 备案号属号段错配，且会被 verify-legal 判 FAIL',
+    ).toBe(false)
+  })
+
+  it('verify-legal 备案号正则必须允许字母后缀（否则 -3A 被截断成 -3 → 误判错配）', () => {
+    const code = readFileSync(join(ROOT, 'deploy/verify-legal.mjs'), 'utf8')
+    const m = /const ICP_RE\s*=\s*\n?\s*\/(.+)\/g/.exec(code)
+    expect(m, 'verify-legal.mjs 找不到 ICP_RE 定义').not.toBeNull()
+    const re = new RegExp(m![1], 'g')
+    // 🔴 真实回归场景：原正则 `号(?:-\d+)?` 把 -3A 匹配成 -3，
+    //   与期望 -2 不等 → 报「同时出现其他备案号 -3」，而 -3 根本不存在，极难排查。
+    const matched = `备案号${APP_ICP}公示`.match(re)
+    expect(
+      matched !== null && matched[0] === APP_ICP,
+      `ICP_RE 无法完整匹配 App 备案号 ${APP_ICP}（实得 ${JSON.stringify(matched)}）` +
+        '—— 正则必须允许 `号-数字+可选字母` 形态',
+    ).toBe(true)
+  })
+
+  it('verify-legal 正则不得把网站号 -2 匹配坏（放宽字母后缀的零回归验证）', () => {
+    const code = readFileSync(join(ROOT, 'deploy/verify-legal.mjs'), 'utf8')
+    const m = /const ICP_RE\s*=\s*\n?\s*\/(.+)\/g/.exec(code)
+    const re = new RegExp(m![1], 'g')
+    const matched = `页脚${ICP_SELF}结束`.match(re)
+    expect(
+      matched !== null && matched[0] === ICP_SELF,
+      `放宽后的正则把网站号 ${ICP_SELF} 匹配坏了（实得 ${JSON.stringify(matched)}）`,
     ).toBe(true)
   })
 })

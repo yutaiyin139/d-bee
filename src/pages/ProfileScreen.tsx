@@ -23,7 +23,8 @@ import {
 } from '../lib/nutrition'
 import { usePlan } from '../state/plan'
 import { exportJSON, exportText } from '../lib/share'
-import { connectHealth, disconnectHealth, getHealthVendor, isHealthConnectable } from '../lib/health'
+import { connectHealth, disconnectHealth, getHealthVendor, isHealthConnectable, probeHealthConnectAvailability } from '../lib/health'
+import { isAndroid } from '../lib/platform'
 import { onActivateKey } from '../lib/a11y'
 import { getNotifyPrefs, setNotifyPrefs, syncLocalNotifications, isNotificationsSupported, getNotificationPermission } from '../lib/notifications'
 import {
@@ -157,7 +158,22 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
   const [confirmSignOut, setConfirmSignOut] = useState(false)
 
   // 健康数据源（可重连 / 可解除连接；连接意图存云端 profiles.health_connected）
-  const healthVendor = useMemo(() => getHealthVendor(), [])
+  // HC probe 时序：Health Connect 可用性是异步跨进程探测，缓存未热时 getHealthVendor()
+  // 读到保守 false。挂载时 probe 一次，完成后置 hcReady 触发 useMemo 重算。
+  // 非 Android 恒不触发（零开销）；probe 幂等且结果缓存，重复挂载不重复打跨进程查询。
+  const [hcReady, setHcReady] = useState(false)
+  useEffect(() => {
+    let alive = true
+    if (isAndroid()) {
+      void probeHealthConnectAvailability().then(() => {
+        if (alive) setHcReady(true)
+      })
+    }
+    return () => {
+      alive = false
+    }
+  }, [])
+  const healthVendor = useMemo(() => getHealthVendor(), [hcReady])
   // WX-4 防串台：按来源判定（反向：小程序连了微信运动后，本端不误显示 Apple 已连接）
   const healthConnected = useMemo(() => {
     if (!profile) return false
@@ -193,13 +209,21 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
     setNotifDenied(res.reason === 'denied')
   }
 
-  // 步数为 0 时的排查引导，按机型给对应路径（苹果走系统设置，华为/小米走各自健康 App）
+  // 步数为 0 时的排查引导，按机型给对应路径（苹果走系统设置，华为/小米走各自健康 App，
+  // Health Connect 走系统「健康连接」应用；default 兜底 iOS 文案）
+  // 🔴 华为/小米分支**不得出现厂商品牌字样**：华为《HUAWEI Health 授权使用规范》把
+  //   「在入口或提示消息中显示 Huawei / 华为运动健康 等字样」列为资质申请**驳回理由**
+  //   （Incorrect Brand Icon Usage）。未获授权前用品牌名，将来申报 Health Kit 会被这条卡住。
+  //   同时这两条原文案还在教用户「去厂商健康 App 登录并同步」—— 而该通道恒返回 not_ready、
+  //   同步过来也读不到，属**不可执行的错误引导**（2026-11-18 华为 P40 实测）。
   const healthHint = useMemo(() => {
     switch (healthVendor.vendor) {
       case 'huawei':
-        return '华为运动健康接入需应用上架华为应用市场（资质申请中）；步数一直为 0 时，请确认已在华为运动健康 App 登录并同步。'
+        return '本机型暂不支持自动同步步数：没有 Health Connect（该系统组件依赖 Google Play 服务），厂商健康数据接口仍在申请资质。请手动记录运动，数据同样计入热量缺口。'
       case 'xiaomi':
-        return '小米运动健康数据服务资质申请中；步数一直为 0 时，请确认已在小米运动健康 App 登录并同步。'
+        return '本机未检测到 Health Connect，厂商健康数据接口仍在申请资质，暂不支持自动同步步数。请手动记录运动，数据同样计入热量缺口。'
+      case 'health_connect':
+        return '步数一直为 0？到系统「健康连接（Health Connect）」> 应用权限 > 自律蜜蜂，确认已授权步数与活动能量，且穿戴/健康类 App 正在向其写入数据。'
       default:
         return '步数一直为 0？到 iOS「设置 > 健康 > 数据访问权限 > 自律蜜蜂」确认已勾选步数与活动能量。'
     }
@@ -741,7 +765,11 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
                 <span className="arrow">›</span>
               </span>
             </div>
-            {healthTip && <div className="notice" style={{ margin: 10, fontSize: 13 }}>{healthTip}</div>}
+            {/* 🔴 warn 修饰类不可省：`.notice` 基类虽已补默认可见底色，但这条是
+                「点击后的操作结果反馈」，需要比常驻说明更强的视觉权重 —— 否则它插在
+                下方一条语义雷同的常驻 hint 上方，用户看不出任何变化（2026-11-18
+                华为 P40 实测反馈「点击连接没有任何反应」的直接原因）。 */}
+            {healthTip && <div className="notice warn" style={{ margin: 10, fontSize: 13 }}>{healthTip}</div>}
             {healthConnected && (
               <div className="list-line" onClick={handleDisconnectHealth} onKeyDown={onActivateKey(() => void handleDisconnectHealth())} role="button" tabIndex={0} aria-disabled={healthBusy}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

@@ -101,6 +101,13 @@ export interface DeviceCatalogItem {
  */
 export const HEALTH_APP_CATALOG: DeviceCatalogItem[] = [
   { key: 'apple', label: 'Apple 健康', status: 'available', note: '真同步 · iOS · 已真机验证' },
+  // HC-1（2026-11-18 D1-A 拍板）：Health Connect 是 Android 跨品牌统一层，一行可匹配所有安卓机型。
+  // HC-2（2026-11-18）：原生已实装（DbeeHealthPlugin + HealthConnectReader，只读步数/活动能量/距离，
+  //   aggregate 聚合读自动多源去重；Manifest 补齐 rationale 与 Android 14+ 的 ViewPermissionUsageActivity
+  //   alias —— 缺后者系统会静默撤销全部 health 权限、授权页不弹）。
+  // 🔴 status **仍保持 in_progress**：代码就绪 ≠ 可用，零真机验收前标 available 就是假功能（同 D7 原则）。
+  //   须华为/小米真机跑通「授权 → 读数与厂商 App 对齐 → 撤权后如实降级」三项后才可改 available。
+  { key: 'health_connect', label: '系统健康（Health Connect）', status: 'in_progress', note: '安卓 · 一次连接通吃穿戴设备' },
   { key: 'huawei', label: '华为运动健康', status: 'in_progress', note: '资质与 SDK 逐个推进' },
   { key: 'xiaomi', label: '小米运动健康', status: 'in_progress', note: '资质与 SDK 逐个推进' },
   { key: 'vivo', label: 'vivo 健康', status: 'guided', note: '暂缓 · 后续启动合作申请' },

@@ -164,6 +164,7 @@ const RUNTIME_PROBES = [
   'isAlipayAvailable',               // 主端支付宝 adapter 是否就绪
   'isHealthKitAvailable',            // iOS HealthKit 插件是否就绪
   'isAndroidVendorHealthAvailable',  // 安卓厂商健康插件是否就绪
+  'isHealthConnectAvailable',        // Android Health Connect 系统层是否就绪（异步 probe 后读缓存；false→门面退回厂商/引导路径，非占位）
   'isOriginProxyAvailable',          // iOS 原生回源代理插件是否就绪
   'isWerunSupported',                // WX-2 宿主是否支持 wx.getWeRunData（false→提示升级微信，非占位）
 ] as const

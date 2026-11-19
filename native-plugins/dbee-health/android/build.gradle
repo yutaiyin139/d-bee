@@ -1,25 +1,41 @@
 ext {
     junitVersion = project.hasProperty('junitVersion') ? rootProject.ext.junitVersion : '4.13.2'
     androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.7.1'
+    // HC-2（2026-11-18 接入）：版本取自 android/variables.gradle 单一配置源，
+    // 沿用本文件既有 hasProperty 回退风格（独立构建插件模块时也能编译）。
+    healthConnectVersion = project.hasProperty('healthConnectVersion') ? rootProject.ext.healthConnectVersion : '1.1.0'
+    kotlinCoroutinesVersion = project.hasProperty('kotlinCoroutinesVersion') ? rootProject.ext.kotlinCoroutinesVersion : '1.10.2'
+    // @ActivityCallback 回调签名需要 androidx.activity.result.ActivityResult，
+    // capacitor-android 对它是 implementation（不传递），故本模块须自行声明。
+    androidxActivityVersion = project.hasProperty('androidxActivityVersion') ? rootProject.ext.androidxActivityVersion : '1.11.0'
 }
 
 buildscript {
+    // 🔴 变量名必须是 kotlin_version（下划线）：与 @capacitor/camera、filesystem、
+    // local-notifications 三个官方插件读取的 rootProject.ext.kotlin_version 同名同值，
+    // 避免同一构建内出现两个 Kotlin 版本（详见 android/variables.gradle 注释）。
+    ext.kotlin_version = project.hasProperty("kotlin_version") ? rootProject.ext.kotlin_version : '2.2.20'
     repositories {
         google()
         mavenCentral()
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.13.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
 
 apply plugin: 'com.android.library'
+// 幂等保护：宿主或其它插件已 apply 过 kotlin 时不重复 apply（与 camera 插件同款写法）
+if (project.extensions.findByName('kotlin') == null) {
+    apply plugin: 'kotlin-android'
+}
 
 android {
     namespace = "com.dbee.health"
     compileSdk = project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 36
     defaultConfig {
-        minSdkVersion project.hasProperty('minSdkVersion') ? rootProject.ext.minSdkVersion : 24
+        minSdkVersion project.hasProperty('minSdkVersion') ? rootProject.ext.minSdkVersion : 26
         targetSdkVersion project.hasProperty('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 36
     }
     lintOptions {
@@ -29,6 +45,10 @@ android {
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
     }
+}
+
+kotlin {
+    jvmToolchain(21)
 }
 
 repositories {
@@ -41,8 +61,26 @@ repositories {
 dependencies {
     implementation project(':capacitor-android')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
-    // 阶段 3a：零新增依赖（反射探测 HMS）。
-    // 真集成时（资质就绪后）加：
+    // 🔴 @ActivityCallback 的回调签名需要 `androidx.activity.result.ActivityResult`
+    //    （Capacitor 3+ 契约，见 DbeeHealthPlugin.healthConnectAuthResult 注释）。
+    //    capacitor-android 对 androidx.activity 用的是 **implementation**（不传递），
+    //    故必须自己显式声明；版本与 android/variables.gradle 单一配置源一致。
+    implementation "androidx.activity:activity:$androidxActivityVersion"
+
+    // ── Health Connect（HC-2，2026-11-18 起接入）──────────────────────────
+    // 🔴 稳定版 1.1.0 要求 minSdk 26（本项目已拍板升 26）；设备侧需 Android 9(API 28)+，
+    //    Android 13 及以下需安装 Health Connect APK（Android 14+ 已并入系统框架）。
+    // 版本与 API 签名已于 2026-11-18 用 javap 反编译 AAR 逐条实证（非凭记忆书写）：
+    //    getSdkStatus() → 1/2/3、provider=com.google.android.apps.healthdata、
+    //    aggregate(AggregateRequest)、StepsRecord.COUNT_TOTAL、
+    //    ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL。
+    implementation "androidx.health.connect:connect-client:$healthConnectVersion"
+    // HC 客户端是 Kotlin suspend API（aggregate / getGrantedPermissions 全为挂起函数），
+    // 需协程运行时；选 coroutines-android 以获得 Main dispatcher（桥接层回主线程 resolve）。
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:$kotlinCoroutinesVersion"
+
+    // 华为 Health Kit / 小米运动健康数据服务：资质就绪后再引入
+    //（当前仍走反射探测 + 诚实降级，见 DbeeHealthPlugin.java）
     //   implementation 'com.huawei.hms:health:6.11.0.300'
     //   implementation 'com.huawei.hms:hwid:6.12.0.300'
 }

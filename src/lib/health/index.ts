@@ -24,7 +24,13 @@ import {
   requestAndroidVendorAuthorization,
   fetchAndroidVendorToday,
 } from './android'
-import { isWechatMiniProgram } from '../platform'
+import {
+  isHealthConnectAvailable,
+  probeHealthConnectAvailability,
+  requestHealthConnectAuthorization,
+  fetchHealthConnectToday,
+} from './connect'
+import { isWechatMiniProgram, isAndroid } from '../platform'
 import { getProfile, saveProfile } from '../api'
 import type { HealthSyncData } from './types'
 import { healthVendorToDb, isVendorConnected } from '@dbee/shared'
@@ -33,6 +39,7 @@ import type { HealthVendorDb } from '@dbee/shared'
 export type { HealthVendor, HealthVendorInfo } from './brand'
 export type { HealthSyncData, HealthSyncStatus, HealthAuthResult, HealthAuthReason } from './types'
 export { isUsableHealthStatus } from './types'
+export { isHealthConnectAvailable, probeHealthConnectAvailability } from './connect'
 
 export interface ConnectResult {
   ok: boolean
@@ -42,8 +49,28 @@ export interface ConnectResult {
   vendor: HealthVendorInfo['vendor']
 }
 
-/** 品牌识别入口 */
+/** Health Connect 数据源的展示信息（跨品牌统一层，与机型品牌无关） */
+const HEALTH_CONNECT_INFO: HealthVendorInfo = {
+  vendor: 'health_connect',
+  label: '系统健康',
+  canSync: true,
+  tip: '请在系统「健康连接（Health Connect）」里授权后使用。',
+}
+
+/**
+ * 品牌识别入口。
+ *
+ * HC-1（2026-11-18）：Android 侧 **Health Connect 优先**于厂商 SDK ——
+ * HC 是跨品牌系统统一层（一次授权通吃各家穿戴设备），厂商 SDK 只覆盖自家设备。
+ * 判定同步读 probe 缓存（与 iOS `isHealthKitAvailable()` 同为同步），故 UI 调用点
+ * 的 `useMemo(() => getHealthVendor(), [])` 形状零改动、与 iOS 端完全同构。
+ *
+ * 🔴 probe 之前 / 插件未就绪 → 缓存 false → 退回 UA 品牌识别，行为与改造前一致。
+ *    probe 由 App 启动或健康页挂载时调 `probeHealthConnectAvailability()` 触发一次。
+ */
 export function getHealthVendor(): HealthVendorInfo {
+  // isHealthConnectAvailable() 内部已 gate isAndroid()，非 Android 恒 false
+  if (isHealthConnectAvailable()) return HEALTH_CONNECT_INFO
   return detectHealthVendor()
 }
 
@@ -52,16 +79,22 @@ export function getHealthVendor(): HealthVendorInfo {
  *
  * 原生 App 且健康平台插件可用时显示，微信小程序（微信运动）也显示：
  *   - iOS    ：Apple 健康（HealthKit）真同步
- *   - Android：华为 Health Kit / 小米运动健康数据服务 真同步（依赖资质，未就绪时授权降级为引导）
- *   - 微信小程序：微信运动（wx.getWeRunData）真同步（规划中）
+ *   - Android：**Health Connect（跨品牌统一层）优先** → 华为 Health Kit / 小米运动健康
+ *              数据服务兜底（均依赖资质，未就绪时授权降级为引导）
+ *   - 微信小程序：微信运动（wx.getWeRunData）真同步
  * 其它安卓厂商无公开读取 API；Web 也不显示。
  *
  * ⚠️ 零影响保证：现有三端走的是 isHealthKitAvailable()/isAndroidVendorHealthAvailable()，
  *   两者在非对应平台恒为 false；新增的 isWechatMiniProgram() 仅在小程序环境为 true，
- *   对 Web/iOS/Android 返回值不变。
+ *   isHealthConnectAvailable() 在 probe 前恒 false，对 Web/iOS/Android 返回值不变。
  */
 export function isHealthConnectable(): boolean {
-  return isWechatMiniProgram() || isHealthKitAvailable() || isAndroidVendorHealthAvailable()
+  return (
+    isWechatMiniProgram() ||
+    isHealthKitAvailable() ||
+    isHealthConnectAvailable() ||
+    isAndroidVendorHealthAvailable()
+  )
 }
 
 /**
@@ -73,12 +106,17 @@ export function isHealthConnectable(): boolean {
  *
  * @param expectedVendor 本端期望来源；省略时按当前机型自动推断。
  *   旧数据（health_vendor 为空）回退布尔，兼容 0053 之前的旧包（见 shared isVendorConnected）。
+ *
+ * HC-1（2026-11-18）：推断来源前先 await probe（幂等，命中缓存零开销）。
+ * 否则 Android 上「已连 HC」的用户在缓存就绪前会被误判为未连接
+ * （UA 品牌 = huawei，而存储的 health_vendor = health_connect → 来源不匹配）。
  */
 export async function isHealthConnected(expectedVendor?: HealthVendorDb): Promise<boolean> {
   try {
     const p = await getProfile()
     if (!p) return false
-    const expect = expectedVendor ?? healthVendorToDb(detectHealthVendor().vendor)
+    if (expectedVendor === undefined && isAndroid()) await probeHealthConnectAvailability()
+    const expect = expectedVendor ?? healthVendorToDb(getHealthVendor().vendor)
     // 本端无对应来源（如 Web / vivo / oppo）：按旧布尔口径，不阻断现有端
     if (!expect) return p.health_connected === true
     return isVendorConnected(p.health_connected, p.health_vendor, expect)
@@ -88,7 +126,7 @@ export async function isHealthConnected(expectedVendor?: HealthVendorDb): Promis
 }
 
 /**
- * 点击「连接 Apple 健康」：调 HealthKit 授权流程，走完后写云端连接状态。
+ * 点击「连接健康数据源」：调对应平台授权流程，走完后写云端连接状态。
  *
  * 流程：
  *   ① 调原生 requestAuthorization → 系统弹健康权限配置（首次）；
@@ -99,9 +137,56 @@ export async function isHealthConnected(expectedVendor?: HealthVendorDb): Promis
  * ⚠️ 读授权不可探测：用户即使拒绝，流程也返回 completed=true。
  *   是否真有数据以 fetchToday 为准；步数一直为 0 时引导用户到
  *   iOS「设置 > 健康 > 数据访问权限 > D-Bee」勾选（见健康数据源页提示）。
+ *
+ * HC-1（2026-11-18）：分派源改为 getHealthVendor()（含 Health Connect），
+ * Android 上 HC 可用时走 HC 分支，与 iOS 分支**完全同构**（授权→写云端→返回）。
  */
 export async function connectHealth(): Promise<ConnectResult> {
-  const v = detectHealthVendor()
+  // HC 能力须在取 vendor 前就绪（probe 幂等，命中缓存零开销）
+  if (isAndroid()) await probeHealthConnectAvailability()
+  const v = getHealthVendor()
+
+  if (v.vendor === 'health_connect') {
+    // probe 已确认可用；防御性复查一次（防止极端时序下缓存被重置）
+    if (!isHealthConnectAvailable()) {
+      return { ok: false, message: HEALTH_CONNECT_INFO.tip, vendor: 'health_connect' }
+    }
+
+    const auth = await requestHealthConnectAuthorization()
+    if (!auth.completed) {
+      if (auth.reason === 'unavailable') {
+        return {
+          ok: false,
+          message: '当前设备不支持 Health Connect，请手动记录运动。',
+          vendor: 'health_connect',
+        }
+      }
+      if (auth.reason === 'system_error') {
+        return {
+          ok: false,
+          message: `健康授权失败（${auth.message ?? '系统错误'}），请稍后重试。`,
+          vendor: 'health_connect',
+        }
+      }
+      return {
+        ok: false,
+        message: '授权未完成，可稍后在「我的 > 健康数据源」里重新连接。',
+        vendor: 'health_connect',
+      }
+    }
+
+    // 授权流程完成 → 写云端连接态 + 来源（HC-1 已补 healthVendorToDb 映射，防串台）
+    try {
+      await saveProfile({
+        health_connected: true,
+        health_connected_at: new Date().toISOString(),
+        health_vendor: 'health_connect',
+      })
+    } catch {
+      // 存状态失败不阻断；本地连接态未落云端时按钮仍在，可重试
+    }
+    return { ok: true, message: '已连接系统健康（Health Connect），步数与活动能量将自动同步。', vendor: 'health_connect' }
+  }
 
   if (v.vendor === 'apple') {
     if (!isHealthKitAvailable()) {
@@ -143,6 +228,24 @@ export async function connectHealth(): Promise<ConnectResult> {
   }
 
   if (v.vendor === 'huawei' || v.vendor === 'xiaomi') {
+    // 🔴 `canSync === false` ＝ 该机型当前**没有任何可用通道**，直接给可操作说明，
+    //   **不假装调原生授权**（零假功能 / 铁律 #13）。
+    //
+    //   为什么必须拦在这里：原生厂商通道（DbeeHealthPlugin.requestAuthorization）
+    //   恒返回 `reason='not_ready'`，而 `isAndroidVendorHealthAvailable()` 只检查
+    //   「插件在不在」、不检查「厂商通道能不能用」→ 会返回 true，于是一路走到
+    //   notReady 分支，只得到一句含糊的「接入正在申请资质」。用户既不知道
+    //   **为什么**连不上，也不知道**现在该怎么办**（2026-11-18 华为 P40 实测反馈：
+    //   「点击华为运动健康卡片右边的连接，没有任何反应」）。
+    //
+    //   华为具体三重锁：① Health Connect 需 Google Play services，华为无 GMS 装不上，
+    //   且华为运动健康**不向 HC 写数据**（HMS/GMS 生态隔离）；② Health Kit 需企业资质
+    //   + 应用先上架华为应用市场 + 约 25 工作日审核；③ HarmonyOS NEXT 只认 .hap、
+    //   装不上 Android APK。资质就绪后把 brand.ts 的 canSync 改回 true 即恢复完整流程。
+    if (!v.canSync) {
+      return { ok: false, message: v.tip, vendor: v.vendor }
+    }
+
     if (!isAndroidVendorHealthAvailable()) {
       // 插件未注入（非对应 Android / 尚未编译插件）：保留原占位提示
       return { ok: false, message: `${v.label}同步正在接入中，当前请先手动记录运动。`, vendor: v.vendor }
@@ -208,12 +311,20 @@ export async function connectHealth(): Promise<ConnectResult> {
  * status 用于区分「今天真的 0 步」与「读不到数据」：
  * 调用方应仅在 isUsableHealthStatus(status) 时把数值写回 UI，
  * 其余状态保留旧值并展示对应引导（授权被拒 → 去系统设置；出错 → 稍后重试）。
+ *
+ * HC-1（2026-11-18）：Android 上 **HC 优先**于厂商 SDK。probe 幂等（缓存命中
+ * 零开销），故 60s 轮询热路径不会重复打跨进程查询。
  */
 export async function syncFromHealth(): Promise<HealthSyncData> {
-  const v = detectHealthVendor()
+  if (isAndroid()) await probeHealthConnectAvailability()
+  const v = getHealthVendor()
   if (v.vendor === 'apple') {
     if (!isHealthKitAvailable()) return { steps: 0, activeKcal: 0, status: 'no_plugin' }
     return fetchTodayHealth()
+  }
+  if (v.vendor === 'health_connect') {
+    if (!isHealthConnectAvailable()) return { steps: 0, activeKcal: 0, status: 'no_plugin' }
+    return fetchHealthConnectToday()
   }
   if (v.vendor === 'huawei' || v.vendor === 'xiaomi') {
     if (!isAndroidVendorHealthAvailable()) return { steps: 0, activeKcal: 0, status: 'no_plugin' }
@@ -230,11 +341,26 @@ export async function syncFromHealth(): Promise<HealthSyncData> {
  *
  * 集中在此处而不是散在各页面：三处调用点（Dashboard 自动同步、Dashboard 手动连接、
  * 「我的 > 健康数据源」）需要完全一致的措辞，否则用户会以为是两个不同问题。
+ *
+ * @param isHealthConnect 数据来源是否为 Health Connect（Android 统一层）。
+ *   🔴 denied 的权限入口两端不同：iOS 在「系统设置 > 健康 > 数据访问权限」，
+ *   Android HC 在「Health Connect 应用 > 应用权限」。措辞错了用户找不到开关，
+ *   会误判为「功能坏了」。默认 false → mini 端与 iOS 措辞零变化。
+ *   🔴 empty 同理：HC 是**中转层**，本身不产生数据 —— 步数为空的真实原因几乎都是
+ *   「数据源应用（小米运动健康 / 华为运动健康 / 手环 App）没往 HC 里写」。
+ *   只说「今天还没有数据」会让用户干等（2026-11-18 小米 15 Ultra 实测：
+ *   授权成功但读数一直无反应），必须给出可操作的检查路径。
  */
-export function healthStatusHint(status: HealthSyncData['status'], vendorLabel: string): string {
+export function healthStatusHint(
+  status: HealthSyncData['status'],
+  vendorLabel: string,
+  isHealthConnect = false,
+): string {
   switch (status) {
     case 'denied':
-      return `${vendorLabel}读取权限未开启，步数不会同步。请到系统设置 > 健康 > 数据访问权限中勾选「自律蜜蜂」。`
+      return isHealthConnect
+        ? `${vendorLabel}读取权限未开启，步数不会同步。请打开「Health Connect」应用 > 应用权限 > 自律蜜蜂，勾选步数与活动热量。`
+        : `${vendorLabel}读取权限未开启，步数不会同步。请到系统设置 > 健康 > 数据访问权限中勾选「自律蜜蜂」。`
     case 'error':
       return '读取健康数据时出错，请稍后重试；步数暂时保持上次结果。'
     case 'unavailable':
@@ -242,7 +368,9 @@ export function healthStatusHint(status: HealthSyncData['status'], vendorLabel: 
     case 'not_ready':
       return `${vendorLabel}接入正在申请资质，当前请先手动记录运动。`
     case 'empty':
-      return `今天还没有${vendorLabel}数据。确认设备已同步后，会自动读取。`
+      return isHealthConnect
+        ? `今天还没有读到步数。「${vendorLabel}」只是中转层，需要数据源先写入：请确认手机自带健康 App（如小米运动健康 / 华为运动健康）或手环 App 里，已开启向「Health Connect」共享步数，然后点「重新读取」。`
+        : `今天还没有${vendorLabel}数据。确认设备已同步后，会自动读取。`
     case 'no_plugin':
     case 'ok':
     default:

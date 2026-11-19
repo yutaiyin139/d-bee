@@ -88,9 +88,17 @@ export async function connectHealth(): Promise<ConnectResult> {
   const r = await syncWechatStepsActive()
   if (r.status === 'ok' || r.status === 'empty') {
     // 真同步成功（含「今天真的 0 步」）→ 写云端连接态 + 来源 werun（WX-4 防串台），
-    // 下次进入据此显示已连接；旧数据无来源时回退布尔，兼容先前版本
+    // 下次进入据此显示已连接；旧数据无来源时回退布尔，兼容先前版本。
+    // 🔴 health_connected_at 必须写（2026-11-19 四端一致性审计）：主端三分支
+    //   （apple / health_connect / 厂商）连接时都写该审计字段（0022 迁移定义），
+    //   mini 旧版漏写 → 同一 profiles 表里 werun 来源的行时间戳恒 NULL，
+    //   「何时连接的」跨端口径不一致。disconnect 时同理置 null（见下）。
     try {
-      await saveProfile({ health_connected: true, health_vendor: 'werun' })
+      await saveProfile({
+        health_connected: true,
+        health_connected_at: new Date().toISOString(),
+        health_vendor: 'werun',
+      })
     } catch {
       // 写状态失败不阻断本次结果展示
     }
@@ -111,7 +119,15 @@ export async function connectHealth(): Promise<ConnectResult> {
 /** 解除连接：清云端状态 + 本地步数缓存，UI 恢复「连接」入口 */
 export async function disconnectHealth(): Promise<void> {
   try {
-    await saveProfile({ health_connected: false, health_vendor: null })
+    // 🔴 health_connected_at 一并置 null（2026-11-19 四端一致性审计）：
+    //   主端 disconnectHealth 三个字段一起清（src/lib/health/index.ts），旧版 mini
+    //   只清两个 → 解除连接后残留上一次的时间戳，跨端读到「已断开但仍有连接时间」
+    //   的矛盾状态。字段在 mini/src/lib/api.ts 的可写白名单内，可安全传 null。
+    await saveProfile({
+      health_connected: false,
+      health_connected_at: null,
+      health_vendor: null,
+    })
   } catch {
     // 状态清除失败不抛出：下次连接会重新覆盖
   }
@@ -184,11 +200,29 @@ export function isUsableHealthStatus(status: HealthSyncStatus): boolean {
   return status === 'ok' || status === 'empty' || status === 'no_plugin'
 }
 
-/** 主端 healthStatusHint:213-229 逐字同源：三处调用点措辞必须一致 */
+/**
+ * 状态 → 用户可见引导。
+ *
+ * 🔴 2026-11-19 四端一致性审计修正：**本函数不再声称与主端「逐字同源」**。
+ *   主端的数据源是 iOS HealthKit / Android Health Connect / 厂商 SDK，权限入口在
+ *   **系统设置**；本端唯一数据源是微信运动，权限入口在**小程序授权管理**，两者
+ *   路径根本不同。旧版直接抄主端文案，导致 denied 时告诉微信用户「到系统设置 >
+ *   健康 > 数据访问权限中勾选自律蜜蜂」—— 微信小程序里**没有这个路径**，用户
+ *   照着找必然找不到，误判为功能坏了。措辞按本端真实路径重写（与 werun.ts 的
+ *   denied message 同一口径）。
+ *
+ * 🔴 **刻意保留与主端逐字一致的分支**（护栏 12「两端措辞同源」钉的就是它）：
+ *   error / unavailable / not_ready 三句两端相同。其中 not_ready 在本端是**死分支**
+ *   （werun 的 status 枚举只有 ok|empty|denied|error|unavailable，微信运动不存在
+ *   「资质未就绪」），保持一致零风险且维持同源约定；**只有 denied / empty 必须分叉**，
+ *   因为这两句在本端指向的操作路径与更新时机和主端根本不同（见各分支注释）。
+ *   🔴 不要为了「统一」把这两句改回主端文案 —— 那是错误引导的复发。
+ */
 export function healthStatusHint(status: HealthSyncStatus, vendorLabel: string): string {
   switch (status) {
     case 'denied':
-      return `${vendorLabel}读取权限未开启，步数不会同步。请到系统设置 > 健康 > 数据访问权限中勾选「自律蜜蜂」。`
+      // 与 werun.ts ensureWerunAuth 的 denied message 同一路径口径（小程序授权管理）
+      return `${vendorLabel}读取权限未开启，步数不会同步。请点右上角「···」> 设置 > 关于 > 权限管理，开启「微信运动」后重新同步。`
     case 'error':
       return '读取健康数据时出错，请稍后重试；步数暂时保持上次结果。'
     case 'unavailable':
@@ -196,7 +230,10 @@ export function healthStatusHint(status: HealthSyncStatus, vendorLabel: string):
     case 'not_ready':
       return `${vendorLabel}接入正在申请资质，当前请先手动记录运动。`
     case 'empty':
-      return `今天还没有${vendorLabel}数据。确认设备已同步后，会自动读取。`
+      // 🔴 微信运动只在**用户进入小程序时**更新（werun.ts 头注④），不存在「会自动读取」。
+      //   旧文案「确认设备已同步后，会自动读取」会让用户干等一个永不发生的自动刷新
+      //   （与 2026-11-18 小米「一直没有反应」同类误导）。如实给出主动出口。
+      return `今天还没有${vendorLabel}步数。微信运动数据在你进入小程序时更新，可点「同步微信运动」获取最新步数。`
     case 'no_plugin':
     case 'ok':
     default:

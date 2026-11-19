@@ -1,2 +1,111 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<!--
+  DbeeHealth 插件 Manifest（HC-2，2026-11-18）。
+
+  🔴 本文件里的每个字面量都经过实证，不是凭记忆书写（写错则权限永远授不上、
+     或 Android 14+ 授权页直接不弹）：
+       · 三个 READ 权限字面量      → 从 connect-client-1.1.0.aar 的 classes.jar
+                                       常量池 grep 实证
+       · ACTION_REQUEST_PERMISSIONS / ACTION_HEALTH_CONNECT_SETTINGS
+                                    → 同上（AAR 自带 Manifest **没有** <queries>，
+                                       故必须我们自己声明）
+       · ACTION_VIEW_PERMISSION_USAGE / START_VIEW_PERMISSION_USAGE
+                                    → javap 反编译 android-37 android.jar 实证
+       · android.intent.category.HEALTH_PERMISSIONS
+                                    → android.jar 中 HealthConnectManager.class 实证
+       · androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE
+                                    → AAR 里**不存在**该字面量（已由 grep 确认），
+                                       属宿主自行声明的契约，按官方指南书写
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      只申「读」权限，且只申真正会读的三项（最小必要原则）。
+      🔴 不申 WRITE_*：D-Bee 只读用户健康数据，绝不写回。
+      🔴 不申 READ_HEALTH_DATA_HISTORY / _IN_BACKGROUND：只读当天，申了会拉长
+         授权页、并触发 Play「Health apps declaration」额外审核。
+      🔴 不申 ACTIVITY_RECOGNITION：我们**不**自己用传感器计步，只从 HC 聚合读，
+         申了属过度索权（合规风险）。
+    -->
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED" />
+    <uses-permission android:name="android.permission.health.READ_DISTANCE" />
+
+    <!--
+      Android 11+ 包可见性限制（🔴 三段各有独立的静默失败后果，缺一段就踩一个坑）：
+
+      ① `<package>` = HC provider 包名。
+         SDK 内部用 DEFAULT_PROVIDER_PACKAGE_NAME 做 getPackageInfo() /
+         queryIntentServices() 探测（字面量已从 AAR 常量池实证，该常量标
+         @RestrictTo(LIBRARY)，宿主拿不到、只能自己写死）。
+         Android 13 及以下 HC 是**独立 APK**，不声明则探测被包可见性拦截 →
+         getSdkStatus() 误报 SDK_UNAVAILABLE → 前端「设备不支持」而实际支持。
+         （Android 14+ 的 HC 已并入系统框架，走平台通道，不依赖此条。）
+         社区实现 react-native-health-connect 的库 Manifest 同样只补这一条，可互为印证。
+
+      ② 两个 `<intent>` = AAR 自带 Manifest **没有** <queries>（已解包确认），
+         不补则 HealthConnectReader.hcSettingsResolvable() 里的 resolveActivity()
+         **恒返回 null**，把「设备支持 HC」误报成「不支持」→ HC-0 真机诊断全红，
+         误导排查方向（会以为是设备问题，其实是我们的 Manifest 缺声明）。
+    -->
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+        <intent>
+            <action android:name="androidx.health.ACTION_REQUEST_PERMISSIONS" />
+        </intent>
+        <intent>
+            <action android:name="androidx.health.ACTION_HEALTH_CONNECT_SETTINGS" />
+        </intent>
+    </queries>
+
+    <application>
+
+        <!--
+          权限用途说明页（rationale）。Android 13 及以下走这个 intent-filter。
+          🔴 exported 必须 true：该 Activity 由系统 HC 授权页深链拉起，
+             Android 12+ 对带 intent-filter 的组件强制要求显式声明 exported。
+        -->
+        <activity
+            android:name=".HealthPermissionsRationaleActivity"
+            android:exported="true"
+            android:label="健康数据用途说明"
+            android:theme="@android:style/Theme.DeviceDefault.Light">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          🔴🔴 Android 14+（API 34+）必需，且与上面的 activity **并存**、不可二选一：
+          响应 VIEW_PERMISSION_USAGE + HEALTH_PERMISSIONS，并由 START_VIEW_PERMISSION_USAGE 保护。
+
+          缺它的后果最阴险：**不报错**。据 react-native-health-connect PR #257 实测记录，
+          API 34+（targetSdk 36 起严格执行）会**静默撤销全部 android.permission.health.\***：
+          requestPermission() 返回空、授权页根本不弹、应用在 HC 权限列表里也不出现。
+          本项目 targetSdk=36，正中该档位 —— 这是本次真机测试的头号拦路虎。
+
+          ── 解析机制（已查 AOSP 源码实证，勿再按猜测改动）────────────────────
+          系统**按 intent 解析**，不按组件名：
+            new Intent().setPackage(pkg).setAction(ACTION_VIEW_PERMISSION_USAGE)
+            → resolveActivity(...) → 再校验 activityInfo.permission
+              == Manifest.permission.START_VIEW_PERMISSION_USAGE
+          （见 AOSP PermissionController/AppPermissionGroupsFragment.java）
+          故 alias 名被 manifest merger 展开成 `com.dbee.health.ViewPermissionUsageActivity`
+          **不影响**功能；名字只是沿用社区惯例便于对照文档。
+          🔴 但 `android:permission` 与 intent-filter 的 action/category 三项**缺一不可**：
+             少 permission → AOSP 那段 equals 校验不通过 → 不展示入口。
+        -->
+        <activity-alias
+            android:name="ViewPermissionUsageActivity"
+            android:exported="true"
+            android:targetActivity=".HealthPermissionsRationaleActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
+
+    </application>
+
+</manifest>

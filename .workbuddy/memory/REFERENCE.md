@@ -1953,3 +1953,169 @@ stdin 脚本不落临时文件、不执行删除。⚠️ 首次红验证脚本�
 ```
 - 🔴🔴 **当前生产状态（非发版）**：**0052 applied**（`llm_gate` SECDEF+`search_path=public`，ACL 仅 `postgres`/`dbee_app`）；**网关手术式部署**（`apply-llm-feature-walls.py`：换 `llm.mjs`+`app.mjs` 插 4 条 `features/*`）；**Web 入口 `index-hSfB-d28.js`（11-17 14:00 发布 v1.7.9、生产实测全绿）**；🔴 **APK `…-llmgate.apk`（vc26、入口 `index-DKoWPSKJ.js`）仅归档不分发**（`not_published`+备案阻断）。门禁 **31 文件/1413 项** EXIT=0；**0054/0055 已应用**（FEFO+补分，34一致）
 ```
+
+---
+
+## 2026-11-18 17:17 迁入：Android HC-1 前端落地 + P0 四项拍板（详版 → `2026-11-18.md` 17:17 节 + `docs/Android运动健康-现状梳理与实施计划-2026-11-18.md` §7）
+
+### MEMORY.md「现状」11-18 10:30 节压缩前逐字原文（零信息丢失归档）
+
+```
+- 🔴🔴 **当前生产状态**：**0052 applied**；网关手术式部署（`apply-llm-feature-walls.py`：换 `llm.mjs`+`app.mjs` 插 4 条 `features/*`）；**Web 入口 `index-CIf_RcMj.js`（17:50 重发含 FEFO，生产实测全绿）**。门禁 **31 文件/1421 项** EXIT=0；**0053/0054/0055 已应用**（34 一致）；四服务 `NRestarts=0`、`gateway.env` 未变。原文 → REF。
+- 🔴 **工具坑 5–10（详版 → `2026-11-16.md` P-补2/4、Q；原文 → REF T 节）**：⑤`node --check` 读 stdin 假绿 ⑥Edit `old_string` 尾带 `\n` 合并 bullet ⑦宽泛 `grep -i proxy` 泄漏 Bearer ⑧构建工具 `catch {}` 吞异常（退出码 0 ≠ 目录纯净）⑨**中文进程名禁 ASCII grep**（`grep -i wechat` 对「微信开发者工具.exe」假阴性）→ `tasklist //V //FO CSV`+Python 多编码；`/tmp` 对 Windows Python 不可见 → 跨工具用 `$TEMP` ⑩**Taro 输出目录与开发者工具工作目录同为 `mini/dist` 互写** → 构建前必关工具，验收只认构建刚结束那次。
+- 🔴🔴 **发现⑦⑧（详版 → `2026-11-16.md` L；原文 → REF T 节）**：⑦`/var/www/d-bee` 实有 **139 文件**、生效仅 19（哈希名+`immutable`，**不影响正确性**）⑧`REFERENCE.md:788` 含 `SMS_MASTER_CODE` 真实值＝既存于 HEAD → 应轮换，**待拍板**。
+- 🔴🔴 **发现③④①（详版 → `2026-11-16.md` H/I/K；原文 → REF T 节）**：③`apk-distribution.baseline.json` 自称护栏但全仓引用 0 处（已加 `knownGap_guardrailNotWired`，**未擅自新增测试**）④11-15 包不兼容新网关、禁分发（已入 `supersededApks[]`）①**0046/0047 生产漂移刻意未夹带**（生产缺 `xpay/apppay/wechatSession.mjs`→收款未落地）。
+```
+
+### P0 四项拍板（用户 11-18 授权「可以执行 P0」）
+
+| # | 决策 | 结果 |
+|---|---|---|
+| **D-A** | minSdk 24→26（放弃 Android 7.0/7.1） | ✅ 升 **26**，用 HC **稳定版** `connect-client:1.1.0`，**不用 alpha**（1.2.0-alpha06 虽支持 24 但 API 可能变动） |
+| **D-E** | 「最流行的技术」技术栈 | ✅ **Kotlin 2.3.0 + kotlinx-coroutines 1.10.2 + HC 稳定版**。🔴 KGP 2.3.0 的 AGP 兼容上限**恰为**项目现有 **8.13.0**（Gradle 8.14.3 / JDK 21）→ **零 AGP 升级** |
+| **D-F** | 「和 mac 端保持一致」口径 | ✅ mac 上跑的是 **iOS 壳**（D-Bee 是 Capacitor React 单一代码库）→ 与 iOS 侧 `healthkit.ts`/`DbeeHealthPlugin.swift` **完全同构**：接口三方法同名同形、授权→写云端→同步流程逐条对齐、7 态语义一致 |
+| **D-G** | 「注意系统性能」 | ✅ `getSdkStatus()` 是**跨进程查询** → 异步 probe 一次 + **模块级缓存** + 同步读缓存；probe **幂等**，60s 轮询热路径零重复开销；非 Android 恒不触发 probe |
+
+**D-B（HC-0 真机覆盖率矩阵，只能用户本人跑）、D-C（华为资质暂不启动，被 App 备案死锁）维持原结论。**
+
+### HC-1 前端实现要点（12 改 + 2 新，未 commit；不含记忆文件）
+
+- 🔴 **阻塞 3 修复**：`healthVendorToDb` 补 `case 'health_connect'`。缺此映射 → 门面 `...(dbVendor ? {health_vendor: dbVendor} : {})` **整个字段被省略** → 写成「有 connected、无 vendor」→ `isVendorConnected()` 命中「旧数据回退布尔」→ **WX-4 刚修好的跨端串台在 HC 上复发**。
+- **`src/lib/health/connect.ts`（新建，第三适配器）**：插件接口三方法**全可选**（`healthConnectStatus?` / `requestHealthConnectAuthorization?` / `fetchHealthConnectToday?`）→ 旧插件无方法 → 缓存恒 false → 行为与改造前**逐字节一致**（HC-2 落地后自动点亮，无需再改前端）。
+- **架构决策**：`brand.ts` 保持**纯 UA 函数**（HC 是跨品牌系统层，UA 探测不出）→ HC 优先分派放**门面** `getHealthVendor()`。好处：`healthCatalogKeyForVendor()` 与全部 UI **零改动**即实现 D1-A「一行多机型」。
+- 🔴 **有意回退的过度工程**：曾引入 `MULTI_VENDOR_CATALOG_KEYS`/`isMultiVendorCatalogKey`/`canConnectCatalogKey` 三个新导出 → **自我发现违反「不乱增复杂度」且会破坏护栏 :472**（`d.key === healthCatalogKeyForVendor(vendorKey)` 两端静态断言）→ 回退，仅保留目录行（标 `in_progress` 时连接按钮本就不渲染）。
+- 🔴 **UI 时序陷阱（本轮新发现）**：`useMemo(() => getHealthVendor(), [])` 只算一次 → Android 上缓存未热（`availabilityCache === null`）时读到过期 false 且**永不重算 → HC 入口永不显示**。修法：两端页面挂载时 probe 一次 → `hcReady` state 翻转触发 useMemo 重算；Dashboard 轮询 effect 依赖补 `[healthConnectable, healthVendor]`。功能路径（`isHealthConnected`/`connectHealth`/`syncFromHealth`）另用「取 vendor 前先 `await probe`」消除时序误判（否则已连 HC 用户会被误判未连接：UA 品牌=huawei 而存储 vendor=health_connect → 来源不匹配）。
+- **ProfileScreen `healthHint` 补 `health_connect` 分支**：原 default 会给安卓用户显示 iOS「设置 > 健康 > 数据访问权限」路径（错误引导）。
+- **`healthStatusHint(status, vendorLabel, isHealthConnect = false)`**：默认参数 false → **mini 端零变化**（护栏 :906/:921 钉死其形状与措辞）。
+
+### 验证证据
+
+- **构建**：`:dbee-health:assembleDebug` + `:dbee-origin-proxy:assembleDebug` **BUILD SUCCESSFUL in 2m1s**（58 tasks）→ minSdk 26 编译通过。
+- **typecheck**：主端 **0 错误**；mini 报错全在 `node_modules/@tarojs/**`（既有环境噪音）。
+- **全量门禁 31 文件 / 1433 项全绿**（`Test Files` == `ls tools/*.test.ts` = 31，无串行丢文件假绿）。基线 1421 → **1433**。
+- **先红后绿**：阻塞 3 红 `expected 'health_connect' to be null`；反漂移扫描红 `expected [ 'isHealthConnectAvailable' ] to deeply equal []`；目录项数红 `expected 7 to be 6`。
+- **变异红验证 5/5 全失配**（临时脚本用完即删）：去 probe `force` 短路 / 删门面 HC 优先行 / 删 HC 落库 vendor / 删三处 `await probe` / Dashboard `hcReady` 改回 `[]`。
+- 🔴 **新护栏坑（标识符互为前缀）**：断言「mini 不引入 HC」用 `includes('health_connect')` **假红** —— `health_connected`（布尔列名）含 `health_connect` 前缀。修法 `/\bhealth_connect\b(?!ed)/`。**凡标识符互为前缀，子串断言必假阳/假阴。**
+- 🔴 **shared dist 是按文件分模块输出**：查 `dist/index.js` 得 0 处 `health_connect` 是**假象**；真源在 `dist/healthVendor.js`（7 处）+ `dist/myPage.js`（1 处）。验 dist 新鲜度须查对应分模块文件。
+- **基线维护**：`four-end-consistency` 手写舍入行号快照 `281,282,668 → 300,301,687`（**合法平移**，三行内容未变）。
+
+### 🔴 未闭合（铁律 #13：本地绿 ≠ 真机绿）
+
+- HC 可用性、读数正确性、多源去重、**minSdk 26 装机回归**（放弃 7.x 后须真机验证既有功能）均**零真机实证**。
+- **HC-2 原生未做**：插件 `build.gradle` 加 Kotlin/协程/`connect-client:1.1.0` → `HealthConnectReader.kt`（`getSdkStatus` 三态早退 / `getOrCreate` 客户端单例 / **每次读前** `getGrantedPermissions()` 复查 / `aggregate()`）→ Manifest 只申 `READ_STEPS`/`READ_ACTIVE_CALORIES_BURNED`/`READ_DISTANCE` + `<queries>` + rationale 入口 → `DbeeHealthPlugin.java` **就地桥接**三方法（不删 Java 文件）。
+- 🔴 **读数三铁律**（踩了静默错数据）：① 用 `aggregate()` **不用** `readRecords()`（前者按用户设定的应用优先级**自动多源去重**）② **禁写死 `dataOriginFilter` 包名**（2026-06 起设备本地步数 DataOrigin 从 `android` 包名改为 **device-specific SPN**，按包名过滤会静默漏步数）③ 时间窗起点用**设备本地时区当天零点**，不用 UTC。另：`activeKcal` 是否含 BMR 须真机与厂商 App 对照，未确认前保守不采信。
+- 🔴 **HC-2 建议等 HC-0 真机矩阵**：国行普遍无 Play 服务、Android 13- 须从 Play 装 HC APK、Android 14+ 才并入系统 → 有「写完发现目标机型装不上 HC」的返工风险。华为/vivo/欢太健康**未集成 HC**；小米 Mi Fitness 部分版本可手动开启但**重启静默掉线**。
+- **未 commit / 未 push**：`main...origin/main` 仍 **ahead 2**（WX-6，代理 schannel+502 未恢复）。版本号**未动**（V1.7.9 / vc26），未碰网关/nginx/数据库/`deploy-gateway.sh`，**零删除**。
+- **P4 发版前合规**（未做）：Play Console **Health apps declaration**（未声明时用户连接 HC 会看到**系统错误弹窗**）、国内应用市场健康数据合规评估、隐私政策 §五（健康数据属**敏感个人信息** → 单独告知+单独同意+撤销即删）、对外话术**分机型**表述不宣称全机型支持、🔴 不碰 `legal.ts`「不构成医疗诊断」红线（心率/睡眠即使读到也不得出诊断色带、燃脂心率、疗效承诺）。
+
+---
+
+## 2026-11-18 17:30 迁入：MEMORY.md 体积压缩前逐字原文（超限 16095 字符 → 压回 ≤9k；零信息丢失）
+
+### 「现状（11-18 17:17）」节压缩前逐字原文（后 8 条）
+
+```
+- 🔴🔴 **微信运动已落地（WX-1 三步 `5bea9d2` + WX-6 静默实时同步 11-18，详版 → `2026-11-18.md`）**：0053 迁移生产应用（根因＝缺三件套被跳号）；网关手术式部署（9 闸门全绿，`werun/sync`→401 已挂载）；mini/dist 直建（10:26，69 文件，探针 6/6）。🔴 **整搬 `app.mjs`＝全站宕机**（生产缺 xpay/apppay/werun.mjs）→ 三文件同批缺一不可。
+- 🔴🔴 **WX-6 两缺陷已修（连接后不刷新 / 登录不实时）**：根因①connectHealth 的 steps 无 UI 承接 ②误读平台规范——真实规则＝「授权**弹窗**须用户操作触发」，已授权用户可**零弹窗静默读**。修法＝`syncWechatStepsSilent()`（隐私+scope 只读双闸）+ `syncFromHealth({live})` 默认实时、轮询 `live:false`（防 jscode2session 45011）+ 首页 `useDidShow` 实时刷（tabBar 不 remount）；🔴 **登录路径刻意不调 refreshHealth**（`[loggedIn]` effect 已首刷，双调＝双倍 wx.login）。
+- 🔴 **剩余边界**：mini 导出/通知**零真机实证**；🔴🔴 **构建只落 `mini/dist`，禁再建 `prebuild-*`**（用户 11-18 明令）；werun 端到端**仍零真机实证**（铁律 #13）→ 待用户导入 `mini/dist` 传体验版复验；1.7.7 旧包不可上传；docs 4 处 v178 引用待批注；Android 分发待批（A7）；模板 ID 回填后补 `subscribeMessage.send`。原文 → REF T 节。
+- 🔴🔴 **四条既有铁律（全文已验在 REF）**：①**收款**（§五+11-08/09）＝开关默认 false / `settling` **绝不报 error** / **发权益权威信号＝验签回调 `settle_app_payment`**。②**兑换码 0048**＝护栏**永不写明文** / **绝不调 `redeem_by_code`**（真烧码）。③**`psql`/脚本六铁律**＝变更类禁 `2>/dev/null` / 探针**不打印真实 uid** / `SUDO()` **不吞 stderr**。④🔴 **写 SQL 前必核 `information_schema.columns` 列名**（例：`schema_migrations`→`version` 非 `id`）。
+- ✅✅ **云库废弃**：数据面全自建 PG、放弃迁移；释放差 2 步（用户本人）＝重传 mini+重设体验版、停用实例（不可逆）；实例**仍在线**。原文 → REF。
+- 🟠 **备案链**：域名/ICP ✅；App/小程序/算法/公安备案均管局审核中（前两项硬阻断 Android 上架、mini 发版+虚拟支付）；`applicationLabel` 仍 `D-Bee`，上商店前须改「自律蜜蜂」。
+- 🔴 **0053 已应用**（11-17 22:50 补全三件套后落地，`health_vendor` 列+约束+登记齐备）；🔴 **pull 涉 `packages/shared/src` 必重跑其 build 再验门禁**（`dist` 陈旧＝护栏读 src 假绿，第三次踩）。原文 → REF。
+```
+
+### 「下一步 / 待拍板」节压缩前逐字原文（全 8 条）
+
+```
+- 📚 **git**：`5bea9d2` 已 push；11-18 WX-6 改动待提交；11-14 P0/P1.4-1.6/P1.7 随 V1.7.6~V1.7.8 发版 → REF「11-15 23:08 迁入」§四。
+- 🔴 **主线 = iOS 上线**（权威 `docs/iOS上线依赖全景与实施步骤-2026-11-07.md`）：正式上架卡软著(30–60 工作日)/App 备案(7–20)/Mac 签名；最大交付 = **TestFlight 内部测试**（需 Mac+Team+重打包）。ASC 填报面几乎空白；Apple 硬闸门 Xcode 26 + iOS 26 SDK、新年龄分级问卷必答。🔴 壳内停在 11-04，apppay + A-5 真删号 + 16px 修复待重打包。
+- 🔴 **只有用户本人能做**：软著 AI 条款、Mac 选 `DEVELOPMENT_TEAM`、证书入 `signing/`、mini 发版、云库停用、公安备案回填、ASC 填报、算法备案收尾、**支付资质申请**（微信移动应用 + 商户号 APP 支付 + 支付宝企业应用）。
+- 🟠 **待拍板**：**0046/0047 生产漂移处置**（收款链路未上生产，补则走手术式脚本 + 开关默认 false）、**是否补 `tools/apk-distribution.test.ts`** 闭合发现③护栏缺口（须先红验证）、隐私政策 §五 + `LEGAL_UPDATED`、mini 同意窗重确认载体、凭据轮换、网关模式收紧、护栏 A9/A10、Apple 个人 vs 备案企业主体、仓库是否转 private。
+- 🔴 **11-12 两条（详版 → REF「11-12 上午/13:40/14:22」+ 两份 `docs/*-2026-11-12.md`）**：①**三端晃动 / 四端分享**：16px 在 `styles.css:83`，Web/Android/mini ✅ **iOS ❌**；iOS 分享修复（base64 误塞 `url` → 改 Filesystem 写 Cache + `files`）待 Mac 重打包；`100vw`/`100dvh` 未动。②**对标薄荷 / 备案等待期**：§1.2 复核 + **PCM #3 立项**（🔴 REF 无此 token，勿删）；Wave 4.1 图片指纹违隐私政策须删。
+- ✅ **发现⑤⑥已处置**（详版 → `2026-11-16.md` L/O）：`.gitignore` 加 `/Temp/`、`/dist-stale-*/`；基线已入库。
+- ⚠️ **已决不再讨论**：云库回迁自托管 / 老用户不迁移 / 存量 newbie bonus / 演示数据两套面 / App 名称=`自律蜜蜂` / 凭据不打进终端 / **mini 微信虚拟支付** / **Android 微信+支付宝 APP 支付** / **Web 暂不收费、ICP 经营许可证不办** / **不做渠道首月半价**（11-11 已回退）。
+- 三条主线：**开发**（看板=本文件「现状」，自动化每日收敛）；**备份两层**（cron 03:30 `pg_dump -Fc` + 异地副本，含真实健康数据**严禁 git add**）；**运营**（每周提醒）。
+```
+
+### 「权威口径」节压缩前逐字原文（全 6 条）
+
+```
+- **Bundle ID = `cn.com.dbee.app`**（iOS/Android 同值）；**版本 1.7.9**（Android vc27 / iOS `CURRENT_PROJECT_VERSION` 12）。🔴 **版本号单一真相源 = 根 `package.json` 的 `version`**，经 `__APP_VERSION__` 注入 Web 与 mini（mini/package.json 的 0.1.0 是包自身版本）；发版须**六处统一**（package.json / android build.gradle 的 versionCode+versionName / ios pbxproj 的 `MARKETING_VERSION`×2 / mini config 与 four-end-consistency 注释）。原文 → REF §六。
+- **域名**：`d-bee.cn` = 自律蜜蜂 Web（隐私政策 / Apple webhook / Universal Link / 原生 endpoint）；`d-bee.com.cn` = 公司官网。
+- 🟢 **ICP 已下证（11-06）**：`-1`=官网、`-2`=自律蜜蜂。🔴 生效代码任何位置**不得出现 `-1`**。真相源 = `packages/shared` 的 `ICP_BEIAN_D_BEE_CN`；`POLICE_BEIAN` 仍空（不渲染＝合规），下证后回填（**2026-12-06 前**）。🔴 **公开公示信息不得只放 `.env`**（备案号/主体名/资质号）：被 gitignore → 换机器/CI 静默产出无备案号页面。
+- 🔴 **原生包禁用 `npm run build`**（白屏）：内测 `npm run build:native:internal`；上架 `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native`。🔴 二者与 web **共用 `dist/`**，且 native / `build:web` 都会**删掉 `dist/legal/`**（隐私政策静态页零 JS 可爬＝OPPO 硬要求）→ **部署 web 前必须重跑 `npm run build`** 并比对入口 js 文件名。**产物自检以 `index.html` 引用的入口 js 为唯一真源**（干净构建本就有 2 个 `index-*.js`）。
+- 🔴🔴 **铁律 #13：「已完成」必须附生产侧实测证据**。**本地绿 ≠ 线上绿**，中间隔「提交→构建→部署」。取证 5 法见 REFERENCE.md。
+- 🔴🔴 **写库字段必须对齐生产库列**：`updateMealGrams` 曾写 `meal_entries.updated_at`（0030 漏列）→ `PGRST204 schema cache` → 前端误翻「服务版本不匹配」，四端编辑份量全崩（11-14 实证）。改 patch 先对 `information_schema.columns`；加列后必 `NOTIFY pgrst, 'reload schema'`。🔴 用户报「服务版本不匹配」**不是前端版本问题**，是 schema cache / function 不存在。
+```
+
+### 「云数据库安全铁律」+「部署最高危」+「环境备忘」三节压缩前逐字原文
+
+```
+## 云数据库安全铁律（最高优先级；全文 → REF）
+
+- 发权益函数必须 **SECURITY DEFINER + 入参白名单**；**涉权益表必须 REVOKE authenticated 的 INSERT/UPDATE/DELETE**（RLS 挡不住直写）。🔴 **0047 沿用此范式**。
+- **0039 闸门**：权益函数只改自建 migrations 单库；🔴 云库废弃后**不再双库同步**（`db/cloud-patch-0039/`、`tools/split-*-for-cloud.py`、`deploy/probe-0039-parity.sh` 仅历史存档，勿再执行）。nginx 唯一生效模板=`nginx.selfhost.conf.example`，改 nginx 只走 `deploy.sh APPLY_NGINX_CONF=1` 或 `switch-nginx-selfhost.sh`。`set_config` 混函数须 `WITH s AS MATERIALIZED`。
+- 🔴 **删号/身份类改动走 PostgREST SECDEF RPC，别改网关**（`app_users` FORCE RLS + 无 DELETE）；0045 范式 = 不带 owner_id、只信 `auth.uid()`、`p_confirm` 闸门、`REVOKE PUBLIC/anon`+`GRANT authenticated`。删号后前端禁调 `saveProfile()`；新增含 `owner_id` 的表须同步 0045 `v_tables`（护栏 9 拦）。
+
+## 部署最高危（全量 → REF「部署侧坑」；11-16 手术式范式详版 → `2026-11-16.md` E-补）
+
+- 🔴🔴 **`deploy-gateway.sh` 是全站永久锁死级地雷**（缺 `IDENT_PEPPER` 即 `rand_hex` 重置 → 全站身份永久失效）→ 改网关一律走手术式脚本（**最新范式 = `deploy/apply-llm-feature-walls.py`**：13 道断言 + 自动回滚）；**只读/备份也绝不跑它**。🔴 手术式铁律：前后断言 `gateway.env` sha256 不变；**绝不整搬本地 `app.mjs`**（import 生产缺失的 `xpay/apppay.mjs` → ESM 顶层即崩 = 全站宕机），只对现网副本按唯一锚点插入；重启前必做 **ESM 预检**（补齐生产 `.mjs`+`package.json`+软链，只 import `app.mjs`）。
+- 🔴🔴 **「状态谎报」比失败更危险**：bash heredoc 内不得把 Python 常量名当 shell 变量（`set -u` 崩在赋值行 → 回滚分支不执行、兜底文案却打印「已回滚」）。纪律：**报了回滚就必须真回滚过**，回滚收敛到一个函数。
+- 🔴 视觉链路 `BASE_URL`/`MODEL`/`API_KEY` 须**成对更换**且同步 `gateway.env.template`+`.secrets.local`（否则静默回退）。
+- 🔴🔴 **nginx reload 有优雅退出窗口** → 立即验证会「假红」。修法 `sleep 8` + 重试 3 次；脚本必须可重入。🔴 验收三坑（`gateway.env` 0640 需 `sudo -n` / 临时账号须 `trap cleanup EXIT` / Windows 禁 `wsl.exe`）。
+
+## 环境备忘（全节逐字 → REF「环境备忘·详版」；只留触发线索）
+
+- **连接/路径**：SSH `150.158.51.106`、`USER=ubuntu`+`SSH_PWD`（`.env` 的 `DBEE_USER=dbee_app` 认证失败）；验收打 `https://d-bee.cn/` **别打 IP**；APK 归档 `release/`；`db/backups/offsite/*.dump` 含真实健康数据 **严禁 git add**；push 遇 `schannel` → 单次 `-c http.sslBackend=openssl`。
+- **两条唯一权威**：数值口径 `src/lib/numfmt.ts`（禁自写 `toFixed`）；nginx **只反代 `/.cloud/` 与 `/auth/`** → 其余 POST 返 **405，405 不能判路由存在**。
+- **防假绿**：vitest 强制串行，跑完核对 `Test Files` 数 == `ls tools/*.test.ts`；mini 类型检查单独跑；禁硬编码日期（同源取 `todayKey()`）；**小程序验收以体验版为准**；MAPE 达标 ≠ 无需处理（四指标并报）。护栏断言三铁律＝①一 `it()` 一断言 ②匹配「实际使用」③在 `stripComments()` 后做；新增/放宽**必红验证**且确认注入真生效；「两端都包含 X」须 `every()`。
+- **产物判读**：①中文形态分工具链（mini=`\uXXXX`→`unicode_escape`，勿 `latin1`；Web=UTF-8 直存）②`VITE_*` grep 命中≠生效，`define` 布尔才被 terser 折叠 ③裸串 grep 会子串碰撞（「下单」命中「预下单」）→用完整 CTA 短语；判数据面追「哪个常量被 `resolveEndpoint` 返回」。
+```
+
+## 2026-11-19 02:35 迁入：四端健康绑定审计后 MEMORY.md 压缩前逐字原文（零信息丢失）
+
+**「剩余边界」条压缩前原文**：
+> - 🔴 **剩余边界**：mini 导出/通知 + werun + **华为/小米健康链路全部零真机实证**（铁律 #13）；🔴🔴 **构建只落 `mini/dist`，禁再建 `prebuild-*`**；1.7.7 旧包不可上传；Android 分发渠道待拍板（A7，备案闸门已开但缺工具链+label 仍 `D-Bee`）；模板 ID 回填后补 `subscribeMessage.send`。四端绑定代码侧已对齐（WX-5 护栏钉死），🔴 但 werun/华为/小米**连接正常与否仍需真机实证**。
+
+**「待拍板」条压缩前原文**：
+> - 🟠 **待拍板**：0046/0047 生产漂移处置、是否补 `tools/apk-distribution.test.ts`（须先红验证）、隐私政策 §五 + `LEGAL_UPDATED`、mini 同意窗重确认载体、`SMS_MASTER_CODE` 轮换、网关模式收紧、护栏 A9/A10、Apple 个人 vs 企业主体、仓库是否转 private、**20 个 `prebuild-*` 目录（约 78MB）清理**。四端审计新增：**D-5** 弹层连接按钮是否对 in_progress/planned 放宽（现保守＝无按钮）/ **D-6** apple 目录 tip「即将开放」vs status=available「已真机验证」措辞矛盾 / **D-7** `not_ready` 死分支处置登记（本次选诚实保留）。
+
+**四端审计详版**：完整矩阵、4 处修复逐条、不修项理由、死分支登记、WX-5 六断言与红验证过程 → `2026-11-19.md` §六（已逐字归档，本处不重复）。
+
+**「Android HC-1/2/3」条压缩时移出的细节（02:40 补档）**：
+> HC-3「读数永驻」修复还包括 `healthSyncView()` 三路共用（Dashboard 自动同步 / Dashboard 手动连接 / 「我的 > 健康数据源」三处调用点共用同一状态视图函数）；empty 文案点明 HC 只是**中转层**（数据源 App 须先向 Health Connect 写入）。vc29 为测试包，已被 vc30 取代。
+
+**华为 P40「连接」无反应修复 · MEMORY 压缩时移出的细节（02:45 补档）**：
+> ④ Dashboard 按钮无视 canSync → 文案分叉：华为/小米（canSync=false）按钮显示「查看说明」（点开是诚实告知不可用的说明卡），可用通道（iOS/HC 就绪机）显示「连接」。荣耀独立拆出：MagicOS 带 GMS → HC 可用 → `canSync:true`（与华为/小米区分）。③ `.notice` 基类无背景色＝透明字 → 补默认样式（浅色主题下说明文字与背景同色不可见）。
+
+**工具坑⑪压缩时移出的具体示例（02:45 补档）**：
+> `APP_ICP_BEIAN` 会被 `VITE_APP_ICP_BEIAN` 的子串匹配命中 → 断言必须用 `\b` 词边界（或完整短语），否则「常量不存在」类护栏假绿/假红。
+
+## 2026-11-19 10:55 迁入：MEMORY.md 压缩前逐字原文（华为修复 / HC-1~3 / 工具坑 5–11 / 11-12 两条；零信息丢失）
+
+> 背景：为登记「四端上线收费前全景文档」，MEMORY.md 需腾出约 1200 字符。下列四条为压缩前逐字原文，其中 REFERENCE 此前**零覆盖**的细节已在本节固化（`createPermissionIntentAsync` 分步超时+回调必发、`@ActivityCallback` 必须 2 参、`withStageTimeout` 6s < 前端 8s、selftest 18/18、护栏 HW-1、Taro 与开发者工具互写 `mini/dist`、`styles.css:83` 的 16px、PCM #3、Wave 4.1）。
+
+**MEMORY.md「现状」条 · 华为 P40「连接」无反应＝4 层根因已修（压缩前逐字原文）**：
+> 🔴🔴 **华为 P40「连接」无反应＝4 层根因已修（详版 → `2026-11-19.md` §一 + REF「02:45 补档」）**：①华为无 GMS→HC 不可用 ②`canSync:true` 假信号→华为/小米改 `false`、荣耀独立拆出 ③`.notice` 透明字→补背景 ④Dashboard 按钮无视 canSync→文案分叉；`connectHealth()` 进原生前拦截 `canSync=false`。🔴 **品牌文案中性化**（入口出现华为字样＝资质驳回理由）。HC-3 异步加固 `createPermissionIntentAsync`（分步超时+回调必发＝不再永久挂起/ANR）。护栏 HW-1 红后绿 + selftest 18/18。
+
+**MEMORY.md「现状」条 · Android HC-1/2/3 已落地（压缩前逐字原文）**：
+> 🔴🔴 **Android HC-1/2/3 已落地（详版 → REF「11-18 17:17 迁入」）**：minSdk 26/Kotlin 2.3.0/HC 1.1.0；**`aggregate()` 非 `readRecords()`**；**vc28 修闪退＝`@ActivityCallback` 必须 2 参**；HC-3「读数永驻」＝原生 `withStageTimeout` 6s < 前端 8s（🔴 **禁 `Promise.race`**）。vc29 测试包已被 vc30 取代。
+
+**MEMORY.md「现状」条 · 工具坑 5–11（压缩前逐字原文）**：
+> 🔴 **工具坑 5–11（逐字 → REF「11-18 17:30 迁入」）**：⑤`node --check` 读 stdin 假绿 ⑥Edit `old_string` 尾带 `\n` 合并 bullet ⑦宽泛 `grep -i proxy` 泄漏 Bearer ⑧构建工具 `catch {}` 吞异常 ⑨**中文进程名禁 ASCII grep**；`/tmp` 对 Windows Python 不可见 → 用 `$TEMP` ⑩**Taro 与开发者工具互写 `mini/dist`** → 构建前必关工具 ⑪**标识符互为前缀时子串断言必假阳/假阴**（用 `\b` 词边界）；**shared dist 按文件分模块输出** → 验新鲜度查对应模块文件。
+
+**MEMORY.md「下一步」条 · 11-12 两条（压缩前逐字原文）**：
+> 🔴 **11-12 两条（详版 → REF + 两份 `docs/*-2026-11-12.md`）**：①三端晃动/四端分享：16px 在 `styles.css:83`，Web/Android/mini ✅ **iOS ❌**；iOS 分享修复待 Mac 重打包；`100vw`/`100dvh` 未动。②对标薄荷/备案等待期：§1.2 复核 + **PCM #3 立项**（🔴 REF 无此 token，勿删）；Wave 4.1 图片指纹违隐私政策须删。
+
+## 2026-11-19 13:40 迁入：MEMORY.md 压缩前逐字原文（Android 专项文档成文，为腾体积压缩两条；零信息丢失）
+
+**MEMORY.md「现状」节 · 四端上线收费全景文档条（压缩前逐字原文）**：
+> - 🔴🔴 **四端上线收费全景文档已成文（11-19，`docs/四端上线收费前-准备工作与实施步骤全景-2026-11-19.md`；详版 → `2026-11-19.md` §八）**＝四端「上线+收费」唯一权威路线图，**取代 11-17 版 §2.2/§3/§4.3/§4.6（已过期）**。触发线索：🔴**「上线就绪」≠「收费就绪」不可互推**（Web 已上线但永久不收费）｜收费就绪 **iOS🟠40% 四端最高**（唯一不需升级 `config.mjs`）> mini/Android 🔴0%｜🔴**生产 `config.mjs` 未升级→光填 env 无效**、**未调 `saveSessionKey()`→mini 虚拟支付必失败**｜🔴**整搬本地 `auth.mjs` 会覆盖 werun 4 手术锚点→微信运动断裂**（须现网副本按锚点插入）｜🔴**基线登记错误**（水位 `"0048"` 实 0055、`gatewayIapDeployed=false` 实已部署）→护栏 19-B 与生产相反（D-11）｜🔴**18 个 `*-selftest.mjs`（含收款三端）门禁覆盖＝0**→开收款前须手工跑留证（D-9）｜拍板 **D-1~D-12**（D-3 iOS 先还是 mini 先＝最重要）｜🔴**纯规划，零生产变更**。
+
+**MEMORY.md「现状」节 · 剩余边界条（压缩前逐字原文）**：
+> - 🔴 **剩余边界**：mini 导出/通知 + werun + **华为/小米健康链路全部零真机实证**（铁律 #13）；🔴🔴 **构建只落 `mini/dist`，禁再建 `prebuild-*`**；1.7.7 旧包不可上传；Android 分发渠道待拍板（A7，缺工具链+label 仍 `D-Bee`）；模板 ID 回填后补 `subscribeMessage.send`。四端绑定代码侧已对齐（WX-5 钉死）。
+
+**Android 端专项文档（`docs/Android端上线收费必须步骤-2026-11-19.md`）全量详版 → `2026-11-19.md` §九**（9.1 结论口径 / 9.2 三条实测校正 / 9.3 排除的伪缺口 / 9.4 `.env.example` 缺 3 键致支付宝静默失效 / 9.5 收费链实测要点 / 9.6 工具链三件套登记先于实现 / 9.7 新增 D-13 支付宝插件方案 A/B / 9.8 梯队与发版命令链校正）。
+
+**MEMORY.md「现状」节 · vc30 交付条（压缩前逐字原文；产物指纹权威登记在 `tools/apk-distribution.baseline.json` 的 `apk` 段与 `_verify_2026_11_19`）**：
+> - 🔴🔴 **交付 `release/D-Bee-1.7.9-vc30-…-FORMAL-20261119.apk`**（9,800,341B / sha256 `5b51362c…` / 入口 `index-Bi5hyWXh.js` / signerMd5 同历版）：产物侧实证全过（详版 → `2026-11-19.md` §二）；基线登记 `appBeian=issued`。🔴🔴**零真机验证**（华为反馈可见/小米不闪退/备案号页脚仅原生壳）；🔴**未 commit**。Web dist 已恢复（入口 `index-jon9Bmrs.js`）。
