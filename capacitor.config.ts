@@ -23,7 +23,7 @@ import type { CapacitorConfig } from '@capacitor/cli'
  */
 const config: CapacitorConfig = {
   appId: 'cn.com.dbee.app',
-  appName: 'D-Bee',
+  appName: '自律蜜蜂',
   webDir: 'dist',
   server: {
     androidScheme: 'https',

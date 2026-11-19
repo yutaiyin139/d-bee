@@ -3,22 +3,31 @@
   "_why_in_git": "release/ 被 .gitignore 排除（APK 不入库），故分发所需的元数据与合规闸门状态必须另有入库载体，否则换机器或重装后无法复现「哪个包可发、为什么还不能发」。",
   "updatedAt": "2026-11-19",
   "apk": {
-    "file": "release/D-Bee-1.7.9-vc30-dbee.cn-FORMAL-20261119.apk",
+    "file": "release/D-Bee-1.7.9-vc31-dbee.cn-FORMAL-20261119.apk",
     "versionName": "1.7.9",
-    "versionCode": 30,
+    "versionCode": 31,
     "packageName": "cn.com.dbee.app",
-    "bytes": 9800341,
-    "sha256": "5b51362c5c53eb8fb98337a92b169e734badaafed7b1e264ab5b08d7ffc54ac9",
+    "bytes": 9800369,
+    "sha256": "59139461f1add10bdc519179bf901e9a325cc23fd514cf85fddb6b038731ab81",
     "webEntry": "index-Bi5hyWXh.js",
-    "applicationLabel": "D-Bee",
+    "applicationLabel": "自律蜜蜂",
     "minSdk": 26,
     "targetSdk": 36,
     "signerMd5": "0abe7fc5005987ed9b6eae9a45fb9dc9",
-    "_check": "发版人用 sha256sum <apk> 与 stat -c%s <apk> 复核；aapt2 dump badging 复核 versionCode/versionName/packageName/application-label；apksigner verify --print-certs 复核 MD5。🔴 applicationLabel 仍是 D-Bee，而软著名/App 备案名/商店上架名须逐字为「自律蜜蜂」（Android 清单 §6.4）——上商店前必须改，自建分发页同样应显示中文名。",
-    "_verify_2026_11_19": "本包为【华为 P40「连接」无反应根因修复 + App 备案号落地】后重打的产物（已归档，未分发）。本机实测证据：① apksigner verify --print-certs = V2 Signer，证书 MD5 0abe7fc5005987ed9b6eae9a45fb9dc9（与既有签名一致，未换证书）；② aapt2 dump badging = cn.com.dbee.app / versionCode 30 / versionName 1.7.9 / targetSdkVersion 36 / application-label D-Bee；③ Python zipfile 比对 APK 内 assets/public（18 文件）与本地 dist：不一致 0、双向差集仅 cordova.js 与 cordova_plugins.js（Capacitor 注入，dist 中本就没有，属既有设计非缺失）；④ 解包全部 js 分包探针（UTF-8 直读，中文未转义故无需 \\uXXXX 解码）：App备案号「京ICP备2026075565号-3A」1 处、网站ICP「京ICP备2026075565号-2」1 处、华为中性 tip「本机型暂不支持自动同步步数」2 处、中性 label「手机健康数据」2 处、荣耀独立分支 android-other 2 处、端点 https://d-bee.cn 6 处、版本串 1.7.9 1 处；⑤ dexdump -d classes.dex 方法名实证 HC-3 异步加固已编入：createPermissionIntentAsync 86 次、buildPermissionIntent 8 次、deliverIntent 9 次、sdkStatusWithTimeout 91 次、clientWithTimeout 91 次（classes2.dex 为 0，插件在主 dex）；⑥ 门禁 31 文件 / 1467 项全绿（含 HW-1 华为修复 10 项断言 + 护栏 8 App 备案 8 项断言，均已做过红验证）。🔴🔴 铁律 #13 未满足：以上全部是【本机产物侧证据】，华为/小米真机安装验证与 App 备案号在真机页脚的肉眼可见确认仍为 0 次，不得宣称「已修复上线」。",
-    "_verify_2026_11_16": "上一归档包 release/D-Bee-1.7.8-vc26-dbee.cn-FORMAL-20261116-llmgate.apk（8263231 B / sha256 e63f1364c91262dc93678e2fae45f841f09a6ffbd065d9c2c43f6fcbec9cce0d / 入口 index-DKoWPSKJ.js / minSdk 24 / versionCode 26）为 0052 LLM 闸门全链路上线后重打的产物（非发版，仅归档）。当时生产侧实测：apksigner Verifies（v2 签名，MD5 0abe7fc5005987ed9b6eae9a45fb9dc9）；aapt2 badging = cn.com.dbee.app / versionCode 26 / versionName 1.7.8 / targetSdk 36 / label D-Bee；APK 内 assets/public 与本地 dist 16 文件逐字节一致（Python zipfile 比对，不用 unzip 通配符——`*` 不跨 `/` 会漏子目录造成假缺失）；入口 index-DKoWPSKJ.js 内含 llm/features/ 新路由 1 处、dbee-feature 自报标记 0 处（全部分包均为 0）、版本串 1.7.8、端点 https://d-bee.cn 3 处；capacitor.config.json appId/androidScheme=https/CapacitorHttp=true，运行时插件 9 个与 capacitor.config.ts 的 android.includePlugins 白名单一致；legal/ 静态文件 0 个（native 既有设计，法律页走 SPA 路由）。门禁 30 文件 / 1333 项全绿。"
+    "_check": "发版人用 sha256sum <apk> 与 stat -c%s <apk> 复核；aapt2 dump badging 复核 versionCode/versionName/packageName/application-label；apksigner verify --print-certs 复核 MD5。🟢 applicationLabel 已改为「自律蜜蜂」（与软著名/App备案名逐字一致）。🔴 证书 DN 内部仍 CN=D-Bee，属签名证书内部标识，与 App 显示名无关，不得为此换证书（换了老用户无法覆盖安装）。",
+    "_verify_2026_11_19": "本包为【applicationLabel 改名「自律蜜蜂」+ versionCode 30→31】后重打的产物（命令行签名出包，未用 Android Studio：VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run native:sync && cd android && ./gradlew assembleRelease）。本机实测证据：① apksigner verify --print-certs = V2 Signer，证书 MD5 0abe7fc5005987ed9b6eae9a45fb9dc9（与历版逐字一致，未换证书→老用户可覆盖安装；证书 DN 内部仍 CN=D-Bee，与 App 显示名无关，改名不应换证书）；② aapt2 dump badging = cn.com.dbee.app / versionCode 31 / versionName 1.7.9 / targetSdkVersion 36 / application-label「自律蜜蜂」（🟢 改名成功，不再是 D-Bee）；③ Python zipfile 比对 APK 内 assets/public（18 文件）与本地 dist：共同 16 文件不一致 0、双向差集仅 cordova.js 与 cordova_plugins.js（Capacitor 注入，既有设计）；④ js 分包探针（UTF-8 直读）：App备案号「京ICP备2026075565号-3A」1 处、网站ICP「京ICP备2026075565号-2」1 处、华为中性 tip「本机型暂不支持自动同步步数」2 处、中性 label「手机健康数据」2 处、端点 https://d-bee.cn 6 处、版本串 1.7.9 1 处；⑤ 🔴 最强证据 vc31 vs vc30 dex 逐字节比对：classes.dex(660d1666…)/classes2.dex(4ff62cfa…) **完全一致** → 本次仅改 strings.xml 资源 + versionCode，原生 Java/Kotlin 零改动，HC-3 异步加固完全继承；resources.arsc/AndroidManifest.xml 不同（label + versionCode 改入，符合预期）；⑥ dexdump -d classes.dex 方法名实证 HC-3 仍在：createPermissionIntentAsync 86、buildPermissionIntent 8、deliverIntent 9、sdkStatusWithTimeout 91、clientWithTimeout 91、withStageTimeout 67（与 vc30 基线逐字一致）；⑦ 门禁 31 文件 / 1473 项全绿；web 入口 index-Bi5hyWXh.js（与 vc30 同，前端 src 未动）。🔴🔴 铁律 #13 未满足：以上全部本机产物侧证据；改名后 vc31 的真机验证（华为/小米 + 桌面图标名显示「自律蜜蜂」）仍 0 次，不得宣称已上线。",
+    "_verify_2026_11_19_vc30": "本包为【华为 P40「连接」无反应根因修复 + App 备案号落地】后重打的产物（已归档，未分发）。本机实测证据：① apksigner verify --print-certs = V2 Signer，证书 MD5 0abe7fc5005987ed9b6eae9a45fb9dc9（与既有签名一致，未换证书）；② aapt2 dump badging = cn.com.dbee.app / versionCode 30 / versionName 1.7.9 / targetSdkVersion 36 / application-label D-Bee；③ Python zipfile 比对 APK 内 assets/public（18 文件）与本地 dist：不一致 0、双向差集仅 cordova.js 与 cordova_plugins.js（Capacitor 注入，dist 中本就没有，属既有设计非缺失）；④ 解包全部 js 分包探针（UTF-8 直读，中文未转义故无需 \\uXXXX 解码）：App备案号「京ICP备2026075565号-3A」1 处、网站ICP「京ICP备2026075565号-2」1 处、华为中性 tip「本机型暂不支持自动同步步数」2 处、中性 label「手机健康数据」2 处、荣耀独立分支 android-other 2 处、端点 https://d-bee.cn 6 处、版本串 1.7.9 1 处；⑤ dexdump -d classes.dex 方法名实证 HC-3 异步加固已编入：createPermissionIntentAsync 86 次、buildPermissionIntent 8 次、deliverIntent 9 次、sdkStatusWithTimeout 91 次、clientWithTimeout 91 次（classes2.dex 为 0，插件在主 dex）；⑥ 门禁 31 文件 / 1467 项全绿（含 HW-1 华为修复 10 项断言 + 护栏 8 App 备案 8 项断言，均已做过红验证）。🔴🔴 铁律 #13 未满足：以上全部是【本机产物侧证据】，华为/小米真机安装验证与 App 备案号在真机页脚的肉眼可见确认仍为 0 次，不得宣称「已修复上线」。"
   },
   "supersededApks": [
+    {
+      "file": "release/D-Bee-1.7.9-vc30-dbee.cn-FORMAL-20261119.apk",
+      "bytes": 9800341,
+      "sha256": "5b51362c5c53eb8fb98337a92b169e734badaafed7b1e264ab5b08d7ffc54ac9",
+      "webEntry": "index-Bi5hyWXh.js",
+      "versionCode": 30,
+      "supersededAt": "2026-11-19",
+      "reason": "被 vc31 取代：applicationLabel 仍是「D-Bee」（软著名/App备案名/商店名须逐字为「自律蜜蜂」）。本包功能与 vc31 完全等价（classes.dex 逐字节一致），仅 label + versionCode 不同。保留作历史留证，🔴 对外分发一律用 vc31。"
+    },
     {
       "file": "release/D-Bee-1.7.8-vc26-dbee.cn-FORMAL-20261115.apk",
       "bytes": 8262867,
