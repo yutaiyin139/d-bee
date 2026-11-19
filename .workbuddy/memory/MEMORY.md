@@ -13,15 +13,15 @@
 - 🔴🔴 **铁律 #13：「已完成」必附生产侧实测证据**。**本地绿 ≠ 线上绿**（中间隔提交→构建→部署）。取证 5 法 → REF。
 - 🔴🔴 **写库字段必须对齐生产库列**：改 patch 先对 `information_schema.columns`；加列后必 `NOTIFY pgrst, 'reload schema'`。🔴 用户报「服务版本不匹配」**不是前端版本问题**，是 schema cache / function 不存在（`updateMealGrams` 写 `meal_entries.updated_at` → PGRST204 → 四端编辑份量全崩，11-14 实证）。
 
-## 现状（11-19·V1.7.9 + 华为修复 + 备案 + 四端审计 + 收费文档·vc30 待真机；证据→`2026-11-19.md`）
+## 现状（11-19·V1.7.9/华为修复/备案/四端审计/收费文档·T0已执行·vc30待真机；证据→`2026-11-19.md`§十）
 
 - 🔴🔴 **生产状态**：**0052~0055 全 applied**（34 一致）；网关手术式部署（`apply-llm-feature-walls.py`）；**Web 入口 `index-CIf_RcMj.js`**（生产实测全绿）；四服务 `NRestarts=0`。门禁基线 **31 文件/1473 项**。
 - 🔴🔴 **华为 P40「连接」无反应＝4 层根因已修（逐字 → REF「11-19 10:55 迁入」+`2026-11-19.md`§一）**：①无 GMS→HC 不可用 ②`canSync:true` 假信号→华为/小米改 `false`、荣耀拆出 ③`.notice` 透明字补背景 ④按钮无视 canSync→文案分叉；`connectHealth()` 进原生前拦截。🔴**品牌文案中性化**（华为字样＝资质驳回理由）。HC-3 `createPermissionIntentAsync` 分步超时+回调必发。护栏 HW-1 红后绿+selftest 18/18。
-- 🔴🔴 **vc30 交付**（指纹/实证逐字 → 基线 `apk` 段 + `_verify_2026_11_19`、REF「13:40 迁入」、`2026-11-19.md` §二）：`appBeian=issued`；🔴🔴**零真机验证**（华为反馈可见/小米不闪退/备案号仅原生壳渲染）；🔴**未 commit**。Web 入口 `index-jon9Bmrs.js`。
+- 🔴🔴 **vc30 交付**（指纹/实证逐字 → 基线 `apk` 段 + `_verify_2026_11_19`、REF「13:40 迁入」、`2026-11-19.md` §二）：`appBeian=issued`；🔴🔴**零真机验证**（Runbook 已备，§十）；🟢**已 push**；软著 **submitted**。Web 入口 `index-jon9Bmrs.js`。
 - 🔴🔴 **Android HC-1/2/3 已落地（逐字 → REF「11-18 17:17 迁入」+「11-19 10:55 迁入」）**：minSdk 26/Kotlin 2.3.0/HC 1.1.0；**`aggregate()` 非 `readRecords()`**；**vc28 修闪退＝`@ActivityCallback` 必须 2 参**；HC-3「读数永驻」＝原生 `withStageTimeout` 6s < 前端 8s（🔴**禁 `Promise.race`**）。vc29 已被 vc30 取代。
 - 🔴🔴 **微信运动 WX-1+WX-6 已落地（详版 → `2026-11-18.md` + REF）**：0053 生产应用；网关 9 闸门全绿；WX-6＝静默同步双闸+**轮询 `live:false`**（防 jscode2session **45011**）+`useDidShow` 实时刷。🔴**登录路径刻意不调 refreshHealth**；🔴**整搬 `app.mjs`＝全站宕机**→三文件同批。
 - 🟢 **四端健康绑定审计已修（11-19，逐字 → `2026-11-19.md` §六 + REF「02:35 迁入」）**：mini 修 4 处＝denied 误指 iOS 路径→「权限管理」；empty 谎称「会自动读取」→「同步微信运动」出口；补写/清 `health_connected_at`；`Profile` 补声明。不修＝弹层按钮只对 `available` 渲染（D-5）；`not_ready` 死分支保留（D-7）；apple tip 矛盾（D-6）。护栏 **WX-5 六断言**红验证全过；tsc src 0 错。🔴 werun 真机 0 实证。
-- 🔴🔴 **两份收费权威文档（11-19，详版 → `2026-11-19.md` §八/§九；逐字 → REF「13:40 迁入」）**：①全景＝四端唯一路线图，**取代 11-17 版 §2.2/§3/§4.3/§4.6**；②Android 专项＝执行级清单。🔴**「上线就绪」≠「收费就绪」不可互推**（Web 已上线永久不收费）｜iOS🟠40%>mini/Android🔴0%｜🔴生产 `config.mjs` 未升级→填 env 无效、未调 `saveSessionKey()`→mini 必失败｜🔴整搬 `auth.mjs` 覆盖 werun 4 锚点→微信运动断裂｜🔴基线假事实（水位 `"0048"` 实 **0055**）→护栏 19-B 与生产相反（D-11）｜18 个 `*-selftest.mjs` 门禁覆盖＝0｜纯规划零变更。
+- 🔴🔴 **两份收费权威文档（11-19，详版 → `2026-11-19.md` §八/§九；逐字 → REF「13:40 迁入」）**：①全景＝四端唯一路线图，**取代 11-17 版 §2.2/§3/§4.3/§4.6**；②Android 专项＝执行级清单。🔴**「上线就绪」≠「收费就绪」不可互推**（Web 已上线永久不收费）｜iOS🟠40%>mini/Android🔴0%｜🔴生产 `config.mjs` 未升级→填 env 无效、未调 `saveSessionKey()`→mini 必失败｜🔴整搬 `auth.mjs` 覆盖 werun 4 锚点→微信运动断裂｜🔴基线假事实（水位 `"0048"` 实 **0055**）→护栏 19-B 与生产相反（D-11）｜18 个 `*-selftest.mjs` 门禁覆盖＝0。
 - 🔴🔴 **Android 实测校正（详版 → §九）**：上线🟠75%（备案 `-3A`→🟢**自建分发页现在能走、软著只卡商店**）/收费🔴0%；渠道待拍板（**A7**）。🔴**归档 APK 38 非 33**→禁分发 37｜🔴改名须 **3 处**（含 `capacitor.config.ts:26` `appName`，不改被 `cap sync` 写回）｜🔴`.env.example` 缺 `VITE_ALIPAY_APPID` 等 3 键→**支付宝静默失效、构建 exit 0 零警告**｜🟢工具链三件套不存在但基线已登记；伪缺口已排除（`PUBLIC_BASE_URL` 有默认值 / 支付宝插件缺失＝诚实降级）｜🔴`0030:1294` seed `dbee_lifetime` 仍 32800｜**D-13 新**＝支付宝插件 A/B（B＝**首发只上微信**，渠道探测独立→不会变假按钮）。
 - 🔴 **剩余边界**：mini 导出/通知 + werun + **华为/小米健康链路零真机实证**（铁律 #13）；🔴🔴构建只落 `mini/dist`、禁再建 `prebuild-*`、1.7.7 旧包不可上传；模板 ID 回填后补 `subscribeMessage.send`；四端绑定代码侧已对齐（WX-5 钉死）。
 - 🔴🔴 **四条既有铁律（全文 → REF）**：①**收款**＝开关默认 false / `settling` **绝不报 error** / **发权益权威信号＝验签回调 `settle_app_payment`**。②**兑换码 0048**＝护栏**永不写明文** / **绝不调 `redeem_by_code`**（真烧码）。③**`psql`/脚本六铁律**＝变更类禁 `2>/dev/null` / 探针**不打印真实 uid** / `SUDO()` **不吞 stderr**。④**写 SQL 前必核列名**（`schema_migrations`→`version` 非 `id`）。
