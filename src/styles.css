@@ -2069,6 +2069,21 @@ select {
   border-radius: 16px 16px 5px 16px;
 }
 
+/* AI 回复气泡内的逐条显式标识（《标识办法》第四条（一），对齐 mini coach.scss .coach-ai-tag）：
+   徽章 + 一句提示，放在气泡正文上方。只作用于 AI 气泡，用户气泡（.mine）不渲染本块。 */
+.coach-ai-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+
+.coach-ai-hint {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink-3);
+}
+
 .coach-thinking {
   display: flex;
   align-items: center;

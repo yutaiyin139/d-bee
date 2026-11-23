@@ -8,6 +8,9 @@ project(':dbee-origin-proxy').projectDir = new File('../native-plugins/dbee-orig
 include ':dbee-health'
 project(':dbee-health').projectDir = new File('../native-plugins/dbee-health/android')
 
+include ':dbee-alipay'
+project(':dbee-alipay').projectDir = new File('../native-plugins/dbee-alipay/android')
+
 include ':capacitor-share'
 project(':capacitor-share').projectDir = new File('../node_modules/@capacitor/share/android')
 

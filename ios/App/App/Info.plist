@@ -6,8 +6,16 @@
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<!--
+	  🔴 必须与 capacitor.config.ts:26 的 appName 逐字一致（「自律蜜蜂」），
+	     也必须与 ASC 上的 App 名称、工信部 App 备案名一致 —— 三处任一不一致
+	     都会在填备案号时触发 409 ICP_NUMBER_MIIT_APP_NAME_MISMATCH，或被审核
+	     以「二进制显示名与商店名不符」打回（Guideline 2.3.7）。
+	  ⚠️ 改本 plist **不会**被 `cap sync` 写回；但改 capacitor.config.ts 的
+	     appName **会**在下次 sync 时覆盖此处 → 两边必须同步改。
+	-->
 	<key>CFBundleDisplayName</key>
-        <string>D-Bee</string>
+        <string>自律蜜蜂</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -32,29 +40,19 @@
 
 	<!--
 	  微信开放平台「移动应用」接入配置（配套代码见 src/lib/wechat.ts）。
-	  1) CFBundleURLSchemes 必须填你的微信 AppID（形如 wx1234567890abcdef）——
-	     微信回调时靠这个 scheme 把控制权交回本 App。此处保留占位值不会造成副作用
-	     （未配置 AppID 时原生端微信入口本身就是隐藏的），但**提审前必须替换**。
-	  2) LSApplicationQueriesSchemes 供 canOpenURL 检测微信是否已安装；
+
+	  🔴 2026-11-22 已删除 CFBundleURLTypes 里的微信占位 scheme（原值
+	     CFBundleURLName=weixin + wx0000000000000000）。原因：注册一个**假 AppID**
+	     的 URL scheme 属审核疑点（Guideline 2.1 / 2.3.1「声明了却不可用的集成」），
+	     且 iOS 侧微信登录当前未启用。将来真接微信开放平台时，须填真实 AppID 后
+	     再把整个 CFBundleURLTypes dict 加回来，并在 Xcode 开启 Associated Domains
+	     （applinks:<已备案域名>）+ 在该域名放 apple-app-site-association。
+
+	  ✅ 保留下面的 LSApplicationQueriesSchemes —— 它只是「允许 canOpenURL 查询
+	     微信是否已安装」，不注册任何 scheme，不含占位凭据，不构成审核疑点。
 	     缺 weixin 会被 iOS 判定为「未安装微信」，缺 weixinULAPI 则 Universal Link
 	     回跳会失效。
-	  3) Universal Link 还需要在 Xcode 里为目标开启 Associated Domains
-	     （applinks:<已备案域名>），并在该域名上放置 apple-app-site-association，
-	     这两步只能在 Mac 上做，见 docs/原生App-阶段1-Capacitor骨架.md。
 	-->
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLName</key>
-			<string>weixin</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>wx0000000000000000</string>
-			</array>
-		</dict>
-	</array>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>weixin</string>
@@ -79,15 +77,15 @@
 	     需另行补 NSPhotoLibraryAddUsageDescription。
 	-->
 	<key>NSCameraUsageDescription</key>
-	<string>D-Bee 需要使用相机，用于扫描食品包装上的条码、以及拍摄你这一餐的照片，以便自动识别食物并估算热量。</string>
+	<string>自律蜜蜂需要使用相机，用于扫描食品包装上的条码、以及拍摄你这一餐的照片，以便自动识别食物并估算热量。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>D-Bee 需要访问相册，用于选择你已拍摄的餐食照片，以便识别食物并估算热量。</string>
+	<string>自律蜜蜂需要访问相册，用于选择你已拍摄的餐食照片，以便识别食物并估算热量。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>D-Bee 需要将识别结果截图或餐食记录保存到你的相册，方便你随时回顾。</string>
+	<string>自律蜜蜂需要将识别结果截图或餐食记录保存到你的相册，方便你随时回顾。</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>D-Bee 需要读取你的步数与活动能量，用于自动计入每日活动消耗，更准确地计算热量缺口。</string>
+	<string>自律蜜蜂需要读取你的步数与活动能量，用于自动计入每日活动消耗，更准确地计算热量缺口。</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>D-Bee 需要写入健康数据，用于同步你的运动记录。</string>
+	<string>自律蜜蜂需要写入健康数据，用于同步你的运动记录。</string>
 
 	<key>UIApplicationSceneManifest</key>
 	<dict>

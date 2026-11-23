@@ -32,6 +32,7 @@
     "@capacitor/preferences": "^8.0.1",
     "@capacitor/share": "^8.0.3",
     "@capgo/capacitor-wechat": "^8.0.52",
+    "@dbee/alipay": "file:native-plugins/dbee-alipay",
     "@dbee/health": "file:native-plugins/dbee-health",
     "@dbee/iap": "file:native-plugins/dbee-iap",
     "@dbee/origin-proxy": "file:native-plugins/dbee-origin-proxy",

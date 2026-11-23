@@ -8,6 +8,7 @@
  */
 
 export * from './constants'
+export * from './aigc'
 export * from './content/transparency'
 export * from './rules'
 export * from './types'

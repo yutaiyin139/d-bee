@@ -1,5 +1,9 @@
 import { cloud } from '../cloud'
 import { publicConfig } from '../cloudConfig'
+// 🔴 AIGC 导出标识的「服务提供者名称」单一真相源：只认 legal.ts 的 SITE.operator，
+//   不在导出物里写死第二份公司名称（工商名称变更时会漏改一处 → 披露的责任主体
+//   与实际运营方不一致）。见 buildAigcLabeling()。
+import { SITE } from '../content/legal'
 import type { Badge, Entitlement, ExerciseLog, HoneyBalance, HoneyLedger, InviteLink, MealEntry, MealSlim, Profile, Recipe, WaterLog, WeightLog } from '../types'
 import { BONUS_TTL_DAYS, FREE_DAILY_AI, SCAN_FEATURE } from './entitlement'
 import { zh } from './errmsg'
@@ -554,12 +558,125 @@ export async function grantPhotoBonus(
 
 /* ── 数据导出与清理 ── */
 
+/**
+ * 导出物里的「AI 生成合成内容」标识块。
+ *
+ * ## 为什么导出物也要标识
+ *
+ * 《人工智能生成合成内容标识办法》（2025-09-01 施行）第五条要求：提供生成合成内容
+ * **下载、导出、复制**等功能的，应当在导出文件中添加显式标识；GB 45438-2025 进一步
+ * 要求在文件元数据中写入「内容属性信息 + 服务提供者名称或编码 + 内容编号」等
+ * 制作要素信息（即隐式标识）。
+ *
+ * 2026-09-15 国家网信办通报第 9 案（四川某科技公司小程序被责令下线）点名的三项中，
+ * 第三项正是「未在提供导出功能时添加显式标识」。本应用确实踩在同一条事实上：
+ *   · `meal_entries.ai_note`（0030-schema.sql:95，AI 生成的餐食点评）
+ *   · `profile.plan_summary`（Onboarding.tsx:206，AI 生成的健康计划）
+ * 二者都被 0049 的 `export_user_bundle()` 用 `json_agg(m)` **整行**导出，
+ * 而改造前 `src/lib/share.ts` 只做裸 `JSON.stringify` → 导出物零标识。
+ *
+ * ## 三要素的当前完成度
+ *
+ * 🔴 **第三项「服务提供者编码」留空是有意的，不要「顺手补一个」**：该编码即
+ * 生成合成服务的算法备案编号，本公司备案尚在办理中（见
+ * `docs/AIGC合规-北京大模型登记与安全评估调研-2026-11-21.md`）。编造一个编号写进
+ * 导出物 = 向用户与监管披露虚假信息，比留空严重得多。备案下证后，把编号填进
+ * `@dbee/shared` 常量并在此引用即可（与 ICP_BEIAN_D_BEE_CN 同一套真相源纪律）。
+ */
+export interface AigcLabeling {
+  /** 要素① 内容属性信息：声明本文件含 AI 生成合成内容 */
+  content_property: string
+  /** 要素② 服务提供者名称：与 legal.ts 的 SITE.operator 同源，不另写一份名称副本 */
+  service_provider: string
+  /**
+   * 要素③ 服务提供者编码（算法备案号）。
+   * 🔴 备案未下证前恒为 ''（空串而非省略该键：键缺失会让接收方以为本文件无需编码，
+   * 空串才如实表达「该项待补」）。
+   */
+  service_provider_code: string
+  /** 逐条 `ai_generated` 字段的判定口径，便于接收方复核而非只能盲信 */
+  labeling_rule: string
+  /** 本导出物中属于 AI 生成合成内容的字段清单（显式指明，避免「笼统声明」） */
+  ai_generated_fields: string[]
+}
+
+/** 饮食记录的导出形态：数据库原行 + 逐条 AIGC 标识（**派生字段，不落库**） */
+export type ExportMealEntry = MealEntry & { ai_generated: boolean }
+
+/** 体重记录的导出形态：全部由用户手工录入，恒为非 AI 生成 */
+export type ExportWeightLog = WeightLog & { ai_generated: boolean }
+
+/**
+ * 由既有 `source` 列判定一条饮食记录是否含 AI 生成合成内容。
+ *
+ * 🔴 **刻意不改数据库**：判定完全派生自 0030-schema.sql:93 已有的 `source` 列
+ * （'photo' | 'text' | 'barcode' | 'manual'），不新增列、不写迁移。
+ *
+ * ## barcode 的口径与 LogSheet 的 isAiDraft 有一处**已知偏差**，此处从宽
+ *
+ * `source = 'barcode'` 实际覆盖两条来路（见 src/pages/LogSheet.tsx:191 的注释）：
+ *   1. 扫码命中 Open Food Facts 商品库（fromPackaged）—— 第三方实测数据，**不是** AI 生成；
+ *   2. 商品库查不到时拍包装、由视觉模型读营养表（identifyPackagedFood → toDraft）—— **是** AI 生成。
+ * 界面上靠 `isAiDraft()` 的 `confidence !== undefined` 区分二者，但
+ * **confidence 从未落库**（db/migrations/ 全库零命中该列）→ 导出侧无法从 source 复原这个区分。
+ *
+ * 两难之下选择**从宽（barcode 一律判为 AI 生成）**，理由：
+ *   · 漏标 = 复现第 9 案被点名的违规事实，是本办法直接处罚的对象；
+ *     多标 = 对商品库数据偏保守，属「过度谨慎的提示」，不构成对用户的不利陈述；
+ *   · 与 legal.ts「四之一」向用户承诺的标识范围不冲突：该条承诺的是「AI 读取包装
+ *     营养表产生的条目会标注」，从宽只是把商品库条目也一并标了，并未少标任何一条。
+ * 要做到精确，需要把 provenance 或 confidence 持久化（改库），本轮明确不做。
+ */
+export function isAiGeneratedSource(source: unknown): boolean {
+  return source === 'photo' || source === 'text' || source === 'barcode'
+}
+
+/** 逐条标识：给一行导出记录追加 `ai_generated` 布尔位（不改动原有字段） */
+function markAiGenerated<T extends object>(row: T, aiGenerated: boolean): T & { ai_generated: boolean } {
+  return { ...row, ai_generated: aiGenerated }
+}
+
+/**
+ * 组装导出物的 AIGC 标识块。
+ *
+ * 单独抽成函数（而不是在 exportAllData 里内联字面量）是为了让护栏与测试能直接调用它
+ * 断言三要素，不必去解析 JSON 字符串。
+ */
+export function buildAigcLabeling(): AigcLabeling {
+  return {
+    content_property:
+      '本文件包含人工智能生成合成内容。其中的 AI 餐食点评、AI 健康计划，' +
+      '以及标记为 ai_generated=true 的饮食记录行（含由 AI 识别/估算的食物名称与营养素数值），' +
+      '均由大语言模型或视觉模型自动生成，可能存在误差，不构成医疗或营养建议，请核对后再作决定。',
+    // 🔴 单一真相源：运营主体名称只认 legal.ts 的 SITE.operator（可用 VITE_SITE_OPERATOR 覆盖）。
+    //   在此写死第二份「北京迪蜂科技有限公司」会在工商名称变更时漏改一处 →
+    //   导出物披露的责任主体与实际运营方不一致。
+    service_provider: SITE.operator,
+    // 🔴 算法备案下证前保持空串，禁止填入任何未经核实的编号（见 AigcLabeling 注释）。
+    service_provider_code: '',
+    labeling_rule:
+      'meal_entries[].ai_generated 由既有 source 列派生：photo / text / barcode 为 true，' +
+      'manual 为 false。其中 barcode 含「扫码命中商品库」与「AI 读包装营养表」两条来路，' +
+      '因 confidence 未落库无法区分，一律从宽判为 true。' +
+      'weight_logs / water_logs / exercise_logs 均为用户手工录入，ai_generated 恒为 false。',
+    ai_generated_fields: [
+      'meal_entries[].ai_note',
+      'meal_entries[].health_score',
+      'meal_entries[].food_name（仅 ai_generated=true 的行）',
+      'meal_entries[].calories/protein_g/carb_g/fat_g/sodium_mg/fiber_g/added_sugar_g（仅 ai_generated=true 的行，AI 估算值）',
+      'profile.plan_summary',
+    ],
+  }
+}
+
 export interface ExportBundle {
   app: string
   exported_at: string
+  /** AIGC 标识块（《标识办法》第五条 / GB 45438-2025 制作要素信息） */
+  aigc_labeling: AigcLabeling
   profile: Profile | null
-  meal_entries: MealEntry[]
-  weight_logs: WeightLog[]
+  meal_entries: ExportMealEntry[]
+  weight_logs: ExportWeightLog[]
   water_logs: unknown[]
   exercise_logs: unknown[]
   /** AI 用量记录同样属于个人数据，一并导出以满足数据可携带权 */
@@ -577,11 +694,14 @@ export async function exportAllData(): Promise<ExportBundle> {
   return {
     app: bundle.app,
     exported_at: bundle.exported_at,
+    // 🔴 标识块一律本地重建，不透传服务端字段：0049 的 export_user_bundle() 不产出本键，
+    //   且合规标识的口径必须由客户端单一真相源决定，不能依赖数据库函数同步维护。
+    aigc_labeling: buildAigcLabeling(),
     profile: bundle.profile,
-    meal_entries: rows<MealEntry>(bundle.meal_entries),
-    weight_logs: rows<WeightLog>(bundle.weight_logs),
-    water_logs: rows<unknown>(bundle.water_logs),
-    exercise_logs: rows<unknown>(bundle.exercise_logs),
+    meal_entries: rows<MealEntry>(bundle.meal_entries).map((m) => markAiGenerated(m, isAiGeneratedSource(m.source))),
+    weight_logs: rows<WeightLog>(bundle.weight_logs).map((w) => markAiGenerated(w, false)),
+    water_logs: rows<Record<string, unknown>>(bundle.water_logs).map((w) => markAiGenerated(w, false)),
+    exercise_logs: rows<Record<string, unknown>>(bundle.exercise_logs).map((e) => markAiGenerated(e, false)),
     ai_usage: rows<unknown>(bundle.ai_usage),
   }
 }
@@ -591,7 +711,8 @@ export async function exportAllData(): Promise<ExportBundle> {
  * 永久删除当前账号（Apple Guideline 5.1.1(v) / PIPL 第 47 条删除权）。
  *
  * 走 0045 的 `delete_own_account` SECURITY DEFINER RPC，在**数据库一个事务内**
- * 删除 17 张业务表的全部行 + `app_users` 身份行，因此：
+ * 删除 16 张业务表的全部行 + `app_users` 身份行（apple_transactions 自 0056 起改为
+ * owner_id 匿名化保留，以保住 transaction_id UNIQUE 幂等键），因此：
  *   · 中间失败会整体回滚，不会留下「删了一半」的半成品账号；
  *   · 身份行删掉后，原手机号/邮箱可以重新注册，旧 JWT 的 sub 不再对应任何用户；
  *   · 函数只信 PostgREST 由已验签 JWT 注入的 `auth.uid()`，**不接受调用方指定删谁**，

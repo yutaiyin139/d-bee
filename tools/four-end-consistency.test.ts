@@ -757,24 +757,38 @@ describe('护栏 8 · ICP 备案号单一真相源 + 后缀不得错配', () => 
 //
 // 🔴 快照基线来源：2026-11-07 生产 `information_schema` 实测 18 张含 owner_id 的表
 //    （17 业务表 + app_users，后者在函数末尾单独删）。**放宽基线前必须做红验证**。
+//
+// 🔴 2026-11-21 基线变更（17 → 16 张，已做红验证）：
+//    `0056-apple-txn-anonymize.sql` 用 CREATE OR REPLACE 覆盖了 0045 的
+//    delete_own_account()，把 `apple_transactions` 从 v_tables 中**移出**，改为
+//    「保留交易行 + owner_id 匿名化」。原因：该表 transaction_id UNIQUE 是全服
+//    IAP 核销的唯一幂等键（0037:58），删号删行 = 释放幂等键 = 可用旧收据对新账号
+//    重放核销（P1 资损）。0045 作者在 :34-40 已自陈此权衡并给出本修法。
+//    故本护栏改为**优先读 0056**：它是生产实际生效的函数版本，0045 已 applied、
+//    是不可变历史记录（改历史迁移 = 灾难）。
 // ────────────────────────────────────────────────────────────────────────────
-describe('护栏 9 · App 内真删号（0045）', () => {
-  const MIG = 'db/migrations/0045-account-deletion.sql'
-  const sqlRaw = readFileSync(join(ROOT, 'db', 'migrations', '0045-account-deletion.sql'), 'utf8')
+describe('护栏 9 · App 内真删号（0045 → 0056 覆盖）', () => {
+  const MIG_0045 = 'db/migrations/0045-account-deletion.sql'
+  const MIG_0056 = 'db/migrations/0056-apple-txn-anonymize.sql'
+  // 0056 存在即为权威版本（CREATE OR REPLACE 覆盖了 0045 的函数体）
+  const MIG = existsSync(join(ROOT, MIG_0056)) ? MIG_0056 : MIG_0045
+  const sqlRaw = readFileSync(join(ROOT, MIG), 'utf8')
   // SQL 只有行注释；逐行剥掉 -- 之后的内容，避免注释里的关键词造成假绿
+  // （0056 的文件头有大段中文注释含 apple_transactions / anon: 等关键词，不剥必假绿）
   const sqlCode = sqlRaw.split('\n').map((l) => l.replace(/--.*$/, '')).join('\n')
   const apiCode = stripComments(readFileSync(join(ROOT, 'src', 'lib', 'api.ts'), 'utf8'))
   const profileCode = stripComments(readFileSync(join(ROOT, 'src', 'pages', 'ProfileScreen.tsx'), 'utf8'))
 
+  // 🔴 16 张（不含 apple_transactions —— 它改为匿名化保留，见下方专项断言）
   const EXPECTED_TABLES = [
-    'ai_quota_claims', 'ai_usage', 'apple_transactions', 'badges',
+    'ai_quota_claims', 'ai_usage', 'badges',
     'entitlements', 'exercise_logs', 'honey_ledger', 'invite_attempts',
     'invite_links', 'meal_entries', 'payment_orders', 'profiles',
     'quota_bonus', 'quota_bonus_newbie_retire_log', 'recipes',
     'water_logs', 'weight_logs',
   ].sort()
 
-  it('🔴 0045 的 v_tables 必须覆盖生产全部 17 张含 owner_id 的业务表', () => {
+  it('🔴 v_tables 必须覆盖生产全部 16 张「删号即删」的含 owner_id 业务表', () => {
     const arr = sqlCode.match(/v_tables\s+text\[\]\s*:=\s*ARRAY\[([\s\S]*?)\]/)?.[1] ?? ''
     const got = [...arr.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).sort()
     expect(
@@ -782,6 +796,54 @@ describe('护栏 9 · App 内真删号（0045）', () => {
       `${MIG} 的 v_tables 与生产快照不一致。新增任何含 owner_id 的表都必须同步该数组，` +
         '否则删号会留下孤儿个人信息；放宽基线前先做红验证',
     ).toEqual(EXPECTED_TABLES)
+  })
+
+  it('🔴 0056 的 v_tables 必须不含 apple_transactions（删它会释放 transaction_id 幂等键）', () => {
+    const arr = sqlCode.match(/v_tables\s+text\[\]\s*:=\s*ARRAY\[([\s\S]*?)\]/)?.[1] ?? ''
+    const got = [...arr.matchAll(/'([a-z_]+)'/g)].map((m) => m[1])
+    expect(
+      got.includes('apple_transactions'),
+      `${MIG} 的 v_tables 仍含 apple_transactions：删号会 DELETE 掉交易行，` +
+        '而该表 transaction_id UNIQUE（0037:58）是全服 IAP 核销的唯一幂等键 → ' +
+        '删号即释放幂等键，旧收据可对新账号重放核销（P1 资损，0045:34-40 已自陈）',
+    ).toBe(false)
+  })
+
+  it('🔴 0056 必须把 apple_transactions 的 owner_id 匿名化（保留行，而非删除）', () => {
+    expect(
+      /UPDATE\s+public\.apple_transactions\s+SET\s+owner_id\s*=\s*'anon:'\s*\|\|\s*md5\(v_owner\)\s+WHERE\s+owner_id\s*=\s*v_owner/.test(
+        sqlCode,
+      ),
+      `${MIG} 缺「匿名化保留」语句。必须是 UPDATE public.apple_transactions ` +
+        `SET owner_id = 'anon:' || md5(v_owner) WHERE owner_id = v_owner —— ` +
+        'transaction_id / original_transaction_id 等对账与幂等字段一律不得改动，' +
+        '改了幂等键等于没修',
+    ).toBe(true)
+  })
+
+  it('🔴 匿名化 UPDATE 必须在 DELETE app_users 之前（同一事务内、顺序不可颠倒）', () => {
+    const anonIdx = sqlCode.search(
+      /UPDATE\s+public\.apple_transactions\s+SET\s+owner_id\s*=\s*'anon:'/,
+    )
+    const identIdx = sqlCode.search(/DELETE\s+FROM\s+public\.app_users\s+WHERE\s+owner_id\s*=\s*v_owner/)
+    expect(
+      anonIdx > 0 && identIdx > 0 && anonIdx < identIdx,
+      `${MIG} 的匿名化 UPDATE（idx=${anonIdx}）必须出现在删除 app_users 身份行` +
+        `（idx=${identIdx}）之前且二者同处 delete_own_account 的一个事务内：` +
+        '顺序颠倒或跨事务会留下「身份已删但幂等键也已释放」的窗口',
+    ).toBe(true)
+  })
+
+  it('🔴 settle_apple_purchase 的 webhook owner 反查必须排除匿名行', () => {
+    expect(
+      /SELECT\s+owner_id\s+INTO\s+v_owner\s+FROM\s+apple_transactions\s+WHERE\s+original_transaction_id\s*=\s*p_original_txn_id\s+AND\s+owner_id\s+NOT\s+LIKE\s+'anon:%'/.test(
+        sqlCode,
+      ),
+      `${MIG} 的 settle_apple_purchase() webhook 分支（0037:171）缺 ` +
+        `AND owner_id NOT LIKE 'anon:%'：匿名化后该反查会取到 'anon:xxxx' 当作合法 ` +
+        'owner，继续 INSERT 交易行并给 app_users 里已不存在的幽灵 owner 写 entitlements ' +
+        '= 孤儿权益行，比修复前（owner_unresolved 只留痕）更糟',
+    ).toBe(true)
   })
 
   it('🔴 0045 必须删掉 app_users 身份行（不能只清业务数据）', () => {

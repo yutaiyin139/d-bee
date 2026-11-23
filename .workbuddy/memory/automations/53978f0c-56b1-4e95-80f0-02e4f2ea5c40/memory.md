@@ -337,6 +337,30 @@ applicationId：wbapp_w6iIU6TqTyHvJxESPTxBTy
 - 保留：Python 按 mtime 清 >30 天，**移除 0 份**；`db/backups/offsite/` 存量 **15 份**（11-05~11-18 daily（11-15 为 weekly）+ 11-19 daily，现存最早 11-05 daily）。
 - 安全：`git status --porcelain db/` 为空；`git check-ignore` 命中 `.gitignore:61 backups/`；未读 dump 正文；未跑 deploy-gateway.sh。
 
+### 2026-11-20 09:14（第 36 次）· 自建 PG 第 15 次
+- 结果：**成功**。`deploy/pull-latest-backup.py` 一次通过，exit=0，服务器 11 份 → 新拉 1 / 已最新 0 / 失败 0。
+- 拉取：`dbee-daily-20261120-033001.dump`，212,509 B（207.5 KB，历史最大，较 11-19 约 +0.8 KB），sha256 `4a30a6ad451f3e77…` 与服务器 SHA256SUMS 一致（脚本逐字节校验）；本地独立复核同值、`od` 魔数 `PGDMP` 正常。
+- 保留：Python 按 mtime 清 >30 天（cutoff 2026-10-21 09:14），**移除 0 份**；`db/backups/offsite/` 存量 **16 份**（11-05~11-20 daily，11-08/11-15 为 weekly；现存最早 11-05 daily）。
+- 安全：`git status --porcelain db/` 为空；`git check-ignore` 命中 `.gitignore:61 backups/`；未读 dump 正文；未跑 deploy-gateway.sh。
+
+### 2026-11-21 09:39（第 37 次）· 自建 PG 第 16 次
+- 结果：**成功**。`deploy/pull-latest-backup.py` 一次通过，exit=0，服务器 11 份 → 新拉 1 / 已最新 0 / 失败 0。
+- 拉取：`dbee-daily-20261121-033001.dump`，214,210 B（209.2 KB，历史最大，较 11-20 +1,701 B），sha256 与服务器 SHA256SUMS 一致（脚本逐字节校验）；本地独立复核 `ad35237a87c52641`、`od` 魔数 `PGDMP` 正常。
+- 保留：Python 按 mtime 清 >30 天（cutoff 2026-10-22 09:39），**移除 0 份**；`db/backups/offsite/` 存量 **17 份**（11-05~11-21 daily，11-08/11-15 为 weekly；现存最早 11-05 daily）。
+- 安全：`git status --porcelain db/` 为空；`git check-ignore` 命中 `.gitignore:61 backups/`；未读 dump 正文；未跑 deploy-gateway.sh。
+
+### 2026-11-22 04:30（第 38 次）· 自建 PG 第 17 次
+- 结果：**成功**。`deploy/pull-latest-backup.py` 一次通过，exit=0，服务器 12 份 → 新拉 1 / 已最新 0 / 失败 0。
+- 拉取：`dbee-weekly-20261122-033001.dump`（周日产出周备份），210.8 KB（历史最大，较 11-21 daily 约 +1.6 KB），sha256 校验通过（脚本用服务器 SHA256SUMS 逐字节校验）。
+- 保留：Python 按 mtime 清 >30 天（cutoff 2026-10-23 04:31），**移除 0 份**；`db/backups/offsite/` 存量 **18 份**（11-05~11-21 daily（11-08/11-15/11-22 为 weekly）；现存最早 11-05 daily）。
+- 安全：未读 dump 正文；未跑 deploy-gateway.sh。
+
+### 2026-11-23 09:04（第 39 次）· 自建 PG 第 18 次
+- 结果：**成功**。`deploy/pull-latest-backup.py` 一次通过，exit=0，服务器 12 份 → 新拉 1 / 已最新 0 / 失败 0。
+- 拉取：`dbee-daily-20261123-033001.dump`，211.5 KB，sha256 校验通过（脚本用服务器 SHA256SUMS 逐字节校验）。
+- 保留：Python 按 mtime 清 >30 天（cutoff 2026-10-24 09:06），**移除 0 份**；`db/backups/offsite/` 存量 **19 份**（11-05~11-23 daily，11-08/11-15/11-22 为 weekly；现存最早 11-05 daily）。
+- 安全：`git status --porcelain db/` 仅 `?? db/migrations/0056-apple-txn-anonymize.sql`（历史既存未跟踪文件，非本次产物）；`git check-ignore` 命中 backups/ 忽略规则；未读 dump 正文；未跑 deploy-gateway.sh。
+
 ## 经验与注意事项
 
 1. **SQL 直接用 `sql` 参数传单行字符串即可**，无需 base64（本次一次通过）。

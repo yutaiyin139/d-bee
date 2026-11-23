@@ -1,0 +1,62 @@
+ext {
+    // 支付宝 SDK 版本取自 android/variables.gradle 单一配置源（钉死精确版本，禁 `+`），
+    // 沿用本文件既有 hasProperty 回退风格（独立构建插件模块时也能编译）。
+    alipaySdkVersion = project.hasProperty('alipaySdkVersion') ? rootProject.ext.alipaySdkVersion : '15.8.42'
+    androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.7.1'
+}
+
+buildscript {
+    // 🔴 变量名必须是 kotlin_version（下划线）：与官方插件读取的 rootProject.ext.kotlin_version
+    //    同名同值，避免同一构建内出现两个 Kotlin 版本（详见 android/variables.gradle 注释）。
+    //    本插件虽是纯 Java，但 Capacitor 插件模块统一走这套 buildscript 范式以对齐 capacitor-android。
+    ext.kotlin_version = project.hasProperty("kotlin_version") ? rootProject.ext.kotlin_version : '2.2.20'
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.13.0'
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace = "com.dbee.alipay"
+    compileSdk = project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 36
+    defaultConfig {
+        minSdkVersion project.hasProperty('minSdkVersion') ? rootProject.ext.minSdkVersion : 26
+        targetSdkVersion project.hasProperty('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 36
+        // 🔴 支付宝 SDK 的 consumerProguardFiles 会随 AAR 自动附加到宿主混淆，
+        //    但插件模块自身若开启 minify 也需 keep PayTask；此处显式声明以防遗漏。
+        consumerProguardFiles 'proguard-rules.pro'
+    }
+    lintOptions {
+        abortOnError = false
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(':capacitor-android')
+    // 🔴 必须显式声明 appcompat：`Plugin.getActivity()` 的返回类型是
+    //    `androidx.appcompat.app.AppCompatActivity`，而 capacitor-android 对 appcompat
+    //    用的是 **implementation**（不传递），本模块拿不到该类 → 编译报
+    //    「无法访问 AppCompatActivity / 找不到类文件」。
+    //    与 dbee-health 为 `@ActivityCallback` 显式声明 androidx.activity 是同一类坑。
+    //    版本取自 android/variables.gradle 单一配置源（与宿主一致，避免版本分裂）。
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    // 🔴 支付宝 App 支付 SDK（App 支付能力，payV2）。
+    //    版本来自 android/variables.gradle（钉死，非动态）；POM packaging=aar 且零传递依赖，
+    //    故**不写** `@aar` 后缀（写了反而会跳过 POM 解析）。
+    //    API 已 javap 实证：`Map<String,String> payV2(String orderStr, boolean showLoading)`。
+    implementation "com.alipay.sdk:alipaysdk-android:$alipaySdkVersion"
+}

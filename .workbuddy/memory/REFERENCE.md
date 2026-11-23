@@ -2119,3 +2119,263 @@ stdin 脚本不落临时文件、不执行删除。⚠️ 首次红验证脚本�
 
 **MEMORY.md「现状」节 · vc30 交付条（压缩前逐字原文；产物指纹权威登记在 `tools/apk-distribution.baseline.json` 的 `apk` 段与 `_verify_2026_11_19`）**：
 > - 🔴🔴 **交付 `release/D-Bee-1.7.9-vc30-…-FORMAL-20261119.apk`**（9,800,341B / sha256 `5b51362c…` / 入口 `index-Bi5hyWXh.js` / signerMd5 同历版）：产物侧实证全过（详版 → `2026-11-19.md` §二）；基线登记 `appBeian=issued`。🔴🔴**零真机验证**（华为反馈可见/小米不闪退/备案号页脚仅原生壳）；🔴**未 commit**。Web dist 已恢复（入口 `index-jon9Bmrs.js`）。
+
+## 2026-11-20 12:45 迁入：MEMORY.md 压缩前逐字原文（拍板 4-C 清理 + 路线①支付宝插件落地；零信息丢失）
+
+本次压缩动因：MEMORY.md 达 9428 字符（超 ≤9k 上限），需同时写入 11-20 两项新状态（归档 APK 已清 / `@dbee/alipay` 已落地 / 门禁 32-1547）。详版全量 → `2026-11-20.md` 12:40 节。
+
+**MEMORY.md「现状」节标题行（压缩前逐字原文）**：
+> ## 现状（11-19·V1.7.9/华为修复/备案/四端审计/收费文档·T0已执行·vc31已重打改名·待真机；证据→`2026-11-19.md`§十）
+
+**「华为 P40 4 层根因」条（压缩前逐字原文；逐字版已在 REF「11-19 10:55 迁入」+`2026-11-19.md`§一）**：
+> - 🔴🔴 **华为 P40「连接」无反应＝4 层根因已修（逐字 → REF「11-19 10:55 迁入」+`2026-11-19.md`§一）**：①无 GMS→HC 不可用 ②`canSync:true` 假信号→华为/小米改 `false`、荣耀拆出 ③`.notice` 透明字补背景 ④按钮无视 canSync→文案分叉；`connectHealth()` 进原生前拦截。🔴**品牌文案中性化**（华为字样＝资质驳回理由）。HC-3 `createPermissionIntentAsync` 分步超时+回调必发。护栏 HW-1 红后绿+selftest 18/18。
+
+**「Android HC-1/2/3」条（压缩前逐字原文；逐字版已在 REF「11-18 17:17 迁入」）**：
+> - 🔴🔴 **Android HC-1/2/3 已落地（逐字 → REF「11-18 17:17 迁入」+「11-19 10:55 迁入」）**：minSdk 26/Kotlin 2.3.0/HC 1.1.0；**`aggregate()` 非 `readRecords()`**；**vc28 修闪退＝`@ActivityCallback` 必须 2 参**；HC-3「读数永驻」＝原生 `withStageTimeout` 6s < 前端 8s（🔴**禁 `Promise.race`**）。vc29 已被 vc30 取代。
+
+**「四端健康绑定审计已修」条（压缩前逐字原文；逐字版已在 REF「02:35 迁入」）**：
+> - 🟢 **四端健康绑定审计已修（11-19，逐字 → `2026-11-19.md` §六 + REF「02:35 迁入」）**：mini 修 4 处＝denied 误指 iOS 路径→「权限管理」；empty 谎称「会自动读取」→「同步微信运动」出口；补写/清 `health_connected_at`；`Profile` 补声明。不修＝弹层按钮只对 `available` 渲染（D-5）；`not_ready` 死分支保留（D-7）；apple tip 矛盾（D-6）。护栏 **WX-5 六断言**红验证全过；tsc src 0 错。🔴 werun 真机 0 实证。
+
+**「vc30→vc31 交付」条（压缩前逐字原文）**：
+> - 🔴🔴 **vc30→vc31 交付**（指纹/实证逐字 → 基线 `apk` 段 + `_verify_2026_11_19`、REF「13:40 迁入」、`2026-11-19.md` §二/§十）：`appBeian=issued`；🔴🔴**零真机验证**（Runbook 已备，§十）；软著 **submitted**。🟢**vc31 已重打改名**（`253a942`，11-19 17:24）：`applicationLabel`→「自律蜜蜂」、versionCode 31（versionName 1.7.9 未变，非六处版本统一）；🔴**改名 3 处全改齐**（`strings.xml:3-4` + `capacitor.config.ts:26` `appName`）；`.env.example` 补 3 键（`VITE_ALIPAY_APPID`/`VITE_APP_DOWNLOAD_LINK`/`VITE_APP_DOWNLOAD_QR`）修支付宝静默失效；vc31 vs vc30 classes.dex 逐字节一致（原生零改动）。🔴 **ahead 1 未 push**。Web 入口 `index-jon9Bmrs.js`。
+
+**「Android 实测校正」条（压缩前逐字原文；详版 → `2026-11-19.md` §九）**：
+> - 🔴🔴 **Android 实测校正（详版 → §九）**：上线🟠75%（备案 `-3A`→🟢**自建分发页现在能走、软著只卡商店**）/收费🔴0%；渠道待拍板（**A7**）。🔴**归档 APK 38 非 33**→禁分发 37｜🟢**改名已落地（`253a942` vc31，3 处全改）**｜🟢**`.env.example` 已补 3 键**（支付宝静默失效隐患已修）｜🟢工具链三件套不存在但基线已登记；伪缺口已排除（`PUBLIC_BASE_URL` 有默认值 / 支付宝插件缺失＝诚实降级）｜🔴`0030:1294` seed `dbee_lifetime` 仍 32800｜**D-13 新**＝支付宝插件 A/B（B＝**首发只上微信**，渠道探测独立→不会变假按钮）。
+
+**「剩余边界」条（压缩前逐字原文）**：
+> - 🔴 **剩余边界**：mini 导出/通知 + werun + **华为/小米健康链路零真机实证**（铁律 #13）；🔴🔴构建只落 `mini/dist`、禁再建 `prebuild-*`、1.7.7 旧包不可上传；模板 ID 回填后补 `subscribeMessage.send`；四端绑定代码侧已对齐（WX-5 钉死）。
+
+**「审计发现」条（压缩前逐字原文；详版 → `2026-11-16.md`）**：
+> - 🔴🔴 **审计发现（详版 → `2026-11-16.md`）**：①`/var/www/d-bee` 实有 139 文件、生效仅 19 ②`REFERENCE.md` 含 `SMS_MASTER_CODE` 真实值→**应轮换待拍板** ③`apk-distribution.baseline.json` 全仓引用 0 处（knownGap，D-10）④**0046/0047 生产漂移刻意未夹带**。
+
+**「工具坑 5–11」条（压缩前逐字原文）**：
+> - 🔴 **工具坑 5–11（逐字 → REF「11-18 17:30 迁入」+「11-19 10:55 迁入」）**：⑤`node --check` 读 stdin 假绿 ⑥Edit `old_string` 尾带 `\n` 合并 bullet ⑦宽泛 `grep -i proxy` 泄漏 Bearer ⑧`catch {}` 吞异常 ⑨中文进程名禁 ASCII grep、`/tmp`→用 `$TEMP` ⑩Taro 与开发者工具互写 `mini/dist`→构建前必关工具 ⑪标识符互为前缀→子串断言必假阳/假阴（用 `\b`）。
+
+**「防假绿」条（压缩前逐字原文；新增坑 12–15 见 `2026-11-20.md` 12:40 节）**：
+> - **防假绿**：vitest 强制串行，跑完核对 `Test Files` 数 == `ls tools/*.test.ts`；mini 类型检查单独跑（`@tarojs/**` 是既有噪音）；禁硬编码日期（同源取 `todayKey()`）；**小程序验收以体验版为准**；MAPE 达标≠无需处理。护栏断言四铁律＝①一 `it()` 一断言②匹配「实际使用」③`stripComments()` 后做④两端同源须 `every()`；新增/放宽**必红验证**。
+
+### 11-20 新增工具坑（逐字，编号接 REF「工具坑」序列）
+
+- ⑫🔴 **解析测试输出做红验证，必先跑「无变异对照组」**：vitest 输出带 ANSI 色码，`line.strip().startswith('×')` 因行首是转义码（`\x1b[39m`）**永不命中** → 三次变异全报「假绿」，而护栏其实完好。修法＝先 `re.sub(r'\x1b\[[0-9;]*m','',out)` 剥色码、改**子串**匹配、并先跑对照组确认「无变异时失败行数==0」才可信。**教训：红验证「全过」和「全假绿」在输出上无法区分，只有对照组能区分。**
+- ⑬🔴 **注入变异的锚点必须 assert 命中次数恰为 1**：`str.replace(old,new,1)` 只换第一处；若注释里也有同名字样（如 `cap?.Plugins?.DbeeAlipay` 同时出现在文件头注释与代码行），替换只动了注释，而注释会被 `stripComments()` 剥离 → 代码未变 → 假绿。修法＝用代码级唯一前缀（`const p = cap?.Plugins?.…`）并先 `assert s.count(OLD)==1` + 注入后 `assert NEW in s and OLD not in s`。
+- ⑭🔴 **手搭 classpath 的 `javac` 会假绿，只有真 Gradle 构建才算数**：独立 `javac` 时我**自己补了** appcompat 的 classes.jar，于是漏声明 appcompat 的 bug 被掩盖；真 `./gradlew :dbee-alipay:compileReleaseJavaWithJavac` 立刻报「找不到 `androidx.appcompat.app.AppCompatActivity` 的类文件」。根因＝`Plugin.getActivity()` 返回 `AppCompatActivity`，而 capacitor-android 对 appcompat 是 **implementation（不传递）** → 插件模块必须自己显式声明（与 dbee-health 为 `@ActivityCallback` 声明 `androidx.activity` 同一类坑）。
+- ⑮ **二进制 class 常量池 grep 字面量不可信**：搜 `9000`/`6001` 有命中、`8000`/`4000` 无命中，属假阳性/假阴性（数字在常量池以多种编码存在）。支付宝 `resultStatus` 的四个码是**服务端返回的协议值**，非客户端硬编码，只能引官方文档、不得当作 AAR 实证。
+- ⑯ **XML 注释需单独剥离器**：`tools/apppay-consistency.test.ts` 的 `stripComments()` 只认 JS 词法（`//` 与块注释），不认 `<!-- -->`；插件 Manifest 注释里大量提及 `H5PayActivity`/`queries`（说明「为何故意为空」），拿 raw 断言会命中注释文字而假绿 → 该文件已加 `stripXmlComments()`。
+- ⑰ **`assembleRelease` 的产物不可当可分发包**：`cap sync` 把 `dist/`（Web 产物）拷进 `assets/public`，故直接 `assembleRelease` 出的 APK 内嵌 Web 入口（本次 `index-jon9Bmrs.js`），而可分发 vc31 是 `index-Bi5hyWXh.js`（native-release）。打可分发包必须走 `npm run native:sync`。产物 gitignored、未进 `release/`、基线未回填 → 零污染。
+
+### 11-20 支付宝插件实证清单（路线①，`@dbee/alipay`；详版 → `2026-11-20.md` 12:40 节二）
+
+- **弃用 `@foskym/capacitor-alipay` 的 4 个阻断点**：①注册名 `Alipay` ≠ 本项目探测名（装上即**静默失效**：`getPlugin()`→null、`isAlipayAvailable()`→false、按钮永不出现，构建 exit 0 无警告）②入参 `orderInfo` ≠ 全链路 `orderStr` ③多余 `register({appId})`（`javap` 实证 `PayTask` 构造只有 `PayTask(Activity)`，appId 已由服务端签进 `orderStr`）④SDK 依赖写动态 `+@aar`（产物不可复现）。
+- **SDK 实证**：Maven Central `maven-metadata.xml` → release `15.8.42`（lastUpdated 20260512）；AAR 460688 B；`javap` → `public synchronized Map<String,String> payV2(String, boolean)`；POM `<packaging>aar</packaging>` + **零传递依赖**（故不写 `@aar` 后缀，写了反而跳过 POM 解析）；AAR sha256 `a6c301708b59a3a7cda843cf02e7b3b0b44afd96819f0a18890322e9868abf28` 与仓库公布值逐字一致（供应链校验）；AAR **自带** `<queries>`（4 个支付宝包名）+ 6 Activity + 3 权限 + `consumerProguardFiles`；本版本**已无 `PayResult` 类**；SDK minSdk 21 ≤ 本项目 26。
+- **接线链**：根 `package.json` `file:` 依赖 → `capacitor.config.ts` **仅 Android** 白名单（iOS 走 IAP，接支付宝违反 App Store 审核指南 3.1.1；插件无 `ios/`）→ `cap sync` 自动生成 `capacitor.settings.gradle`（+3 行）与 `app/capacitor.build.gradle`（+1 行）。
+- **探测名改名** `CapacitorAlipay` → `DbeeAlipay`：全仓仅 1 处引用（`alipay.ts`）、无护栏锁定；旧名是当初为社区插件预留（与社区真实名 `Alipay` 也对不上）；统一进 `Dbee*` 体系。三处必须逐字同源＝适配层探测名 / `@CapacitorPlugin(name)` / `registerPlugin()`。
+- **构建实证**：`:app:assembleRelease` BUILD SUCCESSFUL（4m38s，`mergeDexRelease` 通过 → 无重复类冲突）；依赖两侧均解析 `15.8.42` 无冲突；dexdump → dex 含 `com/alipay` 5588 类 + `com/dbee/alipay` 51 类；manifest merger → 6 支付宝 Activity + 4 `<queries>` 包名 + 3 权限；`javap -v` → 产物 class 类级注解 `@CapacitorPlugin(name="DbeeAlipay")`、`pay`/`getVersion` 均带 `PluginMethod`、常量池含 `orderStr`/`resultStatus`。
+- **护栏 20-I 新增 24 断言**（编号接 20-H），5 次红验证全过；门禁 31/1473 → **32/1547**。
+- 🔴 **仍不可收款**：插件只解决「客户端拉不起收银台」。收费仍需商户号 + 服务端 `ALIPAY_APP_ID`/`ALIPAY_PRIVATE_KEY`/`ALIPAY_PUBLIC_KEY` + `D_BEE_APPPAY_ENABLED=true` + 沙箱 1 分钱联调；资质未就绪时构建期 `VITE_ALIPAY_APPID` 未配 → `isAlipayAvailable()` false → 前端诚实降级，**不会**出现「可点但收不到钱」的按钮。
+
+### 11-20 拍板 4-C 清理留证（详版 → `2026-11-20.md` 12:40 节一）
+
+- 删 **38 个 / 296.1 MiB**（`release/` 23 + `dist-release/` 15），仅留 vc31；删前五项校验全过，删除脚本带双重守卫（非 `.apk` 拒绝 / 含 `vc31` 拒绝），38 成功 0 失败。
+- 🔴 `release/` 内 **6 个非 APK 商业资产全部保留**：`redeem-codes-pro1m-*.txt` ×2、`App备案-Android公钥-十进制-20261107.txt`、`App备案-三平台签名信息-20261107.md`、`d-bee-main-20261107.bundle`、`REVOKED-legacy-hardcoded-codes-20261110.txt`；另 `dist-release/download/index.html` 保留。
+- 删后 vc31 完好性复核：bytes 9800369 + sha256 `59139461f1add10bdc519179bf901e9a325cc23fd514cf85fddb6b038731ab81` 与基线逐字一致。
+- 🔴 **删除不可恢复**（`release/` `.gitignore:84`、`dist-release/` `:64`，git 从未跟踪）。**指纹留证**已迁至 `tools/apk-distribution.baseline.json` 的 `supersededApks[].archived` + 保留的 `sha256`/`bytes`/`reason` 全文（vc30、vc26 两条）。
+- **连带影响**：护栏 30-D 原断言「`supersededApks` 每条文件都存在」→ 全清即幽灵文件、门禁变红（实测 1 failed / 43 passed）。处置＝「删文件不删证据」：断言放宽为「文件在盘 **或** 已登记 `archived.deletedAt`」，硬约束转移到新增 4 条（候选必须存在 / 候选绝不可被 archived / archived 必写 deletedAt+note / archived 必留 sha256+bytes）；并订正 reason 里已成假话的「保留作历史留证」「文件保留在 release/」（登记诚实性）。44 → **48** 断言，3 次红验证全过。
+
+
+## 2026-11-20 13:33 迁入：MEMORY.md 体积收敛前逐字原文（36 条，零信息丢失）
+
+本次收敛动因：11-20 写入「拍板 4 项已执行」（分发工具链三件套 / 护栏 30 / 归档 APK 清理 / `@dbee/alipay` 插件落地）后 MEMORY.md 达 11016 字符，超 ≤9k 上限，压至 8899 字符（余量 101）。
+
+压缩原则＝**已完成的历史状态类条目只留「触发线索＋指针」**（详版本就在 `2026-11-20.md` 12:40 节、`2026-11-19.md` §一/§二/§六/§八/§九/§十、`2026-11-18.md` 及本文件既有各「迁入」节）；**铁律与地雷类保留全部可执行细节**（收款四铁律、`deploy-gateway.sh`、HC 三坑、appcompat 不传递、工具坑 5–18 均逐条留在 MEMORY）。写盘前跑 35 个关键锚点自检，全命中才落盘。
+
+**四条被合并（非删除）的条目及其去处**：①「四端健康绑定审计已修」→ 已完成项，详版 §六+REF「02:35 迁入」，其中「werun 真机 0 实证」已在「剩余边界」条保留 ②「云库废弃」→ 释放 2 步并入「已决不再讨论」条 ③「备案链」→ 小程序/算法备案阻断态并入「权威口径」ICP 条，公安备案 12-06 截止同处 ④「11-20 覆盖事故更正」→ 升格为**工具坑 ⑱**（普适教训比单次更正更值得常驻）。
+
+**同批三处订正**（非压缩）：①「已定技术路线」节 Kotlin `2.3.0` → `2.2.20`（单一真源 `android/variables.gradle:28`，11-18 已修正过，MEMORY 残留旧口径）②「权威口径」版本条 Android `vc30` → `vc31`（vc31 已于 11-19 重打改名，且 vc30 归档 APK 已删）③「现状」标题行去掉与正文重复的指针。
+
+> **订正①溯源**：Kotlin 版本订正是**本轮压缩之前**的独立 Edit（故上方归档的第 51 行「压缩前原文」里已是 `Kotlin 2.2.20`，不是订正前状态）。订正**前**的逐字原措辞为：`… Node≥22 / JDK21 / Xcode≥26 / AGP 8.13.0 + Gradle 8.14.3 + Kotlin 2.3.0 + minSdk 26 …`——即真源 `variables.gradle:28` 写的是 `kotlin_version = '2.2.20'`，MEMORY「已定技术路线」节却残留 `2.3.0`（11-18 只改了别处、漏改此节），本轮已对齐。
+
+**MEMORY.md 第 9 行（压缩前逐字原文，len=273）**：
+> - **Bundle ID `cn.com.dbee.app`**（两端同值）；**版本 1.7.9**（Android vc30 / iOS build 12）。🔴 **版本号单一真相源 = 根 `package.json`**，经 `__APP_VERSION__` 注入 Web+mini；发版须**六处统一**（package.json / android build.gradle / ios pbxproj `MARKETING_VERSION`×2 / mini config 与 four-end-consistency 注释）。
+
+**MEMORY.md 第 11 行（压缩前逐字原文，len=331）**：
+> - 🟢 **ICP 已下证（11-06）**：`-1`=官网、`-2`=自律蜜蜂。🔴 生效代码**任何位置不得出现 `-1`**。真相源=`packages/shared` 的 `ICP_BEIAN_D_BEE_CN`；🟢 **App 备案已下证（11-18）`-3A`**：真相源 `APP_ICP_BEIAN`，🔴 **仅原生壳 `isNative()` 门控渲染**（Web 渲染＝verify-legal FAIL；verify-legal 正则已放宽支持字母后缀）；`POLICE_BEIAN` 仍空（不渲染＝合规），**2026-12-06 前**回填。🔴 **公示信息不得只放 `.env`**（被 gitignore → 静默产出无备案号页面）。
+
+**MEMORY.md 第 12 行（压缩前逐字原文，len=291）**：
+> - 🔴 **原生包禁用 `npm run build`**（白屏）：内测 `build:native:internal`；上架 `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native`。🔴 与 web **共用 `dist/`**，native/`build:web` 都会**删 `dist/legal/`**（隐私政策零 JS 可爬＝OPPO 硬要求）→ **部署 web 前必重跑 `npm run build`** 并比对入口 js 名；**自检以 `index.html` 引用的入口 js 为唯一真源**。
+
+**MEMORY.md 第 14 行（压缩前逐字原文，len=234）**：
+> - 🔴🔴 **写库字段必须对齐生产库列**：改 patch 先对 `information_schema.columns`；加列后必 `NOTIFY pgrst, 'reload schema'`。🔴 用户报「服务版本不匹配」**不是前端版本问题**，是 schema cache / function 不存在（`updateMealGrams` 写 `meal_entries.updated_at` → PGRST204 → 四端编辑份量全崩，11-14 实证）。
+
+**MEMORY.md 第 16 行（压缩前逐字原文，len=108）**：
+> ## 现状（11-20·V1.7.9/归档APK已清/支付宝插件已落地/分发工具链+护栏30完成·vc31待真机·需重打vc32；证据→`2026-11-20.md`12:40节、`2026-11-19.md`§十）
+
+**MEMORY.md 第 18 行（压缩前逐字原文，len=216）**：
+> - 🔴🔴 **生产状态**：**0052~0055 全 applied**（34 一致）；网关手术式部署（`apply-llm-feature-walls.py`）；**Web 入口 `index-CIf_RcMj.js`**（生产实测全绿）；四服务 `NRestarts=0`。门禁 **32 文件/1547 项**（31/1473 → 32/1518 护栏30 → 32/1522 清理重构 → 32/1547 加 20-I）。
+
+**MEMORY.md 第 19 行（压缩前逐字原文，len=319）**：
+> - 🔴🔴 **vc31 交付**（指纹逐字 → 基线 `apk` 段 + `_verify_2026_11_19`；详版 → `2026-11-19.md`§二/§十 + REF「13:40/11-20 迁入」）：`appBeian=issued`（`-3A`）、软著 **submitted**；`253a942` 改名「自律蜜蜂」（3 处全改含 `capacitor.config.ts:26`）、versionCode 31、`.env.example` 补 3 键修支付宝静默失效、vc31 vs vc30 dex 逐字节一致。🔴🔴**零真机验证**（Runbook 已备）；Web 入口 `index-jon9Bmrs.js`。
+
+**MEMORY.md 第 20 行（压缩前逐字原文，len=105）**：
+> - 🔴🔴 **11-20 拍板 4 项已执行**（1=A 双渠道 / 2=自建分发页 / 3=护栏 / 4-C 清理；详版 → `2026-11-20.md` 12:40 节 + REF「11-20 迁入」）：
+
+**MEMORY.md 第 21 行（压缩前逐字原文，len=353）**：
+>   - 🟢 **分发工具链三件套**（零硬编码、**生产零变更**）：`tools/templates/apk-download.html` + `tools/gen-download-page.mjs`（备案号取 `SITE` 真源、APK 三项实测复核、域名解析链）+ `deploy/publish-apk.sh`（默认 dry-run；`--apply` 才碰生产；0644/0755 绕开 `putbin` chmod 600 坑；三项生产实测全过才回填基线）。实测输出 `1.7.9 (vc31) / 9800369 B / sha256 一致 / 正文 2156 字`，生成页零占位符残留。🔴 **`--apply` 未执行**（生产变更须用户指示；缺域名硬失败需显式 `DOMAIN=`）。
+
+**MEMORY.md 第 22 行（压缩前逐字原文，len=87）**：
+>   - 🟢 **护栏 30**（`tools/apk-distribution.test.ts`，48 断言）闭合 `knownGap_guardrailNotWired`。
+
+**MEMORY.md 第 23 行（压缩前逐字原文，len=231）**：
+>   - 🟢 **归档 APK 已清**（方案 C）：删 38 个/296.1 MiB，仅留 vc31；`release/` 6 个非 APK 商业资产（兑换码×2/备案材料×2/bundle/REVOKED）与 `dist-release/download/index.html` 全保留。🔴**删除不可恢复**（两目录 gitignored），指纹留证已迁 `supersededApks[].archived`。连带放宽护栏 30-D 断言（3 次红验证）。
+
+**MEMORY.md 第 24 行（压缩前逐字原文，len=496）**：
+>   - 🟢 **`@dbee/alipay` 本地插件已落地**（路线①，7 文件 + 5 处修改 + 2 个 cap sync 生成 gradle）：弃用 `@foskym/capacitor-alipay`（4 阻断点）；SDK 钉死 `15.8.42`（javap 实证 `payV2(String,boolean)`→Map、AAR sha256 与 Maven Central 一致、自带 `<queries>`/6 Activity/consumerProguard）；探测名统一为 `DbeeAlipay`（三处同源，护栏钉死）；`:app:assembleRelease` BUILD SUCCESSFUL、dexdump 实证 SDK 5588 类 + 插件 51 类、merger 实证组件并入。🔴 **护栏 20-I 24 断言**（5 次红验证）。🔴 **仍不可收款**：需商户号 + 服务端 `ALIPAY_*` + `D_BEE_APPPAY_ENABLED` + 沙箱联调；资质未就绪前 `VITE_ALIPAY_APPID` 未配 → 诚实降级，不会变假按钮。
+
+**MEMORY.md 第 25 行（压缩前逐字原文，len=170）**：
+>   - 🔴 **接入插件后原生代码有实质改动 → 必须重打 vc32**（走 `npm run native:sync`，🔴 **不是** `assembleRelease`：`cap sync` 会把 Web 版 `dist/` 拷进 `assets/public`）→ 更新基线 `apk` 段 → 护栏 30-A 复核 → 真机验证。
+
+**MEMORY.md 第 26 行（压缩前逐字原文，len=242）**：
+> - 🔴🔴 **华为 P40「连接」无反应＝4 层根因已修**（逐字 → REF「11-19 10:55 迁入」+`2026-11-19.md`§一）：①无 GMS→HC 不可用 ②`canSync:true` 假信号→华为/小米改 `false`、荣耀拆出 ③`.notice` 透明字补背景 ④按钮无视 canSync→文案分叉；`connectHealth()` 进原生前拦截。🔴**品牌文案中性化**（华为字样＝资质驳回理由）。护栏 HW-1 + selftest 18/18。
+
+**MEMORY.md 第 27 行（压缩前逐字原文，len=357）**：
+> - 🔴🔴 **Android HC-1/2/3**（逐字 → REF「11-18 17:17 迁入」）：minSdk 26/Kotlin 2.2.20/HC 1.1.0；**`aggregate()` 非 `readRecords()`**；**`@ActivityCallback` 必须 2 参**（vc28 修闪退）；HC-3「读数永驻」＝原生 6s < 前端 8s（🔴**禁 `Promise.race`**）。🆕 **同类坑已复现于支付宝插件**：`Plugin.getActivity()` 返回 `AppCompatActivity`，capacitor-android 对 appcompat 是 implementation（不传递）→ 插件 `build.gradle` **必须自己声明**。
+
+**MEMORY.md 第 28 行（压缩前逐字原文，len=204）**：
+> - 🔴🔴 **微信运动 WX-1+WX-6**（详版 → `2026-11-18.md`+REF）：0053 生产应用；网关 9 闸门全绿；WX-6＝静默同步双闸+**轮询 `live:false`**（防 jscode2session **45011**）+`useDidShow` 实时刷。🔴**登录路径刻意不调 refreshHealth**；🔴**整搬 `app.mjs`＝全站宕机**→三文件同批。
+
+**MEMORY.md 第 29 行（压缩前逐字原文，len=107）**；**本条已合并到别处** → 并入 REF（werun 0 实证已在「剩余边界」）：
+> - 🟢 **四端健康绑定审计已修**（逐字 → `2026-11-19.md`§六 + REF「02:35 迁入」）：mini 修 4 处；护栏 **WX-5 六断言**红验证全过。🔴 werun 真机 0 实证。
+
+**MEMORY.md 第 30 行（压缩前逐字原文，len=356）**：
+> - 🔴🔴 **两份收费权威文档（11-19，详版 → §八/§九；逐字 → REF「13:40 迁入」）**：①全景＝四端唯一路线图，**取代 11-17 版 §2.2/§3/§4.3/§4.6**；②Android 专项＝执行级清单。🔴**「上线就绪」≠「收费就绪」不可互推**（Web 已上线永久不收费）｜iOS🟠40%>mini/Android🔴0%｜🔴生产 `config.mjs` 未升级→填 env 无效、未调 `saveSessionKey()`→mini 必失败｜🔴整搬 `auth.mjs` 覆盖 werun 4 锚点→微信运动断裂｜🔴基线假事实（水位 `"0048"` 实 **0055**）→护栏 19-B 与生产相反（D-11）｜18 个 `*-selftest.mjs` 门禁覆盖＝0。
+
+**MEMORY.md 第 31 行（压缩前逐字原文，len=267）**：
+> - 🔴🔴 **Android 实测校正（详版 → §九 + `2026-11-20.md`）**：上线🟠75%（备案 `-3A`→自建分发页能走、软著只卡商店）/收费🔴0%。🟢**归档 APK 已清（原 38→1，D-12 关闭）**｜🟢**D-13 拍板 A**（双渠道齐上，`@dbee/alipay` 已落地）｜🟢**D-2/A7 拍板自建分发页**（工具链三件套已备，待 `--apply`）｜🟢**D-10 关闭**（护栏 30 已接线）｜🔴`0030:1294` seed `dbee_lifetime` 仍 32800。
+
+**MEMORY.md 第 32 行（压缩前逐字原文，len=259）**：
+> - 🔴 **剩余边界**：mini 导出/通知 + werun + **华为/小米健康链路零真机实证**（铁律 #13，🔴vc32 最优先）；🔴🔴构建只落 `mini/dist`、禁再建 `prebuild-*`；🔴**未 commit**（本轮 14 文件改动 + 上午分发工具链）+ **ahead 1 未 push**（`253a942`）；🔴 `applicationLabel` 改名须 3 处（含 `capacitor.config.ts:26` `appName`），不改被 `cap sync` 写回。
+
+**MEMORY.md 第 33 行（压缩前逐字原文，len=305）**：
+> - 🔴🔴 **四条既有铁律（全文 → REF）**：①**收款**＝开关默认 false / `settling` **绝不报 error** / **发权益权威信号＝验签回调 `settle_app_payment`**。②**兑换码 0048**＝护栏**永不写明文** / **绝不调 `redeem_by_code`**（真烧码）。③**`psql`/脚本六铁律**＝变更类禁 `2>/dev/null` / 探针**不打印真实 uid** / `SUDO()` **不吞 stderr**。④**写 SQL 前必核列名**（`schema_migrations`→`version` 非 `id`）。
+
+**MEMORY.md 第 34 行（压缩前逐字原文，len=587）**：
+> - 🔴 **工具坑 5–17（12–17 为 11-20 新增，逐字 → REF「11-20 迁入」）**：⑤`node --check` 读 stdin 假绿 ⑥Edit `old_string` 尾带 `\n` 合并 bullet ⑦宽泛 `grep -i proxy` 泄漏 Bearer ⑧`catch {}` 吞异常 ⑨中文进程名禁 ASCII grep、`/tmp`→用 `$TEMP` ⑩Taro 与开发者工具互写 `mini/dist`→构建前必关工具 ⑪标识符互为前缀→子串断言必假阳/假阴（用 `\b`）｜⑫🔴**解析测试输出做红验证必先跑「无变异对照组」**（ANSI 色码让 `startswith('×')` 永不命中 → 三次变异全报假绿）⑬🔴**注入变异锚点必 assert 命中恰为 1**（注释里有同名字样 → `replace(...,1)` 只动注释 → 假绿）⑭🔴**手搭 classpath 的 `javac` 会假绿，只有真 Gradle 才算数**（我自己补了 appcompat 才掩盖了漏声明）⑮class 常量池 grep 数字字面量不可信（支付宝状态码属服务端协议值）⑯XML 注释需单独剥离器（`stripXmlComments`）⑰`assembleRelease` 产物内嵌 Web 入口，**不可当可分发包**。
+
+**MEMORY.md 第 35 行（压缩前逐字原文，len=179）**：
+> - 🔴🔴 **审计发现（详版 → `2026-11-16.md`）**：①`/var/www/d-bee` 实有 139 文件、生效仅 19 ②`REFERENCE.md` 含 `SMS_MASTER_CODE` 真实值→**应轮换待拍板** ③~~基线全仓引用 0 处~~ 🟢**已由护栏 30 闭合** ④**0046/0047 生产漂移刻意未夹带**。
+
+**MEMORY.md 第 36 行（压缩前逐字原文，len=62）**；**本条已合并到别处** → 并入「已决不再讨论」：
+> - ✅✅ **云库废弃**：数据面全自建 PG；释放差 2 步（用户本人）＝重传 mini+重设体验版、停用实例（不可逆）。
+
+**MEMORY.md 第 37 行（压缩前逐字原文，len=100）**；**本条已合并到别处** → 并入「权威口径」ICP 条：
+> - 🟠 **备案链**：域名/ICP ✅、**App 备案 ✅（11-18 `-3A`）**；小程序/算法备案审核中（mini 发版+虚拟支付被硬阻断）；公安备案 **2026-12-06 截止**。
+
+**MEMORY.md 第 39 行（压缩前逐字原文，len=178）**；**本条已合并到别处** → 升格为工具坑 ⑱：
+> - 📝 **11-20 更正**：上午报的「`apk-download.html` 4616B 被并行会话覆盖」经查证**不成立**——4616B＝本会话 09:13 Write、4542B＝本会话 09:19 Edit，另一自动化只是 `ls` 如实记录、未写入。**报「覆盖事故」前应先比对同一会话的 Write/Edit 序列**，别只看字节数差异。
+
+**MEMORY.md 第 43 行（压缩前逐字原文，len=318）**：
+> - 🔴 **主线与分端下一步 → 文档 §三**：iOS 上架卡软著/Mac 签名（最大交付＝TestFlight；ASC 几乎空白；🔴壳停 11-04，apppay+A-5 真删号+16px 待重打）；Android＝真机验 vc31（最优先，改名后真机复验 label+备案号+HC-3）→HC-0 矩阵→华为线软著→AppGallery→Health Kit（D-1 自检）；HarmonyOS NEXT 装不了 APK＝永久锁。**只有用户本人能做 → 文档 §七**（软著/Mac `DEVELOPMENT_TEAM` 当前 **0 命中**/证书/mini 发版/公安回填/ASC 3 商品 🔴ID 不可改/三项支付资质）。
+
+**MEMORY.md 第 44 行（压缩前逐字原文，len=220）**：
+> - 🟠 **待拍板 D-1~D-13 全表 → 文档 §六/§九**（🔴D-3＝最重要）。未进文档的：隐私政策 §五+`LEGAL_UPDATED`、mini 同意窗载体、护栏 A9/A10、Apple 个人 vs 企业、**D-5/D-6/D-7**（详版 → REF「02:35 迁入」）。🟢 已落地不再拍：`prebuild-*` 清理（实测 0 个，已过期）；T1 改名 vc31 已做（含 `.env.example` 3 键）。
+
+**MEMORY.md 第 45 行（压缩前逐字原文，len=236）**：
+> - 🔴 **11-12 两条（逐字 → REF「11-19 10:55 迁入」+两份 `docs/*-2026-11-12.md`）**：①三端晃动/四端分享：16px 在 `styles.css:83`，Web/Android/mini ✅ **iOS ❌**，iOS 分享修复待 Mac 重打，`100vw`/`100dvh` 未动 ②对标薄荷/备案等待期：§1.2 复核+**PCM #3 立项**（🔴 仅 REF 有，勿删）；Wave 4.1 图片指纹违隐私须删。
+
+**MEMORY.md 第 46 行（压缩前逐字原文，len=174）**：
+> - ⚠️ **已决不再讨论**：云库回迁自托管 / 老用户不迁移 / 存量 newbie bonus / 演示数据两套面 / App 名称=`自律蜜蜂` / 凭据不打进终端 / mini 微信虚拟支付 / Android 微信+支付宝 APP 支付 / Web 暂不收费、ICP 经营许可证不办 / **不做**渠道首月半价（11-11 已回退）。
+
+**MEMORY.md 第 51 行（压缩前逐字原文，len=304）**：
+> Capacitor 8.5.3 混合壳；React18+Vite5+TS；Windows 出 Android、Mac mini M4 出 iOS；Node≥22 / JDK21 / Xcode≥26 / **AGP 8.13.0 + Gradle 8.14.3 + Kotlin 2.2.20 + minSdk 26**（🔴 单一真源 `android/variables.gradle:28`，11-18 已从 2.3.0 修正）。健康数据源只读系统平台（iOS HealthKit / **Android HC 优先 → 厂商 SDK 兜底**；华为需先上架华为市场、小米官方 SDK、微信运动走网关）。
+
+**MEMORY.md 第 61 行（压缩前逐字原文，len=302）**：
+> - **0039 闸门**：权益函数只改自建 migrations 单库；🔴 云库废弃后**不再双库同步**（`db/cloud-patch-0039/`、`tools/split-*-for-cloud.py`、`deploy/probe-0039-parity.sh` 仅存档勿执行）。nginx 唯一生效模板=`nginx.selfhost.conf.example`，改 nginx 只走 `deploy.sh APPLY_NGINX_CONF=1` 或 `switch-nginx-selfhost.sh`；`set_config` 混函数须 `WITH s AS MATERIALIZED`。
+
+**MEMORY.md 第 62 行（压缩前逐字原文，len=241）**：
+> - 🔴 **删号/身份类改动走 PostgREST SECDEF RPC，别改网关**（`app_users` FORCE RLS + 无 DELETE）；0045 范式=不带 owner_id、只信 `auth.uid()`、`p_confirm` 闸门、`REVOKE PUBLIC/anon`+`GRANT authenticated`；删号后前端禁调 `saveProfile()`；新增含 `owner_id` 的表须同步 0045 `v_tables`（护栏 9 拦）。
+
+**MEMORY.md 第 66 行（压缩前逐字原文，len=269）**：
+> - 🔴🔴 **`deploy-gateway.sh` 是全站永久锁死级地雷**（缺 `IDENT_PEPPER` 即 `rand_hex` 重置 → 全站身份永久失效）→ 改网关一律走手术式脚本（最新范式=`deploy/apply-llm-feature-walls.py`：13 道断言+自动回滚）；**只读/备份也绝不跑它**。手术式铁律：前后断言 `gateway.env` sha256 不变；**绝不整搬本地 `app.mjs`**（ESM 顶层即崩＝全站宕机），只对现网副本按唯一锚点插入；重启前必做 **ESM 预检**。
+
+**MEMORY.md 第 73 行（压缩前逐字原文，len=291）**：
+> - **连接/路径（逐字 → REF）**：SSH `150.158.51.106`、`USER=ubuntu`+`SSH_PWD`（`DBEE_USER=dbee_app` 认证失败）；验收打 `https://d-bee.cn/` **别打 IP**；APK 归档 `release/`；`db/backups/offsite/*.dump` 含真实健康数据**严禁 git add**；push 遇 `schannel`→单次 `-c http.sslBackend=openssl`；遇 `502`/`Empty reply`/HTTP 000＝**代理故障别反复重试**。
+
+**MEMORY.md 第 75 行（压缩前逐字原文，len=235）**：
+> - **防假绿**：vitest 强制串行，跑完核对 `Test Files` 数 == `ls tools/*.test.ts`；mini 类型检查单独跑（`@tarojs/**` 是既有噪音）；禁硬编码日期（同源取 `todayKey()`）；**小程序验收以体验版为准**；MAPE 达标≠无需处理。护栏断言四铁律＝①一 `it()` 一断言②匹配「实际使用」③`stripComments()` 后做④两端同源须 `every()`；新增/放宽**必红验证**。
+
+
+
+---
+
+## 2026-11-22 18:20 迁入：MEMORY.md 事故重建版逐字原文（体积收敛 12788 字符 → ≤9k；零信息丢失）
+
+> 背景：11-22 因多轮 Edit 叠加产生重复条目，误用 git checkout HEAD -- 覆盖掉工作区未提交的 11-20/11-21 版记忆；随后依据本 REF「2026-11-20 13:33 迁入」36 条逐字归档 + 2026-11-20/21/22 日日志单次 Write 重建，35 锚点 35/35 全命中。以下为重建版全文（压缩前），含裁定⑧不使用 Docker、iOS 提审三层、工具坑⑲⑳㉑、APPLE_* 三键、0056 要点。
+
+# D-Bee（自律蜜蜂）· 项目长期记忆（核心版）
+
+> 📚 **全部详版在 `REFERENCE.md`**；本文件只留决策、铁律结论与指针。🔴 **体积 ≤9k 字符**（非字节），超限旧版归档进 REF。
+> 状态默认写保守态，确证后才写完成态；commit 查 `git log`，同步态查 `git status -sb`，**勿写死哈希与「待推 N 个」**。
+> 🔴 协作：不乱增复杂度，决策先征求同意（尤其生产变更）；同一任务只在单会话。🔴 **删文件先评估+等确认**（全授权不豁免，详版 → REF）。
+
+## 权威口径（勿再改动；逐字原文 → REF「11-18 17:30 迁入」）
+
+- **Bundle ID `cn.com.dbee.app`**（两端同值）；**版本 1.7.9**（Android vc31 / iOS build 12）。🔴 **版本号单一真相源 = 根 `package.json`**，经 `__APP_VERSION__` 注入 Web+mini；发版须**六处统一**（package.json / android build.gradle / ios pbxproj `MARKETING_VERSION`×2 / mini config 与 four-end-consistency 注释）。
+- **域名**：`d-bee.cn`=自律蜜蜂 Web（隐私政策/Apple webhook/Universal Link/原生 endpoint）；`d-bee.com.cn`=公司官网（开放平台官网填它）。
+- 🟢 **ICP 已下证（11-06）**：`-1`=官网、`-2`=自律蜜蜂。🔴 生效代码**任何位置不得出现 `-1`**。真相源=`packages/shared` 的 `ICP_BEIAN_D_BEE_CN`；🟢 **App 备案已下证（11-18）`-3A`**：真相源 `APP_ICP_BEIAN`，🔴 **仅原生壳 `isNative()` 门控渲染**（Web 渲染＝verify-legal FAIL）；🔴 公安备案 **2026-12-06 截止**（`POLICE_BEIAN` 仍空，回填前不渲染＝合规）；🟠 小程序/算法备案审核中（硬阻断 mini 发版+虚拟支付）。🔴 **公示信息不得只放 `.env`**（被 gitignore → 静默产出无备案号页面）。
+- 🔴 **原生包禁用 `npm run build`**（白屏）：内测 `build:native:internal`；上架 `VITE_NATIVE_ENDPOINT=https://d-bee.cn npm run build:native`。🔴 与 web **共用 `dist/`**，两者都会**删 `dist/legal/`**（隐私政策零 JS 可爬＝OPPO 硬要求）→ **部署 web 前必重跑 `npm run build`** 并比对入口 js 名；**自检以 `index.html` 引用的入口 js 为唯一真源**。
+- 🔴🔴 **铁律 #13：「已完成」必附生产侧实测证据**。**本地绿 ≠ 线上绿**（中间隔提交→构建→部署）。取证 5 法 → REF。
+- 🔴🔴 **写库字段必须对齐生产库列**：改 patch 先对 `information_schema.columns`；加列后必 `NOTIFY pgrst, 'reload schema'`。🔴 用户报「服务版本不匹配」**不是前端版本问题**，是 schema cache / function 不存在（`updateMealGrams` 写 `meal_entries.updated_at` → PGRST204 → 四端编辑份量全崩）。
+
+## 现状（11-22·iOS 提审三层重梳 + 架构裁定⑧不用 Docker·vc31 待真机·需重打 vc32；证据→`2026-11-22.md`）
+
+- 🔴🔴 **生产状态**（11-22 复核）：**0052~0055 全 applied**（34 一致）；**Web 入口 `index-CIf_RcMj.js`**；四服务 `NRestarts=0`；`healthz` ok、`/legal/{privacy,terms,disclaimer}/` **200×3**、`apple/verify` 空 body → **503 `iap_not_configured`**（＝`APPLE_*` 仍未配的客观证据；配好后应变「参数错误」＝env 真生效唯一判据）。门禁 **32 文件/1554 项**全绿。
+- 🔴🔴 **vc31 交付**（指纹→基线 `apk` 段+`_verify_2026_11_19`；详版→`2026-11-19.md`§二/§十）：`appBeian=issued`（`-3A`）、软著 **submitted**、`253a942` 改名「自律蜜蜂」（3 处含 `capacitor.config.ts:26`）、`.env.example` 补 3 键修支付宝静默失效、vc31≡vc30 dex、`9800369 B`。🔴🔴**零真机验证**（华为/小米/mini/werun，铁律 #13 最优先；Runbook 已备）。
+- 🔴🔴 **11-20 拍板 4 项已执行**（详版→`2026-11-20.md`12:40+REF「11-20 迁入」）：①🟢**分发工具链三件套+护栏 30**（`apk-download.html`/`gen-download-page.mjs`/`publish-apk.sh`/`apk-distribution.test.ts` 48 断言；零硬编码、生产零变更、默认 dry-run）实测 `1.7.9(vc31)/9800369 B/sha256 一致`；🔴**`--apply` 未执行**（须用户指示，缺域名硬失败需显式 `DOMAIN=`）。②🟢**归档 APK 已清（方案 C）**：删 38 个/296.1 MiB 仅留 vc31，`release/` 6 个非 APK 商业资产保留；🔴**不可恢复**（gitignored），指纹留证迁 `supersededApks[].archived`，连带放宽护栏 30-D。③🟢**`@dbee/alipay` 插件落地**（路线①）：弃 `@foskym/capacitor-alipay`（4 阻断点）；SDK 钉 `15.8.42`（javap 实证 `payV2(String,boolean)`）；探测名三处同源 `DbeeAlipay`；`assembleRelease` 成功、dexdump 实证 SDK 5588 类+插件 51 类；护栏 **20-I 24 断言**；🔴**仍不可收款**＝需商户号+服务端 `ALIPAY_*`+`D_BEE_APPPAY_ENABLED`+沙箱联调，未就绪→诚实降级不产假按钮。④🔴**插件接入＝原生实质改动→必须重打 vc32**：走 `npm run native:sync`（🔴**不是** `assembleRelease`：`cap sync` 把 Web 版 `dist/` 拷进 `assets/public`＝不可分发）→ 更新基线 → 护栏 30-A → 真机。
+- 🔴🔴 **iOS 提审三层**（11-22；详版→`docs/iOS提审前置条件与实施步骤-2026-11-22.md`）：**层1 TestFlight** 最快今天，分水岭＝**M0 Xcode 真伪**（`xcodebuild -showsdks|grep -i ios` 须列出 iphoneos SDK + `du -sh` ≥15GB；10-24 实锤 CLT 假壳报「27.1」但 `.app` 仅 3.8G、缺 `xcrun`）。**层2 提交审核**＝ASC 3 商品（`dbee_lifetime` **¥298 非 ¥328**、必须 **Non-Consumable**、🔴ID 永久不可改）+ 隐私标签（🔴照片随大模型请求离设备须如实申报）+ 年龄分级**不能预设 4+** + 🔴🔴**AIGC 两项必填**（**新 App 须立即提交**，非 2027-01-31 宽限档；🔴只有媒体 5 源、Apple 官网无公告→须登 ASC 亲验）。**层3 中国区上架收费** 3–6+ 个月，最长边＝**第三方（DeepSeek/阿里云百炼）盖章合作协议**（不受控）；🔴**AIGC 表2 依赖公安平台记录 → 公安备案是其前置**。
+- 🔴 **iOS 产物侧当日实测**：✅ plistlib 权威解析 `CFBundleDisplayName='自律蜜蜂'`、`CFBundleURLTypes` **不存在**（微信假 AppID scheme 已删，`LSApplicationQueriesSchemes` 保留）、`D-Bee` **0 命中**；✅ `PRICE_LIFETIME=298`(constants:123)、Bundle ID 三处一致、版本 1.7.9/build 12 四处一致、审核截图 3 张+商店截图 10 张齐；✅ 0056（P1 幂等键）SQL 已复核：2 个 `CREATE OR REPLACE`、`v_tables` **16 张**不含 `apple_transactions`、`owner_id='anon:'||md5(v_owner)`、settle 加 `NOT LIKE 'anon:%'`。🔴 **仍缺**：**`DEVELOPMENT_TEAM` 0 命中**、`CODE_SIGN_IDENTITY="iPhone Developer"`（不能分发）、壳内 `public/legal/` 不存在（须 Mac `build:native`+`cap sync`）、🔴**0056 运行时行为未经真库验证**。
+- 🔴🔴 **Android 健康链路三块已修**（逐字→REF「11-18 17:17」/「11-19 10:55」；werun 0 实证见「剩余边界」）：华为 P40 4 层根因（无 GMS→HC 不可用／`canSync:true` 假信号→华为小米改 `false`、荣耀拆出／`.notice` 透明字／按钮无视 canSync；`connectHealth()` 进原生前拦截；🔴**品牌文案中性化**＝华为字样是资质驳回理由）；HC-1/2/3（minSdk 26/HC 1.1.0；**`aggregate()` 非 `readRecords()`**；**`@ActivityCallback` 必须 2 参**（vc28 修闪退）；「读数永驻」＝原生 6s<前端 8s 🔴**禁 `Promise.race`**；🆕appcompat implementation 不传递→插件 `build.gradle` **必须自声明**）；微信运动 WX-1/WX-6（0053 已应用、网关 9 闸门全绿；静默同步双闸+**轮询 `live:false`**（防 jscode2session **45011**）；🔴登录路径刻意不调 refreshHealth；🔴**整搬 `app.mjs`＝全站宕机**→三文件同批）。
+- 🔴🔴 **收费权威文档（11-19，详版→§八/§九）**：全景＝四端唯一路线图（**取代 11-17 版 §2.2/§3/§4.3/§4.6**）+ Android 专项清单。🔴**「上线就绪」≠「收费就绪」不可互推**（Web 永久不收费）｜iOS🟠40%>mini/Android🔴0%｜🔴生产 `config.mjs` 未升级→填 env 无效、未调 `saveSessionKey()`→mini 必失败｜🔴整搬 `auth.mjs` 覆盖 werun 4 锚点｜🔴基线假事实（水位 `"0048"` 实 **0055**）→护栏 19-B 与生产相反（**D-11 未闭合**，`updatedAt=2026-11-12` 已过期）｜18 个 `*-selftest.mjs` 门禁覆盖＝0｜Android 上线🟠75%/收费🔴0%；🔴`0030:1294` seed `dbee_lifetime` 仍 32800。
+- 🔴 **11-21 AIGC 研究**（详版→`2026-11-21.md`+`docs/refs/`）：三份国标入库（GB 45438 强制标识／GB-T 45654 安评／45652·45674 不适用）；🔴 AI 问答＝现存合规敞口（对话问答天然具舆论属性）；北京登记可办 010-55520144；🔴 隐式标识（`AIGC` 7 键）两端 0 命中待落地；✅ G2 JSON 导出显式标识已落地（`buildAigcLabeling()`，`service_provider` 取 `SITE.operator`、备案未下证 `service_provider_code` 恒 `''`）。
+- 🔴 **剩余边界**：mini 导出/通知 + werun + **华为/小米健康链路零真机实证**（铁律 #13，🔴vc32 最优先）；🔴🔴构建只落 `mini/dist`、禁再建 `prebuild-*`、1.7.7 旧包不可上传；🔴**未 commit（11-22 实测 42 项，本机唯一副本）**；🟢`253a942` 已 push；🔴改名须 3 处，不改被 `cap sync` 写回。
+- 🔴🔴 **四条既有铁律（全文 → REF）**：①**收款**＝开关默认 false / `settling` **绝不报 error** / **发权益权威信号＝验签回调 `settle_app_payment`**。②**兑换码 0048**＝护栏**永不写明文** / **绝不调 `redeem_by_code`**（真烧码）。③**`psql`/脚本六铁律**＝变更类禁 `2>/dev/null` / 探针**不打印真实 uid** / `SUDO()` **不吞 stderr**。④**写 SQL 前必核列名**（`schema_migrations`→`version` 非 `id`）。
+- 🔴 **工具坑 5–20（逐字 → REF「11-18/19/20 迁入」）**：⑤`node --check` 读 stdin 假绿 ⑥Edit `old_string` 尾带 `\n` 合并 bullet ⑦宽泛 `grep -i proxy` 泄漏 Bearer ⑧`catch {}` 吞异常 ⑨中文进程名禁 ASCII grep、`/tmp`→用 `$TEMP` ⑩Taro 与开发者工具互写 `mini/dist`→构建前必关工具 ⑪标识符互为前缀→子串断言必假阳/假阴（用 `\b`）｜⑫🔴**解析测试输出做红验证必先跑「无变异对照组」**（ANSI 色码让 `startswith('×')` 永不命中→三次变异全报假绿）⑬🔴**注入变异锚点必 assert 命中恰为 1**（注释里有同名字样→`replace(...,1)` 只动注释→假绿）⑭🔴**手搭 classpath 的 `javac` 会假绿，只有真 Gradle 才算数** ⑮class 常量池 grep 数字字面量不可信 ⑯XML 注释需单独剥离器（`stripXmlComments`）⑰`assembleRelease` 产物内嵌 Web 入口**不可当可分发包** ⑱🔴**报「跨会话覆盖事故」前先比对同一会话的 Write/Edit 序列**，别只看字节数差异 ⑲🔴**绝不用 `io.open(path,'w')` 读改写既有文件**（open('w') 即截断，异常留空文件；日日志 8221 字符曾被清空、靠 JSONL 重建）→追加用 `'a'`/Write/Edit ⑳🔴🔴**Write/Read/Edit 的 FS 视图 ≠ 真实 Windows FS**：曾据工具返回值宣称「embedded-postgres 本地真库验证跑通」，PowerShell `Test-Path` 实测目录**不存在**、`node` 返回空输出→**凡「本地环境/真库验证」类结论必须用 bash/PowerShell 二次确认产物存在且输出非空；工具返回成功 ≠ 真实发生**。同理 **grep 命中 ≠ 结构存在**（plist/XML 判定须用解析器：`CFBundleURLTypes` grep 命中 2 全在注释内、plistlib 解析为不存在）。㉑🔴 **`git checkout HEAD -- <未提交文件>` = 覆盖式删除**（11-22 事故：为撤销自己的错误 Edit 而 checkout，覆盖掉工作区未提交的 11-20/11-21 版 MEMORY）→ **对未提交的记忆/文档文件禁用 checkout 回退**，改用「读 REF/日日志逐字归档 + 单次 Write 重建」。
+- 🔴🔴 **审计发现（详版 → `2026-11-16.md`）**：①`/var/www/d-bee` 实有 139 文件、生效仅 19 ②`REFERENCE.md` 含 `SMS_MASTER_CODE` 真实值→**应轮换待拍板** ③~~基线全仓引用 0 处~~ 🟢已由护栏 30 闭合 ④**0046/0047 生产漂移刻意未夹带**。
+- 🔴 **改 `packages/shared/src` 必重跑其 build 再验门禁**（已踩三次）。
+
+## 下一步 / 待拍板（逐字原文 → REF「11-18 17:30 迁入」）
+
+- 🔴 **主线与分端下一步**：iOS＝M0 判 Xcode 真伪 → M1–M11 出 TestFlight（最大交付；🔴壳内产物停 11-19、`public/legal/` 缺）→ S1–S7 配 `APPLE_*` **三键**；Android＝真机验 vc31（最优先）→HC-0 矩阵→华为线软著→AppGallery→Health Kit（D-1）；HarmonyOS NEXT 装不了 APK＝永久锁。**只有用户本人能做**（软著/Mac `DEVELOPMENT_TEAM`+证书/mini 发版/公安备案回填/ASC 3 商品 🔴ID 不可改/支付资质/🔴AIGC 三件套）。
+- 🟠 **待拍板**：D-1~D-13（→文档 §六/§九，🔴D-3 最重要；**D-5/D-6/D-7 未拍**）+ 11-22 新增 12 项（→`docs/iOS提审前置条件与实施步骤-2026-11-22.md` §六：AIGC 三件套/公安备案/M0/Apple 账号回填/0056 生产应用/首发是否开 IAP/commit 42 项/docker 死代码三选一/基线更新/iOS 备案口径/SBP/🔴截图信息须文字回填）。未进文档：隐私政策 §五+`LEGAL_UPDATED`、mini 同意窗载体、护栏 A9/A10。
+- 🔴 **11-12 两条（逐字 → REF「11-19 10:55 迁入」+两份 `docs/*-2026-11-12.md`）**：①16px 在 `styles.css:83`，Web/Android/mini ✅ **iOS ❌**（待 Mac 重打），`100vw`/`100dvh` 未动 ②对标薄荷 §1.2+**PCM #3 立项**（🔴 仅 REF 有，勿删）；Wave 4.1 图片指纹违隐私须删。
+- ⚠️ **已决不再讨论**：云库回迁自托管（数据面全自建 PG；释放差 2 步须用户本人＝重传 mini+重设体验版、**停用实例**不可逆）/ 老用户不迁移 / 存量 newbie bonus / 演示数据两套面 / App 名称=`自律蜜蜂` / 凭据不打进终端 / mini 微信虚拟支付 / Android 微信+支付宝 APP 支付 / Web 暂不收费、ICP 经营许可证不办 / **不做**渠道首月半价（11-11 已回退）。
+- 三条主线：**开发**（看板＝本文件「现状」）；**备份两层**（cron 03:30 `pg_dump -Fc`+异地副本，含真实健康数据**严禁 git add**）；**运营**（每周提醒）。
+
+## 已定技术路线（勿再讨论；全文 → REF）
+
+Capacitor 8.5.3 混合壳；React18+Vite5+TS；Windows 出 Android、Mac mini M4 出 iOS；Node≥22 / JDK21 / Xcode≥26 / **AGP 8.13.0 + Gradle 8.14.3 + Kotlin 2.2.20 + minSdk 26**（🔴 单一真源 `android/variables.gradle:28`，11-18 已从 2.3.0 修正）。健康数据源只读系统平台（iOS HealthKit / **Android HC 优先 → 厂商 SDK 兜底**；华为需先上架华为市场、小米官方 SDK、微信运动走网关）。
+**决策（10-22 起）**：①主体=有限责任公司 ②未提交产物入库 ③LLM=DeepSeek ④短信=aliyun ⑤网关=Node（`server/index.mjs`）⑥Apple 验签放 Node 网关（弃 pg_net）⑦收款路由见「已决不再讨论」。🔴 **凭据只存本地 `.env`**。
+🔴 **⑧架构体系不使用 Docker（11-22 用户裁定，架构级非权宜）**：本就无 Dockerfile/compose、`package.json` scripts 零 docker、无 CI 工作流、生产 PG 17.11 = ubuntu **apt 原生**（`17.11-1.pgdg24.04+2`）、网关裸 Node+nginx。**禁止**为「起个 PG 验证」引入容器（本机 `wsl.exe` 在安全策略黑名单 → Docker Desktop 事实上不可用：`com.docker.service`=Stopped、无命名管道）。**DB 迁移真库验证唯一正解 = 生产 PG `BEGIN…ROLLBACK` 单事务探针**（`tools/server-apply-0056.sh` + 驱动 `tools/apply-apple-txn-anonymize-prod.py`，带 `--check` 只读预检），零版本偏差、一行不落库、`TEST-0056-` 前缀合成数据+`trap` 兜底+备份验 TOC≥100；`tools/local-pg-selftest{,-0056}.sh`（545 行）＝**架构性死代码**（零护栏/零 docs 引用），待用户三选一处置。详版→`2026-11-22.md` 17:45。
+
+## 架构铁律（12 条全文 → REF:840）
+
+最易踩：⑤**StoreKit 2 服务端核销成功才 `finish()`**；③云端请求走 `OriginProxy` 注入 SDK `options.fetch`、勿 patch window.fetch；⑩原生包禁用 `npm run build`；⑧iOS 付费墙禁硬编码价兜底；⑪`addListenerNative` 三路设防。
+
+## 云数据库安全铁律（最高优先级；逐字 → REF「11-18 17:30 迁入」）
+
+- 发权益函数必须 **SECURITY DEFINER + 入参白名单**；**涉权益表必须 REVOKE authenticated 的 INSERT/UPDATE/DELETE**（RLS 挡不住直写）。0047 沿用此范式。
+- **0039 闸门**：权益函数只改自建 migrations 单库；🔴 云库废弃后**不再双库同步**（`db/cloud-patch-0039/`、`tools/split-*-for-cloud.py`、`deploy/probe-0039-parity.sh` 仅存档勿执行）。nginx 唯一生效模板=`nginx.selfhost.conf.example`，改 nginx 只走 `deploy.sh APPLY_NGINX_CONF=1` 或 `switch-nginx-selfhost.sh`；`set_config` 混函数须 `WITH s AS MATERIALIZED`。
+- 🔴 **删号/身份类改动走 PostgREST SECDEF RPC，别改网关**（`app_users` FORCE RLS + 无 DELETE）；0045 范式=不带 owner_id、只信 `auth.uid()`、`p_confirm` 闸门、`REVOKE PUBLIC/anon`+`GRANT authenticated`；删号后前端禁调 `saveProfile()`；新增含 `owner_id` 的表须同步 0045 `v_tables`（护栏 9 拦）。🔴 **0056 后 `apple_transactions` 从 `v_tables` 移除**（16 张）→ 删号改匿名化保留幂等键，`settle_apple_purchase` webhook 反查须带 `NOT LIKE 'anon:%'` 防幽灵 owner。
+
+## 部署最高危（全量 → REF「部署侧坑」；逐字 → REF「11-18 17:30 迁入」）
+
+- 🔴🔴 **`deploy-gateway.sh` 是全站永久锁死级地雷**（缺 `IDENT_PEPPER` 即 `rand_hex` 重置 → 全站身份永久失效）→ 改网关一律走手术式脚本（范式=`deploy/apply-llm-feature-walls.py`：13 道断言+自动回滚；Apple env 用 `deploy/apply-apple-iap-env.py`：默认 dry-run、须 `--apply`）；**只读/备份也绝不跑它**。手术式铁律：前后断言 `gateway.env` sha256 不变；**绝不整搬本地 `app.mjs`**（ESM 顶层即崩＝全站宕机），只对现网副本按唯一锚点插入；重启前必做 **ESM 预检**。
+- 🔴🔴 **`APPLE_*` 只配三键**（`APPLE_BUNDLE_ID`/`APPLE_SHARED_SECRET`/`APPLE_ALLOWED_ENVS=Sandbox,Production`）：🔴**绝不配 `APPLE_SANDBOX=1`**（`config.mjs:506-508` 审计④ push problems → `:383-385` `throw` → **网关根本起不来**，非 warning）；🔴**`APPLE_WEBHOOK_SECRET` 是死键**（全仓仅 `config.mjs:340` 解析、零消费点；webhook 安全全靠 JWS x5c 证书链 `iap.mjs:169-206`+Apple Root CA G3 钉扎 `:51-52`），配它只制造虚假安全感。
+- 🔴🔴 **「状态谎报」比失败更危险**：bash heredoc 内不得把 Python 常量名当 shell 变量（`set -u` 崩在赋值行→回滚不执行却打印「已回滚」）。**报了回滚就必须真回滚过**，收敛到一个函数。
+- 🔴 视觉链路 `BASE_URL`/`MODEL`/`API_KEY` 须**成对更换**且同步 `gateway.env.template`+`.secrets.local`（否则静默回退）。
+- 🔴🔴 **nginx reload 有优雅退出窗口**→立即验证会「假红」，修法 `sleep 8`+重试 3 次、脚本必须可重入。验收三坑（`gateway.env` 0640 需 `sudo -n` / 临时账号须 `trap cleanup EXIT` / Windows 禁 `wsl.exe`）。
+
+## 环境备忘（全节逐字 → REF「11-18 17:30 迁入」）
+
+- **连接/路径（逐字 → REF）**：SSH `150.158.51.106`、`USER=ubuntu`+`SSH_PWD`（`DBEE_USER=dbee_app` 认证失败）；验收打 `https://d-bee.cn/` **别打 IP**；APK 归档 `release/`；`db/backups/offsite/*.dump` 含真实健康数据**严禁 git add**；push 遇 `schannel`→单次 `-c http.sslBackend=openssl`；遇 `502`/`CONNECT tunnel failed`/HTTP 000＝**代理故障别改 git 配置绕**，curl 探活通了再推。
+- **两条唯一权威**：数值口径 `src/lib/numfmt.ts`（禁自写 `toFixed`）；nginx **只反代 `/.cloud/` 与 `/auth/`** → 其余 POST 返 **405，405 不能判路由存在**。
+- **防假绿**：vitest 强制串行，跑完核对 `Test Files` 数 == `ls tools/*.test.ts`；mini 类型检查单独跑（`@tarojs/**` 是既有噪音）；禁硬编码日期（同源取 `todayKey()`）；**小程序验收以体验版为准**；MAPE 达标≠无需处理。护栏断言四铁律＝①一 `it()` 一断言②匹配「实际使用」③`stripComments()` 后做④两端同源须 `every()`；新增/放宽**必红验证**（红验证前先跑无变异对照组）。
+- **产物判读（逐字 → REF）**：mini 中文 `\uXXXX`（`unicode_escape`，勿 `latin1`）/Web UTF-8；`VITE_*` grep 命中≠生效（`define` 才被 terser 折叠）；裸串子串碰撞→用完整 CTA 短语；数据面追 `resolveEndpoint`。

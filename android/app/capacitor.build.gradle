@@ -11,6 +11,7 @@ apply from: "../capacitor-cordova-android-plugins/cordova.variables.gradle"
 dependencies {
     implementation project(':dbee-origin-proxy')
     implementation project(':dbee-health')
+    implementation project(':dbee-alipay')
     implementation project(':capacitor-share')
     implementation project(':capacitor-filesystem')
     implementation project(':capgo-capacitor-wechat')

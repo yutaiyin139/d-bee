@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DbeeAlipay 插件 Manifest（2026-11-20，路线①自写本地插件）。
+
+  🔴 **故意为空**（与 dbee-origin-proxy 同一范式），原因已逐项实证，不是漏写：
+
+  ① 权限：支付宝 SDK AAR 自带 AndroidManifest 已声明
+     INTERNET / ACCESS_NETWORK_STATE / ACCESS_WIFI_STATE 三项，
+     manifest merger 会自动并入宿主。本插件不新增任何权限 ——
+     支付能力只需网络，无需读存储/定位/通讯录，申了属过度索权（合规风险）。
+
+  ② Activity：AAR 已声明全部四个支付相关 Activity
+     （H5PayActivity / H5AuthActivity / PayResultActivity / AlipayResultActivity，
+      其中 PayResultActivity 与 AlipayResultActivity 为 exported=true + singleInstance，
+      用于从支付宝 App 跳回），同样由 merger 自动并入，**不得**在此重复声明
+     （重复且属性不一致会触发 merger 冲突、构建直接失败）。
+
+  ③ <queries>（Android 11+ 包可见性）：这是与 dbee-health 的**关键差异**。
+     Health Connect 的 AAR **没有** <queries>，所以那边必须自己补三个声明，
+     否则 resolveActivity() 恒返回 null、把「设备支持」误报成「不支持」。
+     而支付宝 AAR **已自带** <queries>（已解包确认，含 com.eg.android.AlipayGphone
+     正式版 / AlipayGphoneRC 沙箱版 / hk.alipay.wallet 港版及其 RC 共 4 个包名），
+     故此处无需补 —— 补了也是冗余。
+
+  ④ 无 uses-library / provider / receiver / service 需求：本插件只调
+     PayTask.payV2()，不涉及任何自定义组件。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />

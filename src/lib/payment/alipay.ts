@@ -43,6 +43,16 @@ import type { PaymentAdapter, ProductInfo, PurchaseResult } from './types'
  * Capacitor 支付宝插件的最小支付接口（鸭子类型探测）。
  * 字段对齐支付宝 SDK「App 支付」返回形态：
  *   resultStatus: '9000' 支付成功 | '8000' 处理中 | '6001' 用户取消 | '4000' 失败
+ *
+ * 🔴 探测名 = `DbeeAlipay`，对应自写本地插件 `native-plugins/dbee-alipay`
+ *    （路线①，2026-11-20 拍板）。三处必须逐字一致，改任一处都要同步：
+ *      ① 本文件 `cap?.Plugins?.DbeeAlipay`
+ *      ② 原生 `DbeeAlipayPlugin.java` 的 `@CapacitorPlugin(name = "DbeeAlipay")`
+ *      ③ `native-plugins/dbee-alipay/dist/plugin.js` 的 `registerPlugin('DbeeAlipay')`
+ *    不一致的后果是**静默失效**：`getPlugin()` 返回 null → `isAlipayAvailable()` false
+ *    → 支付宝按钮永不出现，且构建 exit 0、无任何警告。
+ *    ⚠️ 历史值 `CapacitorAlipay` 是当初为社区插件预留的名字（其真实注册名其实是
+ *       `Alipay`、入参字段是 `orderInfo`，两边都对不上），已随自写插件统一为 Dbee* 体系。
  */
 interface AlipayPlugin {
   pay: (opts: { orderStr: string }) => Promise<{ resultStatus: string; result: string; memo: string }>
@@ -68,7 +78,7 @@ function alipayAppId(): string {
 function getPlugin(): AlipayPlugin | null {
   if (typeof window === 'undefined') return null
   const cap = (window as unknown as { Capacitor?: { Plugins?: Record<string, unknown> } }).Capacitor
-  const p = cap?.Plugins?.CapacitorAlipay
+  const p = cap?.Plugins?.DbeeAlipay
   if (!p || typeof p !== 'object') return null
   const candidate = p as Partial<AlipayPlugin>
   if (typeof candidate.pay !== 'function') return null

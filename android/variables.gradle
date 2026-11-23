@@ -32,4 +32,26 @@ ext {
     // provider=com.google.android.apps.healthdata、aggregate(AggregateRequest)、
     // StepsRecord.COUNT_TOTAL / ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL）。
     healthConnectVersion = '1.1.0'
+    // 支付宝 App 支付 SDK（2026-11-20 接入，方案 A 双渠道齐上 → 路线①自写本地插件）。
+    // 🔴 必须钉死精确版本，**不得**写成 `+`（如 `alipaysdk-android:+@aar`）：
+    //    动态版本每次构建都可能拉到不同二进制 → 产物不可复现、出问题无法回溯是哪版，
+    //    且等于把供应链决定权交给上游（社区插件 @foskym/capacitor-alipay 正是这么写的，
+    //    这也是本项目选择自写 @dbee/alipay 的四条理由之一）。
+    // 版本选定依据（2026-11-20 实证，非凭记忆）：
+    //    ① Maven Central maven-metadata.xml → <release>15.8.42</release>（lastUpdated 20260512）
+    //    ② 下载该版 AAR（460688 bytes）反编译：javap 实证
+    //       `public synchronized java.util.Map<String,String> payV2(java.lang.String, boolean)`
+    //       —— 与 src/lib/payment/alipay.ts 适配层约定的三字段返回形态一致
+    //       （resultStatus / result / memo；本版本**已无** PayResult 类，只能走 Map）
+    //    ③ AAR 自带 AndroidManifest 已声明 <queries>（com.eg.android.AlipayGphone 等 4 个包名）
+    //       与 4 个 Activity（H5PayActivity/H5AuthActivity/PayResultActivity/AlipayResultActivity），
+    //       由 manifest merger 自动合并 → 插件侧无需重复声明（与 HC 需自己补 <queries> 相反）
+    //    ④ AAR 的 proguard.txt 是 consumerProguardFiles（文件内已注明「自动附加」）→
+    //       宿主开启 minify 时 keep 规则自动生效，无需手写；当前宿主 minifyEnabled false
+    //    ⑤ SDK minSdkVersion=21 ≤ 本项目 26，无版本冲突
+    //    ⑥ 供应链校验：POM 声明 <packaging>aar</packaging> 且**零传递依赖** →
+    //       依赖串无需 `@aar` 后缀；本地下载 AAR 的 sha256 与 Maven Central 公布的
+    //       .aar.sha256 **逐字一致** = a6c301708b59a3a7cda843cf02e7b3b0b44afd96819f0a18890322e9868abf28
+    //       （日后升级版本时按同样方式复核，防镜像污染 / 中间人替换）
+    alipaySdkVersion = '15.8.42'
 }

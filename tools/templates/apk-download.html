@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="index, follow" />
+    <meta name="description" content="__APP_NAME__（__APP_NAME_EN__）Android 版官方下载页。版本 __VERSION_NAME__，运营主体：__OPERATOR__。" />
+    <title>__APP_NAME__ Android 版下载 · __APP_NAME_EN__</title>
+    <style>
+      :root { color-scheme: light; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; padding: 24px 18px 48px; background: #fbf8f1; color: #2b2417;
+        font: 16px/1.85 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+          "Helvetica Neue", Arial, sans-serif;
+        -webkit-text-size-adjust: 100%;
+      }
+      main { max-width: 760px; margin: 0 auto; }
+      h1 { margin: 0 0 6px; font-size: 26px; line-height: 1.4; color: #6b4a08; }
+      h2 { margin: 0 0 10px; font-size: 18px; color: #6b4a08; }
+      .meta { margin: 0 0 22px; font-size: 13.5px; color: #7a6b52; }
+      .dl {
+        display: block; margin: 0 0 22px; padding: 16px 18px; text-align: center;
+        background: #e0a83c; color: #3d2c05; font-size: 18px; font-weight: 500;
+        text-decoration: none; border-radius: 10px;
+      }
+      .dl small { display: block; margin-top: 4px; font-size: 13px; font-weight: 400; }
+      section { margin: 0 0 22px; }
+      table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+      th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #e8ddc6; vertical-align: top; }
+      th { width: 116px; color: #7a6b52; font-weight: 400; white-space: nowrap; }
+      td { word-break: break-all; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+      .note {
+        margin: 0 0 22px; padding: 14px 16px; background: #fff;
+        border-left: 3px solid #e0a83c; border-radius: 8px; font-size: 14.5px; color: #463a26;
+      }
+      .note p { margin: 0 0 8px; }
+      .note p:last-child { margin-bottom: 0; }
+      a { color: #a06c07; text-decoration: underline; word-break: break-all; }
+      footer {
+        margin-top: 34px; padding-top: 18px; border-top: 1px solid #e8ddc6;
+        font-size: 13.5px; color: #7a6b52;
+      }
+      footer p { margin: 0 0 8px; }
+      .nav { font-size: 14px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>__APP_NAME__ Android 版下载</h1>
+      <p class="meta">__APP_NAME__（__APP_NAME_EN__） · 版本 __VERSION_NAME__ · 运营主体：__OPERATOR__</p>
+
+      <a class="dl" href="__APK_HREF__" download>
+        下载 Android 安装包
+        <small>__SIZE_HUMAN__ · 适用于 Android __MIN_ANDROID__ 及以上</small>
+      </a>
+
+      <div class="note">
+        <p><strong>安装提示</strong></p>
+        <p>部分手机浏览器下载后会提示「未知来源应用」，请在系统设置中允许本次安装。安装包由我们自行签名，未上架应用商店时属正常现象。</p>
+        <p>__SAFE_SOURCE_LINE__</p>
+      </div>
+
+      <section>
+        <h2>安装包信息</h2>
+        <table>
+          <tr><th>文件名</th><td class="mono">__APK_FILE__</td></tr>
+          <tr><th>版本号</th><td>__VERSION_NAME__（versionCode __VERSION_CODE__）</td></tr>
+          <tr><th>文件大小</th><td>__SIZE_HUMAN__（__BYTES__ 字节）</td></tr>
+          <tr><th>包名</th><td class="mono">__PACKAGE_NAME__</td></tr>
+          <tr><th>系统要求</th><td>Android __MIN_ANDROID__ 及以上（minSdk __MIN_SDK__）</td></tr>
+          <tr><th>SHA-256</th><td class="mono">__SHA256__</td></tr>
+        </table>
+      </section>
+
+      <section>
+        <h2>校验安装包完整性</h2>
+        <p>下载完成后可用以下命令核对文件未被篡改，输出应与上表 SHA-256 逐字一致：</p>
+        <p class="mono">sha256sum __APK_FILE__</p>
+        <p class="mono">certutil -hashfile __APK_FILE__ SHA256</p>
+      </section>
+__BEIAN_BLOCK__
+      <footer>
+        <p class="nav">法律文档：<a href="/legal/terms/">用户协议</a> ｜ <a href="/legal/privacy/">隐私政策</a> ｜ <a href="/legal/disclaimer/">免责声明</a></p>
+        <p>运营主体：__OPERATOR____OPERATOR_ADDRESS__</p>
+        <p>联系方式：<a href="mailto:__CONTACT_EMAIL__">__CONTACT_EMAIL__</a></p>
+        <p>本页面由官方分发工具自动生成于 __GENERATED_AT__。</p>
+        <p><a href="/">进入 __APP_NAME__ →</a></p>
+      </footer>
+    </main>
+  </body>
+</html>

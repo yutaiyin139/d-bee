@@ -125,8 +125,14 @@ c "函数属主是 postgres" \
   "$(Q "SELECT proowner::regrole::text FROM pg_proc WHERE oid='public.delete_own_account(text)'::regprocedure;")" "postgres"
 c "函数返回值是 jsonb" \
   "$(Q "SELECT pg_get_function_result(oid) FROM pg_proc WHERE oid='public.delete_own_account(text)'::regprocedure;")" "jsonb"
-c "函数体含 17 张业务表的全部字面量" \
-  "$(Q "SELECT count(*)::int FROM unnest(ARRAY['ai_quota_claims','ai_usage','apple_transactions','badges','entitlements','exercise_logs','honey_ledger','invite_attempts','invite_links','meal_entries','payment_orders','profiles','quota_bonus','quota_bonus_newbie_retire_log','recipes','water_logs','weight_logs']) AS t WHERE pg_get_functiondef('public.delete_own_account(text)'::regprocedure) LIKE '%''' || t || '''%';")" "17"
+# 🔴 2026-11-22 随 0056 更新：apple_transactions 不再被「删号即删」，改为
+#   owner_id 匿名化保留（'anon:'||md5），以保住 transaction_id UNIQUE 幂等键。
+#   故 v_tables 从 17 张减为 16 张，函数体里 apple_transactions 只以不带引号的
+#   public.apple_transactions 出现（LIKE '%'apple_transactions'%' 不再命中），
+#   本断言期望值随之改为 16，并从 unnest 数组移除 'apple_transactions'。
+#   （幂等键保留与匿名化的验收另见 db/migrations/0056-apple-txn-anonymize.sql 尾段。）
+c "函数体含 16 张「删号即删」业务表的全部字面量（0056 起 apple_transactions 改为匿名化保留）" \
+  "$(Q "SELECT count(*)::int FROM unnest(ARRAY['ai_quota_claims','ai_usage','badges','entitlements','exercise_logs','honey_ledger','invite_attempts','invite_links','meal_entries','payment_orders','profiles','quota_bonus','quota_bonus_newbie_retire_log','recipes','water_logs','weight_logs']) AS t WHERE pg_get_functiondef('public.delete_own_account(text)'::regprocedure) LIKE '%''' || t || '''%';")" "16"
 c "PUBLIC/anon 无 EXECUTE" \
   "$(Q "SELECT count(*)::int FROM information_schema.routine_privileges WHERE routine_name='delete_own_account' AND grantee IN ('PUBLIC','anon');")" "0"
 c "authenticated 有 EXECUTE" \

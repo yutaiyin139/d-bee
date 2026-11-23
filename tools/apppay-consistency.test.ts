@@ -26,7 +26,7 @@
  * 运行：npx vitest run tools/apppay-consistency.test.ts
  * 🔴 本护栏已按项目铁律做红验证（见当日日志「护栏 20 红验证」）。
  */
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -95,6 +95,30 @@ const APPPAY_MJS = load('server/lib/apppay.mjs')
 const CONFIG_MJS = load('server/lib/config.mjs')
 const MIG_0047 = load('db/migrations/0047-app-payment-settlement.sql')
 const MIG_0021 = load('db/migrations/0021-payment-orders.sql')
+
+// ── 20-I 用：支付宝原生插件（路线①自写 @dbee/alipay）与其接线 ──────────────
+const ALIPAY_PLUGIN_JAVA = load('native-plugins/dbee-alipay/android/src/main/java/com/dbee/alipay/DbeeAlipayPlugin.java')
+const ALIPAY_PLUGIN_GRADLE = load('native-plugins/dbee-alipay/android/build.gradle')
+const ALIPAY_PLUGIN_JS = load('native-plugins/dbee-alipay/dist/plugin.js')
+const ALIPAY_PLUGIN_PKG = load('native-plugins/dbee-alipay/package.json')
+const ALIPAY_PLUGIN_MANIFEST = load('native-plugins/dbee-alipay/android/src/main/AndroidManifest.xml')
+const ALIPAY_PLUGIN_PROGUARD = load('native-plugins/dbee-alipay/android/proguard-rules.pro')
+const ANDROID_VARS_GRADLE = load('android/variables.gradle')
+const ANDROID_SETTINGS_GRADLE = load('android/capacitor.settings.gradle')
+const ANDROID_APP_CAP_GRADLE = load('android/app/capacitor.build.gradle')
+const CAP_CONFIG = load('capacitor.config.ts')
+const ROOT_PKG = load('package.json')
+
+/**
+ * XML/HTML 注释剥离。
+ * 🔴 必须单独实现：本文件的 stripComments() 只认 JS 词法（行注释与块注释），
+ *    不认 XML 的尖括号注释。插件 Manifest 的注释里**大量提及** H5PayActivity、
+ *    queries 等字样（用于说明「为何故意为空」），若拿 raw 直接断言会命中
+ *    注释文字而假绿。
+ */
+function stripXmlComments(src: string): string {
+  return src.replace(/<!--[\s\S]*?-->/g, '')
+}
 
 // ---------------------------------------------------------------------------
 // 护栏 20-A · 四端业务逻辑不变：checkout 主流程零改动，适配器只补渠道缺口
@@ -478,5 +502,122 @@ describe('护栏 20-H · 商户凭据边界（只在服务端签名，绝不出�
 
   it('未配置时给出 warnings 提示（渠道级 503，不影响另一渠道）', () => {
     expect(/!cfg\.wechatPayMchid\) w\.push/.test(CONFIG_MJS.code) && /!cfg\.alipayAppId\) w\.push/.test(CONFIG_MJS.code)).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 护栏 20-I · 支付宝原生插件（路线①自写 @dbee/alipay）接线一致性
+//
+// 🔴 本组护栏针对的是**静默失效**类事故：注册名/入参字段/接线任一处对不上，
+//    构建照样 exit 0、类型检查照样通过，但 `getPlugin()` 返回 null →
+//    `isAlipayAvailable()` false → 支付宝按钮永不出现，且**无任何警告**。
+//    这正是当初弃用社区包 @foskym/capacitor-alipay（注册名 Alipay、入参 orderInfo）
+//    而自写本地插件的原因，故必须用护栏钉死，防止日后被改回去。
+// ---------------------------------------------------------------------------
+describe('护栏 20-I · 支付宝原生插件接线一致性（防静默失效）', () => {
+  // 三处注册名：适配层探测名 / 原生注解名 / JS 占位注册名
+  const adapterName = (ALIPAY.code.match(/Plugins\?\.([A-Za-z0-9_]+)/) ?? [])[1]
+  const nativeName = (ALIPAY_PLUGIN_JAVA.code.match(/@CapacitorPlugin\(name\s*=\s*"([^"]+)"/) ?? [])[1]
+  const jsName = (ALIPAY_PLUGIN_JS.code.match(/registerPlugin\(\s*['"]([^'"]+)['"]\s*\)/) ?? [])[1]
+
+  it('插件三处注册名均解析成功（解析不到即说明源码结构已变，护栏本身失效）', () => {
+    expect([adapterName, nativeName, jsName].every((n) => typeof n === 'string' && n.length > 0)).toBe(true)
+  })
+
+  it('适配层探测名 === 原生 @CapacitorPlugin(name)（不一致则探测恒 null）', () => {
+    expect(adapterName).toBe(nativeName)
+  })
+
+  it('适配层探测名 === JS 占位 registerPlugin 名（三处必须逐字同源）', () => {
+    expect(adapterName).toBe(jsName)
+  })
+
+  it('注册名遵循自写插件的 Dbee* 命名体系（与 DbeeHealth / DbeeIap 一致）', () => {
+    expect(nativeName).toBe('DbeeAlipay')
+  })
+
+  it('适配层已弃用历史预留名 CapacitorAlipay（该名对应社区插件，装上必然对不上）', () => {
+    expect(/CapacitorAlipay/.test(ALIPAY.code)).toBe(false)
+  })
+
+  it('原生入参读 orderStr，与适配层 pay({ orderStr }) 同源（社区插件的 orderInfo 是坑）', () => {
+    expect(/getString\(\s*"orderStr"\s*\)/.test(ALIPAY_PLUGIN_JAVA.code)).toBe(true)
+  })
+
+  it('适配层确实以 orderStr 字段调用 pay（两端字段名逐字一致）', () => {
+    expect(/pay\(\{\s*orderStr:/.test(ALIPAY.code)).toBe(true)
+  })
+
+  it('原生不出现社区插件的 orderInfo 字段（防被改回第三方约定）', () => {
+    expect(/orderInfo/.test(ALIPAY_PLUGIN_JAVA.code)).toBe(false)
+  })
+
+  it('原生返回三字段 resultStatus / result / memo 齐备（适配层 TS 类型为非可选）', () => {
+    expect(['resultStatus', 'result', 'memo'].every((k) => ALIPAY_PLUGIN_JAVA.code.includes(`"${k}"`))).toBe(true)
+  })
+
+  it('payV2 在后台线程执行（@PluginMethod 跑主线程，直接调必 ANR）', () => {
+    expect(/Executors\.newSingleThreadExecutor/.test(ALIPAY_PLUGIN_JAVA.code) && /\.execute\(/.test(ALIPAY_PLUGIN_JAVA.code)).toBe(true)
+  })
+
+  it('原生调用的确是 payV2（本版本 SDK 已无 PayResult 类，只能走 Map 返回）', () => {
+    expect(/\.payV2\(/.test(ALIPAY_PLUGIN_JAVA.code)).toBe(true)
+  })
+
+  it('SDK 版本钉死为精确版本号（禁动态 +，否则产物不可复现）', () => {
+    const v = (ANDROID_VARS_GRADLE.code.match(/alipaySdkVersion\s*=\s*'([^']+)'/) ?? [])[1]
+    expect(typeof v === 'string' && /^\d+\.\d+\.\d+$/.test(v) && !v.includes('+')).toBe(true)
+  })
+
+  it('插件 build.gradle 引用版本变量而非写死版本号（单一配置源）', () => {
+    expect(/alipaysdk-android:\$alipaySdkVersion/.test(ALIPAY_PLUGIN_GRADLE.code)).toBe(true)
+  })
+
+  it('插件 build.gradle 显式声明 appcompat（getActivity() 返回 AppCompatActivity，capacitor 不传递）', () => {
+    expect(/androidx\.appcompat:appcompat:\$androidxAppCompatVersion/.test(ALIPAY_PLUGIN_GRADLE.code)).toBe(true)
+  })
+
+  it('根 package.json 以 file: 协议登记本地插件（与其余 @dbee/* 同款）', () => {
+    expect(/"@dbee\/alipay":\s*"file:native-plugins\/dbee-alipay"/.test(ROOT_PKG.code)).toBe(true)
+  })
+
+  it('capacitor.config.ts 的 Android 白名单含 @dbee/alipay', () => {
+    const android = CAP_CONFIG.code.match(/android:\s*\{[^}]*includePlugins:\s*\[([^\]]*)\]/s)
+    expect(android !== null && android[1].includes("'@dbee/alipay'")).toBe(true)
+  })
+
+  it('capacitor.config.ts 的 iOS 白名单**不含** @dbee/alipay（iOS 走 IAP，接支付宝违反 3.1.1）', () => {
+    const ios = CAP_CONFIG.code.match(/ios:\s*\{[^}]*includePlugins:\s*\[([^\]]*)\]/s)
+    expect(ios !== null && !ios[1].includes('@dbee/alipay')).toBe(true)
+  })
+
+  it('插件目录确实没有 ios/ 实现（与上一条的 Android-only 决策互为印证）', () => {
+    expect(existsSync(join(ROOT, 'native-plugins/dbee-alipay/ios'))).toBe(false)
+  })
+
+  it('cap sync 已生成 Gradle 接线（settings.gradle include 模块）', () => {
+    expect(/include\s+':dbee-alipay'/.test(ANDROID_SETTINGS_GRADLE.code)).toBe(true)
+  })
+
+  it('cap sync 已生成 Gradle 接线（app 侧 implementation project）', () => {
+    expect(/implementation\s+project\(':dbee-alipay'\)/.test(ANDROID_APP_CAP_GRADLE.code)).toBe(true)
+  })
+
+  it('插件 package.json 声明 capacitor.android.src（缺则 cap sync 不接线）', () => {
+    const pkg = JSON.parse(ALIPAY_PLUGIN_PKG.raw) as { capacitor?: { android?: { src?: string }; ios?: unknown } }
+    expect(pkg.capacitor?.android?.src === 'android' && pkg.capacitor?.ios === undefined).toBe(true)
+  })
+
+  it('插件 Manifest 不重复声明支付宝组件（AAR 自带，重复且属性不一致会让 merger 构建失败）', () => {
+    const m = stripXmlComments(ALIPAY_PLUGIN_MANIFEST.raw)
+    expect(!/<activity|<queries|<uses-permission|<provider|<service/.test(m)).toBe(true)
+  })
+
+  it('proguard 规则 keep 插件类（Capacitor 按注册名反射，被混淆改名即静默失效）', () => {
+    expect(/-keep\s+class\s+com\.dbee\.alipay\.DbeeAlipayPlugin/.test(ALIPAY_PLUGIN_PROGUARD.code)).toBe(true)
+  })
+
+  it('原生异常路径一律上报 4000，绝不伪装成功（零假成功铁律）', () => {
+    expect(!/"9000"/.test(ALIPAY_PLUGIN_JAVA.code) && (ALIPAY_PLUGIN_JAVA.code.match(/"4000"/g) ?? []).length >= 3).toBe(true)
   })
 })

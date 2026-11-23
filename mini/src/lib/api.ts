@@ -993,9 +993,10 @@ export async function exportAllData(): Promise<ExportBundle> {
 /**
  * 永久删除当前账号（对齐主工程 src/lib/api.ts deleteAccount，0045 SECURITY DEFINER RPC）。
  *
- * 网关侧 PostgREST `delete_own_account` 在一个事务内删除 17 张业务表 + `app_users`
- * 身份行，身份只取 `auth.uid()`，调用方无法指定删谁。小程序与主工程打同一网关、
- * 同一套 RPC，故无需改网关（A-5 纪律）。
+ * 网关侧 PostgREST `delete_own_account` 在一个事务内删除 16 张业务表 + `app_users`
+ * 身份行（apple_transactions 自 0056 起改为 owner_id 匿名化保留，以保住
+ * transaction_id UNIQUE 幂等键），身份只取 `auth.uid()`，调用方无法指定删谁。
+ * 小程序与主工程打同一网关、同一套 RPC，故无需改网关（A-5 纪律）。
  *
  * 🔴 成功后调用方只需清本地会话：绝不能再调 `clearAllRecords()` / `saveProfile()`，
  *    后者会 INSERT 出新的 profiles 档案 = 把刚删掉的账号又重建回来。

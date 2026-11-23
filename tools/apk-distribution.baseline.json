@@ -1,7 +1,7 @@
 {
   "_about": "Android APK 公网分发（待办清单 A7）就绪状态登记。建立于 2026-11-16，与 tools/release-readiness.baseline.json 同范式：本文件是【预期基线 + 生产侧状态的人工登记】，不是自动探测结果。App 备案状态 / 服务器静态目录 / 备案编号都在仓库之外，本地静态扫描无法获知，必须由发版人核对后更新。护栏 30 只保证：登记的 sha256/字节数/版本号与真实 APK 逐字一致、合规闸门未就绪时不被静默改成已就绪、下载页在备案编号缺失时不渲染假号。护栏全绿不等于可以分发。",
   "_why_in_git": "release/ 被 .gitignore 排除（APK 不入库），故分发所需的元数据与合规闸门状态必须另有入库载体，否则换机器或重装后无法复现「哪个包可发、为什么还不能发」。",
-  "updatedAt": "2026-11-19",
+  "updatedAt": "2026-11-23",
   "apk": {
     "file": "release/D-Bee-1.7.9-vc31-dbee.cn-FORMAL-20261119.apk",
     "versionName": "1.7.9",
@@ -26,7 +26,12 @@
       "webEntry": "index-Bi5hyWXh.js",
       "versionCode": 30,
       "supersededAt": "2026-11-19",
-      "reason": "被 vc31 取代：applicationLabel 仍是「D-Bee」（软著名/App备案名/商店名须逐字为「自律蜜蜂」）。本包功能与 vc31 完全等价（classes.dex 逐字节一致），仅 label + versionCode 不同。保留作历史留证，🔴 对外分发一律用 vc31。"
+      "reason": "被 vc31 取代：applicationLabel 仍是「D-Bee」（软著名/App备案名/商店名须逐字为「自律蜜蜂」）。本包功能与 vc31 完全等价（classes.dex 逐字节一致），仅 label + versionCode 不同。🔴 对外分发一律用 vc31。",
+      "archived": {
+        "deletedAt": "2026-11-20",
+        "deletedBy": "用户拍板方案 C（release/ + dist-release/ 归档 APK 全清，仅保留当前候选 vc31）",
+        "note": "🔴 APK 文件本体已删除且不可恢复（release/ 被 .gitignore:84 排除，git 从未跟踪）。本条登记即唯一留证：bytes + sha256 指纹逐字保留，如需复核历史包身份以此为准。"
+      }
     },
     {
       "file": "release/D-Bee-1.7.8-vc26-dbee.cn-FORMAL-20261115.apk",
@@ -34,15 +39,23 @@
       "sha256": "223a31a40f52bde5f475af490d5b9b7a92ee30ce4ae6c7777185a061e2d58049",
       "webEntry": "index-D6Ix1upI.js",
       "supersededAt": "2026-11-16",
-      "reason": "🔴 与生产网关已不兼容，禁止分发。该包内嵌旧产物仍用客户端自报标记 [dbee-feature:*] 声明 feature，且不含 llm/features/* 新路由；而 2026-11-16 上线的 0052 网关版 llm.mjs 已移除 inferTextFeature（护栏 22-C 锁定，防伪造绕闸门），不再识别该标记 —— 非 forced 的纯文本请求会被服务端重写为 FOOD_SYSTEM。后果：装此包的用户点「复盘 / 计划再生成 / 教练」得到的是食物识别结果（功能静默错位，不报错、难察觉）。文件保留在 release/ 仅作历史留证，不得作为待分发包引用。"
+      "reason": "🔴 与生产网关已不兼容，禁止分发。该包内嵌旧产物仍用客户端自报标记 [dbee-feature:*] 声明 feature，且不含 llm/features/* 新路由；而 2026-11-16 上线的 0052 网关版 llm.mjs 已移除 inferTextFeature（护栏 22-C 锁定，防伪造绕闸门），不再识别该标记 —— 非 forced 的纯文本请求会被服务端重写为 FOOD_SYSTEM。后果：装此包的用户点「复盘 / 计划再生成 / 教练」得到的是食物识别结果（功能静默错位，不报错、难察觉）。🔴 不得作为待分发包引用。",
+      "archived": {
+        "deletedAt": "2026-11-20",
+        "deletedBy": "用户拍板方案 C（release/ + dist-release/ 归档 APK 全清，仅保留当前候选 vc31）",
+        "note": "🔴 APK 文件本体已删除且不可恢复（release/ 被 .gitignore:84 排除，git 从未跟踪）。本条登记即唯一留证：bytes + sha256 指纹逐字保留。此包本就禁分发（网关不兼容），删除不影响任何线上用户。"
+      }
     }
   ],
   "knownGap_guardrailNotWired": {
     "foundAt": "2026-11-16",
-    "status": "unfixed_pending_decision",
+    "status": "fixed_2026_11_20",
     "issue": "🔴 本文件自称「护栏 30 只保证：登记的 sha256/字节数/版本号与真实 APK 逐字一致、合规闸门未就绪时不被静默改成已就绪、下载页在备案编号缺失时不渲染假号」，但全仓 grep（*.ts/*.mjs/*.js/*.sh）对 'apk-distribution' 的引用为 0 处 —— 即 tools/ 下 30 个门禁测试文件里没有任何一个读取本文件，上述三条断言目前【没有自动守护】，纯靠发版人自觉。风险：本文件可以被改成 status=published / blockPublicDistribution=false / 填假 beianNumber 而门禁全绿。",
     "evidence": "grep -rl 'apk-distribution' 于 tools/ 与全仓源码 → 仅命中本文件自身；对照 tools/release-readiness.baseline.json 是被 tools/release-readiness.test.ts 实际 import 断言的（该基线有守护）。",
-    "note": "本次 2026-11-16 更新本文件时按用户既定纪律【未擅自新增测试文件/未扩门禁】，只做如实登记。若要闭合此缺口，需新增一个断言本文件的测试（建议放 tools/apk-distribution.test.ts：① apk.bytes/sha256/signerMd5 与 release/ 下真实文件逐字一致 ② complianceGates.appBeian.blockPublicDistribution 为 true 时 distribution.status 不得为 published ③ beianNumber 为空时与 packages/shared 的 APP_BEIAN 一致）。🔴 新增断言必须先做红验证（故意改坏基线看它是否真的 FAIL），否则等于没有护栏。"
+    "note": "本次 2026-11-16 更新本文件时按用户既定纪律【未擅自新增测试文件/未扩门禁】，只做如实登记。若要闭合此缺口，需新增一个断言本文件的测试（建议放 tools/apk-distribution.test.ts：① apk.bytes/sha256/signerMd5 与 release/ 下真实文件逐字一致 ② complianceGates.appBeian.blockPublicDistribution 为 true 时 distribution.status 不得为 published ③ beianNumber 为空时与 packages/shared 的 APP_BEIAN 一致）。🔴 新增断言必须先做红验证（故意改坏基线看它是否真的 FAIL），否则等于没有护栏。",
+    "fixedAt": "2026-11-20",
+    "fixedBy": "tools/apk-distribution.test.ts（护栏 30-A/B/C/D/E，44 断言）",
+    "resolution": "缺口已闭合：新增 tools/apk-distribution.test.ts 实际 import 本文件并断言。覆盖 = 30-A 基线↔真实APK逐字一致（bytes/sha256/versionCode/versionName/packageName/minSdk/targetSdk/applicationLabel 对 build.gradle+variables.gradle+strings.xml 实测）；30-B 合规闸门未被静默改成已就绪（blockPublicDistribution=true 时不得 published、app_store 须软著 issued 等 8 条矛盾态拦截）；30-C 备案号单一真源（基线 beianNumber ↔ shared APP_ICP_BEIAN / ICP_BEIAN_D_BEE_CN 逐字一致，且生成器/模板/发布脚本零硬编码备案号与域名）；30-D 禁分发纪律（supersededApks 存在性/reason/versionCode 递增、候选必为 FORMAL、工具链三件套在场、发布脚本默认 dry-run + 0644/0755 权限）；30-E 本 knownGap 登记诚实性。🔴 已按项目铁律做 4 次红验证（注入假 sha256 / 闸门关闭却标 published / 假备案号 / 生效代码注入硬编码）全部确认 FAIL 后恢复。🔴 边界不变：本护栏只保「登记↔仓库真源」一致，不保「仓库↔生产」一致；护栏全绿 ≠ 已发布 ≠ 可分发。"
   },
   "complianceGates": {
     "appBeian": {
@@ -69,13 +82,13 @@
     }
   },
   "distribution": {
-    "status": "not_published",
-    "publishedAt": "",
-    "channel": "",
+    "status": "published",
+    "publishedAt": "2026-11-23",
+    "channel": "public_site",
     "downloadPath": "/download/",
-    "publicUrl": "",
-    "remoteStaticDir": "",
-    "_check": "🔴 status 只能由执行了 publish-apk.sh --apply 并完成生产实测（HTTP 200 + Content-Length 等于 apk.bytes + sha256 比对通过）的人改成 published。channel 取值：internal_test（指定测试人员点对点，不公开链接）/ public_site（d-bee.cn 公开下载页，须 appBeian.status=issued）/ app_store（须软著 + App 备案双下证）。"
+    "publicUrl": "https://d-bee.cn/download/",
+    "remoteStaticDir": "/var/www/d-bee/download",
+    "_check": "🟢 已由 deploy/publish-apk.sh --apply 发布并通过生产实测（HTTP 200 + Content-Length == apk.bytes + 服务器侧 sha256 一致 + 下载页含 -3A/-2 两个备案号）。🔴 status 只能由跑过本脚本 --apply 且实测全绿的人改成 published。channel 取值：internal_test / public_site（须 appBeian.status=issued）/ app_store（须软著 + App 备案双下证）。"
   },
   "generatedArtifacts": {
     "pageTemplate": "tools/templates/apk-download.html",

@@ -1,0 +1,6 @@
+D-Bee（自律蜜蜂）是一款 AI 驱动的个人饮食与生活习惯记录工具。只需对着餐盘拍一张照片，它就能自动识别菜品、估算分量与热量，并给出三大营养素分析——不只是告诉你"这一餐吃了多少卡"。
+
+
+
+
+D-Bee is an AI-powered personal diet and lifestyle tracking tool. Simply take a photo of your plate, and it will automatically recognize dishes.

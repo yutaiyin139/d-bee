@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>自律蜜蜂 D-Bee · 应用流程逻辑图</title>
+<style>
+  :root{
+    --bg:#fbf8f1; --bg2:#f4efe4; --ink:#2a2723; --ink2:#6b655c; --ink3:#757067;
+    --honey:#f2a93b; --honey-dark:#96600a; --honey-soft:#fdf1da; --honey-soft2:#fbe6c2;
+    --line:#d9d0bf; --white:#ffffff; --blue:#3f6f8f; --blue-soft:#e8f0f5;
+    --green:#4f7a52; --green-soft:#e9f2ea; --red:#a4524a; --red-soft:#f8ebe9;
+    --violet:#6b5b95; --violet-soft:#efecf6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#e9e5dc;font-family:"Microsoft YaHei","PingFang SC","Hiragino Sans GB",sans-serif;}
+  .board{
+    width:1600px;min-height:1100px;height:auto;background:var(--bg);position:relative;overflow:hidden;
+    margin:0 auto 40px;padding:44px 56px;
+  }
+  /* ---------- 页眉 ---------- */
+  .head{display:flex;align-items:flex-end;justify-content:space-between;border-bottom:3px solid var(--honey);padding-bottom:14px;margin-bottom:26px;}
+  .head .ttl{font-size:38px;font-weight:800;color:var(--ink);letter-spacing:1px;}
+  .head .ttl .bee{color:var(--honey-dark);}
+  .head .sub{font-size:16px;color:var(--ink2);margin-top:8px;line-height:1.5;}
+  .head .no{text-align:right;flex-shrink:0;}
+  .head .no b{display:block;font-size:52px;color:var(--honey);line-height:1.3;font-weight:800;}
+  .head .no span{font-size:14px;color:var(--ink3);letter-spacing:2px;}
+  /* ---------- 通用块 ---------- */
+  .flow{display:flex;align-items:center;gap:0;flex-wrap:wrap;}
+  .node{
+    background:var(--white);border:2px solid var(--line);border-radius:12px;
+    padding:14px 18px;min-width:150px;position:relative;
+    box-shadow:0 2px 0 rgba(42,39,35,.05);
+  }
+  .node .k{font-size:11px;color:var(--honey-dark);font-weight:700;letter-spacing:1px;margin-bottom:5px;}
+  .node .t{font-size:19px;font-weight:700;color:var(--ink);line-height:1.3;}
+  .node .d{font-size:13.5px;color:var(--ink2);line-height:1.55;margin-top:7px;}
+  .node.honey{background:var(--honey-soft);border-color:var(--honey);}
+  .node.blue{background:var(--blue-soft);border-color:var(--blue);}
+  .node.blue .k{color:var(--blue);}
+  .node.green{background:var(--green-soft);border-color:var(--green);}
+  .node.green .k{color:var(--green);}
+  .node.violet{background:var(--violet-soft);border-color:var(--violet);}
+  .node.violet .k{color:var(--violet);}
+  .arw{flex:0 0 auto;display:flex;align-items:center;justify-content:center;color:var(--honey);font-size:26px;font-weight:800;padding:0 10px;}
+  .arw.dn{transform:rotate(90deg);padding:6px 0;}
+  /* ---------- 泳道 ---------- */
+  .lane{display:flex;align-items:stretch;margin-bottom:16px;}
+  .lane .lab{
+    flex:0 0 132px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:var(--ink);color:#fff;border-radius:10px 0 0 10px;padding:10px 6px;text-align:center;
+  }
+  .lane .lab b{font-size:18px;font-weight:800;letter-spacing:1px;}
+  .lane .lab span{font-size:12px;opacity:.72;margin-top:6px;line-height:1.4;}
+  .lane .body{
+    flex:1;background:var(--white);border:2px solid var(--line);border-left:none;
+    border-radius:0 10px 10px 0;padding:16px 20px;display:flex;align-items:center;gap:0;flex-wrap:wrap;
+  }
+  .lane.h .lab{background:var(--honey-dark);}
+  .lane.b .lab{background:var(--blue);}
+  .lane.g .lab{background:var(--green);}
+  .lane.v .lab{background:var(--violet);}
+  .lane.r .lab{background:var(--red);}
+  /* ---------- 分支 ---------- */
+  .branch{display:flex;flex-direction:column;gap:9px;}
+  .branch .node{min-width:auto;padding:10px 14px;}
+  /* ---------- 徽标 ---------- */
+  .tag{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:20px;margin-left:6px;vertical-align:middle;}
+  .tag.ai{background:var(--honey);color:#4a3208;}
+  .tag.off{background:var(--green-soft);color:var(--green);border:1px solid var(--green);}
+  .tag.req{background:var(--red-soft);color:var(--red);border:1px solid var(--red);}
+  /* ---------- 图例/脚注 ---------- */
+  .foot{
+    position:absolute;left:56px;right:56px;bottom:26px;
+    border-top:1px dashed var(--line);padding-top:12px;
+    display:flex;justify-content:space-between;align-items:center;gap:20px;
+  }
+  .foot .lg{display:flex;gap:18px;align-items:center;font-size:12.5px;color:var(--ink3);flex-wrap:wrap;}
+  .foot .lg i{display:inline-block;width:13px;height:13px;border-radius:3px;margin-right:5px;vertical-align:-2px;border:1.5px solid;}
+  .foot .src{font-size:12px;color:var(--ink3);text-align:right;line-height:1.5;}
+  .note{background:var(--honey-soft);border-left:4px solid var(--honey);padding:11px 16px;border-radius:0 8px 8px 0;font-size:13.5px;color:var(--ink2);line-height:1.65;margin-top:14px;}
+  .note b{color:var(--honey-dark);}
+  /* ---------- 时序图 ---------- */
+  .seq{display:flex;flex-direction:column;height:100%;}
+  .actors{display:flex;justify-content:space-between;margin-bottom:0;}
+  .actor{flex:1;text-align:center;}
+  .actor .box{display:inline-block;background:var(--ink);color:#fff;font-size:16px;font-weight:700;padding:11px 18px;border-radius:9px;min-width:170px;}
+  .actor.a2 .box{background:var(--honey-dark);} .actor.a3 .box{background:var(--blue);}
+  .actor.a4 .box{background:var(--violet);} .actor.a5 .box{background:var(--green);}
+  .actor .box small{display:block;font-size:11.5px;font-weight:400;opacity:.78;margin-top:4px;}
+  .grid{flex:1;position:relative;margin-top:0;}
+  .lifeline{position:absolute;top:0;bottom:0;width:2px;background:repeating-linear-gradient(to bottom,var(--line) 0 7px,transparent 7px 14px);}
+  .msg{position:absolute;height:0;border-top:2.5px solid var(--ink2);}
+  .msg.ret{border-top-style:dashed;border-top-color:var(--honey-dark);}
+  .msg .lbl{position:absolute;top:-27px;left:0;font-size:13.5px;color:var(--ink);background:var(--bg);padding:1px 7px;border-radius:4px;white-space:nowrap;font-weight:600;}
+  .msg .lbl em{font-style:normal;color:var(--ink3);font-weight:400;font-size:12px;}
+  .msg::after{content:"";position:absolute;right:-2px;top:-6.5px;border-left:11px solid var(--ink2);border-top:6px solid transparent;border-bottom:6px solid transparent;}
+  .msg.left::after{right:auto;left:-2px;border-left:none;border-right:11px solid var(--honey-dark);}
+  .selfcall{position:absolute;border:2px solid var(--honey);background:var(--honey-soft);border-radius:8px;padding:7px 12px;font-size:13px;color:var(--ink);line-height:1.45;}
+  /* ---------- 架构分层 ---------- */
+  .layer{border:2px solid var(--line);border-radius:12px;margin-bottom:14px;overflow:hidden;background:var(--white);}
+  .layer .lh{display:flex;align-items:center;gap:12px;padding:11px 18px;font-size:18px;font-weight:800;color:#fff;}
+  .layer .lh span{font-size:13px;font-weight:400;opacity:.85;}
+  .layer .lb{padding:16px 18px;display:flex;gap:13px;flex-wrap:wrap;}
+  .card{flex:1;min-width:190px;background:var(--bg);border:1.5px solid var(--line);border-radius:10px;padding:12px 14px;}
+  .card b{display:block;font-size:16px;color:var(--ink);margin-bottom:6px;}
+  .card ul{list-style:none;font-size:13px;color:var(--ink2);line-height:1.75;}
+  .card ul li::before{content:"·";color:var(--honey);font-weight:800;margin-right:6px;}
+  .l1 .lh{background:var(--honey-dark);} .l2 .lh{background:var(--blue);}
+  .l3 .lh{background:var(--violet);} .l4 .lh{background:var(--green);}
+  /* ---------- 合规链 ---------- */
+  .chain{display:flex;flex-wrap:wrap;gap:0;align-items:stretch;}
+  .cstep{flex:1;min-width:210px;background:var(--white);border:2px solid var(--line);border-radius:11px;padding:14px 16px;position:relative;}
+  .cstep .n{position:absolute;top:-13px;left:14px;background:var(--honey);color:#4a3208;font-size:13px;font-weight:800;padding:2px 10px;border-radius:20px;}
+  .cstep b{display:block;font-size:17px;color:var(--ink);margin:6px 0 7px;}
+  .cstep p{font-size:13px;color:var(--ink2);line-height:1.6;}
+  .csep{display:flex;align-items:center;color:var(--honey);font-size:24px;font-weight:800;padding:0 8px;}
+  .tbl{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--white);border-radius:10px;overflow:hidden;}
+  .tbl th{background:var(--ink);color:#fff;padding:10px 14px;text-align:left;font-size:14px;font-weight:700;}
+  .tbl td{padding:10px 14px;border-bottom:1px solid var(--bg2);color:var(--ink2);line-height:1.6;vertical-align:top;}
+  .tbl tr:last-child td{border-bottom:none;}
+  .tbl td b{color:var(--ink);}
+  .tbl tr:nth-child(even) td{background:#fdfcf9;}
+</style>
+</head>
+<body>
+
+<!-- ============ 图 1 · 应用主业务流程 ============ -->
+<div class="board" id="p1">
+  <div class="head">
+    <div>
+      <div class="ttl"><span class="bee">自律蜜蜂 D-Bee</span> · 应用主业务流程图</div>
+      <div class="sub">AI 拍照识别饮食热量的记录工具 —— 从启动、注册登录到记录、趋势报告的完整运营业务流程</div>
+    </div>
+    <div class="no"><b>01</b><span>MAIN FLOW</span></div>
+  </div>
+
+  <div class="lane h">
+    <div class="lab"><b>启动</b><span>合规前置</span></div>
+    <div class="body">
+      <div class="node honey"><div class="k">STEP 1</div><div class="t">打开 App</div><div class="d">iOS / Android 原生壳</div></div>
+      <div class="arw">→</div>
+      <div class="node"><div class="k">STEP 2</div><div class="t">隐私同意门<span class="tag req">必经</span></div><div class="d">未同意前不采集任何个人信息</div></div>
+      <div class="arw">→</div>
+      <div class="node"><div class="k">STEP 3</div><div class="t">首次引导</div><div class="d">身高 / 体重 / 年龄 / 性别</div></div>
+      <div class="arw">→</div>
+      <div class="node green"><div class="k">STEP 4</div><div class="t">生成健康计划</div><div class="d">本地规则引擎算出每日参考摄入</div></div>
+    </div>
+  </div>
+
+  <div class="lane b">
+    <div class="lab"><b>账户</b><span>注册 / 登录</span></div>
+    <div class="body">
+      <div class="node blue"><div class="k">入口</div><div class="t">登录 / 注册</div></div>
+      <div class="arw">→</div>
+      <div class="branch">
+        <div class="node"><div class="t" style="font-size:16px">手机号 + 短信验证码</div></div>
+        <div class="node"><div class="t" style="font-size:16px">邮箱 + 验证码（新用户自动注册）</div></div>
+        <div class="node"><div class="t" style="font-size:16px">邮箱 + 密码（老用户直登）</div></div>
+      </div>
+      <div class="arw">→</div>
+      <div class="node green"><div class="k">结果</div><div class="t">建立个人档案</div><div class="d">数据跨设备同步、可续记</div></div>
+    </div>
+  </div>
+
+  <div class="lane h">
+    <div class="lab"><b>核心</b><span>记录一餐</span></div>
+    <div class="body">
+      <div class="node honey"><div class="k">今日页</div><div class="t">点击「记一餐」</div></div>
+      <div class="arw">→</div>
+      <div class="branch">
+        <div class="node honey"><div class="t" style="font-size:16px">① 拍照识别<span class="tag ai">AI</span></div></div>
+        <div class="node"><div class="t" style="font-size:16px">② 扫包装条码</div></div>
+        <div class="node"><div class="t" style="font-size:16px">③ 写一句话描述<span class="tag ai">AI</span></div></div>
+        <div class="node"><div class="t" style="font-size:16px">④ 手动搜索食物库</div></div>
+      </div>
+      <div class="arw">→</div>
+      <div class="node blue"><div class="k">AI 结果</div><div class="t">菜名 / 份量 / 热量<span class="tag ai">AI 生成</span></div><div class="d">显著标识「内容由 AI 生成，仅供参考」</div></div>
+      <div class="arw">→</div>
+      <div class="node green"><div class="k">可改</div><div class="t">用户校对份量后保存</div></div>
+    </div>
+  </div>
+
+  <div class="lane g">
+    <div class="lab"><b>多维</b><span>不止于吃</span></div>
+    <div class="body">
+      <div class="node"><div class="k">维度 A</div><div class="t">饮食</div><div class="d">三餐 + 加餐，含营养素拆分</div></div>
+      <div class="arw">＋</div>
+      <div class="node"><div class="k">维度 B</div><div class="t">饮水</div><div class="d">目标进度环，达标打卡 +2 分</div></div>
+      <div class="arw">＋</div>
+      <div class="node"><div class="k">维度 C</div><div class="t">体重</div><div class="d">趋势曲线，可连接健康数据源</div></div>
+      <div class="arw">＋</div>
+      <div class="node"><div class="k">维度 D</div><div class="t">运动</div><div class="d">手动记录，与设备活动能量取较大者防重复计</div></div>
+    </div>
+  </div>
+
+  <div class="lane v">
+    <div class="lab"><b>产出</b><span>洞察与激励</span></div>
+    <div class="body">
+      <div class="node violet"><div class="k">今日页</div><div class="t">热量环 + 净摄入</div><div class="d">摄入 − 有效运动消耗，活动部分按 50% 计入「可吃回」</div></div>
+      <div class="arw">→</div>
+      <div class="node violet"><div class="k">今日页</div><div class="t">当日饮食体检<span class="tag off">本地计算</span></div><div class="d">规则引擎离线可用，不消耗 AI 额度</div></div>
+      <div class="arw">→</div>
+      <div class="node violet"><div class="k">报告页</div><div class="t">趋势图表 + 本期解读</div><div class="d">饮食 / 饮水 / 体重 / 运动汇总，免费版看近 7 天</div></div>
+      <div class="arw">→</div>
+      <div class="node honey"><div class="k">激励</div><div class="t">蜜糖打卡积分</div><div class="d">记餐 +5 / 饮水达标 +2 / 运动 +2，含邀请中心与排行榜</div></div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>业务模式：</b>基础记录功能<b>永久免费、永久无广告、无隐藏扣费</b>；会员为增值订阅（月 / 年 / 终身三档，扩展报告天数与 AI 识别额度）。
+    营养与热量数据均为<b>参考估算值，不构成医疗或营养建议</b>。
+  </div>
+
+  <div class="foot">
+    <div class="lg">
+      <span><i style="background:var(--honey-soft);border-color:var(--honey)"></i>核心主流程</span>
+      <span><i style="background:var(--blue-soft);border-color:var(--blue)"></i>账户与 AI 服务</span>
+      <span><i style="background:var(--green-soft);border-color:var(--green)"></i>记录维度</span>
+      <span><i style="background:var(--violet-soft);border-color:var(--violet)"></i>数据产出与激励</span>
+      <span><i style="background:var(--honey);border-color:var(--honey)"></i>AI 生成内容</span>
+    </div>
+    <div class="src">自律蜜蜂 D-Bee · 北京迪蜂科技有限公司<br>应用主业务流程图 01 / 04</div>
+  </div>
+</div>
+
+<!-- ============ 图 2 · AI 拍照识别交互时序 ============ -->
+<div class="board" id="p2">
+  <div class="head">
+    <div>
+      <div class="ttl"><span class="bee">自律蜜蜂 D-Bee</span> · AI 拍照识别交互时序图</div>
+      <div class="sub">核心功能「拍一张照片，就知道这餐吃了多少热量」的完整调用链路与数据流向</div>
+    </div>
+    <div class="no"><b>02</b><span>AI SEQUENCE</span></div>
+  </div>
+
+  <div class="seq">
+    <div class="actors">
+      <div class="actor a1"><div class="box">用户<small>App 使用者</small></div></div>
+      <div class="actor a2"><div class="box">自律蜜蜂客户端<small>iOS / Android / Web</small></div></div>
+      <div class="actor a3"><div class="box">自建服务网关<small>d-bee.cn（HTTPS）</small></div></div>
+      <div class="actor a4"><div class="box">阿里云百炼<small>Qwen-VL 视觉模型</small></div></div>
+      <div class="actor a5"><div class="box">DeepSeek<small>「问问小蜜」问答</small></div></div>
+    </div>
+
+    <div class="grid">
+      <div class="lifeline" style="left:10%"></div>
+      <div class="lifeline" style="left:30%"></div>
+      <div class="lifeline" style="left:50%"></div>
+      <div class="lifeline" style="left:70%"></div>
+      <div class="lifeline" style="left:90%"></div>
+
+      <!-- 1 用户→客户端 -->
+      <div class="msg" style="left:10%;width:20%;top:52px"><span class="lbl">① 点击「拍照识别」 <em>触发相机权限申请</em></span></div>
+      <!-- 2 客户端 self -->
+      <div class="selfcall" style="left:24%;top:78px;width:250px">② 拍摄餐食照片<br>或从相册选择已拍照片</div>
+      <!-- 3 客户端→网关 -->
+      <div class="msg" style="left:30%;width:20%;top:150px"><span class="lbl">③ 上传照片 <em>HTTPS 加密传输，不带账号身份信息</em></span></div>
+      <!-- 4 网关→百炼 -->
+      <div class="msg" style="left:50%;width:20%;top:206px"><span class="lbl">④ 图像识别请求 <em>Qwen-VL</em></span></div>
+      <!-- 5 百炼→网关 返回 -->
+      <div class="msg ret left" style="left:50%;width:20%;top:262px"><span class="lbl" style="left:auto;right:0">⑤ 返回菜名 / 份量 / 热量估算</span></div>
+      <!-- 6 网关 self -->
+      <div class="selfcall" style="left:44%;top:288px;width:262px;border-color:var(--blue);background:var(--blue-soft)">⑥ 匹配自建食物营养库<br>补齐碳水 / 蛋白质 / 脂肪</div>
+      <!-- 7 网关→客户端 -->
+      <div class="msg ret left" style="left:30%;width:20%;top:368px"><span class="lbl" style="left:auto;right:0">⑦ 结构化识别结果</span></div>
+      <!-- 8 客户端 self -->
+      <div class="selfcall" style="left:24%;top:394px;width:268px">⑧ 渲染结果并加<br><b>「AI 生成」</b>显著标识<br><span style="font-size:11.5px;color:var(--ink3)">依《人工智能生成合成内容标识办法》第四条</span></div>
+      <!-- 9 用户 self -->
+      <div class="selfcall" style="left:3%;top:486px;width:236px">⑨ 用户可手动修改份量<br>确认无误后保存记录</div>
+      <!-- 10 客户端→网关 保存 -->
+      <div class="msg" style="left:30%;width:20%;top:566px"><span class="lbl">⑩ 保存饮食记录 <em>照片识别完成后不作长期保存</em></span></div>
+      <!-- 11 返回 -->
+      <div class="msg ret left" style="left:30%;width:20%;top:620px"><span class="lbl" style="left:auto;right:0">⑪ 更新今日热量环与打卡积分</span></div>
+
+      <!-- 问答分支 -->
+      <div class="msg" style="left:10%;width:20%;top:690px;border-top-color:var(--green)"><span class="lbl" style="color:var(--green)">⑫ 可选：「问问小蜜」提问 <em>不限次数</em></span></div>
+      <div class="msg" style="left:30%;width:60%;top:744px;border-top-color:var(--green)"><span class="lbl" style="color:var(--green)">⑬ 提问 + 饮食记录摘要 → DeepSeek 生成回答（同样标注「AI 生成」）</span></div>
+    </div>
+  </div>
+
+  <div class="note" style="margin-top:6px">
+    <b>合规要点：</b>① 照片仅用于识别食物名称与估算份量，<b>识别完成后不长期保存</b>，设备上不留副本；
+    ② 向 AI 服务<b>不提供账号身份信息</b>；③ 所有 AI 生成内容统一标注「内容由 AI 生成，仅供参考，请核对后再作决定」；
+    ④ 用户<b>拒绝相机/相册权限不影响基本功能</b>——仍可扫码、写文字或手动搜索食物记录。
+  </div>
+
+  <div class="foot">
+    <div class="lg">
+      <span><i style="background:var(--ink2);border-color:var(--ink2)"></i>请求</span>
+      <span><i style="background:var(--honey-dark);border-color:var(--honey-dark)"></i>返回（虚线）</span>
+      <span><i style="background:var(--green);border-color:var(--green)"></i>AI 问答支线</span>
+      <span><i style="background:var(--honey-soft);border-color:var(--honey)"></i>客户端本地处理</span>
+    </div>
+    <div class="src">自律蜜蜂 D-Bee · 北京迪蜂科技有限公司<br>AI 拍照识别交互时序图 02 / 04</div>
+  </div>
+</div>
+
+<!-- ============ 图 3 · 功能架构 ============ -->
+<div class="board" id="p3">
+  <div class="head">
+    <div>
+      <div class="ttl"><span class="bee">自律蜜蜂 D-Bee</span> · 应用功能架构图</div>
+      <div class="sub">三 Tab 导航结构、能力层与技术支撑层的完整功能组成</div>
+    </div>
+    <div class="no"><b>03</b><span>ARCHITECTURE</span></div>
+  </div>
+
+  <div class="layer l1">
+    <div class="lh">用户可见层 · 三 Tab 主导航 <span>src/App.tsx — 今日 / 报告 / 我的</span></div>
+    <div class="lb">
+      <div class="card"><b>今日（Dashboard）</b><ul>
+        <li>热量摄入环 · 还可摄入约 X kcal</li><li>碳水 / 蛋白质 / 脂肪拆分</li>
+        <li>三餐与加餐时间线</li><li>饮水进度环</li>
+        <li>当日饮食体检（可折叠）</li><li>记一餐 / 记饮水 / 记运动入口</li></ul></div>
+      <div class="card"><b>报告（ReportScreen）</b><ul>
+        <li>饮食 / 饮水 / 体重 / 运动趋势图表</li><li>近 7 天饮食报告（免费版）</li>
+        <li>本期解读（AI 生成，带标识）</li><li>周食谱建议</li>
+        <li>日历与月份选择器回溯</li></ul></div>
+      <div class="card"><b>我的（ProfileScreen）</b><ul>
+        <li>个人档案与身体数据</li><li>健康记录（体重 / 运动）</li>
+        <li>蜜糖积分 · 邀请中心 · 排行榜</li><li>智能设备与健康数据源连接</li>
+        <li>会员与订阅管理</li><li>通知提醒 · 法律与合规</li></ul></div>
+    </div>
+  </div>
+
+  <div class="layer l2">
+    <div class="lh">能力层 · 核心业务逻辑 <span>AI 识别 / 规则引擎 / 激励体系</span></div>
+    <div class="lb">
+      <div class="card"><b>多入口记录</b><ul>
+        <li>拍照识别（AI 视觉）</li><li>扫包装条码（营养成分）</li>
+        <li>自然语言文字描述（AI）</li><li>手动搜索自建食物库</li>
+        <li>我的常吃食物快速复用</li></ul></div>
+      <div class="card"><b>营养与热量计算</b><ul>
+        <li>自建食物营养数据库</li><li>每日参考摄入（健康计划）</li>
+        <li>净摄入 = 摄入 − 有效运动消耗</li><li>活动部分按 50% 计入「可吃回」</li>
+        <li>活动能量与手动运动取较大者</li></ul></div>
+      <div class="card"><b>规则引擎（本地）</b><ul>
+        <li>当日饮食体检多项指标</li><li>离线可用、不消耗 AI 额度</li>
+        <li>食物洞察与标签</li><li>打卡积分与徽章判定</li></ul></div>
+      <div class="card"><b>激励与增长</b><ul>
+        <li>蜜糖积分台账（记餐 +5 / 饮水 +2 / 运动 +2）</li>
+        <li>徽章成就体系</li><li>邀请中心与好友排行榜</li>
+        <li>仅「今天」结算，历史补记不发（防刷）</li></ul></div>
+    </div>
+  </div>
+
+  <div class="layer l3">
+    <div class="lh">AI 与数据服务层 <span>第三方模型服务经自建网关代理，客户端不直连</span></div>
+    <div class="lb">
+      <div class="card"><b>视觉识别</b><ul><li>阿里云百炼 Qwen-VL</li><li>菜名 / 份量 / 热量估算</li><li>照片识别后不长期保存</li></ul></div>
+      <div class="card"><b>语言问答</b><ul><li>DeepSeek 大模型</li><li>「问问小蜜」不限次数</li><li>结合饮食记录摘要作答</li></ul></div>
+      <div class="card"><b>自建网关</b><ul><li>HTTPS 加密传输</li><li>额度与权限统一校验</li><li>不向模型方传账号身份</li></ul></div>
+      <div class="card"><b>健康数据源</b><ul><li>Health Connect 读取（部分品牌）</li><li>作为手动运动的有效补充</li><li>拿不到时不影响手动记录</li></ul></div>
+    </div>
+  </div>
+
+  <div class="layer l4">
+    <div class="lh">合规与信任层 <span>贯穿全流程</span></div>
+    <div class="lb">
+      <div class="card"><b>隐私与同意</b><ul><li>隐私同意门（前置必经）</li><li>权限按功能动态申请</li><li>拒绝非必要权限不影响基本功能</li></ul></div>
+      <div class="card"><b>AI 内容标识</b><ul><li>全站统一 AiLabel 组件</li><li>「内容由 AI 生成，仅供参考」</li><li>符合 2025-09-01 施行的标识办法</li></ul></div>
+      <div class="card"><b>法律公示</b><ul><li>隐私政策 / 用户协议 / 免责声明</li><li>第三方 SDK 与信息共享清单</li><li>每页底部公示 ICP 备案号</li></ul></div>
+      <div class="card"><b>表述红线</b><ul><li>数据为参考估算值</li><li>不构成医疗或营养建议</li><li>基础功能永久免费、永久无广告</li></ul></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div class="lg">
+      <span><i style="background:var(--honey-dark);border-color:var(--honey-dark)"></i>用户可见层</span>
+      <span><i style="background:var(--blue);border-color:var(--blue)"></i>能力层</span>
+      <span><i style="background:var(--violet);border-color:var(--violet)"></i>AI 与数据服务层</span>
+      <span><i style="background:var(--green);border-color:var(--green)"></i>合规与信任层</span>
+    </div>
+    <div class="src">自律蜜蜂 D-Bee · 北京迪蜂科技有限公司<br>应用功能架构图 03 / 04</div>
+  </div>
+</div>
+
+<!-- ============ 图 4 · 数据流转与合规链路 ============ -->
+<div class="board" id="p4">
+  <div class="head">
+    <div>
+      <div class="ttl"><span class="bee">自律蜜蜂 D-Bee</span> · 数据流转与合规链路图</div>
+      <div class="sub">个人信息从采集、处理到 AI 服务调用的全链路合规控制点</div>
+    </div>
+    <div class="no"><b>04</b><span>DATA &amp; COMPLIANCE</span></div>
+  </div>
+
+  <div class="chain" style="margin-bottom:22px">
+    <div class="cstep"><span class="n">控制点 1</span><b>知情同意前置</b><p>首次启动必经隐私同意门，未同意前不采集任何个人信息、不初始化任何 SDK。</p></div>
+    <div class="csep">→</div>
+    <div class="cstep"><span class="n">控制点 2</span><b>最小必要采集</b><p>仅采集实现记录功能所必需的信息；权限随功能触发时动态申请，不一次性索取。</p></div>
+    <div class="csep">→</div>
+    <div class="cstep"><span class="n">控制点 3</span><b>本地优先计算</b><p>饮食体检、打卡积分、营养计算由本地规则引擎完成，离线可用且不产生数据传输。</p></div>
+    <div class="csep">→</div>
+    <div class="cstep"><span class="n">控制点 4</span><b>加密传输</b><p>需 AI 识别时经自建网关以 HTTPS 传输，网关统一校验额度，客户端不直连模型服务。</p></div>
+  </div>
+
+  <div class="chain" style="margin-bottom:24px">
+    <div class="cstep" style="border-color:var(--violet);background:var(--violet-soft)"><span class="n" style="background:var(--violet);color:#fff">控制点 5</span><b>去身份化调用</b><p>向阿里云百炼 / DeepSeek 发起请求时<b>不提供账号身份信息</b>，仅传照片或提问文本与记录摘要。</p></div>
+    <div class="csep">→</div>
+    <div class="cstep" style="border-color:var(--violet);background:var(--violet-soft)"><span class="n" style="background:var(--violet);color:#fff">控制点 6</span><b>AI 生成显式标识</b><p>识别结果、本期解读、问答回复统一加「AI 生成」徽章与「仅供参考」提示，符合标识办法第四条。</p></div>
+    <div class="csep">→</div>
+    <div class="cstep" style="border-color:var(--green);background:var(--green-soft)"><span class="n" style="background:var(--green);color:#fff">控制点 7</span><b>不留存副本</b><p>照片与提问文本仅在完成该次识别/回答所需时间内传输，<b>不在设备上留存副本、不长期保存</b>。</p></div>
+    <div class="csep">→</div>
+    <div class="cstep" style="border-color:var(--green);background:var(--green-soft)"><span class="n" style="background:var(--green);color:#fff">控制点 8</span><b>用户可控</b><p>可查看、修改、删除个人记录；删除今日唯一饮食记录将同步收回打卡积分，防止刷分。</p></div>
+  </div>
+
+  <table class="tbl">
+    <tr><th style="width:170px">处理场景</th><th style="width:210px">涉及信息</th><th style="width:250px">服务提供方</th><th>用途与用户控制权</th></tr>
+    <tr><td><b>拍照识别</b></td><td>用户主动拍摄或选择上传的食物照片</td><td>阿里云计算有限公司<br>（百炼模型服务 · Qwen-VL 视觉模型）</td><td>识别食物种类与估算份量。<b>识别完成后不作长期保存</b>；拒绝相机/相册权限不影响手动记录。</td></tr>
+    <tr><td><b>问问小蜜</b></td><td>用户提问文本 + 相关饮食记录摘要</td><td>DeepSeek 大模型服务</td><td>生成饮食相关问答回复，回答带「AI 生成」标识，<b>仅供参考</b>；不限次数。</td></tr>
+    <tr><td><b>扫条码</b></td><td>食品包装条形码</td><td>本地条码库 + 自建营养数据库</td><td>查询包装食品营养成分；<b>不消耗拍照识别次数</b>。</td></tr>
+    <tr><td><b>账户登录</b></td><td>手机号 / 邮箱及验证码</td><td>自建服务网关（d-bee.cn）</td><td>建立账户以跨设备同步记录；短信与邮箱双通道，可自主注销。</td></tr>
+    <tr><td><b>健康数据源</b></td><td>步数、活动能量等（用户授权后）</td><td>设备端 Health Connect（部分品牌可用）</td><td>作为手动运动记录的<b>补充而非替代</b>；未连接或无数据时完全不影响使用。</td></tr>
+  </table>
+
+  <div class="note" style="margin-top:20px">
+    <b>表述红线（贯穿全部对外材料与产品内文案）：</b>营养与热量数据为<b>参考估算值，不构成医疗或营养建议</b>；
+    不出现诊断、疗效、治愈类表述；基础记录功能<b>永久免费、永久无广告、无隐藏扣费</b>；
+    各端页面底部公示 ICP 备案号，App 内「我的 / 关于」页标注 App 备案号。
+  </div>
+
+  <div class="foot">
+    <div class="lg">
+      <span><i style="background:var(--white);border-color:var(--line)"></i>基础控制点</span>
+      <span><i style="background:var(--violet-soft);border-color:var(--violet)"></i>AI 调用控制</span>
+      <span><i style="background:var(--green-soft);border-color:var(--green)"></i>数据留存与用户权利</span>
+    </div>
+    <div class="src">自律蜜蜂 D-Bee · 北京迪蜂科技有限公司<br>数据流转与合规链路图 04 / 04</div>
+  </div>
+</div>
+
+</body>
+</html>

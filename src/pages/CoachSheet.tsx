@@ -160,12 +160,19 @@ export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
 
         <div className="coach-body" ref={bodyRef}>
           {messages.map((m, i) => {
-            // 流式生成中的教练气泡：无文字时显示「思考中」，有文字后打字机渲染 + 光标
+            // 流式生成中的教练气泡：无文字时显示「思考中」，有文字后打字机渲染 + 光标。
+            // 《标识办法》第四条（一）：生成**过程**与结果都要带「AI 生成」显式标识，
+            // 只标完成态会让流式吐字的几秒钟内屏幕上出现无标识的 AI 文本。
             if (m.streaming) {
               return (
                 <div key={i} className="coach-msg">
                   {m.text
-                    ? <>{m.text}<span className="coach-caret" /></>
+                    ? (
+                      <>
+                        <div className="coach-ai-tag"><AiLabel text="AI 生成回答" /></div>
+                        {m.text}<span className="coach-caret" />
+                      </>
+                    )
                     : (
                       <span className="coach-thinking">
                         <span className="spinner coach-spin" />
@@ -177,6 +184,15 @@ export function CoachSheet({ ctx, onClose }: CoachSheetProps) {
             }
             return (
               <div key={i} className={`coach-msg ${m.role === 'user' ? 'mine' : ''}`}>
+                {/* 《标识办法》第四条（一）：逐条标识只加在 AI 回复上 —— 用户自己打的字
+                    不是生成合成内容，给它挂「AI 生成」徽章属虚假标识（与 mini 端 coach.tsx
+                    的 m.role !== 'user' 门控同源同向） */}
+                {m.role !== 'user' && (
+                  <div className="coach-ai-tag">
+                    <AiLabel text="AI 生成回答" />
+                    <span className="coach-ai-hint">可能存在误差，不构成医疗或营养建议</span>
+                  </div>
+                )}
                 {m.text}
               </div>
             )
