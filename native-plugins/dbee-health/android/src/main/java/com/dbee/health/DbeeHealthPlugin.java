@@ -188,10 +188,10 @@ public class DbeeHealthPlugin extends Plugin {
             ret.put("completed", true);
             ret.put("grantedCount", grantedCount);
             ret.put("wantCount", wantCount);
-            if (grantedCount == 0) {
-                // 流程走完但一项都没授 → 给前端明确的引导触发条件
+            // 只勾距离、或一项都没勾：读数端用不上，不能当成已连接
+            if (!HealthConnectReader.grantsStepsOrCalories(granted)) {
                 ret.put("reason", "no_types");
-                ret.put("message", "已打开授权页，但未勾选任何读取权限");
+                ret.put("message", "已打开授权页，但未授予步数或活动能量");
             } else if (grantedCount < wantCount) {
                 ret.put("message", "已授权 " + grantedCount + "/" + wantCount
                         + " 项读取权限（部分指标不会同步）");
@@ -215,6 +215,44 @@ public class DbeeHealthPlugin extends Plugin {
      * 🔴 设备无 HC → `unavailable`（**不是** 0 步）；一项权限都没授 → `denied`；
      *    今天真没样本（如没戴表）→ `empty`。三者引导文案完全不同，不得混淆。
      */
+    /**
+     * 打开健康连接的安装页或设置页。
+     * target=install：Android 13 及以下还没装健康连接时，去应用商店安装。
+     * target=settings：已安装时打开系统页，让用户核对步数共享。
+     */
+    @PluginMethod
+    public void openHealthConnect(PluginCall call) {
+        String target = call.getString("target", "settings");
+        if (!"install".equals(target)) target = "settings";
+        android.content.Context ctx = getActivity() != null ? getActivity() : getContext();
+        try {
+            HealthConnectReader.openSetup(ctx, target, (HashMap<String, Object> data) -> call.resolve(toJSObject(data)));
+        } catch (Throwable t) {
+            Log.w(TAG, "openHealthConnect failed: " + t.getClass().getSimpleName());
+            JSObject ret = new JSObject();
+            ret.put("opened", false);
+            ret.put("reason", t.getClass().getSimpleName());
+            call.resolve(ret);
+        }
+    }
+
+    /** 读取秤、跳绳、营养、血糖写入健康连接的当天样本。数值不进日志。 */
+    @PluginMethod
+    public void fetchHealthDevices(PluginCall call) {
+        try {
+            HealthConnectReader.fetchDevices(getContext(), (HashMap<String, Object> data) -> {
+                Log.d(TAG, "fetchHealthDevices: status=" + data.get("status"));
+                call.resolve(toJSObject(data));
+            });
+        } catch (Throwable t) {
+            Log.w(TAG, "fetchHealthDevices failed: " + t.getClass().getSimpleName());
+            JSObject ret = new JSObject();
+            ret.put("status", "error");
+            ret.put("message", String.valueOf(t.getMessage()));
+            call.resolve(ret);
+        }
+    }
+
     @PluginMethod
     public void fetchHealthConnectToday(PluginCall call) {
         try {

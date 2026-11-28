@@ -248,7 +248,9 @@ describe('护栏 3 · 数值口径禁止新增手写舍入（唯一权威 numfmt
       // 中性措辞（厂商品牌字样属华为资质驳回理由），上方补 5 行合规注释
       // → 300,301,687 → 305,306,692。🔴 已用 git HEAD 逐行比对确认三处 Math.round
       // **代码逐字节相同**，纯行号平移，非新增违规。
-      'src/pages/ProfileScreen.tsx:305,306,692',
+      // 2026-11-26：健康连接安装入口与回到前台重探，probe 块变长
+      // → 305,306,692 → 312,313,699。三处 Math.round 内容未变。
+      'src/pages/ProfileScreen.tsx:312,313,699',
     ]
 
     expect(
@@ -423,13 +425,13 @@ describe('护栏 7 · 合规公示可达性与版本号同源', () => {
       ).toBe(true)
     }
 
-    // login 页的 LegalLinks 必须在 !session 三元**之外**，否则已登录态看不到入口
+    // 登录成功会离开本页，协议入口必须直接渲染，不能再包进 !session 分支。
     const idx = login.code.indexOf('<LegalLinks')
-    const branch = login.code.indexOf('{!session ? (')
+    expect(idx > 0, 'login.tsx 缺少 <LegalLinks />').toBe(true)
     expect(
-      idx > 0 && branch > 0 && idx > branch,
-      'login.tsx 的 <LegalLinks /> 必须在登录态条件分支之外（放分支内会漏掉一种状态）',
-    ).toBe(true)
+      login.code.includes('{!session ? ('),
+      'login.tsx 不要再用 !session 包住协议入口，已登录态会把入口藏掉',
+    ).toBe(false)
   })
 
   it('🔴 LegalLinks 必须是单一组件，两端页面不得各写一份文案副本', () => {
@@ -480,7 +482,7 @@ describe('护栏 7 · 合规公示可达性与版本号同源', () => {
 
   it('🔴 mini/config 解析版本号必须校验 name==="d-bee"（防误读 mini/package.json 的 0.1.0）', () => {
     const cfg = stripComments(readFileSync(join(ROOT, 'mini', 'config', 'index.ts'), 'utf8'))
-    // 根 package.json 的 name 是 'd-bee'、version 是产品版本（1.7.9）；
+    // 根 package.json 的 name 是 'd-bee'、version 是产品版本（1.8.0）；
     // mini/package.json 的 name 是 'd-bee-mini'、version 是 0.1.0（小程序包自身版本）。
     // 少了这道校验，候选路径一旦命中 mini 自己的包，就会向用户展示 0.1.0 —— 错版本号比不显示更糟。
     expect(
@@ -590,20 +592,26 @@ describe('护栏 8 · ICP 备案号单一真相源 + 后缀不得错配', () => 
     ).toBe(ICP_SELF)
   })
 
-  it('两端 legal.ts 的 SITE.icp 必须引用 shared 常量，禁止写死备案号字面量', () => {
-    // 断言「引用了常量」——注意必须匹配 icp 那一行的实际赋值，不能只匹配 import
-    // （护栏 7 的漏洞 B 教训：/LegalLinks/ 会命中 import 行，存在性断言必须匹配实际使用）。
-    for (const p of ['src/content/legal.ts', 'mini/src/content/legal.ts']) {
-      const f = byPath(p)!
-      const assign = f.code.match(/^\s*icp:\s*(.+?),?\s*$/m)
-      expect(assign, `${p} 找不到 SITE.icp 赋值行`).not.toBeNull()
-      expect(
-        /ICP_BEIAN_D_BEE_CN/.test(assign![1]),
-        `${p} 的 SITE.icp 赋值为「${assign![1].trim()}」，未引用 ICP_BEIAN_D_BEE_CN。` +
-          '两端各写一份字面量必然漂移（本项目版本号踩过同一坑），' +
-          '必须都引用 shared 常量；主端可保留 env 覆盖口，但**回退值必须是该常量**',
-      ).toBe(true)
-    }
+  it('网站 legal.ts 的 SITE.icp 必须引用网站备案常量，禁止写死字面量', () => {
+    const f = byPath('src/content/legal.ts')!
+    const assign = f.code.match(/^\s*icp:\s*(.+?),?\s*$/m)
+    expect(assign, 'src/content/legal.ts 找不到 SITE.icp 赋值行').not.toBeNull()
+    expect(
+      /ICP_BEIAN_D_BEE_CN/.test(assign![1]),
+      `网站 SITE.icp 赋值为「${assign![1].trim()}」，未引用 ICP_BEIAN_D_BEE_CN。` +
+        '必须引用 shared 常量；可保留 env 覆盖口，但回退值必须是该常量',
+    ).toBe(true)
+  })
+
+  it('小程序 legal.ts 的 SITE.icp 必须引用小程序备案常量，不能用网站号或写死字面量', () => {
+    const f = byPath('mini/src/content/legal.ts')!
+    const assign = f.code.match(/^\s*icp:\s*(.+?),?\s*$/m)
+    expect(assign, 'mini/src/content/legal.ts 找不到 SITE.icp 赋值行').not.toBeNull()
+    expect(
+      /\bMINI_ICP_BEIAN\b/.test(assign![1]),
+      `小程序 SITE.icp 赋值为「${assign![1].trim()}」，未引用 MINI_ICP_BEIAN。` +
+        '小程序号是 -4X，网站号是 -2，写错就是备案号错配',
+    ).toBe(true)
   })
 
   it('两端源码（剥离注释后）不得出现官网备案号 -1 的字面量', () => {
@@ -656,6 +664,16 @@ describe('护栏 8 · ICP 备案号单一真相源 + 后缀不得错配', () => 
         `🔴 不得填网站号 '${ICP_SELF}'（那是绑域名的，不是绑应用的），` +
         `也不得填官网号 '${ICP_PORTAL}'`,
     ).toBe(APP_ICP)
+  })
+
+  it('shared 必须导出 MINI_ICP_BEIAN，且值 = 小程序备案号（后缀 -4X）', () => {
+    const raw = sharedCode()
+    const m = raw.match(/export const MINI_ICP_BEIAN\s*=\s*'([^']*)'/)
+    expect(m, 'shared 缺少 MINI_ICP_BEIAN').not.toBeNull()
+    expect(m![1]).toBe('京ICP备2026075565号-4X')
+    const site = /export const ICP_BEIAN_D_BEE_CN\s*=\s*'([^']*)'/.exec(raw)
+    const app = /export const APP_ICP_BEIAN\s*=\s*'([^']*)'/.exec(raw)
+    expect(m![1] !== site?.[1] && m![1] !== app?.[1]).toBe(true)
   })
 
   it('App 备案号必须与网站 ICP 备案号是两个不同的值（防把 -2 当 App 号填）', () => {
@@ -1322,9 +1340,17 @@ describe('护栏 16 · 微信运动 / 管理订阅 / 免费·订阅逻辑四端�
       /export async function openManageSubscriptions\(\): Promise<boolean>/.test(mainManage) &&
         /export async function openManageSubscriptions\(\): Promise<boolean>/.test(miniManage) &&
         /pay-card manage-card/.test(miniPaywall) &&
-        miniPaywall.indexOf("className='pay-card manage-card'") < miniPaywall.indexOf('{!pro ? ('),
-      '把管理订阅塞进 {!pro} → 非订阅态演示账户看不到，主端 3.1.2 明确禁止',
+        miniPaywall.indexOf("className='pay-card manage-card'") < miniPaywall.indexOf('{!lifetime ? ('),
+      '把管理订阅塞进购买分支 → 非订阅态演示账户看不到，主端 3.1.2 明确禁止',
     ).toBe(true)
+  })
+
+  it('🔴 月会员未到期仍可买年卡和终身，只有终身会员隐藏购买', () => {
+    const mainPaywall = byPath('src/pages/PaywallSheet.tsx')!.code
+    expect(miniPaywall.includes('{!lifetime ? ('), '小程序付费墙用 !pro 会把未到期月会员的年卡和终身档藏掉').toBe(true)
+    expect(mainPaywall.includes('{!lifetime && ('), '主端付费墙用 !pro 会把未到期月会员的年卡和终身档藏掉').toBe(true)
+    expect(miniProfile.includes("{pro ? '续费升级' : '升级'}"), '小程序「我的」在已是会员时必须还能打开付费墙').toBe(true)
+    expect(mainProfile.includes("{pro ? '续费升级' : '升级'}"), '主端「我的」在已是会员时必须还能打开付费墙').toBe(true)
   })
 
   it('🔴 「我的」页必须有管理订阅的可达入口', () => {

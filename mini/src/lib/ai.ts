@@ -82,7 +82,8 @@ async function collectText(
   const needVision = messages.some(
     (m) => Array.isArray(m.content) && m.content.some((part) => part.type === 'image_url'),
   )
-  const model = await pickModel(needVision)
+  // 与主端一致：拍照不再先拉模型目录。网关看到图片会换成视觉模型。
+  const model = needVision ? { id: 'vision' } : await pickModel(false)
 
   let text = ''
   for await (const chunk of cloud.llm.chat.completions.create({

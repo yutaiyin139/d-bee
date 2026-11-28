@@ -11,6 +11,7 @@ import {
   WATCH_BIND_HINT, WATCH_BIND_NOT_BOUND, WATCH_BIND_BOUND,
   WATCH_BIND_ACTION_CONNECT, WATCH_BIND_ACTION_PROGRESS, WATCH_BIND_HC_NOTE,
   WATCH_BIND_BACK, WATCH_BIND_PROGRESS_NOTE,
+  smartDeviceLine,
 } from '@dbee/shared'
 import { syncFromHealth, estimateActivityKcal } from '../lib/health'
 import './MyPageSheets.scss'
@@ -34,6 +35,7 @@ export function SmartDeviceSheet({
   onClose, connected, connectable, vendorLabel, vendorKey, steps, weightKg, heightCm, onConnect, onDisconnect,
 }: SmartDeviceSheetProps) {
   const [liveSteps, setLiveSteps] = useState<number | null>(steps)
+  const [liveActive, setLiveActive] = useState<number | null>(null)
   const [error, setError] = useState(false)
   const [watchView, setWatchView] = useState(false)
 
@@ -49,13 +51,18 @@ export function SmartDeviceSheet({
     if (!connected || steps != null) return
     let alive = true
     // live 实时同步：弹层打开就是「用户主动查看」，此时取微信运动当时的步数（零弹框）
-    void syncFromHealth({ live: true }).then((h) => { if (alive) setLiveSteps(h.steps) })
-      .catch(() => { if (alive) setError(true) })
+    void syncFromHealth({ live: true }).then((h) => {
+      if (!alive) return
+      setLiveSteps(h.steps)
+      setLiveActive(h.activeKcal)
+    }).catch(() => { if (alive) setError(true) })
     return () => { alive = false }
   }, [connected, steps])
 
-  const shownSteps = liveSteps ?? steps ?? 0
-  const activeKcal = estimateActivityKcal(shownSteps, weightKg, heightCm)
+  const deviceSteps = liveSteps ?? steps
+  const shownSteps = deviceSteps ?? 0
+  const estimated = estimateActivityKcal(shownSteps, weightKg, heightCm)
+  const activeKcal = liveActive != null && liveActive > 0 ? Math.round(liveActive) : estimated
 
   // 手表品牌状态复用健康应用目录（单一真源），不另造状态机
   const healthFor = (key: string) => HEALTH_APP_CATALOG.find((d) => d.key === key)
@@ -129,12 +136,15 @@ export function SmartDeviceSheet({
               <Text className='mp-section'>{SMART_DEVICE_SECTION_FUTURE}</Text>
               <Text className='mp-helper'>{SMART_DEVICE_FUTURE_NOTE}</Text>
               <View className='mp-card'>
-                {FUTURE_DEVICE_CATALOG.map((d) => (
-                  <View className='mp-line' key={d.key}>
-                    <Text>{d.label}</Text>
-                    <Text className='mp-muted'>{DEVICE_STATUS_LABEL[d.status]}</Text>
-                  </View>
-                ))}
+                {FUTURE_DEVICE_CATALOG.map((d) => {
+                  const line = smartDeviceLine(d.key, null, deviceSteps, 'mini')
+                  return (
+                    <View className='mp-line' key={d.key}>
+                      <Text>{d.label}</Text>
+                      <Text className='mp-muted'>{line.value || d.note}</Text>
+                    </View>
+                  )
+                })}
               </View>
 
               <Text className='mp-section'>{WATCH_SECTION_OTHER}</Text>

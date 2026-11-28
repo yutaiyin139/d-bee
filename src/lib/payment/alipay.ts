@@ -12,26 +12,26 @@
  *   `fetchPrepayParams()` 已接网关 `/.cloud/payment/apppay/prepay`，
  *   服务端补了统一下单 / 异步通知验签 / 主动查单 / 幂等结算。
  *
- * 🔴 与微信通道共用同一道构建期开关 `D_BEE_APPPAY_ENABLED`（默认 false）。
+ * 🔴 按钮另由 `D_BEE_ALIPAY_ENABLED` 门控（默认 false）。微信支付不读这个开关。
  *    开启前置：支付宝企业应用签约 + `ALIPAY_*` env + 0047 上生产 +
  *    `apppay.mjs` 部署 + 真机 1 分钱联调。渠道可独立由服务端 env 决定是否投放，
  *    但任何一个未就绪时都不得渲染「可点但收不到钱」的按钮。
  *    详见 `docs/Web引导闭环与Android收款实装-2026-11-09.md` §五。
  *
  * ── 支付宝链路（与苹果 IAP 的「下单→支付→回传凭证→核销」同构）────────────
- *   ① 服务端统一下单（支付宝 App 支付 / 手机网站支付，返回 orderStr）—— 服务端能力，待商户号后接
- *   ② 客户端原生 SDK 拉起收银台（支付宝 SDK 的 payV2(orderStr)）
- *   ③ 服务端异步通知验签发权益（provider='alipay' 分支）—— 服务端能力，待商户号后接
- *   ④ 前端刷新权益
+ *   ① 网关 /.cloud/payment/apppay/prepay 用服务端私钥签出 orderStr
+ *   ② 客户端 DbeeAlipay.pay({ orderStr }) 拉起收银台（PayTask.payV2）
+ *   ③ 网关 /.cloud/payment/alipay/notify 验签后 settle_app_payment 发会员
+ *   ④ 前端再向网关查单并刷新权益
+ *   商户密钥未配时网关对该渠道返回失败，不会发出会员。
  *
  * ── 前置条件（缺则 createAlipayAdapter 返回 null）───────────────────────
  *   1. 支付宝开放平台「移动应用」AppID（构建时注入 VITE_ALIPAY_APPID）
- *   2. 支付宝商户号（企业主体）+ 服务端统一下单接口（provider='alipay' 验签分支）
- *   3. Capacitor 支付宝插件已注入（Android 原生 SDK）
- *   4. 资质（营业执照 + 对公账户）—— 对公账户下周三开，之后才能签支付宝企业应用
+ *   2. 服务端 ALIPAY_APP_ID / ALIPAY_PRIVATE_KEY / ALIPAY_PUBLIC_KEY 已配
+ *      （ALIPAY_PUBLIC_KEY 是支付宝公钥，不是应用公钥）
+ *   3. @dbee/alipay 已打进 Android 包（插件名 DbeeAlipay）
  *
- *   ⚠️ 当前资质未就绪：本 adapter 的 create 探测会因「未配 AppID」而返回 null，
- *   前端据此降级为诚实提示，与 iOS / 微信未接插件时的行为完全一致。
+ *   未配 AppID 或插件不在包里时，探测返回 null，付费墙不画支付宝按钮。
  */
 
 import { PRODUCT_IDS, type ProductId } from '../entitlement'

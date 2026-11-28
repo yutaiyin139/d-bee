@@ -30,6 +30,11 @@
     <uses-permission android:name="android.permission.health.READ_STEPS" />
     <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED" />
     <uses-permission android:name="android.permission.health.READ_DISTANCE" />
+    <uses-permission android:name="android.permission.health.READ_WEIGHT" />
+    <uses-permission android:name="android.permission.health.READ_BODY_FAT" />
+    <uses-permission android:name="android.permission.health.READ_EXERCISE" />
+    <uses-permission android:name="android.permission.health.READ_NUTRITION" />
+    <uses-permission android:name="android.permission.health.READ_BLOOD_GLUCOSE" />
 
     <!--
       Android 11+ 包可见性限制（🔴 三段各有独立的静默失败后果，缺一段就踩一个坑）：
@@ -50,6 +55,8 @@
     -->
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
+        <!-- 安装健康连接时要能解析应用商店；不声明的话 Android 11+ 会把「商店在」看成「商店不在」 -->
+        <package android:name="com.android.vending" />
         <intent>
             <action android:name="androidx.health.ACTION_REQUEST_PERMISSIONS" />
         </intent>

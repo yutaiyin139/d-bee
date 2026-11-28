@@ -114,6 +114,8 @@ export function createApp(deps) {
   // 微信小程序登录（A1）：SDK AUTH_PATHS.loginWechat='/v1/login-wechat'，
   // baseUrl=endpoint+'/.cloud/auth' → 完整路径与 A 前缀拼接逐字对齐（2026-11-05 实证）
   router.on('POST', `${A}/login-wechat`, wrap(auth.loginWechat))
+  // 0060：小程序授权手机号，绑到当前微信账号，App 短信登录进入同一个 owner
+  router.on('POST', `${A}/bind-phone`, wrap(auth.bindPhone))
   // WX-1：微信运动步数同步（需 Bearer + 用户主动触发，服务端解密只返回当天步数）
   router.on('POST', `${A}/werun/sync`, wrap(werun.sync))
   router.on('POST', `${A}/signup`, wrap(auth.signUp))

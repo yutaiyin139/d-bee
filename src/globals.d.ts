@@ -33,6 +33,12 @@ declare const __XPAY_SALE_ENABLED__: boolean
 declare const __APPPAY_SALE_ENABLED__: boolean
 
 /**
+ * 支付宝按钮是否在构建期开启。默认 false。
+ * Android 微信支付由 `__APPPAY_SALE_ENABLED__` 决定，不依赖本开关。
+ */
+declare const __ALIPAY_SALE_ENABLED__: boolean
+
+/**
  * 微信小程序全局对象（仅在微信小程序运行时由宿主注入）。
  * 这里只声明最小结构用于平台探测，不引入任何类型库；非小程序环境恒为 undefined。
  */

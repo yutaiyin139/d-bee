@@ -14,8 +14,10 @@
  *
  * ── verify 的安全边界（每一条都对应一个真实攻击面）──────────────────────
  *   1. 必须带网关签发的 Bearer JWT —— 权益发给「当前登录用户」，不发给收据持有者；
- *   2. 收据必须过 Apple verifyReceipt（status=0），**绝不**信任客户端自报的
- *      product_id / transaction_id —— 一律以 Apple 返回报文为准；
+ *   2. 凭证必须是苹果签过名的内容，**绝不**信任客户端自报的
+ *      product_id / transaction_id —— 一律以苹果报文为准。
+ *      StoreKit 2 交易的 jwsRepresentation 走本文件的 JWS 验签（与通知同一条
+ *      x5c 链）；旧版 App Store 收据文件仍走 verifyReceipt。
  *   3. receipt.bundle_id 必须等于 APPLE_BUNDLE_ID —— 防止拿别家 App 的
  *      合法收据来换本 App 会员（verifyReceipt 对任何 App 的收据都返 0）；
  *   4. transaction_id 在 apple_transactions 里 UNIQUE —— 同一笔交易全服只能
@@ -83,6 +85,15 @@ const sha256Hex = (buf) => createHash('sha256').update(buf).digest('hex')
 
 /** 收据可能很大（几十 KB base64），库里只存摘要，全文留在 Apple 侧 */
 const receiptDigest = (receipt) => sha256Hex(Buffer.from(String(receipt)))
+
+/**
+ * StoreKit 2 的 jwsRepresentation 是三段 base64url，用点分隔。
+ * 旧版 App Store 收据是标准 base64，字符集里没有点，不会撞上这条判断。
+ */
+function looksLikeJws(value) {
+  const parts = String(value).split('.')
+  return parts.length === 3 && parts.every((part) => part.length > 0 && !/\s/.test(part))
+}
 
 /**
  * 调 Apple verifyReceipt。
@@ -265,13 +276,114 @@ export function createIapHandlers(deps) {
     return sub
   }
 
+  /**
+   * StoreKit 2 交易 JWS 核销。签名、包名、环境、商品和交易号都来自苹果报文。
+   * 客户端传来的 provider_txn_id 只用于核对，对不上就拒绝，避免核销 A、finish B。
+   */
+  async function verifySignedTransaction(res, { ownerId, orderNo, isRestore, clientTxnId, receipt }) {
+    let payload
+    try {
+      payload = jwsVerify(receipt)
+    } catch (err) {
+      logger.warn(`[iap] 交易 JWS 验签失败 owner=${ownerId}: ${err?.message || err}`)
+      return cloudError(res, 402, '交易签名校验失败', 'invalid_signature')
+    }
+
+    const bundleId = typeof payload?.bundleId === 'string' ? payload.bundleId : ''
+    if (bundleId !== cfg.appleBundleId) {
+      logger.warn(`[iap] JWS bundleId 不匹配: got=${bundleId} want=${cfg.appleBundleId} owner=${ownerId}`)
+      return cloudError(res, 402, '收据不属于本应用', 'bundle_mismatch')
+    }
+
+    const environment = String(payload?.environment ?? '')
+    if (!cfg.appleAllowedEnvs?.has(environment)) {
+      logger.warn(`[iap] JWS environment 不在白名单: got=${environment || '<缺失>'} owner=${ownerId}`)
+      return cloudError(res, 402, '收据环境与当前服务不符', 'environment_mismatch')
+    }
+
+    if (payload?.revocationDate != null) {
+      logger.warn(`[iap] JWS 交易已撤销 owner=${ownerId} txn=${payload?.transactionId ?? '-'}`)
+      return cloudError(res, 402, '该交易已退款或撤销', 'apple_revoked')
+    }
+
+    const transactionId = payload?.transactionId != null ? String(payload.transactionId) : ''
+    const productId = typeof payload?.productId === 'string' ? payload.productId : ''
+    if (!transactionId || !productId) {
+      return cloudError(res, 402, '收据中未找到有效交易', 'no_transaction')
+    }
+    if (clientTxnId && clientTxnId !== transactionId) {
+      logger.warn(`[iap] JWS 交易号与客户端不一致 owner=${ownerId} client=${clientTxnId} apple=${transactionId}`)
+      return cloudError(res, 402, '交易号与签名不符', 'txn_mismatch')
+    }
+
+    if (orderNo && !isRestore) {
+      try {
+        const { rows } = await pool.query(
+          'SELECT owner_id, product_id, status FROM public.payment_orders WHERE order_no = $1',
+          [orderNo],
+        )
+        const order = rows[0]
+        if (order) {
+          if (order.owner_id !== ownerId) {
+            logger.warn(`[iap] 订单归属不符 order=${orderNo} order_owner=${order.owner_id} jwt=${ownerId}`)
+          }
+        } else {
+          logger.warn(`[iap] 订单不存在 order=${orderNo} jwt=${ownerId}`)
+        }
+      } catch (err) {
+        logger.error(`[iap] 订单查询失败 order=${orderNo}: ${err?.message || err}`)
+      }
+    }
+
+    const originalTxnId = payload?.originalTransactionId != null
+      ? String(payload.originalTransactionId)
+      : transactionId
+    const { rows } = await pool.query(
+      `SELECT public.settle_apple_purchase($1,$2,$3,$4,$5,$6,$7,$8,$9) AS r`,
+      [
+        ownerId,
+        orderNo,
+        productId,
+        transactionId,
+        originalTxnId,
+        payload?.expiresDate != null ? String(payload.expiresDate) : null,
+        payload?.purchaseDate != null ? String(payload.purchaseDate) : null,
+        environment,
+        receiptDigest(receipt),
+      ],
+    )
+    const r = rows[0]?.r
+    if (!r || r.error) {
+      const code = r?.error ?? 'settle_failed'
+      logger.warn(`[iap] JWS 核销被拒 owner=${ownerId} txn=${transactionId} code=${code}`)
+      const status = code === 'txn_taken_by_other' ? 409 : 402
+      return cloudError(res, status, code === 'txn_taken_by_other' ? '该交易已被其他账号核销' : '支付核销失败，请联系客服', code)
+    }
+
+    logger.info(
+      `[iap] JWS 核销成功 owner=${ownerId} txn=${transactionId} product=${productId}` +
+      ` plan=${r.plan} dup=${!!r.duplicate} env=${environment}`,
+    )
+    return {
+      status: 200,
+      body: {
+        settled: true,
+        duplicate: !!r.duplicate,
+        plan: r.plan ?? 'free',
+        pro_until: r.pro_until ?? null,
+        transaction_id: transactionId,
+      },
+    }
+  }
+
   return {
     /**
      * POST /.cloud/payment/apple/verify
      * body: { receipt: string, order_no?: string, provider_txn_id?: string }
-     *   · receipt 必填（base64 App Store 收据）
+     *   · receipt 必填。StoreKit 2 传 jwsRepresentation；旧客户端传 base64 收据文件
      *   · order_no 可选；`restore-…` 前缀 = 恢复购买（无订单，只核销交易）
-     *   · provider_txn_id 可选；仅用于在收据的多笔交易里定位，**不作为信任依据**
+     *   · provider_txn_id 可选；JWS 路径必须与签名内的 transactionId 一致，
+     *     旧收据路径只用于在多笔交易里定位，**不作为信任依据**
      * 返回: { settled: true, plan, pro_until, duplicate } 或 CloudError 形状
      */
     async verify(req, res, body) {
@@ -284,6 +396,10 @@ export function createIapHandlers(deps) {
       const orderNo = typeof body?.order_no === 'string' && body.order_no.trim() ? body.order_no.trim() : null
       const isRestore = !!orderNo && orderNo.startsWith('restore-')
       const clientTxnId = typeof body?.provider_txn_id === 'string' ? body.provider_txn_id.trim() : ''
+
+      if (looksLikeJws(receipt)) {
+        return verifySignedTransaction(res, { ownerId, orderNo, isRestore, clientTxnId, receipt })
+      }
 
       // ① 外呼 Apple 验签（沙盒/生产自动切换）
       let apple

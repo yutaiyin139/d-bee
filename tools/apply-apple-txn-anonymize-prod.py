@@ -50,9 +50,18 @@ SH_NAME = "server-apply-0056.sh"
 REMOTE_DIR = "/tmp/dbee-mig"
 
 
+def arg_value(flag):
+    if flag not in sys.argv:
+        return ""
+    i = sys.argv.index(flag)
+    if i + 1 >= len(sys.argv):
+        return ""
+    return sys.argv[i + 1]
+
+
 def load_env():
     env = {}
-    path = os.path.join(ROOT, ".env")
+    path = arg_value("--from") or os.path.join(ROOT, ".env")
     if not os.path.isfile(path):
         return env
     with open(path, encoding="utf-8", errors="ignore") as f:
@@ -77,7 +86,7 @@ def main():
 
     env = load_env()
     host = env.get("DBEE_HOST") or env.get("IP")
-    user = env.get("USER")
+    user = env.get("DBEE_SSH_USER") or env.get("USER") or "ubuntu"
     pwd = env.get("SSH_PWD")
     if not (host and user and pwd):
         print("✗ .env 缺 DBEE_HOST/USER/SSH_PWD，无法连接生产")
@@ -100,7 +109,7 @@ def main():
             return 2
         payloads[name] = data
 
-    print(f"· 目标：{user}@{host}  库：dbee")
+    print("· 目标：生产库 dbee")
     print(f"· 上传：{SQL_NAME}（{len(payloads[SQL_NAME])} B）、"
           f"{SH_NAME}（{len(payloads[SH_NAME])} B）")
     if check_only:

@@ -31,7 +31,7 @@ import { STREAK_BADGES } from '../lib/badge'
 import { AI_REDEEM_DAILY_LIMIT, FREE_DAILY_AI, HEALTH_SYNC_INTERVAL_MS, MEAL_PAYWALL_REASON, proDaysLeft } from '../lib/entitlement'
 import { categoryOf } from '../lib/foods'
 import { LEVEL_LABELS, levelOfScore, nextMealAdvice, summarizeEntries } from '../lib/foodInsight'
-import { ACTIVITY_EATBACK_RATIO, connectHealth, DEFAULT_STEP_GOAL, estimateActivityKcal, getHealthVendor, healthStatusHint, isHealthConnectable, isHealthConnected, isUsableHealthStatus, probeHealthConnectAvailability, syncFromHealth, type HealthSyncData } from '../lib/health'
+import { ACTIVITY_EATBACK_RATIO, connectHealth, DEFAULT_STEP_GOAL, estimateActivityKcal, getHealthVendor, healthConnectInstallOffered, healthStatusHint, isHealthConnectable, isHealthConnectAvailable, isHealthConnected, isUsableHealthStatus, openHealthConnect, probeHealthConnectAvailability, syncFromHealth, type HealthSyncData } from '../lib/health'
 import { isAndroid } from '../lib/platform'
 import { CHECKIN_EXERCISE, CHECKIN_MEAL, CHECKIN_WATER, dailyCheckinHoney, streakMilestoneHoney } from '../lib/invite'
 import { errText } from '../lib/errmsg'
@@ -141,22 +141,29 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
   // getHealthVendor()/isHealthConnectable() 读到的是保守 false。故挂载时 probe 一次，
   // 完成后置 hcReady 触发这两个 useMemo 重算（非 Android 恒不触发，零开销；
   // probe 幂等且结果缓存，重复挂载不重复打跨进程查询）。
-  const [hcReady, setHcReady] = useState(false)
+  const [hcEpoch, setHcEpoch] = useState(0)
   useEffect(() => {
+    if (!isAndroid()) return
     let alive = true
-    if (isAndroid()) {
-      void probeHealthConnectAvailability().then(() => {
-        if (alive) setHcReady(true)
+    const bump = () => {
+      void probeHealthConnectAvailability(true).then(() => {
+        if (alive) setHcEpoch((n) => n + 1)
       })
     }
+    bump()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') bump()
+    }
+    document.addEventListener('visibilitychange', onVisible)
     return () => {
       alive = false
+      document.removeEventListener('visibilitychange', onVisible)
     }
   }, [])
-  const healthVendor = useMemo(() => getHealthVendor(), [hcReady])
+  const healthVendor = useMemo(() => getHealthVendor(), [hcEpoch])
   // 是否支持健康数据源连接（仅原生 App：iOS HealthKit / 华为·小米 Health Kit / Health Connect）。
   // Web 端恒 false：不显示任何健康同步/连接相关提示。
-  const healthConnectable = useMemo(() => isHealthConnectable(), [hcReady])
+  const healthConnectable = useMemo(() => isHealthConnectable(), [hcEpoch])
   const [healthConnected, setHealthConnected] = useState(false)
   const [healthSteps, setHealthSteps] = useState(0)
   const [healthActiveKcal, setHealthActiveKcal] = useState(0)
@@ -995,14 +1002,18 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
                 <IconRun color="var(--green)" size={13} />
                 {healthConnecting
                   ? '处理中…'
-                  : healthVendor.canSync
-                    ? `连接${healthVendor.label}`
-                    : `查看${healthVendor.label}说明`}
+                  : healthConnectInstallOffered()
+                    ? '安装健康连接'
+                    : healthVendor.canSync
+                      ? `连接${healthVendor.label}`
+                      : `查看${healthVendor.label}说明`}
               </button>
               <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
-                {healthVendor.canSync
-                  ? '同步步数与活动能量，自动计入活动消耗'
-                  : '本机型暂不支持自动同步，可手动记录运动'}
+                {healthConnectInstallOffered()
+                  ? '安装后，手表和手环的步数才能从系统健康读进来'
+                  : healthVendor.canSync
+                    ? '同步步数与活动能量，自动计入活动消耗'
+                    : '本机型暂不支持自动同步，可手动记录运动'}
               </span>
             </div>
             {/* 🔴 必须带修饰类（notice warn）：`.notice` 基类只有圆角/内边距/字号，
@@ -1020,7 +1031,14 @@ export function Dashboard({ profile, onOpenLegal }: DashboardProps) {
             否则用户只看到步数不动，误以为「同步功能坏了」。
             🔴 同样补 warn 修饰类，理由见上。 */}
         {healthConnectable && healthSyncHint && (
-          <div className="notice warn" style={{ margin: '0 0 10px', fontSize: 13 }}>{healthSyncHint}</div>
+          <div className="notice warn" style={{ margin: '0 0 10px', fontSize: 13 }}>
+            {healthSyncHint}
+            {isHealthConnectVendor && isHealthConnectAvailable() && (
+              <button type="button" className="btn-text" style={{ marginLeft: 8 }} onClick={() => void openHealthConnect('settings')}>
+                打开健康连接
+              </button>
+            )}
+          </div>
         )}
 
         {healthConnectable && healthConnected && hasHealthData && (

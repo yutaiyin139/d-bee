@@ -154,6 +154,32 @@ export async function findUserByIdent(pool, kind, value, pepper) {
 }
 
 /**
+ * 按已绑定的手机号查账号（0060）。
+ * 微信账号的登录标识仍是 openid；手机号挂在 bound_phone_hash 上。
+ * 哈希口径与 ident_kind='phone' 相同，所以 App 短信登录能进同一个 owner。
+ */
+export async function findUserByBoundPhone(pool, phone, pepper) {
+  const hash = identHash('phone', phone, pepper)
+  const { rows } = await pool.query(
+    `SELECT owner_id, ident_kind, ident_masked, bound_phone_masked, created_at, last_login_at, login_count, token_version
+       FROM public.app_users
+      WHERE bound_phone_hash = $1`,
+    [hash],
+  )
+  return rows[0] ?? null
+}
+
+/**
+ * 登录时解析账号：先按本标识，手机号再看是否已绑在微信账号上。
+ * 绑过的号码必须回到微信 owner，不能再新建一个空的手机号账号。
+ */
+export async function findAccountForIdent(pool, kind, value, pepper) {
+  const direct = await findUserByIdent(pool, kind, value, pepper)
+  if (direct || kind !== 'phone') return direct
+  return findUserByBoundPhone(pool, value, pepper)
+}
+
+/**
  * 按标识查用户**并带上 password_hash**（仅「邮箱/手机号 + 密码」登录路径用）。
  *
  * 为什么不直接在 findUserByIdent 里加这一列：那个函数有 3 处调用（发码判存在、
@@ -189,7 +215,7 @@ export const DUMMY_PASSWORD_HASH =
 /** 按 owner_id 查用户（/user/me 用） */
 export async function findUserByOwnerId(pool, ownerId) {
   const { rows } = await pool.query(
-    `SELECT owner_id, ident_kind, ident_masked, created_at, last_login_at, login_count, token_version
+    `SELECT owner_id, ident_kind, ident_masked, bound_phone_masked, created_at, last_login_at, login_count, token_version
        FROM public.app_users
       WHERE owner_id = $1`,
     [ownerId],

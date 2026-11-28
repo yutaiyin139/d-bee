@@ -27,15 +27,37 @@
 
 import { isAndroid } from '../platform'
 import { normalizeHealthStatus, type HealthAuthResult, type HealthSyncData } from './types'
+import type { SmartDeviceSample } from '@dbee/shared'
 
 /** dbee-health 原生插件的 Health Connect 接口（与厂商接口分离，互不干扰） */
 interface HealthConnectPlugin {
   /** 运行时探测 HC 是否可用（SDK 状态 + provider 存在）；旧插件无此方法 */
-  healthConnectStatus?: () => Promise<{ available: boolean; reason?: string }>
+  healthConnectStatus?: () => Promise<{
+    available: boolean
+    reason?: string
+    sdkStatusLabel?: string
+  }>
+  /** 打开健康连接的安装页或系统设置；旧插件无此方法 */
+  openHealthConnect?: (opts: { target: 'install' | 'settings' }) => Promise<{ opened?: boolean }>
   /** 发起 HC 读权限授权；completed = 授权流程走完（真实授予以 fetchToday 为准） */
   requestHealthConnectAuthorization?: () => Promise<{
     completed: boolean
     reason?: string
+    message?: string
+  }>
+  /** 读秤、跳绳、营养、血糖当天样本 */
+  fetchHealthDevices?: () => Promise<{
+    status?: string
+    weightKg?: number
+    bodyFatPct?: number
+    nutritionKcal?: number
+    jumpCount?: number
+    jumpMinutes?: number
+    glucoseMmol?: number
+    weightGranted?: boolean
+    ropeGranted?: boolean
+    nutritionGranted?: boolean
+    glucoseGranted?: boolean
     message?: string
   }>
   /** 读当天步数 + 活动能量 + 数据来源状态（HC aggregate 聚合读） */
@@ -51,6 +73,7 @@ interface HealthConnectPlugin {
 interface HealthConnectProbeResult {
   available: boolean
   reason?: string
+  sdkStatusLabel?: string
   timedOut?: boolean
 }
 
@@ -67,6 +90,8 @@ function getPlugin(): HealthConnectPlugin | null {
  * 用模块级变量而非每次查询：getSdkStatus 是跨进程调用，必须缓存（性能）。
  */
 let availabilityCache: boolean | null = null
+/** 探测结论是「可以安装/更新健康连接」，与「这台手机根本没有这条通道」分开 */
+let installOffered = false
 
 /**
  * 🔴 读数硬超时（8s）。为什么必须有：`aggregate()` 是**跨进程 suspend 调用**，
@@ -123,12 +148,14 @@ export async function probeHealthConnectAvailability(force = false): Promise<boo
   if (availabilityCache !== null && !force) return availabilityCache
   if (!isAndroid()) {
     availabilityCache = false
+    installOffered = false
     return false
   }
   const plugin = getPlugin()
   // 旧插件无 healthConnectStatus 方法 → HC 通道未就绪 → false（零回归）
   if (!plugin || typeof plugin.healthConnectStatus !== 'function') {
     availabilityCache = false
+    installOffered = false
     return false
   }
   try {
@@ -141,8 +168,14 @@ export async function probeHealthConnectAvailability(force = false): Promise<boo
     )
     if (res?.timedOut === true) return false
     availabilityCache = res?.available === true
+    const label = typeof res?.sdkStatusLabel === 'string' ? res.sdkStatusLabel : ''
+    const reason = typeof res?.reason === 'string' ? res.reason : ''
+    // Android 13 及以下没装健康连接时，系统返回的是「需要安装/更新」，不是「这台手机没有」
+    installOffered = availabilityCache !== true &&
+      (label === 'provider_update_required' || reason === 'provider_update_required')
   } catch {
     availabilityCache = false
+    installOffered = false
   }
   return availabilityCache
 }
@@ -154,6 +187,23 @@ export async function probeHealthConnectAvailability(force = false): Promise<boo
  */
 export function isHealthConnectAvailable(): boolean {
   return isAndroid() && availabilityCache === true
+}
+
+/** 本机可以安装或更新「健康连接」，点连接应去安装页，而不是提示手动记录 */
+export function healthConnectInstallOffered(): boolean {
+  return isAndroid() && installOffered
+}
+
+/** 打开健康连接的安装页（install）或系统设置（settings）。打不开时返回 false */
+export async function openHealthConnect(target: 'install' | 'settings'): Promise<boolean> {
+  const plugin = getPlugin()
+  if (!plugin || typeof plugin.openHealthConnect !== 'function') return false
+  try {
+    const res = await plugin.openHealthConnect({ target })
+    return res?.opened === true
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -195,6 +245,44 @@ export async function requestHealthConnectAuthorization(): Promise<HealthAuthRes
  * 🔴 跨进程调用一律套 [HC_FETCH_TIMEOUT_MS] 硬超时：挂起不返回时如实降级为 error
  *    （附「读数超时」文案），让 UI 从「正在读取」切到可见的引导，而不是永远卡着。
  */
+function numOrNull(v: unknown): number | null {
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n) || n < 0) return null
+  return Math.round(n * 10) / 10
+}
+
+/** 系统健康里的设备读数。插件没有这个方法时返回 null，调用方按「读不到」展示。 */
+export async function fetchHealthConnectDevices(): Promise<SmartDeviceSample | null> {
+  const plugin = getPlugin()
+  if (!plugin || typeof plugin.fetchHealthDevices !== 'function') return null
+  try {
+    const res = await withTimeout(plugin.fetchHealthDevices(), HC_FETCH_TIMEOUT_MS, () => ({ status: 'error' }))
+    if (res.status === 'unavailable' || res.status === 'error' || res.status === 'denied') {
+      return {
+        weightKg: null, bodyFatPct: null, nutritionKcal: null, jumpCount: null, jumpMinutes: null, glucoseMmol: null,
+        weightGranted: res.weightGranted === true,
+        ropeGranted: res.ropeGranted === true,
+        nutritionGranted: res.nutritionGranted === true,
+        glucoseGranted: res.glucoseGranted === true,
+      }
+    }
+    return {
+      weightKg: numOrNull(res.weightKg),
+      bodyFatPct: numOrNull(res.bodyFatPct),
+      nutritionKcal: numOrNull(res.nutritionKcal),
+      jumpCount: res.jumpCount == null ? null : Math.max(0, Math.round(Number(res.jumpCount))),
+      jumpMinutes: res.jumpMinutes == null ? null : Math.max(0, Math.round(Number(res.jumpMinutes))),
+      glucoseMmol: numOrNull(res.glucoseMmol),
+      weightGranted: res.weightGranted !== false,
+      ropeGranted: res.ropeGranted !== false,
+      nutritionGranted: res.nutritionGranted !== false,
+      glucoseGranted: res.glucoseGranted !== false,
+    }
+  } catch {
+    return null
+  }
+}
+
 export async function fetchHealthConnectToday(): Promise<HealthSyncData> {
   const plugin = getPlugin()
   if (!plugin || typeof plugin.fetchHealthConnectToday !== 'function') {

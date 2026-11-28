@@ -21,6 +21,7 @@ import {
   type HealthAuthResult,
   type HealthSyncData,
 } from './types'
+import type { SmartDeviceSample } from '@dbee/shared'
 
 /** dbee-health 原生插件的最小接口 */
 interface HealthPlugin {
@@ -29,6 +30,20 @@ interface HealthPlugin {
     completed: boolean
     reason?: string
     message?: string
+  }>
+  /** 读秤、跳绳、饮食能量、血糖的当天样本；旧插件没有这个方法 */
+  fetchDeviceReadings?: () => Promise<{
+    status?: string
+    weightKg?: number
+    bodyFatPct?: number
+    nutritionKcal?: number
+    jumpCount?: number
+    jumpMinutes?: number
+    glucoseMmol?: number
+    weightGranted?: boolean
+    ropeGranted?: boolean
+    nutritionGranted?: boolean
+    glucoseGranted?: boolean
   }>
   /** 读当天步数 + 活动能量 + 数据来源状态 */
   fetchToday: () => Promise<{
@@ -121,5 +136,34 @@ export async function fetchTodayHealth(): Promise<HealthSyncData> {
       status: 'error',
       message: e instanceof Error ? e.message : String(e),
     }
+  }
+}
+
+function numOrNull(v: unknown): number | null {
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n) || n < 0) return null
+  return Math.round(n * 10) / 10
+}
+
+/** Apple 健康里的设备读数。旧插件没有该方法时返回 null。 */
+export async function fetchHealthKitDevices(): Promise<SmartDeviceSample | null> {
+  const plugin = getPlugin()
+  if (!plugin || typeof plugin.fetchDeviceReadings !== 'function') return null
+  try {
+    const res = await plugin.fetchDeviceReadings()
+    return {
+      weightKg: numOrNull(res.weightKg),
+      bodyFatPct: numOrNull(res.bodyFatPct),
+      nutritionKcal: numOrNull(res.nutritionKcal),
+      jumpCount: res.jumpCount == null ? null : Math.max(0, Math.round(Number(res.jumpCount))),
+      jumpMinutes: res.jumpMinutes == null ? null : Math.max(0, Math.round(Number(res.jumpMinutes))),
+      glucoseMmol: numOrNull(res.glucoseMmol),
+      weightGranted: res.weightGranted !== false,
+      ropeGranted: res.ropeGranted !== false,
+      nutritionGranted: res.nutritionGranted !== false,
+      glucoseGranted: res.glucoseGranted !== false,
+    }
+  } catch {
+    return null
   }
 }

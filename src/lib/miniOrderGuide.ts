@@ -60,6 +60,10 @@ export const XPAY_SALE_ENABLED: boolean =
 export const APPPAY_SALE_ENABLED: boolean =
   typeof __APPPAY_SALE_ENABLED__ !== 'undefined' && __APPPAY_SALE_ENABLED__ === true
 
+/** 支付宝按钮。默认关。微信 APP 支付不读这个值。 */
+export const ALIPAY_SALE_ENABLED: boolean =
+  typeof __ALIPAY_SALE_ENABLED__ !== 'undefined' && __ALIPAY_SALE_ENABLED__ === true
+
 /** 小程序名称。默认 A1 定案值，可用 VITE_MINI_APP_NAME 覆盖，避免再写一份名称副本。 */
 export const MINI_APP_NAME =
   (import.meta.env.VITE_MINI_APP_NAME as string | undefined)?.trim() || '自律蜜蜂'

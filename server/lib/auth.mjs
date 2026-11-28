@@ -41,9 +41,10 @@
 import { randomBytes } from 'node:crypto'
 import { signJwt, verifyJwt, bearerFrom } from './jwt.mjs'
 import {
-  resolveIdent, findUserByIdent, findUserByOwnerId,
+  resolveIdent, findUserByIdent, findUserByOwnerId, findAccountForIdent,
   findUserWithPasswordByIdent, verifyPassword, DUMMY_PASSWORD_HASH,
   ensureUser, touchLogin, hashPassword, normalizePhone, normalizeEmail,
+  identHash, maskPhone,
   bumpTokenVersion, getTokenVersion,
 } from './identity.mjs'
 import { sendCode } from './sms.mjs'
@@ -372,6 +373,77 @@ export function createAuthHandlers(deps) {
     return { ok: true, openid: data.openid, sessionKey }
   }
 
+  /** 小程序 access_token 缓存（换手机号用）。按 appid 分开，提前 2 分钟过期。 */
+  const miniTokenCache = new Map()
+
+  async function miniAccessToken(appid) {
+    const secret = cfg.wechatMiniSecrets?.get(appid)
+    if (!secret) return null
+    const hit = miniTokenCache.get(appid)
+    if (hit && hit.exp > Date.now()) return hit.token
+    const url = `${cfg.wechatApiBase}/cgi-bin/token?` + new URLSearchParams({
+      grant_type: 'client_credential', appid, secret,
+    }).toString()
+    let resp
+    try {
+      resp = await fetchImpl(url, {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+        signal: AbortSignal.timeout(cfg.wechatTimeoutMs ?? 10_000),
+      })
+    } catch (err) {
+      logger.error(`[auth] 小程序 access_token 网络失败 appid=${appid}: ${err?.message || err}`)
+      return null
+    }
+    let data
+    try { data = await resp.json() } catch { return null }
+    if (!data?.access_token) {
+      logger.warn(`[auth] 小程序 access_token 失败 appid=${appid} errcode=${data?.errcode}`)
+      return null
+    }
+    const ttlMs = Math.max(60, Number(data.expires_in) - 120) * 1000
+    miniTokenCache.set(appid, { token: data.access_token, exp: Date.now() + ttlMs })
+    return data.access_token
+  }
+
+  /**
+   * 用 getPhoneNumber 按钮返回的 code 换大陆手机号。
+   * 不记录号码、不记录带 access_token 的 URL。
+   */
+  async function phoneFromWechatCode(appid, code) {
+    const token = await miniAccessToken(appid)
+    if (!token) return { ok: false, status: 503, message: '微信登录暂未开通', code: 'wechat_not_configured' }
+    const url = `${cfg.wechatApiBase}/wxa/business/getuserphonenumber?access_token=${encodeURIComponent(token)}`
+    let resp
+    try {
+      resp = await fetchImpl(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({ code }),
+        signal: AbortSignal.timeout(cfg.wechatTimeoutMs ?? 10_000),
+      })
+    } catch (err) {
+      logger.error(`[auth] 换手机号网络失败 appid=${appid}: ${err?.message || err}`)
+      return { ok: false, status: 502, message: '微信服务暂时不可用，请稍后再试', code: 'wechat_upstream_unreachable' }
+    }
+    let data
+    try { data = await resp.json() } catch {
+      return { ok: false, status: 502, message: '微信服务返回异常，请稍后再试', code: 'wechat_bad_response' }
+    }
+    const errcode = Number.isFinite(data?.errcode) ? data.errcode : 0
+    if (errcode !== 0) {
+      logger.warn(`[auth] 换手机号失败 appid=${appid} errcode=${errcode}`)
+      if (errcode === 40029 || errcode === 40163) {
+        return { ok: false, status: 401, message: '授权已过期，请再点一次绑定', code: 'invalid_grant' }
+      }
+      return { ok: false, status: 502, message: '没有拿到手机号，请重试', code: 'wechat_phone_failed' }
+    }
+    const raw = data?.phone_info?.purePhoneNumber || data?.phone_info?.phoneNumber || ''
+    const value = normalizePhone(String(raw))
+    if (!value) return { ok: false, status: 400, message: '目前只支持中国大陆手机号', code: 'invalid_phone' }
+    return { ok: true, value }
+  }
+
   return {
     refresh,
 
@@ -403,7 +475,7 @@ export function createAuthHandlers(deps) {
         return cloudError(res, 429, '请求过于频繁，请稍后再试', 'rate_limited')
       }
 
-      const existing = await findUserByIdent(pool, ident.kind, ident.value, cfg.identPepper)
+      const existing = await findAccountForIdent(pool, ident.kind, ident.value, cfg.identPepper)
       const isExistingUser = !!existing
 
       const { verificationId, code } = otp.issue({
@@ -515,7 +587,7 @@ export function createAuthHandlers(deps) {
       // 不信任 body.username —— 防止「用 A 的验证码登录 B 的账号」。
       const kind = consumed.kind
       const value = consumed.value
-      const user = await findUserByIdent(pool, kind, value, cfg.identPepper)
+      const user = await findAccountForIdent(pool, kind, value, cfg.identPepper)
       if (!user) {
         // token 说 isExistingUser 但库里查无此人：可能被误报，或账号已删。
         // 按新用户建号，避免用户卡死在登录页。
@@ -632,6 +704,16 @@ export function createAuthHandlers(deps) {
         return cloudError(res, 400, '注册标识与验证码不匹配', 'invalid_request')
       }
 
+      const bound = kind === 'phone'
+        ? await findAccountForIdent(pool, kind, value, cfg.identPepper)
+        : null
+      if (bound && bound.ident_kind === 'wechat') {
+        await touchLogin(pool, bound.owner_id)
+        logger.info(`[auth] 注册转到已绑定的微信账号 phone=${maskAny(kind, value)} owner=${bound.owner_id}`)
+        const ver = (await getTokenVersion(pool, bound.owner_id)) ?? 1
+        return { status: 200, body: await sessionPayload(bound.owner_id, null, ver) }
+      }
+
       let passwordHash = null
       if (body.password) {
         const pw = String(body.password)
@@ -682,6 +764,57 @@ export function createAuthHandlers(deps) {
       }
     },
 
+    /**
+     * 小程序「绑定手机号」：getPhoneNumber 的 code 换号码，挂到当前微信账号。
+     * 已有同号的 App 账号时，会员和记录并过来，之后短信登录进入这个微信账号。
+     */
+    async bindPhone(req, res, body) {
+      if (!checkAccessKey(req)) return cloudError(res, 401, 'invalid access key', 'invalid_api_key')
+      const ownerId = await authOwnerIdStrict(req)
+      if (!ownerId) return cloudError(res, 401, '未登录或登录已过期', 'unauthenticated')
+      if (!ownerId.startsWith('wx:')) {
+        return cloudError(res, 400, '请先用微信登录', 'not_wechat')
+      }
+      const code = typeof body?.code === 'string' ? body.code.trim() : ''
+      const appid = typeof body?.appid === 'string' ? body.appid.trim() : ''
+      if (!code) return cloudError(res, 400, '缺少手机号授权', 'invalid_request')
+      if (!/^wx[0-9a-f]{16}$/i.test(appid)) return cloudError(res, 400, 'appid 格式不正确', 'invalid_request')
+
+      const ip = clientIp(req, { trustedProxies: cfg.trustedProxyIps })
+      const rlIp = wxLimiterIp.hit(ip)
+      if (!rlIp.ok) {
+        res.setHeader('retry-after', String(rlIp.retryAfterSec))
+        return cloudError(res, 429, '请求过于频繁，请稍后再试', 'rate_limited')
+      }
+
+      const phone = await phoneFromWechatCode(appid, code)
+      if (!phone.ok) return cloudError(res, phone.status, phone.message, phone.code)
+
+      const hash = identHash('phone', phone.value, cfg.identPepper)
+      const masked = maskPhone(phone.value)
+      try {
+        const { rows } = await pool.query(
+          `SELECT public.bind_wechat_phone($1, $2, $3) AS r`,
+          [ownerId, hash, masked],
+        )
+        const r = rows[0]?.r ?? {}
+        if (r.error === 'phone_taken') {
+          return cloudError(res, 409, '这个手机号已绑定其他微信', 'phone_taken')
+        }
+        if (r.error === 'phone_already_bound') {
+          return cloudError(res, 409, '当前微信已绑定其他手机号', 'phone_already_bound')
+        }
+        if (r.error || r.ok !== true) {
+          return cloudError(res, 400, '暂时无法绑定手机号', r.error || 'bind_failed')
+        }
+        logger.info(`[auth] 绑定手机号 owner=${ownerId} merged=${r.merged === true}`)
+        return { status: 200, body: { ok: true, phone: r.masked || masked } }
+      } catch (err) {
+        logger.error(`[auth] 绑定手机号失败 owner=${ownerId}: ${err?.message || err}`)
+        return cloudError(res, 500, '绑定失败，请稍后重试', 'bind_failed')
+      }
+    },
+
     /** ── 当前用户 ──────────────────────────────────────── */
     async userMe(req, res) {
       // 🔴 安全审计①：用 strict 鉴权（含 token_version 校验），登出/改密后
@@ -697,6 +830,9 @@ export function createAuthHandlers(deps) {
           sub: user.owner_id,
           uid: user.owner_id,
           ...(user.ident_kind === 'phone' ? { phone_number: user.ident_masked, phone: user.ident_masked } : {}),
+          ...(user.ident_kind === 'wechat' && user.bound_phone_masked
+            ? { phone_number: user.bound_phone_masked, phone: user.bound_phone_masked }
+            : {}),
           ...(user.ident_kind === 'email' ? { email: user.ident_masked } : {}),
           name: '',
           avatar_url: '',

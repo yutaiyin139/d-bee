@@ -1,5 +1,9 @@
 node_modules/
 dist/
+# 根规则会连带忽略本地插件的注册入口。支付宝插件的 dist 是源码，
+# 护栏 20-I 与下一次 cap sync 都读 registerPlugin('DbeeAlipay')。
+!native-plugins/dbee-alipay/dist/
+!native-plugins/dbee-alipay/dist/**
 *.local
 # 秘密文件的任何备份变体（.secrets.local.bak-* 等，2026-10-29 险些误提交）
 *.local.bak*

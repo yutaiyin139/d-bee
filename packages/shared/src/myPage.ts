@@ -123,26 +123,107 @@ export function healthCatalogKeyForVendor(vendor: string): string {
   return HEALTH_APP_CATALOG.some((d) => d.key === key) ? key : ''
 }
 
-/** 后续支持的硬件：全部 planned，零可点连接动作、零假功能。 */
+/**
+ * 更多设备。不在应用里逐个配对硬件，只读系统健康里已经同步的当天读数。
+ * status 用 guided：能读、能把体重和跳绳记入今天，但不是「现在可连接」的直连。
+ */
 export const FUTURE_DEVICE_CATALOG: DeviceCatalogItem[] = [
-  { key: 'body-fat-scale', label: '智能体脂秤', status: 'planned', note: '后续支持' },
-  { key: 'nutrition-scale', label: '智能营养秤', status: 'planned', note: '后续支持' },
-  { key: 'jump-rope', label: '智能跳绳', status: 'planned', note: '后续支持' },
-  { key: 'band', label: '智能腕带', status: 'planned', note: '后续支持' },
-  { key: 'third-party-scale', label: '第三方智能秤', status: 'planned', note: '后续支持' },
-  { key: 'glucose-app', label: '血糖仪应用', status: 'planned', note: '后续支持' },
+  { key: 'body-fat-scale', label: '智能体脂秤', status: 'guided', note: '读取系统健康里的今日体重' },
+  { key: 'nutrition-scale', label: '智能营养秤', status: 'guided', note: '读取系统健康里的今日饮食能量' },
+  { key: 'jump-rope', label: '智能跳绳', status: 'guided', note: '读取系统健康里的今日跳绳' },
+  { key: 'band', label: '智能腕带', status: 'guided', note: '读取系统健康里的今日步数' },
+  { key: 'third-party-scale', label: '第三方智能秤', status: 'guided', note: '读取系统健康里的今日体重' },
+  { key: 'glucose-app', label: '血糖仪应用', status: 'guided', note: '读取今日读数，只在本机展示，不上传' },
 ]
+
+/** 系统健康当天读数。没有样本用 null，不用 0 冒充「读到了」。 */
+export interface SmartDeviceSample {
+  weightKg: number | null
+  bodyFatPct: number | null
+  nutritionKcal: number | null
+  jumpCount: number | null
+  jumpMinutes: number | null
+  glucoseMmol: number | null
+  weightGranted: boolean
+  ropeGranted: boolean
+  nutritionGranted: boolean
+  glucoseGranted: boolean
+}
+
+export type SmartDeviceAction = 'save-weight' | 'save-rope' | null
+
+export interface SmartDeviceLine {
+  value: string
+  action: SmartDeviceAction
+  actionLabel: string
+}
+
+const DEVICE_EMPTY = '系统健康里还没有今天的读数'
+const DEVICE_NEED_AUTH = '尚未授权读取。请重新连接，并勾选这项权限'
+const DEVICE_MINI = '小程序不能直接读取这台设备。请在手机 App 连接系统健康后读取'
+const DEVICE_WAIT = '连接系统健康后读取'
+
+/**
+ * 每一台设备在面板上显示什么、能不能记入今天。
+ * mini：腕带用已同步的步数，其余设备不假装读到了。
+ */
+export function smartDeviceLine(
+  key: string,
+  sample: SmartDeviceSample | null,
+  steps: number | null,
+  platform: 'app' | 'mini',
+): SmartDeviceLine {
+  const none: SmartDeviceLine = { value: '', action: null, actionLabel: '' }
+  if (platform === 'mini' && key !== 'band') return { value: DEVICE_MINI, action: null, actionLabel: '' }
+  if (platform === 'app' && sample == null && key !== 'band') return { value: DEVICE_WAIT, action: null, actionLabel: '' }
+  switch (key) {
+    case 'band':
+      if (steps == null) return { value: '连接系统健康后读取今日步数', action: null, actionLabel: '' }
+      return { value: `今日 ${steps} 步`, action: null, actionLabel: '' }
+    case 'body-fat-scale': {
+      if (sample && !sample.weightGranted) return { value: DEVICE_NEED_AUTH, action: null, actionLabel: '' }
+      if (sample?.weightKg == null) {
+        if (sample?.bodyFatPct != null) return { value: `体脂 ${sample.bodyFatPct}%`, action: null, actionLabel: '' }
+        return { value: DEVICE_EMPTY, action: null, actionLabel: '' }
+      }
+      const fat = sample.bodyFatPct != null ? `，体脂 ${sample.bodyFatPct}%` : ''
+      return { value: `${sample.weightKg} kg${fat}`, action: 'save-weight', actionLabel: '记入今日体重' }
+    }
+    case 'third-party-scale':
+      if (sample && !sample.weightGranted) return { value: DEVICE_NEED_AUTH, action: null, actionLabel: '' }
+      if (sample?.weightKg == null) return { value: DEVICE_EMPTY, action: null, actionLabel: '' }
+      return { value: `${sample.weightKg} kg`, action: 'save-weight', actionLabel: '记入今日体重' }
+    case 'jump-rope':
+      if (sample && !sample.ropeGranted) return { value: DEVICE_NEED_AUTH, action: null, actionLabel: '' }
+      if (sample?.jumpCount == null || (sample.jumpMinutes ?? 0) <= 0) return { value: DEVICE_EMPTY, action: null, actionLabel: '' }
+      return {
+        value: `今日跳绳 ${sample.jumpMinutes ?? 0} 分钟（${sample.jumpCount} 段）`,
+        action: 'save-rope',
+        actionLabel: '记入运动',
+      }
+    case 'nutrition-scale':
+      if (sample && !sample.nutritionGranted) return { value: DEVICE_NEED_AUTH, action: null, actionLabel: '' }
+      if (sample?.nutritionKcal == null) return { value: DEVICE_EMPTY, action: null, actionLabel: '' }
+      return { value: `今日饮食能量 ${sample.nutritionKcal} kcal，不会自动记进餐次`, action: null, actionLabel: '' }
+    case 'glucose-app':
+      if (sample && !sample.glucoseGranted) return { value: DEVICE_NEED_AUTH, action: null, actionLabel: '' }
+      if (sample?.glucoseMmol == null) return { value: `${DEVICE_EMPTY}。读数只在本机显示，不上传`, action: null, actionLabel: '' }
+      return { value: `今日最近 ${sample.glucoseMmol} mmol/L。只展示，不上传，不下结论`, action: null, actionLabel: '' }
+    default:
+      return none
+  }
+}
 
 export const SMART_DEVICE_TITLE = '智能设备'
 export const SMART_DEVICE_SECTION_APPS = '健康应用 · 现在可连接'
 export const SMART_DEVICE_SECTION_STATUS = '连接状态'
-export const SMART_DEVICE_SECTION_FUTURE = '更多设备 · 后续支持'
+export const SMART_DEVICE_SECTION_FUTURE = '更多设备'
 export const SMART_DEVICE_WEB_HINT = '在 App 中可连接健康应用'
 export const SMART_DEVICE_NOT_CONNECTED = '暂未连接健康应用'
 export const SMART_DEVICE_CONNECTED = '已连接'
 export const SMART_DEVICE_LABEL_STEPS = '今日步数'
 export const SMART_DEVICE_LABEL_ACTIVITY = '活动消耗'
-export const SMART_DEVICE_FUTURE_NOTE = '仅列出目录，暂不提供连接'
+export const SMART_DEVICE_FUTURE_NOTE = '不在这里逐个配对。设备数据先进入系统健康，这里再读取。读到体重或跳绳后可以记入今天。'
 
 /**
  * 智能手表 · 手表端蜜蜂健康 App 绑定。
@@ -176,7 +257,7 @@ export const WATCH_BIND_NOT_BOUND = '未绑定'
 export const WATCH_BIND_BOUND = '已绑定'
 export const WATCH_BIND_ACTION_CONNECT = '连接'
 export const WATCH_BIND_ACTION_PROGRESS = '查看进度'
-export const WATCH_BIND_HC_NOTE = '安卓手表可走系统健康服务（Health Connect），一次授权读取多种手表与手环的运动数据，正在接入中。'
+export const WATCH_BIND_HC_NOTE = '安卓手表和手环不在这里逐个配对。请先在该设备自己的健康 App 里打开向「健康连接（Health Connect）」共享步数，再回「我的 → 健康数据源」点连接。没有健康连接的手机只能手动记录。'
 export const WATCH_BIND_BACK = '返回'
 export const WATCH_BIND_PROGRESS_NOTE = '该品牌健康数据的接入进度可在「健康应用」一栏查看；当前请先用手动记录运动。'
 

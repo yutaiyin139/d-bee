@@ -59,6 +59,10 @@ function createMockPool() {
         return { rowCount: oid ? 1 : 0, rows: oid ? [rows.get(oid)] : [] }
       }
 
+      if (/FROM public\.app_users/i.test(s) && /bound_phone_hash = \$1/i.test(s)) {
+        return { rowCount: 0, rows: [] }
+      }
+
       if (/FROM public\.app_users/i.test(s) && /owner_id = \$1/i.test(s)) {
         const r = rows.get(params[0])
         return { rowCount: r ? 1 : 0, rows: r ? [r] : [] }

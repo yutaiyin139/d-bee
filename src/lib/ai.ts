@@ -61,7 +61,9 @@ async function collectText(
   const needVision = messages.some(
     (m) => Array.isArray(m.content) && m.content.some((part) => part.type === 'image_url'),
   )
-  const model = await pickModel(needVision)
+  // 拍照识别不再先请求模型目录。网关看到图片后会换成已配置的视觉模型，
+  // 这一跳往返只会拖慢四餐识别。文字解析仍要选文本模型。
+  const model = needVision ? { id: 'vision' } : await pickModel(false)
 
   let text = ''
   for await (const chunk of cloud.llm.chat.completions.create({

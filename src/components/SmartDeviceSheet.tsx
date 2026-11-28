@@ -11,8 +11,12 @@ import {
   WATCH_BIND_HINT, WATCH_BIND_NOT_BOUND, WATCH_BIND_BOUND,
   WATCH_BIND_ACTION_CONNECT, WATCH_BIND_ACTION_PROGRESS, WATCH_BIND_HC_NOTE,
   WATCH_BIND_BACK, WATCH_BIND_PROGRESS_NOTE,
+  smartDeviceLine, type SmartDeviceSample,
 } from '@dbee/shared'
-import { syncFromHealth, estimateActivityKcal } from '../lib/health'
+import { syncFromHealth, estimateActivityKcal, fetchSmartDeviceReadings } from '../lib/health'
+import { addExercise, deleteExercise, listExerciseByDate, saveProfile, saveWeight } from '../lib/api'
+import { exerciseKcal, todayKey } from '../lib/nutrition'
+import type { Profile } from '../types'
 
 interface SmartDeviceSheetProps {
   onClose: () => void
@@ -26,26 +30,78 @@ interface SmartDeviceSheetProps {
   heightCm: number | null
   onConnect: () => void
   onDisconnect: () => void
+  /** 记入体重后同步档案，让热量目标按新体重重算 */
+  onProfileChanged?: (profile: Profile) => void
 }
 
 /** 智能设备：只列真实可连接的健康应用，硬件目录全为「后续支持」，零假绑定按钮。 */
 export function SmartDeviceSheet({
   onClose, connected, connectable, vendorLabel, vendorKey, steps, weightKg, heightCm, onConnect, onDisconnect,
+  onProfileChanged,
 }: SmartDeviceSheetProps) {
   const [liveSteps, setLiveSteps] = useState<number | null>(steps)
+  const [liveActive, setLiveActive] = useState<number | null>(null)
   const [error, setError] = useState(false)
   const [watchView, setWatchView] = useState(false)
+  const [sample, setSample] = useState<SmartDeviceSample | null>(null)
+  const [deviceMsg, setDeviceMsg] = useState('')
+  const [deviceBusy, setDeviceBusy] = useState(false)
 
   useEffect(() => {
     if (!connected || steps != null) return
     let alive = true
-    void syncFromHealth().then((h) => { if (alive) setLiveSteps(h.steps) })
-      .catch(() => { if (alive) setError(true) })
+    void syncFromHealth().then((h) => {
+      if (!alive) return
+      setLiveSteps(h.steps)
+      setLiveActive(h.activeKcal)
+    }).catch(() => { if (alive) setError(true) })
     return () => { alive = false }
   }, [connected, steps])
 
-  const shownSteps = liveSteps ?? steps ?? 0
-  const activeKcal = estimateActivityKcal(shownSteps, weightKg, heightCm)
+  useEffect(() => {
+    if (!connected) return
+    let alive = true
+    void fetchSmartDeviceReadings().then((s) => { if (alive) setSample(s) })
+    return () => { alive = false }
+  }, [connected])
+
+  async function recordDevice(action: 'save-weight' | 'save-rope') {
+    if (!sample || deviceBusy) return
+    setDeviceBusy(true)
+    setDeviceMsg('')
+    try {
+      if (action === 'save-weight' && sample.weightKg != null) {
+        const kg = sample.weightKg
+        await saveWeight(todayKey(), kg, '系统健康')
+        const saved = await saveProfile({ current_weight_kg: kg })
+        onProfileChanged?.(saved)
+        setDeviceMsg('已把体重记入今天，并更新当前体重')
+      }
+      if (action === 'save-rope' && sample.jumpMinutes != null && sample.jumpMinutes > 0) {
+        const date = todayKey()
+        const minutes = sample.jumpMinutes
+        const existing = await listExerciseByDate(date)
+        const oldIds = existing.filter((e) => e.name === '跳绳' && e.id != null).map((e) => e.id as number)
+        await addExercise({
+          log_date: date,
+          name: '跳绳',
+          minutes,
+          calories: exerciseKcal('跳绳', minutes, sample.weightKg ?? weightKg),
+        })
+        for (const id of oldIds) await deleteExercise(id, date)
+        setDeviceMsg('已按今日跳绳读数记入运动')
+      }
+    } catch {
+      setDeviceMsg('记入失败，请稍后重试')
+    } finally {
+      setDeviceBusy(false)
+    }
+  }
+
+  const deviceSteps = liveSteps ?? steps
+  const shownSteps = deviceSteps ?? 0
+  const estimated = estimateActivityKcal(shownSteps, weightKg, heightCm)
+  const activeKcal = liveActive != null && liveActive > 0 ? Math.round(liveActive) : estimated
 
   // 手表品牌状态复用健康应用目录（单一真源），不另造状态机
   const healthFor = (key: string) => HEALTH_APP_CATALOG.find((d) => d.key === key)
@@ -130,13 +186,26 @@ export function SmartDeviceSheet({
           <div className="section-title">{SMART_DEVICE_SECTION_FUTURE}</div>
           <div className="helper" style={{ marginBottom: 8 }}>{SMART_DEVICE_FUTURE_NOTE}</div>
           <div className="card">
-            {FUTURE_DEVICE_CATALOG.map((d) => (
-              <div className="list-line" key={d.key}>
-                <span>{d.label}</span>
-                <span className="val" style={{ color: 'var(--ink-3)', fontSize: 12 }}>{DEVICE_STATUS_LABEL[d.status]}</span>
-              </div>
-            ))}
+            {FUTURE_DEVICE_CATALOG.map((d) => {
+              const line = smartDeviceLine(d.key, sample, deviceSteps, 'app')
+              return (
+                <div className="list-line" key={d.key}>
+                  <span>
+                    {d.label}
+                    <span className="sub" style={{ display: 'block', color: 'var(--ink-3)', fontSize: 12 }}>{line.value || d.note}</span>
+                  </span>
+                  <span className="val" style={{ color: 'var(--ink-3)', fontSize: 12 }}>
+                    {line.action ? (
+                      <button className="btn-text" disabled={deviceBusy} onClick={() => void recordDevice(line.action!)}>
+                        {line.actionLabel}
+                      </button>
+                    ) : d.note}
+                  </span>
+                </div>
+              )
+            })}
           </div>
+          {deviceMsg && <div className="notice ok" style={{ marginTop: 8 }}>{deviceMsg}</div>}
 
           <div className="section-title">{WATCH_SECTION_OTHER}</div>
           <div className="card">

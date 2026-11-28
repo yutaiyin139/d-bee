@@ -21,6 +21,7 @@ import {
   type ProductId,
 } from '@dbee/shared'
 import { TransparencyNotes } from '../../components/TransparencyNotes'
+import { PhoneBindCard } from '../../components/PhoneBind'
 import { MINI_RECORDING_CAPS, quotaNotes } from '@dbee/shared'
 import { REDEEM_CODE_RULE } from '../../lib/validate'
 import { errText } from '../../lib/errmsg'
@@ -303,7 +304,7 @@ export default function Paywall() {
       {/* 🔴 提示区一律全局渲染（不埋在下方任何条件区块内）。
           这是主端 PaywallSheet.tsx 2026-11-07 修过的同一缺陷：err/ok 原先只写在
           「兑换码」区块里，而该区块在某些分支被隐藏 → 购买失败静默无任何提示。
-          本端引入支付后同理会犯：`{!pro}` 之外的状态（Pro 用户续费、manage 模式）
+          本端引入支付后同理会犯：终身会员之外的状态（月会员续费升级、manage 模式）
           也需要看到 settling / 错误。提示与支付链路无关，必须永远可见。 */}
       {hint ? (
         <View className='notice info'><Text>{hint}</Text></View>
@@ -317,6 +318,7 @@ export default function Paywall() {
       {okMsg ? (
         <View className='notice ok'><Text>{okMsg}</Text></View>
       ) : null}
+      {okMsg ? <PhoneBindCard /> : null}
 
       {pro ? (
         <View className='notice ok'>
@@ -393,12 +395,12 @@ export default function Paywall() {
             写清既是事实，也能挡住用户「怎么取消订阅」的困惑与投诉。 */}
         <Text className='manage-tip'>
           {XPAY_SALE_ENABLED
-            ? '会员为一次性购买对应时长，不自动续费、无需取消；到期后可在本页重新购买。权益通过购买或兑换码解锁，云端同步，换设备登录同一账号同样生效。若你在 iOS App 内购买了订阅，请到 iPhone「设置 → 你的头像 → 订阅」管理。'
+            ? '会员为一次性购买对应时长，不自动续费、无需取消。月会员未到期也可以购买年卡或终身会员：年卡从当前到期日往后顺延，终身会员立即变为永久。权益通过购买或兑换码解锁，云端同步，换设备登录同一账号同样生效。若你在 iOS App 内购买了订阅，请到 iPhone「设置 → 你的头像 → 订阅」管理。'
             : '本小程序免费提供、不涉及在线支付。权益通过兑换码或跨设备同步自动生效；若你在 iOS App 内购买了订阅，请到 iPhone「设置 → 你的头像 → 订阅」管理。'}
         </Text>
       </View>
 
-      {!pro ? (
+      {!lifetime ? (
         <>
           {/* ── 三档售卖（仅 XPAY_SALE_ENABLED 且宿主支持时渲染）──
               🔴 价格走 shared PRODUCTS + priceTag()：全仓定价单一真相源，

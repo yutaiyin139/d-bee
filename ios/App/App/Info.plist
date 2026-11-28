@@ -83,7 +83,7 @@
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>自律蜜蜂需要将识别结果截图或餐食记录保存到你的相册，方便你随时回顾。</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>自律蜜蜂需要读取你的步数与活动能量，用于自动计入每日活动消耗，更准确地计算热量缺口。</string>
+	<string>自律蜜蜂需要读取步数、活动能量、体重、跳绳记录、饮食能量和血糖读数。血糖只在本机展示，不上传，也不做高低判断。</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>自律蜜蜂需要写入健康数据，用于同步你的运动记录。</string>
 

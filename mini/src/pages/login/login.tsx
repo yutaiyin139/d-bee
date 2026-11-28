@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { View, Text, Button, Input } from '@tarojs/components'
-import { useLoad } from '@tarojs/taro'
+import Taro, { useLoad } from '@tarojs/taro'
 import { IconBee } from '../../components/Icons'
 import { LegalLinks } from '../../components/LegalLinks'
 import { bindInvite } from '../../lib/api'
@@ -13,16 +13,27 @@ import {
   signIn,
   sendPhoneOtp,
   signInWithPhone,
-  signOut,
   isSignedIn,
   canNativeSignIn,
   currentPlatformName,
-  type MiniSession,
 } from '../../lib/auth'
 import './login.scss'
 
+/** 登录页是从首页 navigateTo 打开的。成功后必须自己返回，否则用户会停在会话卡片上。 */
+function leaveAfterLogin() {
+  const go = () => {
+    const pages = Taro.getCurrentPages()
+    if (pages.length > 1) {
+      Taro.navigateBack()
+      return
+    }
+    Taro.reLaunch({ url: '/pages/index/index' })
+  }
+  // 页面刚打开时立刻返回会被微信丢掉，等当前页入栈后再走。
+  setTimeout(go, 50)
+}
+
 export default function Login() {
-  const [session, setSession] = useState<MiniSession | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -57,8 +68,8 @@ export default function Login() {
 
     if (await isSignedIn()) {
       try {
-        const s = await signIn()
-        setSession(s)
+        await signIn()
+        leaveAfterLogin()
       } catch (e) {
         // 🔴 2026-11-08 iOS 微信登录白屏：旧实现静默吞掉，真机上表现为「点了没反应/白屏」。
         //    改为原生 Modal 自报（不依赖页面渲染层），并保留页面内错误文字。
@@ -116,15 +127,18 @@ export default function Login() {
   const onNativeLogin = async () => {
     setLoading(true)
     setError('')
+    let left = false
     try {
-      setSession(await signIn())
+      await signIn()
       await tryBindInvite()
+      leaveAfterLogin()
+      left = true
     } catch (e) {
       // 微信原生 Modal 在页面白屏时仍可显示，是 iOS 真机排障的唯一可见通道。
       reportBootError('微信一键登录', e)
       setError(e instanceof Error ? e.message : '登录失败')
     } finally {
-      setLoading(false)
+      if (!left) setLoading(false)
     }
   }
 
@@ -154,21 +168,17 @@ export default function Login() {
     }
     setLoading(true)
     setError('')
+    let left = false
     try {
-      setSession(await signInWithPhone(phone, code, verificationId, isExistingUser))
+      await signInWithPhone(phone, code, verificationId, isExistingUser)
       await tryBindInvite()
+      leaveAfterLogin()
+      left = true
     } catch (e) {
       setError(e instanceof Error ? e.message : '登录失败')
     } finally {
-      setLoading(false)
+      if (!left) setLoading(false)
     }
-  }
-
-  const onLogout = async () => {
-    await signOut()
-    setSession(null)
-    setOtpSent(false)
-    setCode('')
   }
 
   return (
@@ -182,8 +192,7 @@ export default function Login() {
         <Text className='desc'>多端同步你的打卡数据（{platform}）</Text>
       </View>
 
-      {!session ? (
-        <>
+      <>
           {native ? (
             <>
               <Button className='btn-primary' loading={loading} disabled={loading} onClick={onNativeLogin}>
@@ -247,26 +256,11 @@ export default function Login() {
           </View>
 
           {error ? <Text className='error'>{error}</Text> : null}
-        </>
-      ) : (
-        <>
-          <View className='session-card'>
-            <Text className='session-label'>已登录（云端会话已建立）</Text>
-            <Text className='session-uid'>UID：{session.uid}</Text>
-            <Text className='session-uid'>OpenID：{session.openid}</Text>
-          </View>
-          <Button className='btn-ghost' onClick={onLogout}>
-            退出登录
-          </Button>
-        </>
-      )}
+      </>
 
       {/*
-        🔴 登录前法律文档入口（合规必修，2026-11-05）。刻意放在 !session 三元**之外**：
-        本页既服务未登录（微信一键登录 / 手机号验证码），也会显示已登录会话卡片，
-        两种状态都应能查阅协议与隐私政策。放进任一分支都会留缺口。
-        与 index.tsx auth gate 复用同一个 LegalLinks 组件（单一真相源），
-        避免两处各写一份文案日后漂移。
+        登录前法律文档入口。登录成功会离开本页，协议入口仍留在表单下方，
+        注册前就能打开。与首页未登录引导共用 LegalLinks。
       */}
       <LegalLinks footer />
     </View>

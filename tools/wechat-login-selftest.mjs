@@ -64,6 +64,22 @@ function createMockPool() {
         const oid = byIdent.get(`${kind}:${hash}`)
         return { rowCount: oid ? 1 : 0, rows: oid ? [rows.get(oid)] : [] }
       }
+      if (/FROM public\.app_users/i.test(s) && /bound_phone_hash = \$1/i.test(s)) {
+        const hash = params[0]
+        const r = [...rows.values()].find((row) => row.bound_phone_hash === hash)
+        return { rowCount: r ? 1 : 0, rows: r ? [r] : [] }
+      }
+      if (/bind_wechat_phone/i.test(s)) {
+        const [owner, hash, masked] = params
+        const r = rows.get(owner)
+        if (!r || r.ident_kind !== 'wechat') return { rowCount: 1, rows: [{ r: { error: 'not_wechat' } }] }
+        if (r.bound_phone_hash && r.bound_phone_hash !== hash) {
+          return { rowCount: 1, rows: [{ r: { error: 'phone_already_bound' } }] }
+        }
+        r.bound_phone_hash = hash
+        r.bound_phone_masked = masked
+        return { rowCount: 1, rows: [{ r: { ok: true, masked, merged: false } }] }
+      }
       if (/FROM public\.app_users/i.test(s) && /owner_id = \$1/i.test(s)) {
         if (/token_version/i.test(s) && !/ident_kind/i.test(s)) {
           // getTokenVersion：SELECT token_version ... WHERE owner_id=$1
@@ -109,6 +125,17 @@ function createWechatMock() {
   const fetchImpl = async (url, init) => {
     calls.push(String(url))
     const u = new URL(String(url))
+    if (u.pathname.endsWith('/cgi-bin/token')) {
+      return json(200, { access_token: 'mock-access-token', expires_in: 7200 })
+    }
+    if (u.pathname.includes('getuserphonenumber')) {
+      let code = ''
+      try { code = JSON.parse(init?.body || '{}').code || '' } catch { code = '' }
+      if (code === 'phoneok') {
+        return json(200, { errcode: 0, phone_info: { purePhoneNumber: '13800138000', countryCode: '86' } })
+      }
+      return json(200, { errcode: 40029, errmsg: 'invalid code' })
+    }
     const jsCode = u.searchParams.get('js_code') || ''
     // 网络不可达（code 以 neterr 开头）
     if (jsCode.startsWith('neterr')) throw new Error('connect ECONNREFUSED')
@@ -420,6 +447,36 @@ section('真实 SDK · 缺 code/appid 被 SDK 前置拦下（不外呼）')
   const r2 = await sdk.auth.signInWithWechat('c', '')
   assert('空 appid → SDK 本地拒绝（invalid-request）', r2.error?.kind === 'invalid-request', r2.error?.kind)
   assert('SDK 前置校验未产生外呼', wechat.calls.length === before)
+}
+
+section('bind-phone · 授权手机号挂到微信账号，短信登录进入同一个 owner')
+{
+  const login = await post(LW, { code: 'bind_phone_user', appid: WX_APPID })
+  const session = await login.json()
+  assert('先微信登录成功', login.status === 200 && String(session.sub).startsWith('wx:'), `实际 ${login.status}`)
+  const bound = await post(`${A}/bind-phone`, { code: 'phoneok', appid: WX_APPID }, {
+    authorization: `Bearer ${session.access_token}`,
+  })
+  const bj = await bound.json()
+  assert('绑定成功', bound.status === 200 && bj.ok === true, `实际 ${bound.status} ${JSON.stringify(bj)}`)
+  assert('返回掩码，不是完整手机号', bj.phone === '138****8000', bj.phone)
+  assert('响应和日志都不含完整号码', !JSON.stringify(bj).includes('13800138000') && !logs.some(([, line]) => String(line).includes('13800138000')))
+
+  const me = await get(`${A}/user/me`, { authorization: `Bearer ${session.access_token}` })
+  const mej = await me.json()
+  assert('我的页能读回已绑定掩码', mej.phone === '138****8000', mej.phone)
+
+  const send = await post(`${A}/verification`, { phone_number: '13800138000', target: 'ANY' })
+  const sent = await send.json()
+  assert('绑定后发码视为老用户', send.status === 200 && sent.is_user === true, JSON.stringify(sent))
+  const verified = await post(`${A}/verification/verify`, {
+    verification_id: sent.verification_id,
+    verification_code: '888888',
+  })
+  const vt = await verified.json()
+  const sign = await post(`${A}/signin`, { username: '13800138000', verification_token: vt.verification_token })
+  const sj = await sign.json()
+  assert('短信登录进入原来的微信账号', sign.status === 200 && sj.sub === session.sub, `${sign.status} ${sj.sub}`)
 }
 
 // ── 收尾 ──────────────────────────────────────────────────────────────

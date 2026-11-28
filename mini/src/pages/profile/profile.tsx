@@ -80,6 +80,7 @@ import {
 } from '@dbee/shared'
 import { TransparencyNotes } from '../../components/TransparencyNotes'
 import { LegalLinks } from '../../components/LegalLinks'
+import { PhoneBindCard } from '../../components/PhoneBind'
 import { signOut } from '../../lib/auth'
 import { getNotifyPrefs, setNotifyPrefs, enableCheckinNotify, disableCheckinNotify, enableWaterNotify, disableWaterNotify, isNotifyPushAvailable, NOTIFY_UNAVAILABLE_NOTE } from '../../lib/notifications'
 import './profile.scss'
@@ -630,12 +631,14 @@ export default function ProfilePage() {
             <Text className='member-sub'>{memberSub}</Text>
           </View>
         </View>
-        {!pro && (
+        {!lifetime && (
           <Button className='member-btn' onClick={() => void openPaywall()}>
-            升级
+            {pro ? '续费升级' : '升级'}
           </Button>
         )}
       </View>
+
+      <PhoneBindCard />
 
       {/* 收敛 1：账户区只承担邀请动作，积分余额与明细归宫格「蜜糖积分」 */}
       <View className='card' onClick={goInvite}>

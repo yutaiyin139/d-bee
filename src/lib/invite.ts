@@ -1,4 +1,7 @@
+import { HONEY_PRICE, type HoneyRewardKind } from '@dbee/shared'
 import { shiftDate } from './nutrition'
+
+export { HONEY_PRICE, type HoneyRewardKind }
 
 /**
  * 邀约拉新 + 蜜糖积分规则引擎（纯函数，便于测试与复用）。
@@ -47,15 +50,7 @@ export const INVITEE_PRO_DAYS = 7
 /** 单人月度邀请返佣积分上限（风控） */
 export const MAX_MONTHLY_INVITE_HONEY = 3000
 
-/* ── 兑换价格表 ── */
-
-export const HONEY_PRICE = {
-  pro1Day: 100, // 100 分 = Pro 1 天
-  pro30Day: 2600, // 2600 分 = Pro 30 天
-  ai1Scan: 50, // 50 分 = AI 拍照 1 次
-} as const
-
-export type HoneyRewardKind = 'pro1Day' | 'pro30Day' | 'ai1Scan'
+/* ── 兑换价格表在 @dbee/shared 的 HONEY_PRICE，本文件只 re-export ── */
 
 /* ── 判定函数 ── */
 

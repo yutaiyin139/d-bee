@@ -155,12 +155,15 @@ export function encryptWechatNotifyResource(apiV3Key, plaintextObj, { nonce, ass
 
 /**
  * 支付宝「待签名字符串」：所有非空参数按 key 字典序排列，k=v&k=v 拼接（value 不 urlencode）。
- * 🔴 签名与发送必须用同一份拼接结果；sign / sign_type 不参与签名。
+ * 请求（下单、查单）必须带 sign_type，否则开放平台返回 isv.invalid-signature。
+ * 异步通知相反：sign 和 sign_type 都不参与验签。
  * @param {Record<string,string|number|undefined>} params
+ * @param {{ includeSignType?: boolean }} [opt]
  */
-export function alipaySignContent(params) {
+export function alipaySignContent(params, opt = {}) {
+  const includeSignType = opt.includeSignType === true
   return Object.keys(params)
-    .filter((k) => k !== 'sign' && k !== 'sign_type')
+    .filter((k) => k !== 'sign' && (includeSignType || k !== 'sign_type'))
     .filter((k) => params[k] !== undefined && params[k] !== null && params[k] !== '')
     .sort()
     .map((k) => `${k}=${params[k]}`)
@@ -184,13 +187,17 @@ export function buildAlipayOrderStr({ appId, method, bizContent, notifyUrl, priv
     notify_url: notifyUrl,
     biz_content: typeof bizContent === 'string' ? bizContent : JSON.stringify(bizContent),
   }
-  const content = alipaySignContent(params)
+  const content = alipaySignContent(params, { includeSignType: true })
   const sign = rsaSign(privateKeyPem, content)
-  // orderStr = 参数 urlencode 拼接 + &sign=urlencode(sign)
-  const usp = new URLSearchParams()
-  for (const [k, v] of Object.entries(params)) usp.append(k, v)
-  usp.append('sign', sign)
-  return usp.toString()
+  // orderStr 必须用 %20 表示空格。URLSearchParams 会把空格编成 +，收银台验签会失败。
+  const pairs = Object.entries(params).map(([k, v]) => `${alipayEncode(k)}=${alipayEncode(v)}`)
+  pairs.push(`sign=${alipayEncode(sign)}`)
+  return pairs.join('&')
+}
+
+/** orderStr 百分号编码。空格是 %20，不是加号。 */
+export function alipayEncode(value) {
+  return encodeURIComponent(String(value))
 }
 
 /**
@@ -693,7 +700,7 @@ export function createAppPayHandlers(deps) {
       charset: 'utf-8', sign_type: 'RSA2', timestamp, version: '1.0',
       biz_content: JSON.stringify({ out_trade_no: order.order_no }),
     }
-    const sign = rsaSign(cfg.alipayPrivateKey, alipaySignContent(params))
+    const sign = rsaSign(cfg.alipayPrivateKey, alipaySignContent(params, { includeSignType: true }))
     const usp = new URLSearchParams(params)
     usp.append('sign', sign)
     const resp = await fetchImpl(`${ALIPAY_GATEWAY}?${usp.toString()}`, { method: 'GET' })

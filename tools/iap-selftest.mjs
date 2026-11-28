@@ -569,6 +569,62 @@ section('Webhook · 其他通知类型仅留痕')
   await s.close()
 }
 
+// ── StoreKit 2 JWS：不再依赖 appStoreReceiptURL ──
+section('StoreKit 2 · 交易 JWS 核销')
+{
+  const JWS = 'hdr.payload.sig'
+  const jwsTxn = '1000000444444444'
+  const signed = () => ({
+    bundleId: BUNDLE_ID,
+    environment: 'Production',
+    productId: 'dbee_pro_monthly',
+    transactionId: jwsTxn,
+    originalTransactionId: jwsTxn,
+    purchaseDate: Date.now(),
+    expiresDate: futureMs,
+  })
+  const s = await startServer({ routes, verifyJwsImpl: (jws) => {
+    if (jws !== JWS) throw new Error('unexpected jws')
+    return signed()
+  } })
+  const orderNo = 'PO-JWS-1'
+  s.pool.orders.set(orderNo, { owner_id: OWNER_A, product_id: 'dbee_pro_monthly', status: 'pending', order_no: orderNo })
+  const ok = await post(s.url, '/.cloud/payment/apple/verify', {
+    receipt: JWS, order_no: orderNo, provider_txn_id: jwsTxn,
+  }, s.token(OWNER_A))
+  assert('JWS 核销成功', ok.status === 200 && ok.body?.settled === true && ok.body?.transaction_id === jwsTxn, JSON.stringify(ok.body))
+  assert('JWS 订单转 paid', s.pool.orders.get(orderNo).status === 'paid')
+
+  const badSig = await startServer({ routes, verifyJwsImpl: () => { throw new Error('bad signature') } })
+  const bad = await post(badSig.url, '/.cloud/payment/apple/verify', { receipt: JWS }, badSig.token(OWNER_A))
+  assert('坏签名 → 402 invalid_signature', bad.status === 402 && bad.body?.error === 'invalid_signature', JSON.stringify(bad.body))
+  assert('坏签名未写权益', badSig.pool.entitlements.size === 0)
+
+  const otherApp = await startServer({ routes, verifyJwsImpl: () => ({ ...signed(), bundleId: 'com.evil.otherapp' }) })
+  const bundle = await post(otherApp.url, '/.cloud/payment/apple/verify', { receipt: JWS }, otherApp.token(OWNER_A))
+  assert('JWS 别家 bundle → 402 bundle_mismatch', bundle.status === 402 && bundle.body?.error === 'bundle_mismatch')
+
+  const sandbox = await startServer({ routes, verifyJwsImpl: () => ({ ...signed(), environment: 'Sandbox', transactionId: '1000000555555555' }) })
+  const env = await post(sandbox.url, '/.cloud/payment/apple/verify', { receipt: JWS }, sandbox.token(OWNER_A))
+  assert('生产拒绝 JWS Sandbox', env.status === 402 && env.body?.error === 'environment_mismatch')
+
+  const revoked = await startServer({ routes, verifyJwsImpl: () => ({ ...signed(), revocationDate: Date.now(), transactionId: '1000000666666666' }) })
+  const rev = await post(revoked.url, '/.cloud/payment/apple/verify', { receipt: JWS }, revoked.token(OWNER_A))
+  assert('已退款 JWS → 402 apple_revoked', rev.status === 402 && rev.body?.error === 'apple_revoked')
+  assert('已退款未写权益', revoked.pool.entitlements.size === 0)
+
+  const mismatch = await post(s.url, '/.cloud/payment/apple/verify', {
+    receipt: JWS, provider_txn_id: '999',
+  }, s.token(OWNER_A))
+  assert('交易号与签名不符 → 402 txn_mismatch', mismatch.status === 402 && mismatch.body?.error === 'txn_mismatch')
+
+  await s.close()
+  await badSig.close()
+  await otherApp.close()
+  await sandbox.close()
+  await revoked.close()
+}
+
 // ── 汇总 ──
 console.log(`\n${'═'.repeat(60)}`)
 console.log(`  通过 ${passed} · 失败 ${failed}`)

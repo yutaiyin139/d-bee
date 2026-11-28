@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import pkg from './package.json'
@@ -90,6 +91,56 @@ function resolveApppaySaleFlag(): 'true' | 'false' {
   return norm
 }
 
+/** 小程序 AppID。Android 微信支付若填成这个值，真机签名校验会失败，构建本身不报错。 */
+function readMiniProgramAppId(): string {
+  try {
+    const raw = JSON.parse(readFileSync(new URL('./mini/project.config.json', import.meta.url), 'utf8')) as { appid?: unknown }
+    return typeof raw.appid === 'string' ? raw.appid.trim() : ''
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * 客户端 AppID 与售卖开关的构建期校验。
+ * 服务端 WECHAT_PAY_APPID / ALIPAY_APP_ID 不在这个构建里，填错只能到真机才发现；
+ * 这里能挡住的是：把小程序 AppID 打进 Android 包，以及微信支付开关打开后移动应用 AppID 仍为空。
+ */
+function assertAppPayClientIds(env: Record<string, string>, sale: 'true' | 'false'): void {
+  const wechat = (env.VITE_WECHAT_APPID ?? '').trim()
+  const alipay = (env.VITE_ALIPAY_APPID ?? '').trim()
+  const mini = readMiniProgramAppId()
+  if (wechat && mini && wechat === mini) {
+    throw new Error(
+      '[vite] VITE_WECHAT_APPID 与 mini/project.config.json 的小程序 AppID 相同。' +
+        'Android 微信支付必须填微信开放平台「移动应用」AppID。请先把该变量清空，拿到移动应用 AppID 后再填。',
+    )
+  }
+  if (sale === 'true' && !wechat) {
+    throw new Error(
+      '[vite] D_BEE_APPPAY_ENABLED=true，但 VITE_WECHAT_APPID 为空。' +
+        'Android 收款走微信 APP 支付，必须填微信开放平台「移动应用」AppID。支付宝另走 D_BEE_ALIPAY_ENABLED，不能代替微信。',
+    )
+  }
+  if (resolveAlipaySaleFlag() === 'true' && !alipay) {
+    throw new Error(
+      '[vite] D_BEE_ALIPAY_ENABLED=true，但 VITE_ALIPAY_APPID 为空。支付宝按钮不会出现，请先填 AppID，或把开关改回 false。',
+    )
+  }
+}
+
+/** 支付宝按钮单独开关。默认 false：Android 先只走微信支付。 */
+function resolveAlipaySaleFlag(): 'true' | 'false' {
+  const raw = process.env.D_BEE_ALIPAY_ENABLED ?? 'false'
+  const norm = raw.trim().toLowerCase()
+  if (norm !== 'true' && norm !== 'false') {
+    throw new Error(
+      `[vite] D_BEE_ALIPAY_ENABLED 只接受 'true' / 'false'，收到 ${JSON.stringify(process.env.D_BEE_ALIPAY_ENABLED)}。`,
+    )
+  }
+  return norm
+}
+
 /** 原生包必须在构建期确定数据面，不能把 Web 产物静默同步成云库正式包。 */
 function validateNativeBuild(mode: string, env: Record<string, string>): void {
   if (mode !== 'native-release' && mode !== 'native-internal') return
@@ -145,6 +196,7 @@ function validateNativeBuild(mode: string, env: Record<string, string>): void {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_')
   validateNativeBuild(mode, env)
+  assertAppPayClientIds(env, resolveApppaySaleFlag())
 
   return {
     define: {
@@ -157,6 +209,7 @@ export default defineConfig(({ mode }) => {
       // 默认 false 时 Android 支付按钮与 Web 的 App 引导一起被折叠掉，
       // 产物里 grep 不到「去 App 内购买」即为验证通过。
       __APPPAY_SALE_ENABLED__: resolveApppaySaleFlag() === 'true' ? 'true' : 'false',
+      __ALIPAY_SALE_ENABLED__: resolveAlipaySaleFlag() === 'true' ? 'true' : 'false',
     },
     plugins: [react()],
     server: {

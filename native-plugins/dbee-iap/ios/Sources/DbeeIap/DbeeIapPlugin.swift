@@ -5,9 +5,9 @@ import StoreKit
 /**
  * DbeeIap —— D-Bee 原生 StoreKit 2 内购插件（iOS-only）。
  *
- * 交易纪律：购买成功后绝不立即 finish。客户端先把 transactionId + 收据交给
- * 服务端幂等核销，核销成功后才调用 finishTransaction。否则断网时会同时丢掉
- * 权益与 Transaction.unfinished 的恢复入口。
+ * 交易纪律：购买成功后绝不立即 finish。客户端先把 transactionId 和
+ * StoreKit 2 的 jwsRepresentation 交给服务端幂等核销，核销成功后才调用
+ * finishTransaction。否则断网时会同时丢掉权益与 Transaction.unfinished 的恢复入口。
  *
  * 本插件负责商店商品、StoreKit 交易和交易生命周期；权益落库仍由服务端负责。
  */
@@ -179,10 +179,14 @@ public class DbeeIapPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func transactionPayload(_ transaction: Transaction) -> [String: String] {
+        // 核销凭证用这笔交易自己的 JWS。appStoreReceiptURL 在 StoreKit 2 上经常是空文件，
+        // 空凭证会让客户端在核销前失败，钱已经扣了、会员却到不了账。
+        let signed = transaction.jwsRepresentation
+        let proof = signed.isEmpty ? loadReceiptBase64() : signed
         return [
             "status": "purchased",
             "transactionId": String(transaction.id),
-            "receipt": loadReceiptBase64(),
+            "receipt": proof,
             "productId": transaction.productID
         ]
     }

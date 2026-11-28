@@ -27,7 +27,8 @@ public class DbeeHealthPlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "DbeeHealth"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "requestAuthorization", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "fetchToday", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "fetchToday", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "fetchDeviceReadings", returnType: CAPPluginReturnPromise)
     ]
 
     private let healthStore = HKHealthStore()
@@ -37,6 +38,11 @@ public class DbeeHealthPlugin: CAPPlugin, CAPBridgedPlugin {
         var set = Set<HKObjectType>()
         if let step = HKObjectType.quantityType(forIdentifier: .stepCount) { set.insert(step) }
         if let energy = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) { set.insert(energy) }
+        if let weight = HKObjectType.quantityType(forIdentifier: .bodyMass) { set.insert(weight) }
+        if let fat = HKObjectType.quantityType(forIdentifier: .bodyFatPercentage) { set.insert(fat) }
+        if let glucose = HKObjectType.quantityType(forIdentifier: .bloodGlucose) { set.insert(glucose) }
+        if let diet = HKObjectType.quantityType(forIdentifier: .dietaryEnergyConsumed) { set.insert(diet) }
+        set.insert(HKObjectType.workoutType())
         return set
     }
 
@@ -167,6 +173,81 @@ public class DbeeHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 "activeKcal": kcal,
                 "status": (steps > 0 || kcal > 0) ? "ok" : "empty"
             ])
+        }
+    }
+
+    /// 秤、跳绳、饮食能量、血糖的当天读数。没有样本就省略字段。
+    @objc func fetchDeviceReadings(_ call: CAPPluginCall) {
+        guard isHealthAvailable() else {
+            call.resolve(["status": "unavailable"])
+            return
+        }
+        let now = Date()
+        let startOfDay = Calendar.current.startOfDay(for: now)
+        let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: now, options: .strictStartDate)
+        let group = DispatchGroup()
+        var out: [String: Any] = [
+            "status": "empty",
+            "weightGranted": true,
+            "ropeGranted": true,
+            "nutritionGranted": true,
+            "glucoseGranted": true
+        ]
+
+        func latest(_ id: HKQuantityTypeIdentifier, unit: HKUnit, key: String, scale: Double = 1) {
+            guard let type = HKObjectType.quantityType(forIdentifier: id) else { return }
+            group.enter()
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+            let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: 1, sortDescriptors: [sort]) { _, samples, error in
+                if let error = error, Self.isAuthorizationDenied(error) {
+                    if key == "weightKg" { out["weightGranted"] = false }
+                    if key == "glucoseMmol" { out["glucoseGranted"] = false }
+                } else if let qty = (samples?.first as? HKQuantitySample)?.quantity.doubleValue(for: unit) {
+                    out[key] = (qty * scale * 10).rounded() / 10
+                }
+                group.leave()
+            }
+            healthStore.execute(query)
+        }
+
+        latest(.bodyMass, unit: .gramUnit(with: .kilo), key: "weightKg")
+        latest(.bodyFatPercentage, unit: .percent(), key: "bodyFatPct", scale: 100)
+        let glucoseUnit = HKUnit.moleUnit(with: .milli, molarMass: HKUnitMolarMassBloodGlucose).dividing(by: .liter())
+        latest(.bloodGlucose, unit: glucoseUnit, key: "glucoseMmol")
+
+        if let diet = HKObjectType.quantityType(forIdentifier: .dietaryEnergyConsumed) {
+            group.enter()
+            let query = HKStatisticsQuery(quantityType: diet, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, stats, error in
+                if let error = error, Self.isAuthorizationDenied(error) {
+                    out["nutritionGranted"] = false
+                } else if let sum = stats?.sumQuantity()?.doubleValue(for: .kilocalorie()), sum > 0 {
+                    out["nutritionKcal"] = (sum * 10).rounded() / 10
+                }
+                group.leave()
+            }
+            healthStore.execute(query)
+        }
+
+        group.enter()
+        let workouts = HKSampleQuery(sampleType: .workoutType(), predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
+            if let error = error, Self.isAuthorizationDenied(error) {
+                out["ropeGranted"] = false
+            } else {
+                let ropes = (samples as? [HKWorkout])?.filter { $0.workoutActivityType == .jumpRope } ?? []
+                let seconds = ropes.reduce(0.0) { $0 + max(0, $1.duration) }
+                if seconds > 0 {
+                    out["jumpCount"] = ropes.count
+                    out["jumpMinutes"] = Int((seconds / 60.0).rounded(.up))
+                }
+            }
+            group.leave()
+        }
+        healthStore.execute(workouts)
+
+        group.notify(queue: .main) {
+            let any = out["weightKg"] != nil || out["jumpCount"] != nil || out["nutritionKcal"] != nil || out["glucoseMmol"] != nil
+            out["status"] = any ? "ok" : "empty"
+            call.resolve(out)
         }
     }
 

@@ -65,7 +65,7 @@ export function detectHealthVendor(): HealthVendorInfo {
       vendor: 'wechat-miniprogram',
       label: '微信运动',
       canSync: true,
-      tip: '请在微信「设置 > 通用 > 辅助功能」里开启微信运动后使用。',
+      tip: '请先在微信「我 → 设置 → 通用 → 辅助功能」打开微信运动。手环和手表的步数要先进入微信运动，这里才能读到；小程序不能直接配对设备。',
     }
   }
 

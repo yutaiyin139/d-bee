@@ -21,7 +21,7 @@
 import { getProfile, saveProfile } from '../api'
 import { syncWechatStepsActive, syncWechatStepsSilent, readWechatStepsCache } from '../werun'
 import { isVendorConnected } from '@dbee/shared'
-import type { HealthVendorDb } from '@dbee/shared'
+import type { HealthVendorDb, SmartDeviceSample } from '@dbee/shared'
 
 export interface HealthVendorInfo {
   vendor: 'wechat-miniprogram' | 'apple' | 'huawei' | 'xiaomi' | 'none'
@@ -36,7 +36,7 @@ export function getHealthVendor(): HealthVendorInfo {
     vendor: 'wechat-miniprogram',
     label: '微信运动',
     canSync: true,
-    tip: '请在微信「设置 > 通用 > 辅助功能」里开启微信运动后使用。',
+    tip: '请先在微信「我 → 设置 → 通用 → 辅助功能」打开微信运动。手环和手表的步数要先进入微信运动，这里才能读到；小程序不能直接配对设备。',
   }
 }
 
@@ -168,6 +168,11 @@ export interface HealthSyncData {
  *   更新，轮询做实时同步拿到的仍是同一份快照，却每分钟一次 wx.login + 网关调用，
  *   会撞 jscode2session 频控 errcode 45011 → 把本来正常的登录链路拖成 503）。
  */
+/** 小程序没有系统健康读数接口。返回 null，面板按「请到手机 App 读取」展示。 */
+export async function fetchSmartDeviceReadings(): Promise<SmartDeviceSample | null> {
+  return null
+}
+
 export async function syncFromHealth(opts?: { live?: boolean }): Promise<HealthSyncData> {
   const live = opts?.live !== false
   if (live) {

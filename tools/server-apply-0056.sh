@@ -170,8 +170,15 @@ c "前置：settle_apple_purchase 已存在（0037 已应用）" \
   "$(Q "SELECT count(*)::int FROM pg_proc WHERE oid='${SETTLE_OID}'::regprocedure;" 2>/dev/null || echo 0)" "1"
 c "前置：apple_transactions 表已存在（0037 已应用）" \
   "$(Q "SELECT (to_regclass('public.apple_transactions') IS NOT NULL)::int;")" "1"
-c "前置：含 owner_id 的表仍为 18 张（快照基线；0056 不建表不删表）" \
-  "$(Q "SELECT count(*)::int FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_attribute a ON a.attrelid=c.oid AND a.attname='owner_id' AND NOT a.attisdropped WHERE n.nspname='public' AND c.relkind='r';")" "18"
+# 2026-10 写脚本时是 18 张。其后支付等迁移新增了带 owner_id 的表，
+# 0056 本身不建表不删表，所以这里只要求不少于当时的 18 张。
+OWNER_TABLES="$(Q "SELECT count(*)::int FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_attribute a ON a.attrelid=c.oid AND a.attname='owner_id' AND NOT a.attisdropped WHERE n.nspname='public' AND c.relkind='r';")"
+if [ "${OWNER_TABLES:-0}" -ge 18 ]; then
+  echo "  ✓ 前置：含 owner_id 的表不少于 18 张（0056 不建表不删表，实测=${OWNER_TABLES}）"
+else
+  echo "  ✗ 前置：含 owner_id 的表不少于 18 张（实测=${OWNER_TABLES:-<空>}）"
+  FAIL=$((FAIL+1))
+fi
 
 # 探针需要一个真实在售的 lifetime 商品（settle 的商品映射以 payment_products 为唯一事实源）
 PRODUCT="$(Q "SELECT product_id FROM public.payment_products WHERE active = true AND plan = 'lifetime' ORDER BY product_id LIMIT 1;")"

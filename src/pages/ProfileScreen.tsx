@@ -23,7 +23,7 @@ import {
 } from '../lib/nutrition'
 import { usePlan } from '../state/plan'
 import { exportJSON, exportText } from '../lib/share'
-import { connectHealth, disconnectHealth, getHealthVendor, isHealthConnectable, probeHealthConnectAvailability } from '../lib/health'
+import { connectHealth, disconnectHealth, getHealthVendor, healthConnectInstallOffered, isHealthConnectable, isHealthConnectAvailable, openHealthConnect, probeHealthConnectAvailability } from '../lib/health'
 import { isAndroid } from '../lib/platform'
 import { onActivateKey } from '../lib/a11y'
 import { getNotifyPrefs, setNotifyPrefs, syncLocalNotifications, isNotificationsSupported, getNotificationPermission } from '../lib/notifications'
@@ -161,19 +161,26 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
   // HC probe 时序：Health Connect 可用性是异步跨进程探测，缓存未热时 getHealthVendor()
   // 读到保守 false。挂载时 probe 一次，完成后置 hcReady 触发 useMemo 重算。
   // 非 Android 恒不触发（零开销）；probe 幂等且结果缓存，重复挂载不重复打跨进程查询。
-  const [hcReady, setHcReady] = useState(false)
+  const [hcEpoch, setHcEpoch] = useState(0)
   useEffect(() => {
+    if (!isAndroid()) return
     let alive = true
-    if (isAndroid()) {
-      void probeHealthConnectAvailability().then(() => {
-        if (alive) setHcReady(true)
+    const bump = () => {
+      void probeHealthConnectAvailability(true).then(() => {
+        if (alive) setHcEpoch((n) => n + 1)
       })
     }
+    bump()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') bump()
+    }
+    document.addEventListener('visibilitychange', onVisible)
     return () => {
       alive = false
+      document.removeEventListener('visibilitychange', onVisible)
     }
   }, [])
-  const healthVendor = useMemo(() => getHealthVendor(), [hcReady])
+  const healthVendor = useMemo(() => getHealthVendor(), [hcEpoch])
   // WX-4 防串台：按来源判定（反向：小程序连了微信运动后，本端不误显示 Apple 已连接）
   const healthConnected = useMemo(() => {
     if (!profile) return false
@@ -574,9 +581,9 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
             </div>
           </div>
         </div>
-        {!pro && (
+        {!lifetime && (
           <button className="member-btn" onClick={() => openPaywall()}>
-            升级
+            {pro ? '续费升级' : '升级'}
           </button>
         )}
       </div>
@@ -760,7 +767,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
               </span>
               <span className="val" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>
-                  {healthBusy ? '处理中…' : healthConnected ? '已连接 · 点击重新授权' : healthVendor.canSync ? '连接' : '查看'}
+                  {healthBusy ? '处理中…' : healthConnected ? '已连接 · 点击重新授权' : healthConnectInstallOffered() ? '安装健康连接' : healthVendor.canSync ? '连接' : '查看'}
                 </span>
                 <span className="arrow">›</span>
               </span>
@@ -784,6 +791,12 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
             <div className="hint" style={{ padding: '0 16px 12px' }}>
               {healthHint}
             </div>
+            {healthVendor.vendor === 'health_connect' && isHealthConnectAvailable() && (
+              <div className="list-line" onClick={() => void openHealthConnect('settings')} onKeyDown={onActivateKey(() => void openHealthConnect('settings'))} role="button" tabIndex={0}>
+                <span>打开健康连接，核对步数共享</span>
+                <span className="arrow">›</span>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -1122,6 +1135,7 @@ export function ProfileScreen({ profile, account, onOpenLegal, onProfileChanged,
           heightCm={profile.height_cm}
           onConnect={() => void handleConnectHealth()}
           onDisconnect={() => void handleDisconnectHealth()}
+          onProfileChanged={onProfileChanged}
         />
       )}
     </div>

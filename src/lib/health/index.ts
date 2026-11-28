@@ -18,7 +18,7 @@
 
 import { detectHealthVendor, isWechatWebView } from './brand'
 import type { HealthVendorInfo } from './brand'
-import { isHealthKitAvailable, requestHealthAuthorization, fetchTodayHealth } from './healthkit'
+import { isHealthKitAvailable, requestHealthAuthorization, fetchTodayHealth, fetchHealthKitDevices } from './healthkit'
 import {
   isAndroidVendorHealthAvailable,
   requestAndroidVendorAuthorization,
@@ -26,20 +26,24 @@ import {
 } from './android'
 import {
   isHealthConnectAvailable,
+  healthConnectInstallOffered,
+  openHealthConnect,
   probeHealthConnectAvailability,
   requestHealthConnectAuthorization,
   fetchHealthConnectToday,
+  fetchHealthConnectDevices,
 } from './connect'
 import { isWechatMiniProgram, isAndroid } from '../platform'
 import { getProfile, saveProfile } from '../api'
 import type { HealthSyncData } from './types'
+import type { SmartDeviceSample } from '@dbee/shared'
 import { healthVendorToDb, isVendorConnected } from '@dbee/shared'
 import type { HealthVendorDb } from '@dbee/shared'
 
 export type { HealthVendor, HealthVendorInfo } from './brand'
 export type { HealthSyncData, HealthSyncStatus, HealthAuthResult, HealthAuthReason } from './types'
 export { isUsableHealthStatus } from './types'
-export { isHealthConnectAvailable, probeHealthConnectAvailability } from './connect'
+export { isHealthConnectAvailable, healthConnectInstallOffered, openHealthConnect, probeHealthConnectAvailability } from './connect'
 
 export interface ConnectResult {
   ok: boolean
@@ -54,7 +58,15 @@ const HEALTH_CONNECT_INFO: HealthVendorInfo = {
   vendor: 'health_connect',
   label: '系统健康',
   canSync: true,
-  tip: '请在系统「健康连接（Health Connect）」里授权后使用。',
+  tip: '请在系统「健康连接（Health Connect）」里授权后使用。手表或手环要先在自己的健康 App 里打开向健康连接共享步数。',
+}
+
+/** 本机还没装健康连接，但系统允许安装。按钮去安装页，不写成「这台手机不支持」。 */
+const HEALTH_CONNECT_INSTALL_INFO: HealthVendorInfo = {
+  vendor: 'health_connect',
+  label: '系统健康',
+  canSync: true,
+  tip: '本机还没有「健康连接」。安装后，在手表或手环的健康 App 里打开向它共享步数，再回到这里点连接。',
 }
 
 /**
@@ -71,6 +83,7 @@ const HEALTH_CONNECT_INFO: HealthVendorInfo = {
 export function getHealthVendor(): HealthVendorInfo {
   // isHealthConnectAvailable() 内部已 gate isAndroid()，非 Android 恒 false
   if (isHealthConnectAvailable()) return HEALTH_CONNECT_INFO
+  if (healthConnectInstallOffered()) return HEALTH_CONNECT_INSTALL_INFO
   return detectHealthVendor()
 }
 
@@ -93,6 +106,7 @@ export function isHealthConnectable(): boolean {
     isWechatMiniProgram() ||
     isHealthKitAvailable() ||
     isHealthConnectAvailable() ||
+    healthConnectInstallOffered() ||
     isAndroidVendorHealthAvailable()
   )
 }
@@ -144,6 +158,16 @@ export async function isHealthConnected(expectedVendor?: HealthVendorDb): Promis
 export async function connectHealth(): Promise<ConnectResult> {
   // HC 能力须在取 vendor 前就绪（probe 幂等，命中缓存零开销）
   if (isAndroid()) await probeHealthConnectAvailability()
+  if (healthConnectInstallOffered()) {
+    const opened = await openHealthConnect('install')
+    return {
+      ok: false,
+      message: opened
+        ? '已打开「健康连接」的安装页。安装完成，并在手表或手环的健康 App 里打开步数共享后，回到这里再点一次连接。'
+        : '请到应用商店安装「健康连接（Health Connect）」。装好后，在手表或手环的健康 App 里打开向它共享步数，再回来连接。',
+      vendor: 'health_connect',
+    }
+  }
   const v = getHealthVendor()
 
   if (v.vendor === 'health_connect') {
@@ -153,6 +177,14 @@ export async function connectHealth(): Promise<ConnectResult> {
     }
 
     const auth = await requestHealthConnectAuthorization()
+    // 流程可以走完，但一项可读指标都没勾：不能写成已连接，否则首页一直是 0 步。
+    if (auth.reason === 'no_types') {
+      return {
+        ok: false,
+        message: '授权页已打开，但没有允许读取步数或活动能量。请再点一次连接并勾选这两项。手表或手环还要在自己的健康 App 里打开向「健康连接」共享步数。',
+        vendor: 'health_connect',
+      }
+    }
     if (!auth.completed) {
       if (auth.reason === 'unavailable') {
         return {
@@ -315,6 +347,17 @@ export async function connectHealth(): Promise<ConnectResult> {
  * HC-1（2026-11-18）：Android 上 **HC 优先**于厂商 SDK。probe 幂等（缓存命中
  * 零开销），故 60s 轮询热路径不会重复打跨进程查询。
  */
+/** 智能设备面板用的当天读数。非 Android / 非 iOS 返回 null。 */
+export async function fetchSmartDeviceReadings(): Promise<SmartDeviceSample | null> {
+  if (isAndroid()) {
+    await probeHealthConnectAvailability()
+    if (!isHealthConnectAvailable()) return null
+    return fetchHealthConnectDevices()
+  }
+  if (isHealthKitAvailable()) return fetchHealthKitDevices()
+  return null
+}
+
 export async function syncFromHealth(): Promise<HealthSyncData> {
   if (isAndroid()) await probeHealthConnectAvailability()
   const v = getHealthVendor()

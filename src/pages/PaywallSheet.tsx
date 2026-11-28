@@ -12,7 +12,7 @@ import { openManageSubscriptions } from '../lib/manageSubscription'
 import { isAlipayAvailable } from '../lib/payment/alipay'
 import { isWechatPayAvailable } from '../lib/payment/wechatPay'
 import { isIOS, isWeb, isAndroid } from '../lib/platform'
-import { APPPAY_SALE_ENABLED } from '../lib/miniOrderGuide'
+import { ALIPAY_SALE_ENABLED, APPPAY_SALE_ENABLED } from '../lib/miniOrderGuide'
 import { MiniOrderGuide } from '../components/MiniOrderGuide'
 
 /**
@@ -102,7 +102,7 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
    *   · `getPlugin()` 读 `window.Capacitor.Plugins.CapacitorWechat`，而 web 端
    *     `isNative()` 恒 false、`window.Capacitor` 不存在 → adapter 恒 null；
    *   · `@capgo/capacitor-wechat` 的 package.json 只声明 `{ios, android}`，**无 web 实现**；
-   *   · 支付宝侧同理，且 `package.json` 连 alipay 插件依赖都没有。
+   *   · 支付宝走本地插件 @dbee/alipay（注册名 DbeeAlipay）；未打进当前安装包时探测同样为 null。
    * `isWechatPayAvailable()` / `isAlipayAvailable()` 本来就为此而写，却全仓 0 处调用。
    *
    * 用**能力探测**而非 `isWeb()` 平台判断：资质就绪后 Android 插件装上，同一份代码
@@ -119,7 +119,7 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
     //       排除，杜绝 Web 出现任何收款入口（护栏 18 的运行时兜底）。
     //    ③ isWechatPayAvailable()/isAlipayAvailable() —— AppID + 原生插件齐备探测。
     setPayChannels(APPPAY_SALE_ENABLED && isAndroid()
-      ? { wechat: isWechatPayAvailable(), alipay: isAlipayAvailable() }
+      ? { wechat: isWechatPayAvailable(), alipay: ALIPAY_SALE_ENABLED && isAlipayAvailable() }
       : { wechat: false, alipay: false })
   }, [paywall.open])
   const noPayChannel = !isIOS() && !payChannels.wechat && !payChannels.alipay
@@ -335,8 +335,9 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
       </div>
 
       {/* 「管理订阅」入口（iOS 3.1.2 硬要求）。
-          🔴 刻意放在 {!pro && ...} 之外 = iOS 端**无论是否会员都渲染**：
-          审核员用的是演示账户（非订阅态），入口若只对会员可见，审核员看不到 = 仍判缺失。 */}
+          🔴 刻意放在 {!lifetime && ...} 购买区之外 = iOS 端**无论是否会员都渲染**：
+          审核员用的是演示账户（非订阅态），入口若只对会员可见，审核员看不到 = 仍判缺失。
+          月会员未到期仍可购买年卡或终身；只有终身会员才隐藏购买区。 */}
       {isIOS() && (
         <button
           type="button"
@@ -349,7 +350,7 @@ export function PaywallSheet({ onOpenLegal }: { onOpenLegal: (id: DocId) => void
         </button>
       )}
 
-      {!pro && (
+      {!lifetime && (
         <>
           {/* iOS 商店价格未就绪：明确告知并提供重试，禁止以硬编码价发起购买 */}
           {isIOS() && iosPriceState === 'error' && (

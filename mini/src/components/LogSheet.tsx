@@ -371,7 +371,7 @@ export function LogSheet({ logDate, initialMeal, initialMode = 'photo', onClose,
   async function toDataUrl(filePath: string): Promise<string> {
     let src = filePath
     try {
-      const r = await Taro.compressImage({ src: filePath, quality: 80 })
+      const r = await Taro.compressImage({ src: filePath, quality: 80, compressedWidth: 1600 })
       if (r?.tempFilePath) src = r.tempFilePath
     } catch { /* 压缩不可用则用原图 */ }
     const b64 = await new Promise<string>((resolve, reject) => {

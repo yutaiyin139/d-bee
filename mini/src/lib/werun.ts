@@ -272,20 +272,22 @@ async function syncWithGateway(appid: string): Promise<WerunSyncData> {
   }
 
   // 只上传四元组；🔴 绝不上传 steps（服务端只信解密值）
-  const payload = { code, appid, encryptedData: enc.encryptedData, iv: enc.iv }
-
-  const doSync = (): Promise<WerunGatewayResult> => gatewayPost<WerunGatewayResult>(SYNC_PATH, payload)
+  // 每次调用新建 payload：重试时必须带上新的 login code，不能复用第一次的对象。
+  const doSync = (loginCode: string): Promise<WerunGatewayResult> => {
+    const payload = { code: loginCode, appid, encryptedData: enc.encryptedData, iv: enc.iv }
+    return gatewayPost<WerunGatewayResult>(SYNC_PATH, payload)
+  }
 
   try {
     let result: WerunGatewayResult
     try {
-      result = await doSync()
+      result = await doSync(code)
     } catch (e) {
       // code 失效（40029/40163 → 401 invalid_grant）→ 重新 wx.login 换 code 重试一次
       if (e instanceof GatewayError && (e.status === 401 && e.code === 'invalid_grant')) {
         code = await freshLoginCode()
         if (!code) throw new GatewayError(401, 'invalid_grant', '登录凭证刷新失败')
-        result = await doSync()
+        result = await doSync(code)
       } else {
         throw e
       }

@@ -23,20 +23,20 @@
  *   详见 `docs/Web引导闭环与Android收款实装-2026-11-09.md` §五。
  *
  * ── 微信支付链路（与苹果 IAP 的「下单→支付→回传凭证→核销」同构）────────────
- *   ① 服务端统一下单（微信支付 V3 JSAPI，返回 prepay 参数）—— 服务端能力，待商户号后接
- *   ② 客户端原生 SDK 拉起收银台（@capgo/capacitor-wechat 的 sendPaymentRequest）
- *   ③ 服务端回调验签发权益（provider='wechat' 分支）—— 服务端能力，待商户号后接
- *   ④ 前端刷新权益
+ *   ① 网关 /.cloud/payment/apppay/prepay 走微信支付 V3 APP 下单，返回 prepay 参数
+ *   ② 客户端 @capgo/capacitor-wechat 的 sendPaymentRequest 拉起收银台
+ *   ③ 网关 /.cloud/payment/wechat-app/notify 验签后 settle_app_payment 发会员
+ *   ④ 前端再向网关查单并刷新权益
+ *   商户密钥未配时网关对该渠道返回 503，不会发出会员。
  *
- * ── 前置条件（四条缺一不可，缺则 createWechatPayAdapter 返回 null）────────
+ * ── 前置条件（缺则 createWechatPayAdapter 返回 null）────────────────────
  *   1. 微信开放平台「移动应用」AppID（构建时注入 VITE_WECHAT_APPID）
- *   2. 微信支付商户号 + 服务端统一下单接口（provider='wechat' 验签分支）
- *   3. @capgo/capacitor-wechat 插件已注入（Android 原生 SDK）
- *   4. 资质（营业执照 + 商户号）—— 当前未就绪，见 docs 微信登录接入.md
+ *      不能填小程序 AppID。构建期会与 mini/project.config.json 比对并拒绝。
+ *   2. 服务端 WECHAT_PAY_APPID 与上面是同一个值，并配齐商户号、证书、APIv3 密钥、平台证书
+ *   3. @capgo/capacitor-wechat 已打进 Android 包
  *
- *   ⚠️ 当前资质未就绪：本 adapter 的 create 探测会因「未配 AppID」而返回 null，
- *   前端 getAdapter() 对 Android 返回 null → checkout 提示「当前平台暂不支持在线支付」，
- *   与 iOS 未接插件时行为完全一致（诚实降级，不谎报）。
+ *   未配移动应用 AppID 或插件不在包里时，探测返回 null，付费墙不画微信支付按钮。
+ *   微信支付可用不等于原生微信登录可用（登录另有 NATIVE_CODE_EXCHANGE_SUPPORTED）。
  */
 
 import { PRODUCT_IDS, type ProductId } from '../entitlement'

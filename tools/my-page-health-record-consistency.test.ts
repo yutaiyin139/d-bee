@@ -26,7 +26,7 @@ import {
   MY_PAGE_INVITE_LABEL, MY_PAGE_REPORT_ARIA,
   MY_PAGE_TODAY_TITLE, MY_PAGE_TODAY_HINT, MY_PAGE_TODAY_ARIA,
   MY_PAGE_TODAY_LABELS, MY_FOOD_HINT,
-  HEALTH_APP_CATALOG, FUTURE_DEVICE_CATALOG, DEVICE_STATUS_LABEL,
+  HEALTH_APP_CATALOG, FUTURE_DEVICE_CATALOG, DEVICE_STATUS_LABEL, smartDeviceLine,
   WATCH_CATALOG, WATCH_BIND_ENTRY, WATCH_BIND_TITLE,
   HEALTH_RECORD_ANCHORS, HEALTH_RECORD_COMPLETION,
   HEALTH_RECORD_COMPLETION_NOTE, HEALTH_RECORD_COMPLETION_FIELDS,
@@ -390,8 +390,8 @@ describe('健康档案 · 四段 / 合规 / 零编造', () => {
     })
   })
 
-  it('设备目录里的「血糖仪应用」仅作后续支持目录名，状态恒为 planned', () => {
-    expect(FUTURE_DEVICE_CATALOG.filter((d) => d.label.includes('血糖')).every((d) => d.status === 'planned')).toBe(true)
+  it('设备目录里的「血糖仪应用」只引导读取，不标成现在可连接', () => {
+    expect(FUTURE_DEVICE_CATALOG.filter((d) => d.label.includes('血糖')).every((d) => d.status === 'guided')).toBe(true)
   })
 
   it('零医学结论文案', () => {
@@ -465,12 +465,57 @@ describe('智能设备 · 零假功能', () => {
     expect(HEALTH_APP_CATALOG.filter((d) => d.key === 'vivo' || d.key === 'oppo').every((d) => d.status === 'guided')).toBe(true)
   })
 
-  it('后续支持设备全部为 planned', () => {
-    expect(FUTURE_DEVICE_CATALOG.every((d) => d.status === 'planned')).toBe(true)
+  it('更多设备全部为引导读取，不标成现在可连接', () => {
+    expect(FUTURE_DEVICE_CATALOG.every((d) => d.status === 'guided')).toBe(true)
   })
 
   it('后续支持设备 6 项', () => {
     expect(FUTURE_DEVICE_CATALOG.length).toBe(6)
+  })
+
+  it('体脂秤读到体重后可以记入今天', () => {
+    const line = smartDeviceLine('body-fat-scale', {
+      weightKg: 62.4, bodyFatPct: 22, nutritionKcal: null, jumpCount: null, jumpMinutes: null, glucoseMmol: null,
+      weightGranted: true, ropeGranted: true, nutritionGranted: true, glucoseGranted: true,
+    }, null, 'app')
+    expect(line.action).toBe('save-weight')
+  })
+
+  it('小程序不为体脂秤提供记入按钮', () => {
+    const line = smartDeviceLine('body-fat-scale', null, null, 'mini')
+    expect(line.action).toBe(null)
+  })
+
+  it('已读到 0 步时腕带显示今日 0 步，未读到才提示去连接', () => {
+    expect(smartDeviceLine('band', null, 0, 'app').value).toBe('今日 0 步')
+    expect(smartDeviceLine('band', null, null, 'app').value).toContain('连接系统健康')
+  })
+
+  it('只有体脂、没有体重时不提供记入', () => {
+    const line = smartDeviceLine('body-fat-scale', {
+      weightKg: null, bodyFatPct: 22, nutritionKcal: null, jumpCount: null, jumpMinutes: null, glucoseMmol: null,
+      weightGranted: true, ropeGranted: true, nutritionGranted: true, glucoseGranted: true,
+    }, null, 'app')
+    expect(line.action).toBe(null)
+    expect(line.value).toContain('22')
+  })
+
+  it('跳绳不足 1 分钟不提供记入', () => {
+    const line = smartDeviceLine('jump-rope', {
+      weightKg: null, bodyFatPct: null, nutritionKcal: null, jumpCount: 1, jumpMinutes: 0, glucoseMmol: null,
+      weightGranted: true, ropeGranted: true, nutritionGranted: true, glucoseGranted: true,
+    }, null, 'app')
+    expect(line.action).toBe(null)
+  })
+
+  it('血糖只描述今日读数，并写明不上传', () => {
+    const line = smartDeviceLine('glucose-app', {
+      weightKg: null, bodyFatPct: null, nutritionKcal: null, jumpCount: null, jumpMinutes: null, glucoseMmol: 5.6,
+      weightGranted: true, ropeGranted: true, nutritionGranted: true, glucoseGranted: true,
+    }, null, 'app')
+    expect(line.action).toBe(null)
+    expect(line.value).toContain('今日最近')
+    expect(line.value).toContain('不上传')
   })
 
   it('状态标签四档齐全', () => {
@@ -856,7 +901,7 @@ describe('护栏 28-WX4 · health_vendor 跨端串台防护', () => {
 
   it('HC-1 门面 Android 分派 Health Connect 优先于厂商 SDK', () => {
     const body = fnBody(stripComments(read('src/lib/health/index.ts')), 'getHealthVendor')
-    expect(/if \(isHealthConnectAvailable\(\)\) return HEALTH_CONNECT_INFO\s*\n\s*return detectHealthVendor\(\)/.test(body)).toBe(true)
+    expect(/if \(isHealthConnectAvailable\(\)\) return HEALTH_CONNECT_INFO\s*\n\s*if \(healthConnectInstallOffered\(\)\) return HEALTH_CONNECT_INSTALL_INFO\s*\n\s*return detectHealthVendor\(\)/.test(body)).toBe(true)
   })
 
   it('HC-1 连接/同步/已连接判定在取 vendor 前先 await probe（消除缓存未热的时序误判）', () => {
@@ -873,8 +918,8 @@ describe('护栏 28-WX4 · health_vendor 跨端串台防护', () => {
   it('HC-1 两端健康页挂载时 probe 并以 hcReady 触发 useMemo 重算（UI 入口时序）', () => {
     const pages = ['src/pages/Dashboard.tsx', 'src/pages/ProfileScreen.tsx'].map((p) => stripComments(read(p)))
     expect(pages.every((x) =>
-      /if \(isAndroid\(\)\) \{\s*void probeHealthConnectAvailability\(\)\.then\(/.test(x) &&
-      x.includes('const healthVendor = useMemo(() => getHealthVendor(), [hcReady])'))).toBe(true)
+      /probeHealthConnectAvailability\(true\)/.test(x) &&
+      x.includes('const healthVendor = useMemo(() => getHealthVendor(), [hcEpoch])'))).toBe(true)
   })
 
   it('HC-1 mini 端不引入 Health Connect 适配器（小程序无 HC，形状钉死）', () => {

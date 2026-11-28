@@ -378,18 +378,21 @@ section('A · 密码学纯函数（自造密钥，正 / 负用例）')
   // 支付宝：待签名串字典序 + 排除 sign/sign_type
   const content = alipaySignContent({ b: '2', a: '1', sign: 'zzz', sign_type: 'RSA2', empty: '' })
   assert('alipaySignContent 字典序 k=v& 且排除 sign / sign_type / 空值', content === 'a=1&b=2', content)
+  const requestContent = alipaySignContent({ b: '2', a: '1', sign: 'zzz', sign_type: 'RSA2', empty: '' }, { includeSignType: true })
+  assert('请求签名带上 sign_type', requestContent === 'a=1&b=2&sign_type=RSA2', requestContent)
   const orderStr = buildAlipayOrderStr({
     appId: ALI_APPID, method: 'alipay.trade.app.pay',
     bizContent: { out_trade_no: 'PO1', total_amount: '18.00' },
     notifyUrl: `${PUBLIC_BASE}/.cloud/payment/alipay/notify`, privateKeyPem: ALI_MCH.privateKey, timestamp: '2026-11-09 12:00:00',
   })
+  assert('orderStr 时间里的空格编码为 %20', orderStr.includes('2026-11-09%2012%3A00%3A00'), orderStr.slice(0, 80))
   const usp = new URLSearchParams(orderStr)
   const signParam = usp.get('sign')
   const paramsForVerify = Object.fromEntries([...usp.entries()].filter(([k]) => k !== 'sign'))
   assert('支付宝 orderStr 的 sign 可用**应用公钥**验签通过',
-    rsaVerify(ALI_MCH.publicKey, alipaySignContent(paramsForVerify), signParam))
+    rsaVerify(ALI_MCH.publicKey, alipaySignContent(paramsForVerify, { includeSignType: true }), signParam))
   assert('支付宝 orderStr 篡改金额后验签失败',
-    !rsaVerify(ALI_MCH.publicKey, alipaySignContent({ ...paramsForVerify, biz_content: '{"total_amount":"0.01"}' }), signParam))
+    !rsaVerify(ALI_MCH.publicKey, alipaySignContent({ ...paramsForVerify, biz_content: '{"total_amount":"0.01"}' }, { includeSignType: true }), signParam))
   const aliParams = { app_id: ALI_APPID, out_trade_no: 'PO1', total_amount: '18.00', trade_status: 'TRADE_SUCCESS' }
   const aliSign = rsaSign(ALI_PLATFORM.privateKey, alipaySignContent(aliParams))
   assert('支付宝异步通知验签正用例（支付宝公钥）',
@@ -464,7 +467,7 @@ section('B · POST /apppay/prepay · 支付宝下单（本地签名，零外呼�
   assert('product_code = QUICK_MSECURITY_PAY（App 支付固定值）', biz.product_code === 'QUICK_MSECURITY_PAY')
   const verifyParams = Object.fromEntries([...usp.entries()].filter(([k]) => k !== 'sign'))
   assert('orderStr 的 sign 可用应用公钥验签通过',
-    rsaVerify(ALI_MCH.publicKey, alipaySignContent(verifyParams), usp.get('sign')))
+    rsaVerify(ALI_MCH.publicKey, alipaySignContent(verifyParams, { includeSignType: true }), usp.get('sign')))
   assert('支付宝下单**零平台外呼**（本地签名即可，减少一次网络失败面）', platform.calls.length === 0)
   assert('响应不含应用私钥', !JSON.stringify(body).includes('PRIVATE KEY'))
 }
@@ -884,7 +887,7 @@ section('E · POST /apppay/query · 平台金额不足 / 未支付 / 退款 / �
       const usp = new URL(q.url).searchParams
       const sign = usp.get('sign')
       const rest = Object.fromEntries([...usp.entries()].filter(([k]) => k !== 'sign'))
-      return usp.get('method') === 'alipay.trade.query' && rsaVerify(ALI_MCH.publicKey, alipaySignContent(rest), sign)
+      return usp.get('method') === 'alipay.trade.query' && rsaVerify(ALI_MCH.publicKey, alipaySignContent(rest, { includeSignType: true }), sign)
     })())
   }
 }

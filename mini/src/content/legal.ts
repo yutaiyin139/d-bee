@@ -28,8 +28,8 @@
  */
 
 import {
-  ICP_BEIAN_D_BEE_CN,
   ICP_QUERY_URL,
+  MINI_ICP_BEIAN,
   POLICE_BEIAN,
   POLICE_QUERY_URL,
   PRODUCTS,
@@ -63,16 +63,16 @@ export const SITE = {
   version: __APP_VERSION__,
   operator: OPERATOR,
   /**
-   * ICP 备案号（2026-11-06 下证）—— 取自 `@dbee/shared`，与主端**同源同值**。
+   * 小程序备案号（2026-11-24 下证）—— 取自 `@dbee/shared` 的 MINI_ICP_BEIAN。
    *
-   * 🔴 本站 d-bee.cn = 京ICP备2026075565号-**2**。
-   *   京ICP备2026075565号-**1** 是官网 d-bee.com.cn（门户网站）的号，**不可**填到本项目。
-   *   （本页 legal.tsx 的旧注释曾把示例写成 -1，已一并改正，防照抄填错。）
-   * 📌 小程序无 import.meta.env，故不走环境变量；但**也不写死字面量** ——
-   *   两端各写一份就是两个真相源，必然漂移（这正是本项目版本号曾踩过的坑）。
-   *   备案号是公开信息不是密钥，放 shared 常量即可随 Git 同步到四端。
+   * 🔴 三个号不能混：
+   *   · 京ICP备2026075565号-2 = 网站 d-bee.cn
+   *   · 京ICP备2026075565号-3A = Android / iOS App
+   *   · 京ICP备2026075565号-4X = 本小程序
+   *   京ICP备2026075565号-1 是官网 d-bee.com.cn，不可填到本项目。
+   * 📌 不写死字面量，避免和小程序页脚再分叉出第二份。
    */
-  icp: ICP_BEIAN_D_BEE_CN,
+  icp: MINI_ICP_BEIAN,
   icpUrl: ICP_QUERY_URL,
   /** 公安联网备案号：ICP 下证后 30 日内办理（即 2026-12-06 前）。拿到前为空 = 不渲染。 */
   police: POLICE_BEIAN,

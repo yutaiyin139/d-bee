@@ -22,19 +22,19 @@ import { computeHoneyBalance, HONEY_REASON_EXPIRE, type HoneyLedgerRow } from '.
 
 const NOW = new Date('2026-11-17T15:00:00+08:00').getTime()
 
-/** 生产只读取证的真实流水（11 条，owner 179325...） */
+/** 生产只读取证的真实流水（11 条，owner 179325...）。扣减日在新手分到期之前。 */
 const REAL_ROWS: HoneyLedgerRow[] = [
-  { id: 283, amount: 150, reason: 'newbie', expires_at: '2026-11-05T13:00:00+08:00' },
-  { id: 287, amount: 2, reason: 'checkin_exercise', expires_at: '2027-11-02T10:00:00+08:00' },
-  { id: 290, amount: 5, reason: 'checkin_meal', expires_at: '2027-11-02T16:00:00+08:00' },
-  { id: 293, amount: -100, reason: 'redeem', expires_at: null },
-  { id: 370, amount: 5, reason: 'checkin_meal', expires_at: '2027-11-09T08:00:00+08:00' },
-  { id: 371, amount: -150, reason: 'expire', expires_at: null },
-  { id: 388, amount: 5, reason: 'checkin_meal', expires_at: '2027-11-10T11:00:00+08:00' },
-  { id: 469, amount: 5, reason: 'checkin_meal', expires_at: '2027-11-12T20:00:00+08:00' },
-  { id: 507, amount: 5, reason: 'checkin_meal', expires_at: '2027-11-14T22:00:00+08:00' },
-  { id: 659, amount: 5, reason: 'checkin_meal', expires_at: '2027-11-17T14:00:00+08:00' },
-  { id: 667, amount: 2, reason: 'checkin_exercise', expires_at: '2027-11-17T14:00:00+08:00' },
+  { id: 283, amount: 150, reason: 'newbie', expires_at: '2026-11-05T13:00:00+08:00', created_at: '2026-10-29T13:00:00+08:00' },
+  { id: 287, amount: 2, reason: 'checkin_exercise', expires_at: '2027-11-02T10:00:00+08:00', created_at: '2026-11-02T09:00:00+08:00' },
+  { id: 290, amount: 5, reason: 'checkin_meal', expires_at: '2027-11-02T16:00:00+08:00', created_at: '2026-11-02T10:00:00+08:00' },
+  { id: 293, amount: -100, reason: 'redeem', expires_at: null, created_at: '2026-11-02T12:00:00+08:00' },
+  { id: 370, amount: 5, reason: 'checkin_meal', expires_at: '2027-11-09T08:00:00+08:00', created_at: '2026-11-09T08:00:00+08:00' },
+  { id: 371, amount: -150, reason: 'expire', expires_at: null, created_at: '2026-11-09T13:00:00+08:00' },
+  { id: 388, amount: 5, reason: 'checkin_meal', expires_at: '2027-11-10T11:00:00+08:00', created_at: '2026-11-10T11:00:00+08:00' },
+  { id: 469, amount: 5, reason: 'checkin_meal', expires_at: '2027-11-12T20:00:00+08:00', created_at: '2026-11-12T20:00:00+08:00' },
+  { id: 507, amount: 5, reason: 'checkin_meal', expires_at: '2027-11-14T22:00:00+08:00', created_at: '2026-11-14T22:00:00+08:00' },
+  { id: 659, amount: 5, reason: 'checkin_meal', expires_at: '2027-11-17T14:00:00+08:00', created_at: '2026-11-17T14:00:00+08:00' },
+  { id: 667, amount: 2, reason: 'checkin_exercise', expires_at: '2027-11-17T14:00:00+08:00', created_at: '2026-11-17T14:30:00+08:00' },
 ]
 
 describe('FEFO 余额：真实账户回归（双扣取证）', () => {
@@ -94,6 +94,15 @@ describe('FEFO 余额：边界语义', () => {
     ]
     expect(computeHoneyBalance(rows, NOW).balance).toBe(0)
   })
+  it('过期之后的兑换扣未过期批次，余额从 80 降到 30', () => {
+    const rows: HoneyLedgerRow[] = [
+      { id: 1, amount: 150, reason: 'newbie', expires_at: '2026-11-05T00:00:00+08:00', created_at: '2026-10-29T00:00:00+08:00' },
+      { id: 2, amount: -100, reason: 'redeem', expires_at: null, created_at: '2026-11-02T00:00:00+08:00' },
+      { id: 3, amount: 80, reason: 'checkin_meal', expires_at: '2027-06-01T00:00:00+08:00', created_at: '2026-11-10T00:00:00+08:00' },
+      { id: 4, amount: -50, reason: 'redeem', expires_at: null, created_at: '2026-11-17T12:00:00+08:00' },
+    ]
+    expect(computeHoneyBalance(rows, NOW).balance).toBe(30)
+  })
 })
 
 function stripComments(s: string): string {
@@ -125,5 +134,24 @@ describe('四端一致性：FEFO 口径落地', () => {
   })
   it('0054 迁移忽略 reason=expire 物理冲正', () => {
     expect(/reason\s*<>\s*'expire'/.test(migration)).toBe(true)
+  })
+})
+
+function stripSqlComments(s: string): string {
+  return s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '')
+}
+
+describe('兑换与页面余额同一口径', () => {
+  const redeem = stripSqlComments(read('db/migrations/0058-redeem-honey-fefo.sql'))
+  const spendTime = stripSqlComments(read('db/migrations/0059-honey-balance-spend-time.sql'))
+
+  it('0058 的 redeem_honey 调用 honey_balance()', () => {
+    expect(redeem.includes("public.honey_balance()->>'balance'")).toBe(true)
+  })
+  it('0058 不再用未过期流水直接求和当余额', () => {
+    expect(redeem.includes('SUM(amount)')).toBe(false)
+  })
+  it('0059 按扣减发生时间跳过已过期批次', () => {
+    expect(spendTime.includes('v_lots_expires[v_i] <= v_spend_at')).toBe(true)
   })
 })

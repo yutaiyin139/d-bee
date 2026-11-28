@@ -1,17 +1,25 @@
 package com.dbee.health
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
+import androidx.health.connect.client.records.BloodGlucoseRecord
+import androidx.health.connect.client.records.BodyFatRecord
 import androidx.health.connect.client.records.DistanceRecord
+import androidx.health.connect.client.records.ExerciseSessionRecord
+import androidx.health.connect.client.records.NutritionRecord
 import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.request.AggregateRequest
+import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -66,7 +74,23 @@ internal object HealthConnectReader {
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class),
         HealthPermission.getReadPermission(DistanceRecord::class),
+        HealthPermission.getReadPermission(WeightRecord::class),
+        HealthPermission.getReadPermission(BodyFatRecord::class),
+        HealthPermission.getReadPermission(ExerciseSessionRecord::class),
+        HealthPermission.getReadPermission(NutritionRecord::class),
+        HealthPermission.getReadPermission(BloodGlucoseRecord::class),
     )
+
+    /**
+     * 授权结果里是否至少有步数或活动能量。
+     * 只勾了距离不算连上：读数端要求二者至少其一，否则会把「已连接」写成假状态。
+     */
+    @JvmStatic
+    fun grantsStepsOrCalories(granted: Set<String>): Boolean {
+        val steps = HealthPermission.getReadPermission(StepsRecord::class)
+        val kcal = HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class)
+        return granted.contains(steps) || granted.contains(kcal)
+    }
 
     /** 回调式结果（Java 侧看到的是 HashMap<String, Object>） */
     fun interface ResultCallback {
@@ -318,6 +342,77 @@ internal object HealthConnectReader {
         fun onResult(intent: Intent?)
     }
 
+    /**
+     * 打开健康连接的安装页或系统设置。
+     * target=install：仅当本机装了应用商店才打开，打不开就如实返回，不把用户丢进打不开的网页。
+     * target=settings：打开健康连接的权限页，方便用户核对哪个手环 App 在共享步数。
+     */
+    @JvmStatic
+    fun openSetup(context: Context, target: String, callback: ResultCallback) {
+        val scope = CoroutineScope(Dispatchers.IO + CoroutineExceptionHandler { _, t ->
+            val out = HashMap<String, Any?>()
+            out["opened"] = false
+            out["reason"] = "crash_guarded:${t.javaClass.simpleName}"
+            deliverMap(callback, out)
+        })
+        scope.launch {
+            val out = HashMap<String, Any?>()
+            try {
+                val opened = withContext(Dispatchers.Main) {
+                    if (target == "install") openInstaller(context) else openSettings(context)
+                }
+                out["opened"] = opened
+                if (!opened) out["reason"] = "no_handler"
+            } catch (t: Throwable) {
+                out["opened"] = false
+                out["reason"] = t.javaClass.simpleName
+            }
+            withContext(Dispatchers.Main) { callback.onResult(out) }
+        }
+    }
+
+    private fun deliverMap(callback: ResultCallback, data: HashMap<String, Any?>) {
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        handler.post {
+            try {
+                callback.onResult(data)
+            } catch (ignore: Throwable) {
+                // 进程存活优先
+            }
+        }
+    }
+
+    private fun launchExternal(context: Context, intent: Intent): Boolean {
+        if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY) == null) {
+            return false
+        }
+        return try {
+            context.startActivity(intent)
+            true
+        } catch (t: Throwable) {
+            Log.w(TAG, "launchExternal failed: ${t.javaClass.simpleName}")
+            false
+        }
+    }
+
+    /** 应用商店里的健康连接。没有商店（例如无 Google 服务的华为）返回 false。 */
+    private fun openInstaller(context: Context): Boolean {
+        val market = Intent(Intent.ACTION_VIEW).apply {
+            data = Uri.parse(
+                "market://details?id=com.google.android.apps.healthdata&url=healthconnect%3A%2F%2Fonboarding",
+            )
+            setPackage("com.android.vending")
+            putExtra("overlay", true)
+            putExtra("callerId", context.packageName)
+        }
+        return launchExternal(context, market)
+    }
+
+    private fun openSettings(context: Context): Boolean {
+        return launchExternal(context, Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS))
+    }
+
     /** 真正造 Intent 的部分（不含阻塞调用，可在任意线程执行） */
     private fun buildPermissionIntent(app: Context): Intent? = try {
         // 🔴 必须用**无参重载**：1.1.0 里 HEALTH_CONNECT_CLIENT_TAG 是 internal，
@@ -533,6 +628,105 @@ internal object HealthConnectReader {
                 out["message"] = "${t.javaClass.simpleName}: ${t.message}"
             }
 
+            withContext(Dispatchers.Main) { callback.onResult(out) }
+        }
+    }
+
+    /**
+     * 读取体脂秤、第三方秤、跳绳、营养秤、血糖仪写入系统健康的当天样本。
+     * 没有样本就省略字段，不用 0 冒充。数值不进日志。
+     */
+    @JvmStatic
+    fun fetchDevices(context: Context, callback: ResultCallback) {
+        val app = context.applicationContext
+        val scope = CoroutineScope(Dispatchers.IO + crashGuard(callback, "fetchDevices"))
+        scope.launch {
+            val out = HashMap<String, Any?>()
+            try {
+                val status = sdkStatusWithTimeout("device_sdk_status", app)
+                if (status != HealthConnectClient.SDK_AVAILABLE) {
+                    out["status"] = "unavailable"
+                    withContext(Dispatchers.Main) { callback.onResult(out) }
+                    return@launch
+                }
+                val c = clientWithTimeout("device_client_create", app)
+                if (c == null) {
+                    out["status"] = "unavailable"
+                    withContext(Dispatchers.Main) { callback.onResult(out) }
+                    return@launch
+                }
+                val granted = withStageTimeout("device_permission_query") {
+                    c.permissionController.getGrantedPermissions()
+                }
+                val canWeight = granted.contains(HealthPermission.getReadPermission(WeightRecord::class))
+                val canFat = granted.contains(HealthPermission.getReadPermission(BodyFatRecord::class))
+                val canRope = granted.contains(HealthPermission.getReadPermission(ExerciseSessionRecord::class))
+                val canNutrition = granted.contains(HealthPermission.getReadPermission(NutritionRecord::class))
+                val canGlucose = granted.contains(HealthPermission.getReadPermission(BloodGlucoseRecord::class))
+                out["weightGranted"] = canWeight
+                out["ropeGranted"] = canRope
+                out["nutritionGranted"] = canNutrition
+                out["glucoseGranted"] = canGlucose
+
+                val today = LocalDate.now()
+                val range = TimeRangeFilter.between(today.atStartOfDay(), today.plusDays(1).atStartOfDay())
+
+                if (canWeight) {
+                    val page = withStageTimeout("device_weight") {
+                        c.readRecords(ReadRecordsRequest(WeightRecord::class, range, emptySet(), false, 1, null))
+                    }
+                    page.records.firstOrNull()?.let { out["weightKg"] = it.weight.inKilograms }
+                }
+                if (canFat) {
+                    val page = withStageTimeout("device_fat") {
+                        c.readRecords(ReadRecordsRequest(BodyFatRecord::class, range, emptySet(), false, 1, null))
+                    }
+                    page.records.firstOrNull()?.let { out["bodyFatPct"] = it.percentage.value }
+                }
+                if (canRope) {
+                    val page = withStageTimeout("device_rope") {
+                        c.readRecords(ReadRecordsRequest(ExerciseSessionRecord::class, range, emptySet(), false, 50, null))
+                    }
+                    val ropeType = ExerciseSessionRecord.EXERCISE_TYPE_STRING_TO_INT_MAP["jump_rope"]
+                    val ropes = page.records.filter { rec ->
+                        (ropeType != null && rec.exerciseType == ropeType) ||
+                            rec.title?.contains("跳绳") == true ||
+                            rec.title?.contains("jump rope", ignoreCase = true) == true
+                    }
+                    val seconds = ropes.sumOf {
+                        java.time.Duration.between(it.startTime, it.endTime).seconds.coerceAtLeast(0)
+                    }
+                    if (ropes.isNotEmpty() && seconds > 0) {
+                        out["jumpCount"] = ropes.size
+                        out["jumpMinutes"] = ((seconds + 59) / 60).toInt()
+                    }
+                }
+                if (canNutrition) {
+                    val result = withStageTimeout("device_nutrition") {
+                        c.aggregate(AggregateRequest(setOf(NutritionRecord.ENERGY_TOTAL), range, emptySet()))
+                    }
+                    result[NutritionRecord.ENERGY_TOTAL]?.let { out["nutritionKcal"] = it.inKilocalories }
+                }
+                if (canGlucose) {
+                    val page = withStageTimeout("device_glucose") {
+                        c.readRecords(ReadRecordsRequest(BloodGlucoseRecord::class, range, emptySet(), false, 1, null))
+                    }
+                    page.records.firstOrNull()?.let { out["glucoseMmol"] = it.level.inMillimolesPerLiter }
+                }
+                val any = out.containsKey("weightKg") || out.containsKey("jumpCount") ||
+                    out.containsKey("nutritionKcal") || out.containsKey("glucoseMmol")
+                out["status"] = if (any) "ok" else "empty"
+            } catch (e: HcTimeoutException) {
+                out["status"] = "error"
+                out["message"] = "Health Connect 读数超时（卡在 ${e.stage}）"
+            } catch (e: SecurityException) {
+                out["status"] = "denied"
+                out["message"] = "Health Connect 权限不足"
+            } catch (t: Throwable) {
+                Log.w(TAG, "fetchDevices failed: ${t.javaClass.simpleName}")
+                out["status"] = "error"
+                out["message"] = t.javaClass.simpleName
+            }
             withContext(Dispatchers.Main) { callback.onResult(out) }
         }
     }

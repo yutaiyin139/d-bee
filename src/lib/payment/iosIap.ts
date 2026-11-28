@@ -1,4 +1,4 @@
-/** iOS StoreKit 2 适配器：交易只有经服务端核销后才允许 finish。 */
+/** iOS StoreKit 2 适配器：交易只有经服务端核销后才允许 finish。receipt 是这笔交易的 JWS。 */
 
 import { PRODUCT_IDS, type ProductId } from '../entitlement'
 import { isIOS } from '../platform'

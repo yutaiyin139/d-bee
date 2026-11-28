@@ -185,6 +185,19 @@ describe('护栏 20-B · D_BEE_APPPAY_ENABLED 一个变量同决定 Android 按�
     expect(/__APPPAY_SALE_ENABLED__: resolveApppaySaleFlag\(\) === 'true' \? 'true' : 'false'/.test(VITE.code)).toBe(true)
   })
 
+  it('VITE_WECHAT_APPID 与小程序 AppID 相同则构建失败', () => {
+    expect(/function assertAppPayClientIds/.test(VITE.code) && /wechat === mini/.test(VITE.code)).toBe(true)
+  })
+
+  it('售卖开关为 true 且微信移动应用 AppID 为空则构建失败', () => {
+    expect(/sale === 'true' && !wechat/.test(VITE.code)).toBe(true)
+  })
+
+  it('支付宝按钮另有 D_BEE_ALIPAY_ENABLED，不随微信支付开关一起打开', () => {
+    expect(/D_BEE_ALIPAY_ENABLED/.test(VITE.code)).toBe(true)
+    expect(/alipay: ALIPAY_SALE_ENABLED && isAlipayAvailable\(\)/.test(PAYWALL.code)).toBe(true)
+  })
+
   it('lib 侧 APPPAY_SALE_ENABLED 取自该构建期常量且 typeof 兜底为 false', () => {
     expect(
       /typeof __APPPAY_SALE_ENABLED__ !== 'undefined' && __APPPAY_SALE_ENABLED__ === true/.test(GUIDE_LIB.code),

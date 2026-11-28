@@ -1148,6 +1148,7 @@ export async function verifyPaymentOrder(
  *   POST {endpoint}/.cloud/payment/apple/verify
  *   Bearer = 会话 access_token（网关用 JWT_SECRET 验签，sub 即权益归属人）
  *   body { receipt, order_no?, provider_txn_id? }
+ *   receipt 为 StoreKit 2 的 jwsRepresentation，或旧版 base64 收据文件
  *   200 { settled:true, duplicate, plan, pro_until, transaction_id }
  *   4xx CloudError 形状 { message, error }
  */
